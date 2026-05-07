@@ -2,8 +2,10 @@ pub mod activity;
 pub mod analytics;
 pub mod background;
 pub(crate) mod core_api;
+pub mod db_pools;
 pub mod favorites;
 pub(crate) mod library;
+mod mountinfo_watcher;
 pub mod now_playing;
 pub mod recents;
 pub mod response_cache;
@@ -151,14 +153,26 @@ pub struct AppState {
     /// Cached user preferences (skin, locale, region, font size).
     /// Loaded once at startup; updated in-memory on every settings change.
     pub prefs: Arc<std::sync::RwLock<replay_control_core_server::settings::UserPreferences>>,
-    /// Library DB pool (deadpool-backed, concurrent reads).
-    pub library_pool: DbPool,
-    /// User data DB pool (deadpool-backed, concurrent reads).
-    pub user_data_pool: DbPool,
-    /// Host-global external metadata DB pool — LaunchBox text + libretro
-    /// thumbnail manifests. Read by enrichment + thumbnail UI lookups;
-    /// written by the LaunchBox + libretro refresh paths.
-    pub external_metadata_pool: DbPool,
+    /// Library DB read handle. Type-fenced — readers cannot write.
+    /// See `api/db_pools.rs`.
+    pub library_reader: db_pools::LibraryReadPool,
+    /// Library DB write handle. Holds the same underlying pool as
+    /// `library_reader`; only background, scan, watcher, and explicit
+    /// user-action paths should hold a writer.
+    pub library_writer: db_pools::LibraryWritePool,
+    /// User data DB read handle.
+    pub user_data_reader: db_pools::UserDataReadPool,
+    /// User data DB write handle. Server-fn user actions (favorites,
+    /// box-art override, video add/remove, recents append) and
+    /// destructive recovery paths (`repair_corrupt_user_data`,
+    /// `restore_user_data_backup`) are the only legitimate writers.
+    pub user_data_writer: db_pools::UserDataWritePool,
+    /// Host-global external metadata DB read handle.
+    pub external_metadata_reader: db_pools::ExternalMetadataReadPool,
+    /// Host-global external metadata DB write handle. Only the
+    /// LaunchBox refresh path and the libretro manifest refresh path
+    /// should hold this; SSR/HTTP read handlers must use the reader.
+    pub external_metadata_writer: db_pools::ExternalMetadataWritePool,
     /// Thumbnail pipeline (index + download operations).
     pub thumbnails: Arc<ThumbnailPipeline>,
     /// Single coordinator for all thumbnail-download work (bulk
@@ -279,7 +293,10 @@ fn prepare_storage_dbs(
 /// swap so the corruption banner fires on either path. Library DBs don't
 /// need this — `LibraryDb::open_at` deletes-and-recreates on bad header
 /// (the file is rebuildable cache); user_data is not rebuildable.
-async fn reopen_user_data_or_mark_corrupt(pool: &DbPool, db_path: &std::path::Path) -> bool {
+async fn reopen_user_data_or_mark_corrupt(
+    pool: &db_pools::UserDataWritePool,
+    db_path: &std::path::Path,
+) -> bool {
     if replay_control_core_server::sqlite::has_invalid_sqlite_header(db_path) {
         tracing::error!(
             "user_data.db at {} has invalid SQLite header — flagging pool corrupt",
@@ -560,6 +577,19 @@ impl AppState {
             });
         }
 
+        // Library uses `as_reader()` because `LibraryWritePool` retains
+        // the legacy escape hatch (task #29). The other two pools build
+        // reader + writer directly from cloned `DbPool` handles —
+        // intentional asymmetry, not drift.
+        let library_writer = db_pools::LibraryWritePool::from_pool(library_pool);
+        let library_reader = library_writer.as_reader();
+        let user_data_reader = db_pools::UserDataReadPool::from_pool(user_data_pool.clone());
+        let user_data_writer = db_pools::UserDataWritePool::from_pool(user_data_pool);
+        let external_metadata_reader =
+            db_pools::ExternalMetadataReadPool::from_pool(external_metadata_pool.clone());
+        let external_metadata_writer =
+            db_pools::ExternalMetadataWritePool::from_pool(external_metadata_pool);
+
         let state = Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             storage_status,
@@ -571,9 +601,12 @@ impl AppState {
             settings,
             data_dir,
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
-            library_pool,
-            user_data_pool,
-            external_metadata_pool,
+            library_reader,
+            library_writer,
+            user_data_reader,
+            user_data_writer,
+            external_metadata_reader,
+            external_metadata_writer,
             thumbnails,
             thumbnail_orchestrator: Arc::new(
                 thumbnail_orchestrator::ThumbnailDownloadOrchestrator::spawn(
@@ -647,8 +680,8 @@ impl AppState {
     /// Returns `(library_corrupt, user_data_corrupt)`.
     pub fn is_db_corrupt(&self) -> (bool, bool) {
         (
-            self.library_pool.is_corrupt(),
-            self.user_data_pool.is_corrupt(),
+            self.library_reader.is_corrupt(),
+            self.user_data_reader.is_corrupt(),
         )
     }
 
@@ -702,7 +735,7 @@ impl AppState {
         (
             library_corrupt,
             user_data_corrupt,
-            self.user_data_pool.backup_path_exists(),
+            self.user_data_writer.backup_path_exists(),
         )
     }
 
@@ -843,6 +876,27 @@ impl AppState {
         };
 
         if changed {
+            // Confirm the storage is fully usable before flipping the
+            // middleware gate. A mount point can show up in
+            // /proc/self/mountinfo while subdir dirent caches are still
+            // cold (NFS partial-mount window) — opening the gate then
+            // lets request handlers see zero ROMs and poison library.db
+            // with all-zero rows. The probe walks roms_dir + system
+            // subdirs with a bounded retry so the gate only opens once
+            // the dirent cache stabilizes.
+            use replay_control_core_server::roms::StorageProbe;
+            match replay_control_core_server::roms::probe_storage_ready(&new_storage).await {
+                StorageProbe::HasRoms | StorageProbe::StableEmpty => {}
+                StorageProbe::NotReady => {
+                    tracing::debug!(
+                        "refresh_storage: probe at {} not yet ready; deferring",
+                        new_storage.root.display()
+                    );
+                    self.set_storage_status(StorageStatus::WaitingForMount);
+                    return Ok(false);
+                }
+            }
+
             tracing::info!(
                 "Storage changed: {:?} at {}",
                 new_storage.kind,
@@ -864,7 +918,7 @@ impl AppState {
                 }
             };
 
-            if !self.library_pool.reopen(&paths.library).await {
+            if !self.library_writer.reopen(&paths.library).await {
                 let message = format!(
                     "Could not open library database at {}",
                     paths.library.display()
@@ -874,7 +928,7 @@ impl AppState {
                 return Ok(false);
             }
 
-            if !reopen_user_data_or_mark_corrupt(&self.user_data_pool, &paths.user_data).await {
+            if !reopen_user_data_or_mark_corrupt(&self.user_data_writer, &paths.user_data).await {
                 let message = format!(
                     "Could not open user data database at {}",
                     paths.user_data.display()
@@ -892,7 +946,7 @@ impl AppState {
 
             // Back up user_data.db after opening at the new location.
             if !had_storage {
-                let ud_path = self.user_data_pool.db_path();
+                let ud_path = self.user_data_writer.db_path();
                 let backup_path = ud_path.with_extension("db.bak");
                 match std::fs::copy(&ud_path, &backup_path) {
                     Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
@@ -900,7 +954,7 @@ impl AppState {
                 }
             }
 
-            if let Err(e) = self.cache.invalidate(&self.library_pool).await {
+            if let Err(e) = self.cache.invalidate(&self.library_writer).await {
                 tracing::debug!("storage-change cache.invalidate skipped: {e}");
             }
             self.invalidate_user_caches().await;
@@ -1307,13 +1361,14 @@ mod tests {
 
         replay_control_core_server::user_data_db::UserDataDb::open_at(&valid_path).unwrap();
 
-        let pool = DbPool::new(
+        let raw = DbPool::new(
             valid_path,
             "user_data_db",
             open_user_data_db,
             USER_DATA_READ_POOL_SIZE,
         )
         .unwrap();
+        let pool = db_pools::UserDataWritePool::from_pool(raw);
         assert!(!pool.is_corrupt());
 
         // 4 KiB of garbage = clobbered SQLite magic header.
@@ -1336,13 +1391,14 @@ mod tests {
         replay_control_core_server::user_data_db::UserDataDb::open_at(&initial_path).unwrap();
         replay_control_core_server::user_data_db::UserDataDb::open_at(&new_path).unwrap();
 
-        let pool = DbPool::new(
+        let raw = DbPool::new(
             initial_path,
             "user_data_db",
             open_user_data_db,
             USER_DATA_READ_POOL_SIZE,
         )
         .unwrap();
+        let pool = db_pools::UserDataWritePool::from_pool(raw);
 
         reopen_user_data_or_mark_corrupt(&pool, &new_path).await;
 

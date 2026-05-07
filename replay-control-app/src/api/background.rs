@@ -1,4 +1,3 @@
-use replay_control_core_server::DbPool;
 use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::update as update_io;
@@ -9,7 +8,8 @@ use super::activity::{
     Activity, RebuildPhase, RebuildProgress, RefreshMetadataPhase, RefreshMetadataProgress,
     StartupPhase,
 };
-use super::library::dir_mtime;
+use super::db_pools::LibraryReadPool;
+use super::library::dir_mtime_secs;
 
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
@@ -85,7 +85,7 @@ fn report_system(
 /// "DB unavailable" from "DB has no rows" — defaulting unavailability to
 /// "empty" is what triggered the
 /// `2026-05-01-library-wal-unlink-under-live-connections` regression.
-async fn try_read_or_skip<T, F>(pool: &DbPool, phase: &'static str, f: F) -> Option<T>
+async fn try_read_or_skip<T, F>(pool: &LibraryReadPool, phase: &'static str, f: F) -> Option<T>
 where
     F: FnOnce(&rusqlite::Connection) -> replay_control_core::error::Result<T> + Send + 'static,
     T: Send + 'static,
@@ -105,6 +105,18 @@ where
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
+
+/// Cold-NFS meta poisoning fingerprint: every row reports
+/// `rom_count = 0` while still carrying a stamped `dir_mtime_secs`.
+/// Empty meta returns `false` (the legitimate fresh-DB state).
+fn has_poisoned_meta_fingerprint(
+    cached_meta: &[replay_control_core_server::library_db::SystemMeta],
+) -> bool {
+    !cached_meta.is_empty()
+        && cached_meta
+            .iter()
+            .all(|m| m.rom_count == 0 && m.dir_mtime_secs.is_some())
+}
 
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
@@ -260,7 +272,7 @@ impl BackgroundManager {
             let cache_dir = state.data_dir.cache_dir();
 
             let stored_etag = state
-                .external_metadata_pool
+                .external_metadata_reader
                 .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG))
                 .await
                 .flatten();
@@ -346,7 +358,7 @@ impl BackgroundManager {
                     // detect an unchanged file without re-downloading.
                     if let Some(etag) = upstream_etag {
                         let _ = state
-                            .external_metadata_pool
+                            .external_metadata_writer
                             .write(move |conn| {
                                 external_metadata::write_meta(
                                     conn,
@@ -395,8 +407,10 @@ impl BackgroundManager {
     async fn phase_title_norm_reconcile(state: &AppState) {
         use replay_control_core_server::title_norm_reconcile;
 
-        if let Err(e) =
-            title_norm_reconcile::reconcile_library_normalized_titles(&state.library_pool).await
+        if let Err(e) = title_norm_reconcile::reconcile_library_normalized_titles(
+            state.library_writer.as_db_pool(),
+        )
+        .await
         {
             tracing::warn!("title_norm reconcile (library) failed: {e}");
         }
@@ -421,7 +435,7 @@ impl BackgroundManager {
         drop(storage);
 
         let seed_check = state
-            .external_metadata_pool
+            .external_metadata_reader
             .read(|conn| {
                 let has_crc32 =
                     external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32).is_some();
@@ -490,7 +504,7 @@ impl BackgroundManager {
             let api_key =
                 replay_control_core_server::settings::read_github_api_key(&state.settings);
             match replay_control_core_server::thumbnail_manifest::import_all_manifests(
-                &state.external_metadata_pool,
+                state.external_metadata_writer.as_db_pool(),
                 &|_, _, _| {},
                 &cancel,
                 api_key.as_deref(),
@@ -574,7 +588,7 @@ impl BackgroundManager {
         let xml_for_hash = xml_path.clone();
         let hash_fut =
             tokio::task::spawn_blocking(move || external_metadata::hash_file_crc32(&xml_for_hash));
-        let stamp_fut = state.external_metadata_pool.read(|conn| {
+        let stamp_fut = state.external_metadata_reader.read(|conn| {
             (
                 external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32),
                 external_metadata::read_meta(conn, meta_keys::TITLE_NORM_VERSION),
@@ -642,7 +656,7 @@ impl BackgroundManager {
         let xml_for_task = xml_path.clone();
         let progress_state = state.clone();
         let result = state
-            .external_metadata_pool
+            .external_metadata_writer
             .try_write_with_timeout(EXTERNAL_METADATA_REFRESH_TIMEOUT, move |conn| {
                 replay_control_core_server::library::external_metadata_refresh::refresh_launchbox(
                     &xml_for_task,
@@ -722,7 +736,7 @@ impl BackgroundManager {
         let storage = state.storage();
         let systems = state
             .cache
-            .cached_systems(&storage, &state.library_pool)
+            .cached_systems(&storage, &state.library_reader)
             .await;
         let active: Vec<String> = systems
             .into_iter()
@@ -760,7 +774,7 @@ impl BackgroundManager {
         let region_secondary = state.region_preference_secondary();
 
         let Some(cached_meta) = try_read_or_skip(
-            &state.library_pool,
+            &state.library_reader,
             "cache_verification",
             LibraryDb::load_all_system_meta,
         )
@@ -768,6 +782,64 @@ impl BackgroundManager {
         else {
             return;
         };
+
+        // Self-heal the cold-NFS poisoned-meta state. The is_stale /
+        // is_incomplete checks below can't recover it on their own:
+        // mtime matches, rom_count == 0 so the `> 0` guard skips.
+        // Clearing meta drops us into the empty-DB branch for a clean
+        // repopulate.
+        if has_poisoned_meta_fingerprint(&cached_meta) {
+            // Atomic on the writer connection: re-check that
+            // `game_library` is empty and clear in the same closure, so
+            // a hypothetical concurrent write can't insert rows between
+            // the check and the clear. Activity::Startup already
+            // serializes against other writers, but the in-closure
+            // re-check makes the safety local rather than guard-derived.
+            let cleared = state
+                .library_writer
+                .try_write(|conn| -> Result<bool, replay_control_core::error::Error> {
+                    let count = LibraryDb::game_library_count(conn)?;
+                    if count != 0 {
+                        return Ok(false);
+                    }
+                    LibraryDb::clear_all_game_library(conn)?;
+                    Ok(true)
+                })
+                .await;
+            match cleared {
+                Ok(Ok(true)) => {
+                    tracing::warn!(
+                        "phase_cache_verification: detected poisoned all-zero meta ({} rows) — cleared for repopulate",
+                        cached_meta.len()
+                    );
+                    Self::populate_all_systems(
+                        state,
+                        &storage,
+                        region_pref,
+                        region_secondary,
+                        PopulateProgress::Startup,
+                    )
+                    .await;
+                    return;
+                }
+                Ok(Ok(false)) => {
+                    // game_library has rows after all — fingerprint was
+                    // a false positive (something populated since the
+                    // initial cached_meta read). Fall through to the
+                    // normal stale/incomplete checks below.
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "phase_cache_verification: recovery transaction failed ({e}); skipping this boot"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "phase_cache_verification: pool unavailable ({e}); skipping recovery this boot"
+                    );
+                }
+            }
+        }
 
         if cached_meta.is_empty() {
             // Fresh DB — full populate.
@@ -784,30 +856,15 @@ impl BackgroundManager {
 
         // Query actual game_library row counts per system to detect interrupted scans.
         let actual_counts: std::collections::HashMap<String, usize> = state
-            .library_pool
-            .read(|conn| {
-                let mut stmt = conn
-                    .prepare("SELECT system, COUNT(*) FROM game_library GROUP BY system")
-                    .ok()?;
-                let rows = stmt
-                    .query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
-                    })
-                    .ok()?;
-                Some(rows.flatten().collect())
-            })
+            .library_reader
+            .read(|conn| LibraryDb::row_counts_per_system(conn).unwrap_or_default())
             .await
-            .flatten()
             .unwrap_or_default();
 
         let mut rescan_count = 0usize;
         for meta in &cached_meta {
             let system_dir = roms_dir.join(&meta.system);
-            let current_mtime_secs = dir_mtime(&system_dir).and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .map(|d| d.as_secs() as i64)
-            });
+            let current_mtime_secs = dir_mtime_secs(&system_dir);
 
             let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
                 (Some(cached), Some(current)) => cached != current,
@@ -841,7 +898,7 @@ impl BackgroundManager {
                         &meta.system,
                         region_pref,
                         region_secondary,
-                        &state.library_pool,
+                        &state.library_writer,
                     )
                     .await;
                 state
@@ -876,7 +933,7 @@ impl BackgroundManager {
 
         // Check data_source for libretro-thumbnails entries and thumbnail_manifest emptiness.
         let (has_sources, index_empty) = match state
-            .external_metadata_pool
+            .external_metadata_reader
             .read(|conn| {
                 let stats =
                     external_metadata::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
@@ -964,7 +1021,7 @@ impl BackgroundManager {
 
         // Now write all collected data to external_metadata.db in one txn.
         let write_result = state
-            .external_metadata_pool
+            .external_metadata_writer
             .write(move |db| {
                 let tx = match db.transaction() {
                     Ok(t) => t,
@@ -1060,12 +1117,21 @@ impl BackgroundManager {
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
         progress: PopulateProgress,
     ) {
+        // Startup/Rebuild discover systems via a direct filesystem walk.
+        // `cached_systems` is read-only and would return [] on fresh DB.
+        // `AllSystemsMissing` means partial-mount window or empty library
+        // — nothing to populate either way; bail.
         let systems = match progress {
             PopulateProgress::Startup | PopulateProgress::Rebuild { .. } => {
-                state
-                    .cache
-                    .cached_systems(storage, &state.library_pool)
-                    .await
+                match replay_control_core_server::roms::scan_systems(storage).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::info!(
+                            "populate_all_systems: scan_systems returned {e}; nothing to populate"
+                        );
+                        return;
+                    }
+                }
             }
             PopulateProgress::Rescan { .. } => replay_control_core::systems::visible_systems()
                 .map(|system| replay_control_core::roms::SystemSummary {
@@ -1111,7 +1177,7 @@ impl BackgroundManager {
                         &sys.folder_name,
                         region_pref,
                         region_secondary,
-                        &state.library_pool,
+                        &state.library_writer,
                     )
                     .await
             } else {
@@ -1122,7 +1188,7 @@ impl BackgroundManager {
                         &sys.folder_name,
                         region_pref,
                         region_secondary,
-                        &state.library_pool,
+                        &state.library_writer,
                     )
                     .await
             };
@@ -1732,7 +1798,7 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            let Some(is_empty) = try_read_or_skip(&state.library_pool, "post_import", |conn| {
+            let Some(is_empty) = try_read_or_skip(&state.library_reader, "post_import", |conn| {
                 LibraryDb::load_all_system_meta(conn).map(|m| m.is_empty())
             })
             .await
@@ -1763,7 +1829,7 @@ impl AppState {
             // so the exFAT corruption risk is low.
             let systems = state
                 .cache
-                .cached_systems(&storage, &state.library_pool)
+                .cached_systems(&storage, &state.library_reader)
                 .await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
@@ -1801,7 +1867,7 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            let Some(is_empty) = try_read_or_skip(&state.library_pool, "rebuild", |conn| {
+            let Some(is_empty) = try_read_or_skip(&state.library_reader, "rebuild", |conn| {
                 LibraryDb::load_all_system_meta(conn).map(|m| m.is_empty())
             })
             .await
@@ -1829,7 +1895,7 @@ impl AppState {
             // Enrichment writes are small per-system UPDATEs, not bulk INSERTs.
             let systems = state
                 .cache
-                .cached_systems(&storage, &state.library_pool)
+                .cached_systems(&storage, &state.library_reader)
                 .await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
             let total = with_games.len();
@@ -1921,20 +1987,21 @@ impl AppState {
         });
     }
 
-    /// Spawn a background task that watches `replay.cfg` for changes and
-    /// periodically re-checks storage as a fallback.
-    ///
-    /// Uses `notify` (inotify on Linux) to react immediately when the config
-    /// file is modified. Falls back to the 60-second poll if filesystem
-    /// watching cannot be set up (e.g., on NFS).
+    /// Spawn the storage-detection watchers: a `notify` watcher on
+    /// `replay.cfg` (config changes), a `/proc/self/mountinfo` POLLPRI
+    /// watcher (mount-table changes — Linux only), and a 60 s
+    /// belt-and-suspenders poll for missed events on flaky NFS / dev hosts.
     pub fn spawn_storage_watcher(self) {
         let config_path = self.config_file_path();
         let state = self.clone();
 
-        // Spawn the filesystem watcher in a blocking thread (notify uses
-        // its own event loop that blocks the thread).
         let watcher_state = self.clone();
         let watcher_config_path = config_path.clone();
+
+        // Spawn the kernel-driven mount-table watcher. Replaces the old
+        // 10 s "waiting for storage" busy-loop: refresh_storage now runs
+        // when the kernel signals a real mount change, not on a timer.
+        super::mountinfo_watcher::spawn(self.clone());
 
         tokio::spawn(async move {
             let watcher_active =
@@ -1946,14 +2013,11 @@ impl AppState {
                 tracing::info!("Config file watcher unavailable; using 60s poll only");
             }
 
-            // Poll loop: 10s when waiting for storage, 60s once connected.
+            // Belt-and-suspenders poll. Catches mount events the kernel
+            // forgot to signal (rare) and is the only signal source on
+            // non-Linux dev hosts where the mountinfo watcher is a no-op.
             loop {
-                let delay = if state.has_storage() {
-                    STORAGE_CHECK_INTERVAL
-                } else {
-                    10
-                };
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                tokio::time::sleep(Duration::from_secs(STORAGE_CHECK_INTERVAL)).await;
                 match state.refresh_storage().await {
                     Ok(true) => tracing::info!("Background storage re-detection: storage changed"),
                     Ok(false) => {}
@@ -2257,7 +2321,7 @@ impl AppState {
                 for system in &affected_systems {
                     if let Err(e) = state
                         .cache
-                        .invalidate_system(system.clone(), &state.library_pool)
+                        .invalidate_system(system.clone(), &state.library_writer)
                         .await
                     {
                         tracing::debug!("rom-watch invalidate_system({system}) skipped: {e}");
@@ -2284,7 +2348,7 @@ impl AppState {
                                 system,
                                 region_pref,
                                 region_secondary,
-                                &state.library_pool,
+                                &state.library_writer,
                             )
                             .await;
                         state
@@ -2301,7 +2365,7 @@ impl AppState {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
                     let systems = state
                         .cache
-                        .cached_systems(&storage, &state.library_pool)
+                        .cached_systems(&storage, &state.library_reader)
                         .await;
                     for sys in &systems {
                         if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
@@ -2312,7 +2376,7 @@ impl AppState {
                                     &sys.folder_name,
                                     region_pref,
                                     region_secondary,
-                                    &state.library_pool,
+                                    &state.library_writer,
                                 )
                                 .await;
                             state
@@ -2324,7 +2388,7 @@ impl AppState {
                 } else if !affected_systems.is_empty() {
                     let _ = state
                         .cache
-                        .cached_systems(&storage, &state.library_pool)
+                        .cached_systems(&storage, &state.library_reader)
                         .await;
                 }
             }
@@ -2405,6 +2469,54 @@ impl AppState {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    // ── has_poisoned_meta_fingerprint ───────────────────────────────
+
+    fn meta(
+        system: &str,
+        rom_count: usize,
+        mtime: Option<i64>,
+    ) -> replay_control_core_server::library_db::SystemMeta {
+        replay_control_core_server::library_db::SystemMeta {
+            system: system.into(),
+            dir_mtime_secs: mtime,
+            scanned_at: 0,
+            rom_count,
+            total_size_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn poisoned_fingerprint_empty_meta_is_not_poisoned() {
+        assert!(!has_poisoned_meta_fingerprint(&[]));
+    }
+
+    #[test]
+    fn poisoned_fingerprint_all_zero_with_mtime_is_poisoned() {
+        let rows = vec![
+            meta("nintendo_nes", 0, Some(1700000000)),
+            meta("sega_smd", 0, Some(1700000000)),
+            meta("snes", 0, Some(1700000001)),
+        ];
+        assert!(has_poisoned_meta_fingerprint(&rows));
+    }
+
+    #[test]
+    fn poisoned_fingerprint_zero_without_mtime_is_not_poisoned() {
+        // Pre-2026 meta without mtime stamps; the regular `is_stale`
+        // path treats `None` as stale and rescans them.
+        let rows = vec![meta("nintendo_nes", 0, None), meta("sega_smd", 0, None)];
+        assert!(!has_poisoned_meta_fingerprint(&rows));
+    }
+
+    #[test]
+    fn poisoned_fingerprint_any_nonzero_row_is_not_poisoned() {
+        let rows = vec![
+            meta("nintendo_nes", 12, Some(1700000000)),
+            meta("sega_smd", 0, Some(1700000000)),
+        ];
+        assert!(!has_poisoned_meta_fingerprint(&rows));
+    }
 
     // ── generate_update_script ──────────────────────────────────────
 

@@ -133,7 +133,7 @@ pub async fn get_roms_page(
     let sys_owned = system.clone();
 
     let db_result = state
-        .library_pool
+        .library_reader
         .read(move |conn| {
             let filter = SearchFilter {
                 hide_hacks,
@@ -220,7 +220,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let sys_owned = system.clone();
     let fname_owned = filename.clone();
     let entry = state
-        .library_pool
+        .library_reader
         .read(move |conn| LibraryDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
         .and_then(|r| r.ok())
@@ -258,7 +258,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let arcade_display =
         replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename).await;
     let variant_count = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read({
             let system = system.clone();
             let filename = filename.clone();
@@ -451,7 +451,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
 
     if let Err(e) = state
         .cache
-        .invalidate_system(system, &state.library_pool)
+        .invalidate_system(system, &state.library_writer)
         .await
     {
         tracing::debug!("post-mutation invalidate_system skipped: {e}");
@@ -508,7 +508,7 @@ async fn delete_rom_cleanup(
 
     // 3. Delete user_data.db entries (videos, box art overrides).
     state
-        .user_data_pool
+        .user_data_writer
         .write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
@@ -524,7 +524,7 @@ async fn delete_rom_cleanup(
 
     // 4. Delete library.db game_library entry.
     state
-        .library_pool
+        .library_writer
         .write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
@@ -589,7 +589,7 @@ pub async fn rename_rom(
 
     if let Err(e) = state
         .cache
-        .invalidate_system(system, &state.library_pool)
+        .invalidate_system(system, &state.library_writer)
         .await
     {
         tracing::debug!("post-mutation invalidate_system skipped: {e}");
@@ -636,7 +636,7 @@ async fn rename_rom_cascade(
 
     // 3. Update user_data.db (box art overrides, game videos).
     state
-        .user_data_pool
+        .user_data_writer
         .write({
             let system = system.to_string();
             let old_filename = old_filename.to_string();
@@ -654,7 +654,7 @@ async fn rename_rom_cascade(
 
     // 4. Update library.db game_library entry.
     state
-        .library_pool
+        .library_writer
         .write({
             let system = system.to_string();
             let old_filename = old_filename.to_string();

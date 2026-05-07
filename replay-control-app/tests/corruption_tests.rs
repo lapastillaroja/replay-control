@@ -21,7 +21,7 @@ use tokio::time::timeout;
 use tower::ServiceExt;
 
 use common::{TestEnv, init_executor, register_server_fns, test_router};
-use replay_control_app::api::{AppState, ConfigEvent, DbPool};
+use replay_control_app::api::{AppState, ConfigEvent};
 use replay_control_app::server_fns;
 
 fn setup() {
@@ -111,10 +111,10 @@ impl Drop for StandaloneStorage {
 #[tokio::test(flavor = "multi_thread")]
 async fn user_data_mark_corrupt_broadcasts_event() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let mut rx = env.state.config_tx.subscribe();
 
-    env.state.user_data_pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
 
     let ev = next_corruption_event(&mut rx).await;
     match ev {
@@ -128,16 +128,16 @@ async fn user_data_mark_corrupt_broadcasts_event() {
         }
         _ => unreachable!(),
     }
-    assert!(env.state.user_data_pool.is_corrupt());
+    assert!(env.state.user_data_reader.is_corrupt());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn library_mark_corrupt_broadcasts_event() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let mut rx = env.state.config_tx.subscribe();
 
-    env.state.library_pool.mark_corrupt();
+    env.state.library_writer.mark_corrupt();
 
     let ev = next_corruption_event(&mut rx).await;
     match ev {
@@ -156,13 +156,13 @@ async fn library_mark_corrupt_broadcasts_event() {
 #[tokio::test(flavor = "multi_thread")]
 async fn idempotent_mark_corrupt_does_not_re_broadcast() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let mut rx = env.state.config_tx.subscribe();
 
-    env.state.user_data_pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
     let _first = next_corruption_event(&mut rx).await;
 
-    env.state.user_data_pool.mark_corrupt(); // already corrupt
+    env.state.user_data_writer.mark_corrupt(); // already corrupt
     let second = timeout(Duration::from_millis(150), rx.recv()).await;
     assert!(
         second.is_err(),
@@ -187,17 +187,15 @@ async fn invoke_server_fn<F: ServerFn>(state: AppState, body: &str) -> StatusCod
     resp.status()
 }
 
-/// Shared shape of every recovery-broadcast test: pick a pool, mark it
-/// corrupt, drain the "set" event, invoke the recovery server fn, return the
-/// "cleared" event for the caller to assert on. Keeps each test focused on
-/// the one assertion that actually differs (which flag flips back to false).
-async fn run_recovery_test<F: ServerFn>(pick_pool: fn(&AppState) -> &DbPool) -> ConfigEvent {
+/// Shared shape of every user_data recovery-broadcast test: mark the
+/// pool corrupt, drain the "set" event, invoke the recovery server fn,
+/// return the "cleared" event for the caller to assert on.
+async fn run_user_data_recovery_test<F: ServerFn>() -> ConfigEvent {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let mut rx = env.state.config_tx.subscribe();
 
-    let pool = pick_pool(&env.state);
-    pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
     let _set = next_corruption_event(&mut rx).await;
 
     let status = invoke_server_fn::<F>(env.state.clone(), "").await;
@@ -205,7 +203,7 @@ async fn run_recovery_test<F: ServerFn>(pick_pool: fn(&AppState) -> &DbPool) -> 
 
     let cleared = next_corruption_event(&mut rx).await;
     assert!(
-        !pick_pool(&env.state).is_corrupt(),
+        !env.state.user_data_reader.is_corrupt(),
         "pool must clear after recovery"
     );
     cleared
@@ -213,8 +211,7 @@ async fn run_recovery_test<F: ServerFn>(pick_pool: fn(&AppState) -> &DbPool) -> 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn repair_corrupt_user_data_clears_flag_and_broadcasts_inverse() {
-    let cleared =
-        run_recovery_test::<server_fns::RepairCorruptUserData>(|s| &s.user_data_pool).await;
+    let cleared = run_user_data_recovery_test::<server_fns::RepairCorruptUserData>().await;
     match cleared {
         ConfigEvent::CorruptionChanged {
             user_data_corrupt, ..
@@ -226,19 +223,23 @@ async fn repair_corrupt_user_data_clears_flag_and_broadcasts_inverse() {
 #[tokio::test(flavor = "multi_thread")]
 async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
 
     // TestEnv brings up AppState which auto-saves a healthy backup at startup;
     // that's exactly what restore expects to find. Verify the precondition so
     // failure here is a setup issue, not a logic issue.
-    let backup_path = env.state.user_data_pool.db_path().with_extension("db.bak");
+    let backup_path = env
+        .state
+        .user_data_writer
+        .db_path()
+        .with_extension("db.bak");
     assert!(
         backup_path.exists(),
         "TestEnv setup should have created .bak"
     );
 
     let mut rx = env.state.config_tx.subscribe();
-    env.state.user_data_pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
     let _set = next_corruption_event(&mut rx).await;
 
     let status = invoke_server_fn::<server_fns::RestoreUserDataBackup>(env.state.clone(), "").await;
@@ -251,12 +252,26 @@ async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
         } => assert!(!user_data_corrupt),
         _ => unreachable!(),
     }
-    assert!(!env.state.user_data_pool.is_corrupt());
+    assert!(!env.state.user_data_reader.is_corrupt());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
-    let cleared = run_recovery_test::<server_fns::RebuildCorruptLibrary>(|s| &s.library_pool).await;
+    setup();
+    let env = TestEnv::new().await;
+    let mut rx = env.state.config_tx.subscribe();
+
+    env.state.library_writer.mark_corrupt();
+    let _set = next_corruption_event(&mut rx).await;
+
+    let status = invoke_server_fn::<server_fns::RebuildCorruptLibrary>(env.state.clone(), "").await;
+    assert_eq!(status, StatusCode::OK, "recovery server fn should succeed");
+
+    let cleared = next_corruption_event(&mut rx).await;
+    assert!(
+        !env.state.library_writer.is_corrupt(),
+        "pool must clear after recovery"
+    );
     match cleared {
         ConfigEvent::CorruptionChanged {
             library_corrupt, ..
@@ -272,44 +287,32 @@ async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
 #[tokio::test(flavor = "multi_thread")]
 async fn rebuild_corrupt_library_wipes_table_content() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
 
     // Pre-populate a sentinel row that survives only if reset_to_empty is a
     // no-op. game_library_meta is the simplest table with a known schema.
+    use replay_control_core_server::library_db::LibraryDb;
     let inserted = env
         .state
-        .library_pool
-        .write(|conn| {
-            conn.execute(
-                "INSERT INTO game_library_meta \
-                 (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes) \
-                 VALUES ('rebuild_sentinel', NULL, 0, 1, 0)",
-                [],
-            )
-        })
+        .library_writer
+        .write(|conn| LibraryDb::save_system_meta(conn, "rebuild_sentinel", None, 1, 0))
         .await;
     assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
 
-    env.state.library_pool.mark_corrupt();
+    env.state.library_writer.mark_corrupt();
 
     let status = invoke_server_fn::<server_fns::RebuildCorruptLibrary>(env.state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 
-    let count: i64 = env
+    let sentinel = env
         .state
-        .library_pool
-        .read(|conn| {
-            conn.query_row(
-                "SELECT COUNT(*) FROM game_library_meta WHERE system = 'rebuild_sentinel'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or(-1)
-        })
+        .library_reader
+        .read(|conn| LibraryDb::load_system_meta(conn, "rebuild_sentinel"))
         .await
-        .unwrap_or(-1);
-    assert_eq!(
-        count, 0,
+        .unwrap()
+        .unwrap();
+    assert!(
+        sentinel.is_none(),
         "rebuild must wipe library content; sentinel row should not survive"
     );
 }
@@ -322,11 +325,11 @@ async fn rebuild_corrupt_library_wipes_table_content() {
 #[tokio::test(flavor = "multi_thread")]
 async fn repair_corrupt_user_data_wipes_table_content() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
 
     let inserted = env
         .state
-        .user_data_pool
+        .user_data_writer
         .write(|conn| {
             conn.execute(
                 "INSERT INTO box_art_overrides \
@@ -338,14 +341,14 @@ async fn repair_corrupt_user_data_wipes_table_content() {
         .await;
     assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
 
-    env.state.user_data_pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
 
     let status = invoke_server_fn::<server_fns::RepairCorruptUserData>(env.state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 
     let count: i64 = env
         .state
-        .user_data_pool
+        .user_data_reader
         .read(|conn| {
             conn.query_row(
                 "SELECT COUNT(*) FROM box_art_overrides WHERE rom_filename = 'sentinel.rom'",
@@ -370,13 +373,13 @@ async fn repair_corrupt_user_data_wipes_table_content() {
 #[tokio::test(flavor = "multi_thread")]
 async fn restore_user_data_backup_actually_restores_content() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
 
     // Insert a sentinel BEFORE creating the backup. (TestEnv's auto-backup
     // ran at startup against an empty DB, so it doesn't have our row.)
     let inserted = env
         .state
-        .user_data_pool
+        .user_data_writer
         .write(|conn| {
             conn.execute(
                 "INSERT INTO box_art_overrides \
@@ -391,23 +394,23 @@ async fn restore_user_data_backup_actually_restores_content() {
     // Test setup only: fold the WAL into the main file before copying it as
     // a manual .bak snapshot; otherwise the copied main file can miss the row.
     env.state
-        .user_data_pool
+        .user_data_writer
         .write(|conn| conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"))
         .await;
 
     // Manually refresh the .bak so it carries the sentinel row.
-    let ud_path = env.state.user_data_pool.db_path();
+    let ud_path = env.state.user_data_writer.db_path();
     let bak_path = ud_path.with_extension("db.bak");
     std::fs::copy(&ud_path, &bak_path).expect("manual backup snapshot");
 
-    env.state.user_data_pool.mark_corrupt();
+    env.state.user_data_writer.mark_corrupt();
 
     let status = invoke_server_fn::<server_fns::RestoreUserDataBackup>(env.state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 
     let restored: Option<String> = env
         .state
-        .user_data_pool
+        .user_data_reader
         .read(|conn| {
             conn.query_row(
                 "SELECT override_path FROM box_art_overrides \
@@ -433,7 +436,7 @@ async fn startup_with_clobbered_user_data_header_does_not_crash() {
 
     // First boot — creates user_data.db + .bak.
     let state1 = storage.build_state();
-    let ud_path = state1.user_data_pool.db_path();
+    let ud_path = state1.user_data_writer.db_path();
     let bak_path = ud_path.with_extension("db.bak");
     assert!(bak_path.exists());
     drop(state1);
@@ -446,11 +449,11 @@ async fn startup_with_clobbered_user_data_header_does_not_crash() {
     // pool flagged corrupt.
     let state2 = storage.build_state();
     assert!(
-        state2.user_data_pool.is_corrupt(),
+        state2.user_data_reader.is_corrupt(),
         "user_data pool must come up flagged corrupt"
     );
     assert!(
-        !state2.library_pool.is_corrupt(),
+        !state2.library_reader.is_corrupt(),
         "library pool must be unaffected"
     );
 
@@ -466,12 +469,12 @@ async fn restore_after_startup_corruption_recovers_pool() {
     let storage = StandaloneStorage::new("recover");
 
     let state1 = storage.build_state();
-    let ud_path = state1.user_data_pool.db_path();
+    let ud_path = state1.user_data_writer.db_path();
     drop(state1);
 
     corrupt_file_header(&ud_path);
     let state = storage.build_state();
-    assert!(state.user_data_pool.is_corrupt());
+    assert!(state.user_data_reader.is_corrupt());
 
     let mut rx = state.config_tx.subscribe();
     let status = invoke_server_fn::<server_fns::RestoreUserDataBackup>(state.clone(), "").await;
@@ -484,5 +487,5 @@ async fn restore_after_startup_corruption_recovers_pool() {
         } => assert!(!user_data_corrupt),
         _ => unreachable!(),
     }
-    assert!(!state.user_data_pool.is_corrupt());
+    assert!(!state.user_data_reader.is_corrupt());
 }

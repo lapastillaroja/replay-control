@@ -12,7 +12,7 @@ async fn list_systems(
     Json(
         state
             .cache
-            .cached_systems(&state.storage(), &state.library_pool)
+            .cached_systems(&state.storage(), &state.library_reader)
             .await,
     )
 }
@@ -20,36 +20,30 @@ async fn list_systems(
 async fn list_system_roms(
     State(state): State<AppState>,
     Path(system): Path<String>,
-) -> Result<Json<Vec<replay_control_core_server::roms::RomEntry>>, StatusCode> {
+) -> Json<Vec<replay_control_core_server::roms::RomEntry>> {
     let storage = state.storage();
 
-    // L2: try SQLite game_library.
+    // L2 only: this is a GET handler, so it stays read-only. A miss
+    // returns an empty list and lets the background pipeline populate
+    // L2 — request handlers used to fall through to a full L3 scan
+    // here, which kicked off enrichment writes (TGDB aliases, Wikidata
+    // series, release-date seeding) from a GET. That was the second
+    // half of the cold-NFS poisoning vector traced in the
+    // write-isolation investigation.
     if let Some(roms) = state
         .cache
         .load_roms_from_db(
             &storage,
             &system,
             &storage.roms_dir().join(&system),
-            &state.library_pool,
+            &state.library_reader,
         )
         .await
     {
-        return Ok(Json(roms));
+        return Json(roms);
     }
 
-    // L3: full filesystem scan (L2 miss, e.g. first access before pipeline).
-    state
-        .cache
-        .scan_and_cache_system(
-            &storage,
-            &system,
-            state.region_preference(),
-            state.region_preference_secondary(),
-            &state.library_pool,
-        )
-        .await
-        .map(|arc| Json(arc.to_vec()))
-        .map_err(|_| StatusCode::NOT_FOUND)
+    Json(Vec::new())
 }
 
 async fn delete_rom(
@@ -62,7 +56,7 @@ async fn delete_rom(
         &payload.relative_path,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
         tracing::debug!("post-mutation cache.invalidate skipped: {e}");
     }
     state.invalidate_user_caches().await;
@@ -79,7 +73,7 @@ async fn rename_rom(
         &payload.new_filename,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
         tracing::debug!("post-mutation cache.invalidate skipped: {e}");
     }
     state.invalidate_user_caches().await;

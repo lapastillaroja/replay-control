@@ -12,7 +12,7 @@ use replay_control_core_server::library_db::LibraryDb;
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = state
-        .library_pool
+        .library_reader
         .read(|conn| LibraryDb::image_stats(conn).unwrap_or((0, 0)))
         .await
         .unwrap_or((0, 0));
@@ -38,7 +38,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 
     // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
     if let Some(Err(e)) = state
-        .library_pool
+        .library_writer
         .write(|conn| LibraryDb::clear_all_box_art_urls(conn))
         .await
     {
@@ -70,7 +70,7 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let storage = state.storage();
     let storage_root = storage.root.clone();
     let (files_deleted, bytes_freed) = state
-        .library_pool
+        .library_writer
         .write(move |conn| {
             replay_control_core_server::thumbnails::delete_orphaned_thumbnails(&storage_root, conn)
                 .unwrap_or((0, 0))

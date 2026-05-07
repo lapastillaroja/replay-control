@@ -47,7 +47,7 @@ async fn game_refs_to_core_entries(state: &AppState, games: Vec<GameRef>) -> Vec
         .map(|g| (g.system.clone(), g.rom_filename.clone()))
         .collect();
     let db_entries = state
-        .library_pool
+        .library_reader
         .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
@@ -105,7 +105,7 @@ async fn game_detail(
     let sys_owned = system.clone();
     let fname_owned = filename.clone();
     let entry = state
-        .library_pool
+        .library_reader
         .read(move |conn| LibraryDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
         .and_then(|r| r.ok())

@@ -76,7 +76,11 @@ impl ThumbnailPipeline {
 
         // Verify DB is available before starting.
         {
-            let db_available = state.library_pool.read(|_conn| true).await.unwrap_or(false);
+            let db_available = state
+                .library_reader
+                .read(|_conn| true)
+                .await
+                .unwrap_or(false);
             if !db_available {
                 tracing::error!("Library DB unavailable at thumbnail update start (pool closed)");
                 state.update_activity(|act| {
@@ -109,7 +113,7 @@ impl ThumbnailPipeline {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let manifest_recently_fetched = state
-            .external_metadata_pool
+            .external_metadata_reader
             .read(move |conn| {
                 use replay_control_core_server::external_metadata::{self, meta_keys};
                 external_metadata::read_meta(conn, meta_keys::THUMBNAIL_MANIFEST_FETCHED_AT)
@@ -130,7 +134,7 @@ impl ThumbnailPipeline {
             let activity_ref = activity_lock.clone();
             let activity_tx = state.activity_tx.clone();
             let result = thumbnail_manifest::import_all_manifests(
-                &state.external_metadata_pool,
+                state.external_metadata_writer.as_db_pool(),
                 &|repos_done, repos_total, current_repo| {
                     let mut guard = write_lock(&activity_ref, "activity");
                     if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
@@ -153,7 +157,7 @@ impl ThumbnailPipeline {
             if matches!(result, Ok(ref s) if !s.rate_limited) {
                 let ts = now_secs.to_string();
                 let _ = state
-                    .external_metadata_pool
+                    .external_metadata_writer
                     .write(move |conn| {
                         use replay_control_core_server::external_metadata::{self, meta_keys};
                         external_metadata::write_meta(
@@ -278,7 +282,7 @@ impl ThumbnailPipeline {
         let storage = state.storage();
         let systems = state
             .cache
-            .cached_systems(&storage, &state.library_pool)
+            .cached_systems(&storage, &state.library_reader)
             .await;
         let supported: Vec<String> = systems
             .into_iter()
@@ -334,7 +338,7 @@ impl ThumbnailPipeline {
                 // only, then build fuzzy indexes and touch the filesystem after
                 // the pooled connection is released.
                 let repo_data = state
-                    .external_metadata_pool
+                    .external_metadata_reader
                     .read(move |em_conn| {
                         let Some(repo_names) =
                             replay_control_core_server::thumbnails::thumbnail_repo_names(

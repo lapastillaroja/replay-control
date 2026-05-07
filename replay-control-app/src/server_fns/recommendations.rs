@@ -69,7 +69,7 @@ pub(crate) async fn compute_recommendations(
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.library_pool)
+        .cached_systems(&storage, &state.library_reader)
         .await;
     let count = count.clamp(1, 12);
 
@@ -118,7 +118,7 @@ pub(crate) async fn compute_recommendations(
     // This includes the favorites genre lookup that previously required a
     // separate DB read round-trip.
     let db_data = state
-        .library_pool
+        .library_reader
         .read(move |conn| {
             let random_pool = LibraryDb::random_cached_roms_diverse(
                 conn,

@@ -27,7 +27,7 @@ pub async fn get_game_videos(
     // Resolve alias base_titles for cross-name sharing (best-effort).
     let mut all_titles = vec![base_title.clone()];
     if let Some(aliases) = state
-        .library_pool
+        .library_reader
         .read({
             let system = system.clone();
             let base_title = base_title.clone();
@@ -39,7 +39,7 @@ pub async fn get_game_videos(
     }
 
     state
-        .user_data_pool
+        .user_data_reader
         .read(move |conn| {
             let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
             UserDataDb::get_game_videos(conn, &system, &title_refs)
@@ -83,7 +83,7 @@ pub async fn add_game_video(
     };
 
     state
-        .user_data_pool
+        .user_data_writer
         .write({
             let entry = entry.clone();
             move |conn| {
@@ -106,7 +106,7 @@ pub async fn remove_game_video(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     state
-        .user_data_pool
+        .user_data_writer
         .write(move |conn| UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id))
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?

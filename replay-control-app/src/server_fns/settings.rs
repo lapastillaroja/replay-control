@@ -349,7 +349,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     replay_control_core_server::settings::write_region_preference(&state.settings, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.prefs.write().expect("prefs lock poisoned").region = pref;
-    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
         tracing::debug!("post-region cache.invalidate skipped: {e}");
     }
     state.invalidate_user_caches().await;
@@ -357,7 +357,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     // Fast (milliseconds on a typical library) — no re-fetch, no re-parse.
     let region_secondary = state.region_preference_secondary();
     state
-        .library_pool
+        .library_writer
         .write(move |conn| {
             let _ =
                 replay_control_core_server::library_db::LibraryDb::resolve_release_date_for_library(
@@ -396,14 +396,14 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
         .write()
         .expect("prefs lock poisoned")
         .region_secondary = pref;
-    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
         tracing::debug!("post-region cache.invalidate skipped: {e}");
     }
     state.invalidate_user_caches().await;
     // Re-resolve release_date mirror columns for the new secondary region preference.
     let region_primary = state.region_preference();
     state
-        .library_pool
+        .library_writer
         .write(move |conn| {
             let _ =
                 replay_control_core_server::library_db::LibraryDb::resolve_release_date_for_library(

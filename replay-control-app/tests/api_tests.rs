@@ -3,14 +3,14 @@
 mod common;
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::Request;
 use tower::ServiceExt;
 
 use common::{TestEnv, assert_json_ok, test_api_router};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_systems_returns_ok_with_json() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -42,7 +42,7 @@ async fn api_systems_returns_ok_with_json() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_system_roms_returns_roms_for_valid_system() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -68,8 +68,12 @@ async fn api_system_roms_returns_roms_for_valid_system() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn api_system_roms_returns_not_found_for_nonexistent_system() {
-    let env = TestEnv::new();
+async fn api_system_roms_returns_empty_for_nonexistent_system() {
+    // The handler is read-only (L2-only) since the write-isolation work:
+    // an unknown system has no L2 rows and the handler returns an empty
+    // list rather than 404. Clients distinguish "no roms" from "system
+    // doesn't exist" via /api/systems.
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -82,12 +86,14 @@ async fn api_system_roms_returns_not_found_for_nonexistent_system() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let json = assert_json_ok(resp).await;
+    let roms = json.as_array().expect("should be an array");
+    assert!(roms.is_empty(), "unknown system should produce empty list");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_info_returns_system_info() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -116,7 +122,7 @@ async fn api_info_returns_system_info() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_favorites_empty_initially() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -136,7 +142,7 @@ async fn api_favorites_empty_initially() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_recents_empty_initially() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app
@@ -156,7 +162,7 @@ async fn api_recents_empty_initially() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn api_systems_includes_multiple_systems() {
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_api_router(env.state.clone());
 
     let resp = app

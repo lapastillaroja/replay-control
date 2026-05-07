@@ -19,7 +19,7 @@ fn setup() {
 #[tokio::test(flavor = "multi_thread")]
 async fn home_page_returns_200_with_replay_control() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -41,7 +41,7 @@ async fn home_page_returns_200_with_replay_control() {
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_page_returns_200() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -60,7 +60,7 @@ async fn settings_page_returns_200() {
 #[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_page_returns_200_with_not_found_message() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -87,7 +87,7 @@ async fn nonexistent_page_returns_200_with_not_found_message() {
 #[tokio::test(flavor = "multi_thread")]
 async fn style_css_endpoint_returns_css() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -116,7 +116,7 @@ async fn style_css_endpoint_returns_css() {
 #[tokio::test(flavor = "multi_thread")]
 async fn home_page_contains_setup_checklist_on_fresh_storage() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -138,7 +138,7 @@ async fn home_page_contains_setup_checklist_on_fresh_storage() {
 #[tokio::test(flavor = "multi_thread")]
 async fn storage_guard_redirects_to_waiting_page_with_error_reboot_action() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     {
         let mut storage = env.state.storage.write().expect("storage lock poisoned");
         *storage = None;

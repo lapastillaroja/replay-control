@@ -19,15 +19,15 @@ use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 /// snapshot rather than caching `None`.
 pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let storage = state.storage();
-    let em_db_path = state.external_metadata_pool.db_path();
+    let em_db_path = state.external_metadata_reader.db_path();
 
     // 8 independent reads across two pools. The pools serialize them on their
     // slot counts; fanning them out lets the slowest queries overlap with the
     // others instead of running back-to-back. `unwrap_or_default()` keeps the
     // snapshot best-effort: a single transient pool failure degrades that one
     // section instead of failing the whole rebuild.
-    let lib_pool = &state.library_pool;
-    let em_pool = &state.external_metadata_pool;
+    let lib_pool = &state.library_reader;
+    let em_pool = &state.external_metadata_reader;
     let (
         stats,
         library_summary,
@@ -61,7 +61,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     // bundled-catalog read-only stats.
     let systems = state
         .cache
-        .cached_systems(&storage, &state.library_pool)
+        .cached_systems(&storage, &state.library_reader)
         .await;
     let storage_root = storage.root.clone();
     let media_size = tokio::task::spawn_blocking(move || {

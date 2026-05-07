@@ -7,8 +7,8 @@ use replay_control_core_server::storage::StorageLocation;
 
 use replay_control_core_server::library_db::LibraryDb;
 
-use super::{LibraryService, dir_mtime};
-use crate::api::DbPool;
+use super::{LibraryService, dir_mtime_secs};
+use crate::api::db_pools::LibraryWritePool;
 
 impl LibraryService {
     /// Hash ROM files for a hash-eligible system and apply identification results.
@@ -26,7 +26,7 @@ impl LibraryService {
         storage: &StorageLocation,
         system: &str,
         roms: &mut [RomEntry],
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
         use replay_control_core_server::rom_hash::{self, HashResult};
 
@@ -34,9 +34,12 @@ impl LibraryService {
             return HashMap::new();
         }
 
-        // Load cached hashes from L2 (database).
+        // Load cached hashes from L2 (database). Read on a separate
+        // connection — the downstream write uses INSERT OR REPLACE so a
+        // concurrent rescan re-hashing the same file is a benign rewrite.
         let system_owned = system.to_string();
         let cached_hashes = db
+            .as_reader()
             .read(move |conn| LibraryDb::load_cached_hashes(conn, &system_owned))
             .await
             .and_then(|r| r.ok())
@@ -124,13 +127,9 @@ impl LibraryService {
         hash_results: &HashMap<String, replay_control_core_server::rom_hash::HashResult>,
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) {
-        let mtime_secs = dir_mtime(system_dir).and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs() as i64)
-        });
+        let mtime_secs = dir_mtime_secs(system_dir);
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
         let cached_roms = replay_control_core_server::game_entry_builder::build_game_entries(

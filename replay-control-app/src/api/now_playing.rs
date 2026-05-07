@@ -281,7 +281,7 @@ mod linux {
         let sys = system.to_string();
         let fname = filename.to_string();
         let rows = state
-            .library_pool
+            .library_reader
             .read(move |conn| LibraryDb::lookup_game_entries(conn, &[(&sys, &fname)]))
             .await
             .and_then(|r| r.ok());
@@ -305,7 +305,7 @@ mod linux {
         let rom_path = extract_rom_path(raw_rom_path)?;
         let sys = system.to_string();
         state
-            .library_pool
+            .library_reader
             .read(move |conn| {
                 conn.query_row(
                     "SELECT rom_filename, display_name, box_art_url

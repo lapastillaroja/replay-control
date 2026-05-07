@@ -73,7 +73,7 @@ pub async fn get_local_manuals(
     // Resolve alias base_titles for cross-name sharing.
     let mut all_titles = vec![base_title.clone()];
     if let Some(aliases) = state
-        .library_pool
+        .library_reader
         .read({
             let system = system.clone();
             let base_title = base_title.clone();

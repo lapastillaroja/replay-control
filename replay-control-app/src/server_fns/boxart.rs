@@ -37,7 +37,7 @@ pub async fn get_boxart_variants(
     // (e.g., during a metadata import or thumbnail update operation).
     let storage_root = storage.root.clone();
     let Some(core_variants) = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read({
             move |em_conn| {
                 replay_control_core_server::thumbnail_manifest::find_boxart_variants(
@@ -90,7 +90,7 @@ pub async fn set_boxart_override(
 
         let variant_fn = variant_filename.clone();
         state
-            .external_metadata_pool
+            .external_metadata_reader
             .read(move |em_conn| {
                 for display_name in repo_names {
                     let url_name =
@@ -173,7 +173,7 @@ pub async fn set_boxart_override(
     let boxart_dir = ThumbnailKind::Boxart.media_dir();
     let override_path = format!("{boxart_dir}/{variant_filename}.png");
     state
-        .user_data_pool
+        .user_data_writer
         .write({
             let system = system.clone();
             let rom_filename = rom_filename.clone();
@@ -190,7 +190,7 @@ pub async fn set_boxart_override(
         let sys = system.clone();
         let rom = rom_filename.clone();
         let _ = state
-            .library_pool
+            .library_writer
             .write(move |conn| {
                 let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
                     conn,
@@ -216,7 +216,7 @@ pub async fn reset_boxart_override(
     let sys_for_db = system.clone();
     let rom_for_db = rom_filename.clone();
     state
-        .user_data_pool
+        .user_data_writer
         .write(move |conn| UserDataDb::remove_override(conn, &system, &rom_filename))
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
@@ -227,7 +227,7 @@ pub async fn reset_boxart_override(
         let sys = sys_for_db;
         let rom = rom_for_db;
         let _ = state
-            .library_pool
+            .library_writer
             .write(move |conn| {
                 let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
                     conn, &sys, &rom, None,

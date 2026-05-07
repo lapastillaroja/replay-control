@@ -21,7 +21,7 @@ fn setup() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_systems_returns_test_systems() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let path = <server_fns::GetSystems as ServerFn>::PATH;
@@ -52,7 +52,7 @@ async fn sfn_get_systems_returns_test_systems() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_roms_page_returns_roms() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let path = <server_fns::GetRomsPage as ServerFn>::PATH;
@@ -84,7 +84,7 @@ async fn sfn_get_roms_page_returns_roms() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_info_returns_system_info() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let path = <server_fns::GetInfo as ServerFn>::PATH;
@@ -111,7 +111,7 @@ async fn sfn_get_info_returns_system_info() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_nonexistent_function_returns_error() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -137,7 +137,7 @@ async fn sfn_nonexistent_function_returns_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_setup_status_returns_200() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let path = <server_fns::GetSetupStatus as ServerFn>::PATH;
@@ -168,7 +168,7 @@ async fn sfn_get_setup_status_returns_200() {
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_dismiss_setup_returns_200() {
     setup();
-    let env = TestEnv::new();
+    let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
 
     let path = <server_fns::DismissSetup as ServerFn>::PATH;

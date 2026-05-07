@@ -24,13 +24,14 @@ pub enum ScanError {
     /// permission denied, path missing, etc.). Caller should retry with
     /// backoff before treating this as authoritative.
     RomsDirUnreadable(String),
-    /// `roms_dir` listed successfully but every visible system directory
-    /// reported as missing. Distinguishable from the legitimate
-    /// "user has no ROMs" state only by `roms_dir` containing entries that
-    /// don't match any known system folder name. Returned as a hint to
-    /// caller; persisting a zero-count cache from this state is what the
-    /// reported NFS bug did, so the caller is expected to either retry or
-    /// at minimum not clobber existing non-zero rom_count rows.
+    /// `roms_dir` listed successfully but the scan found zero ROMs across
+    /// every visible system. This collapses two states the scan can't
+    /// distinguish from below: (a) every visible system folder failed to
+    /// enumerate (partial mount, dirent cache cold) and (b) every visible
+    /// system folder enumerated cleanly but contained no ROM files. Both
+    /// are returned as the same error so the caller can refuse to persist
+    /// a zero-count cache; a user with a genuinely empty library has
+    /// nothing to display either way.
     AllSystemsMissing,
 }
 
@@ -56,11 +57,10 @@ impl std::error::Error for ScanError {}
 /// Returns `Err(RomsDirUnreadable)` if the roms directory itself can't be
 /// listed — the caller should retry with backoff before treating that as
 /// "no games". Returns `Err(AllSystemsMissing)` when the directory listed
-/// fine but every visible system folder reports as missing AND the listing
-/// has no entries that look like systems — same retry signal. Otherwise
-/// `Ok(summaries)` (which may include all-zero counts for a legitimately
-/// empty library — the DB-level zero-overwrite guard in `save_system_meta`
-/// keeps the persisted state safe in either case).
+/// fine but the walk found zero ROMs across every visible system —
+/// indistinguishable from below between "partial NFS mount" and "library
+/// is genuinely empty", so collapsed into one error and never persisted.
+/// Otherwise `Ok(summaries)`.
 pub async fn scan_systems(
     storage: &StorageLocation,
 ) -> std::result::Result<Vec<SystemSummary>, ScanError> {
@@ -79,7 +79,7 @@ pub async fn scan_systems(
 
         let mut summaries = Vec::new();
         let mut systems_seen = 0usize;
-        let mut systems_present = 0usize;
+        let mut total_roms = 0usize;
         for system in systems::visible_systems() {
             systems_seen += 1;
             let system_dir = roms_dir.join(system.folder_name);
@@ -87,11 +87,11 @@ pub async fn scan_systems(
             // means the FS at least surfaced it. exists() can lag on NFS.
             let visible_in_listing = listed_names.contains(system.folder_name);
             let (count, size) = if visible_in_listing && system_dir.exists() {
-                systems_present += 1;
                 count_roms_recursive(&system_dir, system, &roms_dir)
             } else {
                 (0, 0)
             };
+            total_roms += count;
 
             summaries.push(SystemSummary {
                 folder_name: system.folder_name.to_string(),
@@ -103,13 +103,15 @@ pub async fn scan_systems(
             });
         }
 
-        // Layer 2: if we know visible_systems is non-empty AND the directory
-        // listing exists AND nothing showed up, we're likely racing storage.
-        // Distinguish from "user genuinely has no ROMs" by checking whether
-        // the listing has *any* entries at all — a non-empty roms_dir that
-        // happens to contain only unknown folders is a real "no games" state
-        // and should pass through as Ok.
-        if systems_seen > 0 && systems_present == 0 && entries.is_empty() {
+        // Layer 2: refuse to return all-zero summaries. Two states produce
+        // the same observation here — a partial NFS mount where subdir
+        // dirent caches are cold (the bug we defend against), and a
+        // genuinely empty library. The scan can't tell them apart, so it
+        // surfaces both as `AllSystemsMissing` and lets the caller decide.
+        // Persisting an all-zero cache from either state is wrong: the
+        // partial-mount case poisons the DB, and the empty-library case
+        // has nothing useful to persist anyway.
+        if systems_seen > 0 && total_roms == 0 {
             return Err(ScanError::AllSystemsMissing);
         }
 
@@ -128,6 +130,56 @@ pub async fn scan_systems(
             "scan task panicked: {e}"
         )))
     })
+}
+
+/// Probe budget: number of attempts and inter-attempt delay. Constants so
+/// tests can reason about the worst-case wall time.
+pub const PROBE_MAX_TRIES: u32 = 3;
+pub const PROBE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Outcome of [`probe_storage_ready`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageProbe {
+    /// `scan_systems` returned a non-empty summary at least once.
+    HasRoms,
+    /// `scan_systems` returned `AllSystemsMissing` consistently. Either
+    /// the library is genuinely empty or the partial-mount state is
+    /// sticky enough that we've stopped waiting; either way the gate
+    /// can open — empty UI is a valid state.
+    StableEmpty,
+    /// `read_dir(roms_dir)` failed throughout the retry budget. Mount
+    /// has not surfaced; leave the gate closed.
+    NotReady,
+}
+
+/// Confirm that `storage` is fully usable before opening the middleware
+/// gate. Catches the NFS partial-mount window where `read_dir(roms_dir)`
+/// already succeeds but system subdirs still report zero entries because
+/// the dirent cache is cold.
+///
+/// A single non-empty `scan_systems` result returns immediately;
+/// otherwise we require two consecutive identical outcomes before
+/// treating storage as stably empty / stably unreadable. Wall-time bound:
+/// `(PROBE_MAX_TRIES - 1) * PROBE_RETRY_DELAY` plus the scan cost.
+pub async fn probe_storage_ready(storage: &StorageLocation) -> StorageProbe {
+    let mut last = StorageProbe::NotReady;
+    let mut prev: Option<StorageProbe> = None;
+    for attempt in 0..PROBE_MAX_TRIES {
+        let outcome = match scan_systems(storage).await {
+            Ok(_) => return StorageProbe::HasRoms,
+            Err(ScanError::AllSystemsMissing) => StorageProbe::StableEmpty,
+            Err(ScanError::RomsDirUnreadable(_)) => StorageProbe::NotReady,
+        };
+        if prev == Some(outcome) {
+            return outcome;
+        }
+        prev = Some(outcome);
+        last = outcome;
+        if attempt + 1 < PROBE_MAX_TRIES {
+            tokio::time::sleep(PROBE_RETRY_DELAY).await;
+        }
+    }
+    last
 }
 
 /// Block until `roms_dir` is **readable**, or the timeout elapses. Used at
@@ -1660,20 +1712,24 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn scan_roms_dir_with_unrelated_subdirs_returns_ok() {
-        // The roms_dir lists fine and contains entries — even if none of
-        // them match a known system, that's a legitimate "user has no
-        // recognised games" state, not a storage race.
+    async fn scan_roms_dir_with_unrelated_subdirs_returns_all_systems_missing() {
         let tmp = tempdir();
         let roms = tmp.join("roms");
         fs::create_dir_all(roms.join("not_a_system")).unwrap();
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let summaries = scan_systems(&storage).await.unwrap();
-        assert!(
-            !summaries.is_empty(),
-            "all visible systems should be enumerated"
-        );
-        assert!(summaries.iter().all(|s| s.game_count == 0));
+        let err = scan_systems(&storage).await.unwrap_err();
+        assert_eq!(err, ScanError::AllSystemsMissing);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn scan_visible_system_dirs_with_no_roms_returns_all_systems_missing() {
+        let tmp = tempdir();
+        let roms = tmp.join("roms");
+        fs::create_dir_all(roms.join("nintendo_nes")).unwrap();
+        fs::create_dir_all(roms.join("sega_md")).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let err = scan_systems(&storage).await.unwrap_err();
+        assert_eq!(err, ScanError::AllSystemsMissing);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1740,6 +1796,41 @@ mod tests {
         wait_for_storage_ready(&roms, std::time::Duration::from_millis(500))
             .await
             .expect("empty dir is ready");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn probe_returns_has_roms_when_populated() {
+        let tmp = tempdir();
+        let nes_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&nes_dir).unwrap();
+        fs::write(nes_dir.join("Game.nes"), b"data").unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        assert_eq!(probe_storage_ready(&storage).await, StorageProbe::HasRoms);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn probe_returns_stable_empty_for_truly_empty_library() {
+        // roms_dir exists, no system folders inside — scan_systems returns
+        // AllSystemsMissing twice in a row; probe stabilizes on
+        // StableEmpty so the gate can open.
+        let tmp = tempdir();
+        fs::create_dir_all(tmp.join("roms")).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        assert_eq!(
+            probe_storage_ready(&storage).await,
+            StorageProbe::StableEmpty
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn probe_returns_not_ready_when_roms_dir_missing() {
+        let tmp = tempdir();
+        // roms/ deliberately not created.
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        assert_eq!(probe_storage_ready(&storage).await, StorageProbe::NotReady);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2088,6 +2179,13 @@ mod tests {
             "/media/nfs/roms/scummvm/Missing Game/Missing Game.svm\n",
         )
         .unwrap();
+
+        // Place a real ROM in another system so scan_systems doesn't trip
+        // the all-systems-missing guard while we're testing orphan-m3u
+        // counting in scummvm.
+        let nes_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&nes_dir).unwrap();
+        fs::write(nes_dir.join("Game.nes"), b"data").unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 

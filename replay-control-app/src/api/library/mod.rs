@@ -20,7 +20,7 @@ use replay_control_core_server::roms::{RomEntry, SystemSummary};
 use replay_control_core_server::storage::StorageLocation;
 use tokio::sync::RwLock;
 
-use super::DbPool;
+use super::db_pools::{LibraryReadPool, LibraryWritePool};
 
 /// Compute the max mtime across a directory and its immediate subdirectories
 /// (maxdepth 2). This detects changes inside organizational subdirectories
@@ -45,6 +45,15 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     }
 
     Some(max_mtime)
+}
+
+/// `dir_mtime` rendered as Unix seconds for storage in `game_library_meta`.
+pub(crate) fn dir_mtime_secs(path: &Path) -> Option<i64> {
+    dir_mtime(path).and_then(|t| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs() as i64)
+    })
 }
 
 use crate::server_fns::RecommendationData;
@@ -119,15 +128,17 @@ impl LibraryService {
         self.recommendations.invalidate().await;
     }
 
-    /// Get cached systems or scan and cache.
-    /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
+    /// Cached systems list from L1 (in-memory) → L2 (`game_library_meta`).
+    /// Read-only: never falls through to a filesystem scan and never
+    /// writes to L2. Discovery and persistence are owned by the
+    /// background pipeline. See `docs/architecture/database-schema.md`.
     ///
-    /// Single-flight on miss: concurrent callers acquire the write lock and
-    /// re-check before rebuilding, so only the first arrival performs L2/L3.
+    /// Single-flight on miss; misses and unavailable-pool states return
+    /// an empty vec without caching so the next call retries.
     pub async fn cached_systems(
         &self,
-        storage: &StorageLocation,
-        db: &DbPool,
+        _storage: &StorageLocation,
+        db: &LibraryReadPool,
     ) -> Vec<SystemSummary> {
         if let Some(ref cached) = *self.systems.read().await {
             return cached.clone();
@@ -138,74 +149,25 @@ impl LibraryService {
             return cached.clone();
         }
 
-        // L2: Try SQLite game_library_meta. `Some(non-empty)` is a hit;
-        // `Some(empty)` means the DB is reachable but has no systems cached
-        // (true cache miss → fall through to L3); `None` means the pool was
-        // unavailable (closed, or briefly write-gated). In the unavailable
-        // case we deliberately skip L3 — kicking off a multi-thousand-ROM
-        // filesystem scan because of a transient DB-unavailable would pin
-        // the L1 write lock for minutes and starve every concurrent SSR
-        // request that needs the systems list.
-        match self.load_systems_from_db(storage, db).await {
+        match self.load_systems_from_db(db).await {
             Some(summaries) if !summaries.is_empty() => {
                 *guard = Some(summaries.clone());
                 summaries
             }
-            Some(_) => {
-                // L3: full filesystem scan and write-through to L2.
-                // On a racy NFS / autofs / USB hot-plug, scan_systems may
-                // return Err (storage not ready). Don't cache — let the next
-                // call retry once storage settles. Don't write-through either:
-                // the DB-level zero-overwrite guard would normally save us,
-                // but on a fresh DB there's no existing row to protect, so
-                // a partially-mounted scan would still poison persistent state.
-                match replay_control_core_server::roms::scan_systems(storage).await {
-                    Ok(summaries) => {
-                        *guard = Some(summaries.clone());
-                        drop(guard);
-                        self.save_systems_to_db(storage, &summaries, db).await;
-                        summaries
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "cached_systems: L3 scan rejected ({e}); not caching, will retry on next call"
-                        );
-                        Vec::new()
-                    }
-                }
-            }
-            None => {
-                // DB unavailable; return empty without caching so the next
-                // caller retries once the pool is reachable.
-                Vec::new()
-            }
+            _ => Vec::new(),
         }
     }
 
-    /// Try to reconstruct SystemSummary list from SQLite game_library_meta.
-    ///
-    /// Three-state outcome (matches the `cached_systems` matcher):
-    /// - `None` → pool unavailable (closed / write-gated / SQL error). Caller
-    ///   should NOT fall through to a filesystem scan; return empty without
-    ///   caching so the next call retries.
-    /// - `Some(empty)` → DB reachable but `game_library_meta` has no rows
-    ///   yet. Caller should fall through to an L3 filesystem scan (this is
-    ///   the fresh-DB and post-clear case).
-    /// - `Some(non-empty)` → genuine cache hit; use as L1.
-    async fn load_systems_from_db(
-        &self,
-        _storage: &StorageLocation,
-        db: &DbPool,
-    ) -> Option<Vec<SystemSummary>> {
+    /// Reconstruct the SystemSummary list from `game_library_meta`.
+    /// `None` = pool unavailable (closed / write-gated / SQL error);
+    /// `Some(empty)` = DB reachable, no rows yet; `Some(non-empty)` = hit.
+    async fn load_systems_from_db(&self, db: &LibraryReadPool) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
         let cached_meta = db.read(LibraryDb::load_all_system_meta).await?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
-            // DB reachable but no rows yet — signal "fall through to L3" via
-            // `Some(empty)`. `None` is reserved for the pool-unavailable case
-            // above, where we don't want to trigger an expensive scan.
             return Some(Vec::new());
         }
 
@@ -242,52 +204,6 @@ impl LibraryService {
         Some(summaries)
     }
 
-    /// Write system summaries to SQLite game_library_meta.
-    ///
-    /// `save_system_meta` itself enforces the zero-overwrite guard at SQL
-    /// level. We additionally log a warning here when the guard fires so a
-    /// racy scan is *visible* in the journal rather than silently absorbed.
-    async fn save_systems_to_db(
-        &self,
-        storage: &StorageLocation,
-        summaries: &[SystemSummary],
-        db: &DbPool,
-    ) {
-        let roms_dir = storage.roms_dir();
-        let summaries: Vec<_> = summaries.to_vec();
-        db.write(move |conn| {
-            for summary in &summaries {
-                let system_dir = roms_dir.join(&summary.folder_name);
-                let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
-                    t.duration_since(std::time::UNIX_EPOCH)
-                        .ok()
-                        .map(|d| d.as_secs() as i64)
-                });
-                match LibraryDb::save_system_meta(
-                    conn,
-                    &summary.folder_name,
-                    mtime_secs,
-                    summary.game_count,
-                    summary.total_size_bytes,
-                ) {
-                    Ok(stored) if stored != summary.game_count => {
-                        tracing::warn!(
-                            "Refusing to overwrite system {} rom_count: existing={}, scanned=0 (likely scan-time race)",
-                            summary.folder_name,
-                            stored,
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!(
-                        "Failed to save system meta for {}: {e}",
-                        summary.folder_name
-                    ),
-                }
-            }
-        })
-        .await;
-    }
-
     /// Scan a system from filesystem and write to L2 (SQLite).
     /// Called by the background pipeline during warmup and by REST API on L2 miss.
     pub async fn scan_and_cache_system(
@@ -296,7 +212,7 @@ impl LibraryService {
         system: &str,
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
         let system_dir = storage.roms_dir().join(system);
 
@@ -348,12 +264,19 @@ impl LibraryService {
         system: &str,
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
         let system_dir = storage.roms_dir().join(system);
         if !system_dir.exists() {
+            // Separate-connection read: the long filesystem walk + hash
+            // phase that follows can't run inside a write transaction
+            // without starving every other writer. The race here is
+            // benign — if meta gets cleared between this read and the
+            // downstream save_system_entries, there are no rows to
+            // protect, so bail-then-retry is safe.
             let sys = system.to_string();
             let cached_meta = db
+                .as_reader()
                 .read(move |conn| LibraryDb::load_system_meta(conn, &sys))
                 .await
                 .and_then(|r| r.ok())
@@ -402,7 +325,7 @@ impl LibraryService {
         _storage: &StorageLocation,
         system: &str,
         system_dir: &Path,
-        db: &DbPool,
+        db: &LibraryReadPool,
     ) -> Option<Vec<RomEntry>> {
         use replay_control_core_server::library_db::SystemMeta;
 
@@ -418,11 +341,7 @@ impl LibraryService {
         }
 
         // Check mtime freshness.
-        let current_mtime_secs = dir_mtime(system_dir).and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs() as i64)
-        });
+        let current_mtime_secs = dir_mtime_secs(system_dir);
 
         match (meta.dir_mtime_secs, current_mtime_secs) {
             (Some(cached), Some(current)) if cached != current => {
@@ -521,7 +440,7 @@ impl LibraryService {
     /// L2 clear actually ran — caller-driven destructive flows (rebuild,
     /// re-import) must propagate the error rather than proceeding to write
     /// over a not-actually-cleared table.
-    pub async fn invalidate(&self, db: &DbPool) -> Result<(), DbError> {
+    pub async fn invalidate(&self, db: &LibraryWritePool) -> Result<(), DbError> {
         self.invalidate_l1().await;
         db.try_write(|conn| LibraryDb::clear_all_game_library(conn))
             .await?
@@ -531,7 +450,11 @@ impl LibraryService {
     /// Invalidate cache for a specific system. Same semantics as
     /// `invalidate()` — typed error so destructive callers can detect a
     /// no-op clear.
-    pub async fn invalidate_system(&self, system: String, db: &DbPool) -> Result<(), DbError> {
+    pub async fn invalidate_system(
+        &self,
+        system: String,
+        db: &LibraryWritePool,
+    ) -> Result<(), DbError> {
         *self.systems.write().await = None;
         self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
@@ -559,22 +482,19 @@ mod tests {
     use replay_control_core_server::test_utils::build_library_pool;
     use replay_control_core_server::{library_db::LibraryDb, storage::StorageKind};
 
-    /// Regression: `cached_systems` must fall through to the L3 filesystem
-    /// scan when the DB is reachable but `game_library_meta` is empty
-    /// (fresh install, post-clear, or any time before the first populate).
-    ///
-    /// The bug this guards: an earlier refactor made
-    /// `load_systems_from_db` return `None` for *both* "pool unavailable"
-    /// and "cached_meta empty". `cached_systems` then treated empty-DB
-    /// like pool-unavailable and skipped L3 — fresh installs returned an
-    /// empty systems list and the api_tests integration suite went red.
-    /// `Some(empty)` is the correct signal for "DB reachable, no rows".
+    /// `cached_systems` is strictly read-only: an empty `game_library_meta`
+    /// must return an empty list rather than fall through to a filesystem
+    /// scan. Discovering and persisting systems is the job of the
+    /// background pipeline (`populate_all_systems` calls `scan_systems`
+    /// directly) — letting a request handler do it was the cold-NFS
+    /// poisoning vector traced in the write-isolation investigation.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn cached_systems_falls_through_to_l3_scan_on_empty_db() {
+    async fn cached_systems_returns_empty_on_empty_db_without_writing() {
         use replay_control_core_server::storage::{StorageKind, StorageLocation};
         use std::path::Path;
 
-        // Build a temp storage layout that scan_systems will recognise.
+        // Populated roms_dir so a hypothetical L3 fallback would find ROMs
+        // (we then assert it does NOT and the DB stays empty).
         let tmp = tempfile::tempdir().unwrap();
         let roms = tmp.path().join("roms");
         std::fs::create_dir_all(roms.join("nintendo_nes")).unwrap();
@@ -582,8 +502,6 @@ mod tests {
 
         // Empty library DB (no game_library_meta rows, no game_library rows).
         let db_path = tmp.path().join("library.db");
-        // Minimal opener: just open with our standard pragmas + ensure the
-        // game_library_meta table exists so load_all_system_meta succeeds.
         fn opener(
             db_path: &Path,
         ) -> replay_control_core::error::Result<
@@ -604,26 +522,30 @@ mod tests {
             Ok(conn)
         }
         let _ = opener(&db_path).unwrap();
-        let pool = super::DbPool::new(db_path, "test_lib", opener, 1).unwrap();
+        let pool = replay_control_core_server::db_pool::DbPool::new(db_path, "test_lib", opener, 1)
+            .unwrap();
+        let writer = LibraryWritePool::from_pool(pool);
+        let reader = writer.as_reader();
 
         let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
 
-        let summaries = svc.cached_systems(&storage, &pool).await;
+        let summaries = svc.cached_systems(&storage, &reader).await;
         assert!(
-            summaries.iter().any(|s| s.game_count > 0),
-            "fresh DB + populated roms_dir should fall through to L3 scan and \
-             find at least one system with games — got {:?}",
-            summaries
-                .iter()
-                .map(|s| (&s.folder_name, s.game_count))
-                .collect::<Vec<_>>()
+            summaries.is_empty(),
+            "cached_systems must not fall through to L3 scan; got {summaries:?}"
         );
-        let nes = summaries
-            .iter()
-            .find(|s| s.folder_name == "nintendo_nes")
-            .expect("nintendo_nes should be in scan result");
-        assert_eq!(nes.game_count, 1);
+
+        // Confirm no rows were persisted.
+        let meta = reader
+            .read(LibraryDb::load_all_system_meta)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            meta.is_empty(),
+            "cached_systems must not write to game_library_meta from a read path"
+        );
     }
 
     /// Per-batch DB locking: verify that the DB Mutex is released between
@@ -680,6 +602,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
         std::fs::create_dir_all(&roms_dir).unwrap();
@@ -694,12 +617,13 @@ mod tests {
             "nintendo_nes",
             RegionPreference::default(),
             None,
-            &pool,
+            &writer,
         )
         .await
         .unwrap();
 
-        let filenames = pool
+        let filenames = writer
+            .as_reader()
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
@@ -713,12 +637,13 @@ mod tests {
             "nintendo_nes",
             RegionPreference::default(),
             None,
-            &pool,
+            &writer,
         )
         .await
         .unwrap();
 
-        let filenames = pool
+        let filenames = writer
+            .as_reader()
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
@@ -728,7 +653,8 @@ mod tests {
             "reconcile rescan should drop removed ROMs"
         );
 
-        let meta = pool
+        let meta = writer
+            .as_reader()
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()
@@ -746,6 +672,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
         std::fs::create_dir_all(&roms_dir).unwrap();
@@ -760,7 +687,7 @@ mod tests {
             "nintendo_nes",
             RegionPreference::default(),
             None,
-            &pool,
+            &writer,
         )
         .await
         .unwrap();
@@ -773,7 +700,7 @@ mod tests {
                 "nintendo_nes",
                 RegionPreference::default(),
                 None,
-                &pool,
+                &writer,
             )
             .await
             .expect_err("missing top-level dir with cached rows must preserve old cache");
@@ -782,14 +709,16 @@ mod tests {
             "unexpected error: {err}"
         );
 
-        let filenames = pool
+        let filenames = writer
+            .as_reader()
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
             .unwrap();
         assert_eq!(filenames, vec!["Game.nes".to_string()]);
 
-        let meta = pool
+        let meta = writer
+            .as_reader()
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()

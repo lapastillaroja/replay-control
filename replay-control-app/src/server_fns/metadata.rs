@@ -39,7 +39,7 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
     }
 
     let has_metadata = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read(|conn| {
             replay_control_core_server::external_metadata::launchbox_game_count(conn).unwrap_or(0)
                 > 0
@@ -48,7 +48,7 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
         .unwrap_or(false);
 
     let has_thumbnail_index = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read(|conn| {
             replay_control_core_server::external_metadata::get_data_source_stats(
                 conn,
@@ -139,9 +139,9 @@ pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, Server
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let db_path = state.external_metadata_pool.db_path();
+    let db_path = state.external_metadata_reader.db_path();
     let Some(result) = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read(move |conn| {
             replay_control_core_server::external_metadata::launchbox_stats(conn, &db_path)
         })
@@ -159,7 +159,7 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_library_summary() -> Result<LibrarySummary, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result = state.library_pool.read(LibraryDb::library_summary).await;
+    let result = state.library_reader.read(LibraryDb::library_summary).await;
     match result {
         Some(Ok(summary)) => Ok(summary),
         Some(Err(e)) => {
@@ -179,7 +179,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     // coverage stats, and driver status per system. Return empty data when a
     // pool is unavailable (e.g., during import).
     let entries_per_system = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read(|conn| {
             replay_control_core_server::external_metadata::launchbox_entries_per_system(conn)
                 .unwrap_or_default()
@@ -188,7 +188,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .unwrap_or_default();
 
     let (thumbnails_per_system, coverage_stats, driver_status) = state
-        .library_pool
+        .library_reader
         .read(|conn| {
             let thumbnails = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
             let stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
@@ -202,7 +202,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.library_pool)
+        .cached_systems(&storage, &state.library_reader)
         .await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
@@ -293,7 +293,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state
-        .external_metadata_pool
+        .external_metadata_writer
         .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
         .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
@@ -309,7 +309,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     state
-        .external_metadata_pool
+        .external_metadata_writer
         .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
         .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
@@ -371,7 +371,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     // typed-error refactor exists to close.
     state
         .cache
-        .invalidate(&state.library_pool)
+        .invalidate(&state.library_writer)
         .await
         .map_err(|e| ServerFnError::new(format!("Could not clear library: {e}")))?;
     state.invalidate_user_caches().await;
@@ -398,23 +398,23 @@ pub struct CorruptionStatus {
 #[server(prefix = "/sfn")]
 pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.library_pool.is_corrupt() {
+    if !state.library_reader.is_corrupt() {
         return Err(ServerFnError::new("Library database is not corrupt"));
     }
 
-    let db_path = state.library_pool.db_path();
+    let db_path = state.library_reader.db_path();
     tracing::info!("Rebuilding corrupt library DB at {}", db_path.display());
 
     // Drain in-flight ops, unlink files, and reopen with a fresh empty
     // schema — single atomic lifecycle transition. The previous
     // close/unlink/reopen choreography raced in-flight reads.
-    if !state.library_pool.reset_to_empty().await {
+    if !state.library_writer.reset_to_empty().await {
         return Err(ServerFnError::new(
             "Failed to reopen library DB after rebuild",
         ));
     }
     // L2 was already wiped by reset_to_empty; this drops L1.
-    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
         tracing::warn!("post-rebuild cache.invalidate failed: {e}");
     }
     state.invalidate_user_caches().await;
@@ -428,14 +428,14 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.user_data_pool.is_corrupt() {
+    if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));
     }
 
-    let db_path = state.user_data_pool.db_path();
+    let db_path = state.user_data_reader.db_path();
     tracing::info!("Repairing corrupt user data DB at {}", db_path.display());
 
-    if !state.user_data_pool.reset_to_empty().await {
+    if !state.user_data_writer.reset_to_empty().await {
         return Err(ServerFnError::new(
             "Failed to reopen user data DB after repair",
         ));
@@ -448,11 +448,11 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.user_data_pool.is_corrupt() {
+    if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));
     }
 
-    let db_path = state.user_data_pool.db_path();
+    let db_path = state.user_data_reader.db_path();
     let backup_path = db_path.with_extension("db.bak");
     if !backup_path.exists() {
         return Err(ServerFnError::new("No backup file found"));
@@ -464,10 +464,10 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
     );
 
     // Drain → copy backup over current DB → reopen.
-    if !state.user_data_pool.replace_with_file(&backup_path).await {
+    if !state.user_data_writer.replace_with_file(&backup_path).await {
         // Restored copy is also corrupt — fall back to fresh DB.
         tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
-        if !state.user_data_pool.reset_to_empty().await {
+        if !state.user_data_writer.reset_to_empty().await {
             return Err(ServerFnError::new(
                 "Failed to reopen user data DB after restore",
             ));

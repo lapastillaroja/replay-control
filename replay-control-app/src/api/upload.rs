@@ -40,7 +40,7 @@ async fn upload_rom(
     if !uploaded.is_empty() {
         if let Err(e) = state
             .cache
-            .invalidate_system(system.clone(), &state.library_pool)
+            .invalidate_system(system.clone(), &state.library_writer)
             .await
         {
             tracing::debug!("post-upload invalidate_system skipped: {e}");
@@ -54,7 +54,7 @@ async fn upload_rom(
 async fn list_upload_targets(State(state): State<AppState>) -> Json<Vec<serde_json::Value>> {
     let summaries = state
         .cache
-        .cached_systems(&state.storage(), &state.library_pool)
+        .cached_systems(&state.storage(), &state.library_reader)
         .await;
     Json(
         summaries

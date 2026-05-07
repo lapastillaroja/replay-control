@@ -391,7 +391,7 @@ async fn enrich_detail_fields(
 ) {
     // Check user_data_db for box art override FIRST (highest priority).
     if let Some(override_path) = state
-        .user_data_pool
+        .user_data_reader
         .read({
             let system = info.system.clone();
             let rom_filename = info.rom_filename.clone();
@@ -422,7 +422,7 @@ async fn enrich_detail_fields(
     let rom_filename = info.rom_filename.clone();
     let arcade_display_owned = arcade_display.map(str::to_owned);
     if let Some(Ok(Some(meta))) = state
-        .library_pool
+        .library_reader
         .read(move |conn| LibraryDb::lookup_description(conn, &system, &rom_filename))
         .await
     {
@@ -470,7 +470,7 @@ pub(crate) async fn resolve_box_art_url(
 
     // 0. Check user_data_db for box art override (highest priority).
     if let Some(override_path) = state
-        .user_data_pool
+        .user_data_reader
         .read({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();

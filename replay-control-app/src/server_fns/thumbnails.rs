@@ -41,7 +41,7 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
     // Gracefully return defaults when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
     let Some(stats) = state
-        .external_metadata_pool
+        .external_metadata_reader
         .read(|conn| {
             replay_control_core_server::external_metadata::get_data_source_stats(
                 conn,
@@ -102,7 +102,7 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state
-        .external_metadata_pool
+        .external_metadata_writer
         .write(|conn| {
             replay_control_core_server::external_metadata::clear_libretro_thumbnail_manifest(conn)
         })

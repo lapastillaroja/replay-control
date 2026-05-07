@@ -126,7 +126,7 @@ pub async fn get_related_games(
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.library_pool)
+        .cached_systems(&storage, &state.library_reader)
         .await;
 
     let is_arcade = replay_control_core::systems::is_arcade_system(&system);
@@ -144,7 +144,7 @@ pub async fn get_related_games(
     let region_pref_str_cl = region_pref_str.clone();
 
     let db_data = state
-        .library_pool
+        .library_reader
         .read(move |conn| {
             let variants =
                 LibraryDb::regional_variants(conn, &system_cl, &filename_cl).unwrap_or_default();

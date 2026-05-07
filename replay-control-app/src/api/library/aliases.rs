@@ -2,7 +2,7 @@ use replay_control_core::title_utils::fuzzy_match_key;
 use replay_control_core_server::library_db::LibraryDb;
 
 use super::LibraryService;
-use crate::api::DbPool;
+use crate::api::db_pools::LibraryWritePool;
 
 impl LibraryService {
     /// Populate game_alias table with TGDB alternate names for a system.
@@ -13,7 +13,7 @@ impl LibraryService {
         &self,
         system: &str,
         roms: &[replay_control_core_server::library_db::GameEntry],
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) {
         // Build lookup maps for matching TGDB names to library base_titles.
         let library_exact: std::collections::HashSet<&str> = roms
@@ -62,7 +62,7 @@ impl LibraryService {
         &self,
         system: &str,
         roms: &[replay_control_core_server::library_db::GameEntry],
-        db: &DbPool,
+        db: &LibraryWritePool,
     ) {
         // Call pure core matching function.
         let series_entries =

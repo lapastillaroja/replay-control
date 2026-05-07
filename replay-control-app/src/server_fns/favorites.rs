@@ -56,7 +56,7 @@ async fn enrich_favorites(
     let favs_count = favs.len();
 
     let art_genre: Vec<(Option<String>, Option<String>)> = state
-        .library_pool
+        .library_reader
         .read(move |conn| {
             let entries = LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default();
             keys.iter()
@@ -146,7 +146,7 @@ pub async fn organize_favorites(
     // (system, rom_filename) — no normalized-title bridge needed.
     let ratings = if needs_ratings {
         state
-            .library_pool
+            .library_reader
             .read(|conn| {
                 replay_control_core_server::library_db::LibraryDb::all_ratings(conn)
                     .unwrap_or_default()
@@ -217,7 +217,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.library_pool)
+        .cached_systems(&storage, &state.library_reader)
         .await;
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
@@ -256,7 +256,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     // DB closure: run all queries under one connection.
     let db_result = state
-        .library_pool
+        .library_reader
         .read(move |conn| {
             #[allow(clippy::type_complexity)]
             let mut sections: Vec<(

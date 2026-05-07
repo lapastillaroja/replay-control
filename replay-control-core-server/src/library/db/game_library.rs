@@ -982,6 +982,29 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// Total row count in `game_library`.
+    pub fn game_library_count(conn: &Connection) -> Result<usize> {
+        conn.query_row("SELECT COUNT(*) FROM game_library", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map(|n| n as usize)
+        .map_err(|e| Error::Other(format!("game_library_count: {e}")))
+    }
+
+    /// Per-system row counts from `game_library`. Systems with zero rows
+    /// are absent from the returned map.
+    pub fn row_counts_per_system(conn: &Connection) -> Result<HashMap<String, usize>> {
+        let mut stmt = conn
+            .prepare("SELECT system, COUNT(*) FROM game_library GROUP BY system")
+            .map_err(|e| Error::Other(format!("row_counts_per_system prepare: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })
+            .map_err(|e| Error::Other(format!("row_counts_per_system query: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Clear all `box_art_url` values from `game_library`.
     /// Used after clearing images from disk so the UI doesn't show 404 placeholders.
     pub fn clear_all_box_art_urls(conn: &Connection) -> Result<()> {

@@ -16,10 +16,39 @@ pub struct TestEnv {
 }
 
 impl TestEnv {
-    pub fn new() -> Self {
+    /// Production populates L2 from the background pipeline before the
+    /// first HTTP request lands. Integration tests skip the pipeline,
+    /// so we mirror its effect here. Without it, the read-only GET
+    /// handlers would return empty lists for every fixture system.
+    pub async fn new() -> Self {
         let tmp = create_test_storage();
         let state = test_app_state(&tmp);
+        populate_test_library(&state).await;
         Self { tmp, state }
+    }
+}
+
+async fn populate_test_library(state: &replay_control_app::api::AppState) {
+    let storage = state.storage();
+    let region_pref = state.region_preference();
+    let region_secondary = state.region_preference_secondary();
+    let pool = state.library_writer.clone();
+
+    for system in replay_control_core::systems::visible_systems() {
+        let system_dir = storage.roms_dir().join(system.folder_name);
+        if !system_dir.exists() {
+            continue;
+        }
+        let _ = state
+            .cache
+            .scan_and_cache_system(
+                &storage,
+                system.folder_name,
+                region_pref,
+                region_secondary,
+                &pool,
+            )
+            .await;
     }
 }
 

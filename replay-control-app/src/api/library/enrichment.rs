@@ -16,20 +16,25 @@ impl LibraryService {
     /// filesystem state. Called after L2 write-through to populate fields
     /// that `list_roms()` doesn't set.
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
-        let db = &state.library_pool;
-
         // Fetch the visible-filename list once; image-index, launchbox load,
         // and arcade lookup all consume it. Previously each path read it
         // independently (an N+1 against the same query).
+        // The network/CPU work below makes it impossible to hold the
+        // writer connection open for the whole pass; this read goes
+        // through the dedicated reader pool. Stale-row risk is mitigated
+        // by INSERT OR REPLACE on the write side and by FK CASCADE on
+        // ROM deletion.
         let sys = system.clone();
-        let rom_filenames: Vec<String> = db
+        let rom_filenames: Vec<String> = state
+            .library_reader
             .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
 
         if rom_filenames.is_empty() {
             let sys = system.clone();
-            let _ = db
+            let _ = state
+                .library_writer
                 .write(move |conn| {
                     let _ = LibraryDb::replace_descriptions_for_system(conn, &sys, &[]);
                 })
@@ -42,16 +47,18 @@ impl LibraryService {
         // `join!` lets the slowest overlap with the others.
         let (index, launchbox_rows, alt_to_primary, arcade_lookup) = tokio::join!(
             build_image_index(state, &system),
-            load_launchbox_rows(state, &system),
-            load_launchbox_alt_to_primary(state, &system),
+            load_launchbox_rows(&state.external_metadata_reader, &system),
+            load_launchbox_alt_to_primary(&state.external_metadata_reader, &system),
             ArcadeInfoLookup::build(&system, &rom_filenames),
         );
 
         let sys = system.clone();
-        // Heavy enrichment pass (per-row matching, manifest cross-ref, image
-        // index lookups). Library pool has 3 read slots, so SSR keeps the
-        // other 2 free while this runs.
-        let result = db
+        // Heavy enrichment pass (per-row matching, manifest cross-ref,
+        // image index lookups). Routed through the reader pool so the
+        // single writer slot stays free for downloads and other writes;
+        // the write closure below batches the resulting per-row updates.
+        let result = state
+            .library_reader
             .read(move |conn| {
                 replay_control_core_server::enrichment::enrich_system(
                     conn,
@@ -94,45 +101,50 @@ impl LibraryService {
         let release_date_rows = result.release_date_rows;
         let description_rows = result.description_rows;
         let enrichments = result.enrichments;
-        db.write(move |conn| {
-            if !developer_updates.is_empty()
-                && let Err(e) = LibraryDb::update_developers(conn, &sys, &developer_updates)
-            {
-                tracing::warn!("Developer enrichment failed for {sys}: {e}");
-            }
-            if !cooperative_updates.is_empty()
-                && let Err(e) = LibraryDb::update_cooperative(conn, &sys, &cooperative_updates)
-            {
-                tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
-            }
-            // Upsert LaunchBox-sourced rows into game_release_date BEFORE
-            // the resolver runs. The resolver rebuilds game_library's
-            // mirror columns from game_release_date; any rows we miss
-            // here would be cleared to NULL on the same write.
-            if !release_date_rows.is_empty()
-                && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
-            {
-                tracing::warn!("Release-date upsert failed for {sys}: {e}");
-            }
-            // Release-date resolver: rewrites game_library mirror columns
-            // from `game_release_date` for every ROM.
-            let _ =
-                LibraryDb::resolve_release_date_for_library(conn, region_pref, region_secondary);
-            // Always rebuilt (truncate + repopulate) so removed ROMs lose
-            // their description on the next pass.
-            if !description_rows.is_empty()
-                && let Err(e) =
-                    LibraryDb::replace_descriptions_for_system(conn, &sys, &description_rows)
-            {
-                tracing::warn!("game_description rebuild failed for {sys}: {e}");
-            }
-            if !enrichments.is_empty()
-                && let Err(e) = LibraryDb::update_box_art_genre_rating(conn, &sys, &enrichments)
-            {
-                tracing::warn!("Enrichment failed for {sys}: {e}");
-            }
-        })
-        .await;
+        state
+            .library_writer
+            .write(move |conn| {
+                if !developer_updates.is_empty()
+                    && let Err(e) = LibraryDb::update_developers(conn, &sys, &developer_updates)
+                {
+                    tracing::warn!("Developer enrichment failed for {sys}: {e}");
+                }
+                if !cooperative_updates.is_empty()
+                    && let Err(e) = LibraryDb::update_cooperative(conn, &sys, &cooperative_updates)
+                {
+                    tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
+                }
+                // Upsert LaunchBox-sourced rows into game_release_date BEFORE
+                // the resolver runs. The resolver rebuilds game_library's
+                // mirror columns from game_release_date; any rows we miss
+                // here would be cleared to NULL on the same write.
+                if !release_date_rows.is_empty()
+                    && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
+                {
+                    tracing::warn!("Release-date upsert failed for {sys}: {e}");
+                }
+                // Release-date resolver: rewrites game_library mirror columns
+                // from `game_release_date` for every ROM.
+                let _ = LibraryDb::resolve_release_date_for_library(
+                    conn,
+                    region_pref,
+                    region_secondary,
+                );
+                // Always rebuilt (truncate + repopulate) so removed ROMs lose
+                // their description on the next pass.
+                if !description_rows.is_empty()
+                    && let Err(e) =
+                        LibraryDb::replace_descriptions_for_system(conn, &sys, &description_rows)
+                {
+                    tracing::warn!("game_description rebuild failed for {sys}: {e}");
+                }
+                if !enrichments.is_empty()
+                    && let Err(e) = LibraryDb::update_box_art_genre_rating(conn, &sys, &enrichments)
+                {
+                    tracing::warn!("Enrichment failed for {sys}: {e}");
+                }
+            })
+            .await;
 
         tracing::debug!(
             "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {enrich_count} box+genre+players+ratings"
@@ -145,12 +157,11 @@ impl LibraryService {
 /// or the read fails (the design treats LaunchBox as optional — users
 /// without it still get scan-time + catalog enrichment).
 async fn load_launchbox_rows(
-    state: &crate::api::AppState,
+    em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
     system: &str,
 ) -> HashMap<String, LaunchboxRow> {
     let sys = system.to_string();
-    state
-        .external_metadata_pool
+    em_reader
         .read(move |conn| external_metadata::system_launchbox_rows(conn, &sys).unwrap_or_default())
         .await
         .unwrap_or_default()
@@ -160,12 +171,11 @@ async fn load_launchbox_rows(
 /// `normalized_alternate` rows (legacy data pre-dating Phase 1 import) are
 /// dropped so the matcher's lookup is dense.
 async fn load_launchbox_alt_to_primary(
-    state: &crate::api::AppState,
+    em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
     system: &str,
 ) -> HashMap<String, String> {
     let sys = system.to_string();
-    state
-        .external_metadata_pool
+    em_reader
         .read(move |conn| {
             external_metadata::system_launchbox_alternates(conn, &sys)
                 .unwrap_or_default()
@@ -183,7 +193,7 @@ async fn load_launchbox_alt_to_primary(
 /// manifest fuzzy index. Empty list when the pool is unavailable or the
 /// system has no libretro repos configured.
 async fn load_libretro_repo_data(
-    state: &crate::api::AppState,
+    em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
     system: &str,
 ) -> Vec<(String, String, Vec<ThumbnailManifestEntry>)> {
     let Some(repo_names) = replay_control_core_server::thumbnails::thumbnail_repo_names(system)
@@ -191,8 +201,7 @@ async fn load_libretro_repo_data(
         return Vec::new();
     };
     let display_names: Vec<String> = repo_names.iter().map(|s| (*s).to_string()).collect();
-    state
-        .external_metadata_pool
+    em_reader
         .read(move |conn| {
             let display_refs: Vec<&str> = display_names.iter().map(String::as_str).collect();
             thumbnail_manifest::load_repo_manifest_data(
@@ -218,9 +227,9 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
     // small, both come from independent pools.
     let system_owned = system.to_string();
     let user_overrides_fut = state
-        .user_data_pool
+        .user_data_reader
         .read(move |conn| UserDataDb::get_system_overrides(conn, &system_owned).ok());
-    let libretro_fut = load_libretro_repo_data(state, system);
+    let libretro_fut = load_libretro_repo_data(&state.external_metadata_reader, system);
     let (user_overrides, libretro_repo_data) = tokio::join!(user_overrides_fut, libretro_fut);
     let user_overrides = user_overrides.flatten().unwrap_or_default();
 
@@ -274,7 +283,7 @@ async fn queue_on_demand_download(
     // Capture the per-job state the on-complete hook needs. Cheap clones
     // (Arc + small strings); the orchestrator's dedup ensures this hook
     // only runs once per (system, filename).
-    let library_pool = state.library_pool.clone();
+    let library_pool = state.library_writer.clone();
     let state_for_invalidate = state.clone();
     let system_for_hook = system.to_string();
     let rom_filename_for_hook = rom_filename.to_string();
