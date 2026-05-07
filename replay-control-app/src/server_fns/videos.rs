@@ -61,6 +61,7 @@ pub async fn add_game_video(
     tag: Option<String>,
 ) -> Result<VideoEntry, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "add videos").await?;
 
     let parsed =
         replay_control_core::video_url::parse_video_url(&url).map_err(ServerFnError::new)?;
@@ -105,6 +106,7 @@ pub async fn remove_game_video(
     video_id: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "remove videos").await?;
     state
         .user_data_writer
         .write(move |conn| UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id))

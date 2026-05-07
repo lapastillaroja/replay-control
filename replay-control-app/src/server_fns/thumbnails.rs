@@ -18,6 +18,7 @@ pub struct DataSourceSummary {
 pub async fn update_thumbnails() -> Result<(), ServerFnError> {
     tracing::info!("update_thumbnails: handler entered");
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "update thumbnails").await?;
     if !state.thumbnails.start_thumbnail_update(&state) {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
@@ -94,6 +95,7 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "clear thumbnail index").await?;
 
     let _guard = state
         .try_start_activity(crate::api::Activity::Maintenance {

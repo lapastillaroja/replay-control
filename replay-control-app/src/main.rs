@@ -114,10 +114,11 @@ mod ssr {
             let skin = state.effective_skin();
             let skin_css = replay_control_core::skins::theme_css(skin);
             let storage_kind = if state.has_storage() {
-                format!("{:?}", state.storage().kind).to_lowercase()
+                state.storage().kind.as_str().to_string()
             } else {
                 "none".to_string()
             };
+            let storage_status = state.storage_status();
             let available_update = replay_control_core_server::update::read_available_update();
             let version = replay_control_app::VERSION;
             let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
@@ -128,6 +129,7 @@ mod ssr {
                 "skin_index": skin,
                 "skin_css": skin_css,
                 "storage_kind": storage_kind,
+                "storage_status": storage_status,
                 "available_update": available_update,
                 "version": version,
                 "library_corrupt": library_corrupt,

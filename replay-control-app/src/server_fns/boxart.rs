@@ -81,6 +81,7 @@ pub async fn set_boxart_override(
     use replay_control_core_server::thumbnails::ThumbnailKind;
 
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "set box art").await?;
     let storage = state.storage();
 
     // Look up the variant in the thumbnail index to get repo/branch info.
@@ -212,6 +213,7 @@ pub async fn reset_boxart_override(
     rom_filename: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "reset box art").await?;
 
     let sys_for_db = system.clone();
     let rom_for_db = rom_filename.clone();

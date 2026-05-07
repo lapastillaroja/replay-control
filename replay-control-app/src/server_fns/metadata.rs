@@ -285,6 +285,7 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "clear metadata").await?;
 
     let _guard = state
         .try_start_activity(crate::api::Activity::Maintenance {
@@ -308,6 +309,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "regenerate metadata").await?;
     state
         .external_metadata_writer
         .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
@@ -323,6 +325,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "download metadata").await?;
     crate::api::BackgroundManager::spawn_external_metadata_download_and_refresh(state.clone());
     Ok(())
 }
@@ -345,6 +348,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
 
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "rescan the game library").await?;
 
     let guard = state
         .try_start_activity(crate::api::Activity::Rebuild {
@@ -366,6 +370,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
 
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "rebuild the game library").await?;
 
     let guard = state
         .try_start_activity(crate::api::Activity::Rebuild {
@@ -403,6 +408,7 @@ pub struct CorruptionStatus {
 #[server(prefix = "/sfn")]
 pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "rebuild the corrupt library").await?;
     if !state.library_reader.is_corrupt() {
         return Err(ServerFnError::new("Library database is not corrupt"));
     }
@@ -433,6 +439,7 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "repair user data").await?;
     if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));
     }
@@ -453,6 +460,7 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "restore user data").await?;
     if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));
     }

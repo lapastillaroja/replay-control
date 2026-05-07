@@ -50,6 +50,10 @@ async fn delete_rom(
     State(state): State<AppState>,
     Json(payload): Json<DeleteRomRequest>,
 ) -> Result<StatusCode, StatusCode> {
+    state
+        .require_configured_storage_ready_for_mutation("delete ROMs")
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
     replay_control_core_server::roms::delete_rom_group(
         &state.storage(),
         &payload.system,
@@ -67,6 +71,10 @@ async fn rename_rom(
     State(state): State<AppState>,
     Json(payload): Json<RenameRomRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    state
+        .require_configured_storage_ready_for_mutation("rename ROMs")
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
     let new_path = replay_control_core_server::roms::rename_rom(
         &state.storage(),
         &payload.relative_path,

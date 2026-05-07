@@ -402,6 +402,7 @@ pub async fn get_rom_file_group(
 pub async fn delete_rom(system: String, relative_path: String) -> Result<(), ServerFnError> {
     validate_path_safe(&relative_path)?;
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "delete ROMs").await?;
     let storage = state.storage();
 
     // Extract ROM filename for cleanup.
@@ -572,6 +573,7 @@ pub async fn rename_rom(
     validate_path_safe(&relative_path)?;
     validate_path_safe(&new_filename)?;
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "rename ROMs").await?;
     let storage = state.storage();
 
     // Extract old filename for cascade.
@@ -711,6 +713,7 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     }
 
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "launch games").await?;
     let storage = state.storage();
 
     replay_control_core_server::launch::launch_game(&storage, &rom_path)

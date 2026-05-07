@@ -30,6 +30,8 @@ The app monitors the RePlayOS configuration file for changes. When the storage m
 
 This also applies to skin/theme changes, which are pushed to all browsers instantly.
 
+If the configured storage target cannot be activated (for example NVMe is selected but no NVMe drive is mounted), Replay Control keeps the last successfully opened storage online when one exists and shows a storage-status banner. The banner names the configured target, the fallback storage if available, and tells the user to insert the device or change the selection in RePlayOS settings. Read-only browsing remains available on the fallback storage, but launch, rebuild/rescan, upload, rename/delete, metadata refresh, media downloads, favorites, and other storage-scoped mutations are blocked until the configured storage is ready. On first boot with no usable storage, the `/waiting` page shows the same configured-storage problem instead of silently waiting on an unspecified device.
+
 ## Filesystem Adaptation
 
 The app automatically adapts its database configuration to the underlying filesystem:

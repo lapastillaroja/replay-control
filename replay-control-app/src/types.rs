@@ -11,6 +11,44 @@ use serde::{Deserialize, Serialize};
 
 pub use replay_control_core::library_db::{ImportProgress, ImportState};
 
+// ── Storage status types ───────────────────────────
+
+/// Current storage activation state.
+///
+/// `Misconfigured` means the user's configured target cannot currently be
+/// activated. When `current_kind` is `Some`, Replay Control is deliberately
+/// keeping the last successfully activated storage online as a fallback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum StorageStatus {
+    WaitingForMount,
+    Activating,
+    Ready,
+    Error {
+        message: String,
+    },
+    Misconfigured {
+        wanted: String,
+        current_kind: Option<String>,
+        reason: String,
+    },
+}
+
+impl Default for StorageStatus {
+    fn default() -> Self {
+        Self::WaitingForMount
+    }
+}
+
+pub fn storage_kind_label(kind: &str) -> &'static str {
+    match kind {
+        "usb" => "USB",
+        "nvme" => "NVMe",
+        "nfs" => "NFS",
+        _ => "SD",
+    }
+}
+
 // ── Now Playing types ───────────────────────────────
 
 /// Snapshot of "what is the appliance currently playing".

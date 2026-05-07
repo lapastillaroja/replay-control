@@ -10,6 +10,10 @@ async fn upload_rom(
     Path(system): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    state
+        .require_configured_storage_ready_for_mutation("upload ROMs")
+        .await
+        .map_err(|_| StatusCode::CONFLICT)?;
     let storage = state.storage();
     let mut uploaded = Vec::new();
 

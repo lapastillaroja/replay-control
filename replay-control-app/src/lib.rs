@@ -25,6 +25,7 @@ use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use components::now_playing_indicator::NowPlayingIndicator;
+use components::storage_status_banner::StorageStatusBanner;
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
@@ -44,6 +45,7 @@ use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
 use server_fns::{Activity, CorruptionStatus};
+use types::StorageStatus;
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
@@ -112,6 +114,7 @@ pub fn App() -> impl IntoView {
     // Banners and other consumers subscribe to these via use_context.
     provide_context(RwSignal::new(Activity::Idle));
     provide_context(RwSignal::new(CorruptionStatus::default()));
+    provide_context(RwSignal::new(StorageStatus::default()));
     provide_context(RwSignal::new(Vec::<
         replay_control_core::asset_health::AssetHealthIssue,
     >::new()));
@@ -175,6 +178,7 @@ pub fn App() -> impl IntoView {
                 </Suspense>
 
                 <CorruptionBanner />
+                <StorageStatusBanner />
                 <AssetHealthBanner />
                 <MetadataBusyBanner />
 
@@ -285,6 +289,17 @@ fn asset_health_from_payload(
         .unwrap_or_default()
 }
 
+#[cfg(feature = "hydrate")]
+fn storage_status_from_payload(payload: &serde_json::Value) -> StorageStatus {
+    // Init carries `storage_status`; StorageStatusChanged carries `status`.
+    payload
+        .get("storage_status")
+        .or_else(|| payload.get("status"))
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
 /// SSE listener for config changes (skin, storage, update, corruption).
 ///
 /// Connects to `/sse/config` on hydration. This is a broadcast-based endpoint
@@ -311,6 +326,7 @@ fn SseConfigListener() -> impl IntoView {
         let update_state_signal =
             use_context::<RwSignal<replay_control_core::update::UpdateState>>();
         let corruption_signal = use_context::<RwSignal<CorruptionStatus>>();
+        let storage_status_signal = use_context::<RwSignal<StorageStatus>>();
         let asset_health_signal =
             use_context::<RwSignal<Vec<replay_control_core::asset_health::AssetHealthIssue>>>();
 
@@ -368,6 +384,9 @@ fn SseConfigListener() -> impl IntoView {
                             }
                             if let Some(sig) = corruption_signal {
                                 sig.set(corruption_status_from_payload(&payload));
+                            }
+                            if let Some(sig) = storage_status_signal {
+                                sig.set(storage_status_from_payload(&payload));
                             }
                             if let Some(sig) = asset_health_signal {
                                 sig.set(asset_health_from_payload(&payload));
@@ -457,6 +476,11 @@ fn SseConfigListener() -> impl IntoView {
                         "CorruptionChanged" => {
                             if let Some(sig) = corruption_signal {
                                 sig.set(corruption_status_from_payload(&payload));
+                            }
+                        }
+                        "StorageStatusChanged" => {
+                            if let Some(sig) = storage_status_signal {
+                                sig.set(storage_status_from_payload(&payload));
                             }
                         }
                         "AssetHealthChanged" => {

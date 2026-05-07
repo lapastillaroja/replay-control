@@ -91,6 +91,7 @@ pub async fn add_favorite(
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "add favorites").await?;
     let result = replay_control_core_server::favorites::add_favorite(
         &state.storage(),
         &system,
@@ -110,6 +111,7 @@ pub async fn remove_favorite(
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "remove favorites").await?;
     let storage = state.storage();
 
     match &subfolder {
@@ -139,6 +141,7 @@ pub async fn organize_favorites(
     keep_originals: bool,
 ) -> Result<OrganizeResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "organize favorites").await?;
     let needs_ratings =
         primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
     // Ratings now live in `game_library.rating` (denormalized at enrichment),
@@ -175,6 +178,7 @@ pub async fn organize_favorites(
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "group favorites").await?;
     let result = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
@@ -185,6 +189,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "flatten favorites").await?;
     let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;

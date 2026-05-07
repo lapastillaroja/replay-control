@@ -306,6 +306,7 @@ pub async fn download_manual(
     language: Option<String>,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "download manuals").await?;
 
     // Validate inputs
     if base_title.contains("..") || base_title.contains('/') || base_title.contains('\\') {
@@ -381,6 +382,7 @@ pub async fn delete_manual(system: String, filename: String) -> Result<(), Serve
     }
 
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "delete manuals").await?;
     let folder =
         replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
     let target_path = state.storage().manuals_dir().join(&folder).join(&filename);

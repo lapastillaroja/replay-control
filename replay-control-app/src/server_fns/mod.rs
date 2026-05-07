@@ -52,6 +52,17 @@ pub(crate) fn region_strings(state: &crate::api::AppState) -> (String, String) {
     )
 }
 
+#[cfg(feature = "ssr")]
+pub(crate) async fn require_storage_mutation_allowed(
+    state: &crate::api::AppState,
+    action: &str,
+) -> Result<(), ServerFnError> {
+    state
+        .require_configured_storage_ready_for_mutation(action)
+        .await
+        .map_err(ServerFnError::new)
+}
+
 /// Lightweight entry for ROM list views (game browser, search results).
 ///
 /// Unlike `GameInfo` (which carries full metadata for the detail page),

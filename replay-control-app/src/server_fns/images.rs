@@ -25,6 +25,7 @@ pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_images() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "clear images").await?;
 
     let _guard = state
         .try_start_activity(crate::api::Activity::Maintenance {
@@ -60,6 +61,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "cleanup orphaned images").await?;
 
     let _guard = state
         .try_start_activity(crate::api::Activity::Maintenance {

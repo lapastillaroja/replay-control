@@ -105,3 +105,34 @@
     gap: 8px;
     flex-wrap: wrap;
 }
+
+/* ================================================================
+   Storage Status Banner — shown when ReplayOS config points at
+   unavailable storage while Replay Control keeps running on the
+   last active storage, or when an active storage swap hits an error.
+   ================================================================ */
+
+.storage-status-banner {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 8px 16px;
+    background: #1e3a5f;
+    color: #dbeafe;
+    font-size: 0.8rem;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.storage-status-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.storage-status-banner-reason {
+    color: rgba(219, 234, 254, 0.78);
+    font-size: 0.72rem;
+}
