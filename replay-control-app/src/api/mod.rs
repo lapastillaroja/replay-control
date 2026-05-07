@@ -886,7 +886,7 @@ impl AppState {
             // the dirent cache stabilizes.
             use replay_control_core_server::roms::StorageProbe;
             match replay_control_core_server::roms::probe_storage_ready(&new_storage).await {
-                StorageProbe::HasRoms | StorageProbe::StableEmpty => {}
+                StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => {}
                 StorageProbe::NotReady => {
                     tracing::debug!(
                         "refresh_storage: probe at {} not yet ready; deferring",

@@ -54,14 +54,25 @@ async fn main() {
         }
     }
 
-    let summaries = match roms::scan_systems(&storage).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Scan failed: {e}");
-            std::process::exit(1);
+    // Iterate every visible platform; keep only those that returned
+    // ROMs. Strict scan errors are logged and skipped — analyst tool,
+    // better to know that something failed than silently produce a
+    // wrong coverage number.
+    let mut active: Vec<(String, Vec<roms::RomEntry>)> = Vec::new();
+    for system in systems::visible_systems() {
+        match roms::list_roms(
+            &storage,
+            system.folder_name,
+            rom_tags::RegionPreference::default(),
+            None,
+        )
+        .await
+        {
+            Ok(rs) if !rs.is_empty() => active.push((system.folder_name.to_string(), rs)),
+            Ok(_) => {} // genuinely empty system folder; skip
+            Err(e) => eprintln!("  Skipped {} (scan error): {e}", system.folder_name),
         }
-    };
-    let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
+    }
 
     if active.is_empty() {
         eprintln!(
@@ -78,36 +89,15 @@ async fn main() {
     println!("║ Systems with games: {:<56}║", active.len());
     println!(
         "║ Total ROMs: {:<64}║",
-        active.iter().map(|s| s.game_count).sum::<usize>()
+        active.iter().map(|(_, rs)| rs.len()).sum::<usize>()
     );
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     println!();
 
     let mut grand_totals = GrandTotals::default();
 
-    for summary in &active {
-        let system_name = &summary.folder_name;
+    for (system_name, rom_list) in &active {
         let is_arcade = systems::is_arcade_system(system_name);
-
-        let rom_list = match roms::list_roms(
-            &storage,
-            system_name,
-            rom_tags::RegionPreference::default(),
-            None,
-        )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("  Error listing ROMs for {system_name}: {e}");
-                continue;
-            }
-        };
-
-        if rom_list.is_empty() {
-            continue;
-        }
-
         let total = rom_list.len();
         let mut embedded = EmbeddedCoverage::default();
         let mut external = ExternalCoverage::default();
@@ -155,7 +145,7 @@ async fn main() {
             (by_stem, by_norm)
         };
 
-        for rom in &rom_list {
+        for rom in rom_list {
             let filename = &rom.game.rom_filename;
 
             // --- Embedded metadata ---
@@ -256,12 +246,15 @@ async fn main() {
         }
 
         // Print system report
+        let display_name = systems::find_system(system_name)
+            .map(|s| s.display_name)
+            .unwrap_or(system_name.as_str());
         println!(
             "┌──────────────────────────────────────────────────────────────────────────────┐"
         );
         println!(
             "│ {:<40} {:>5} ROMs {:>20} │",
-            summary.display_name,
+            display_name,
             total,
             if is_arcade { "(arcade)" } else { "" }
         );

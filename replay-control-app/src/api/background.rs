@@ -1125,7 +1125,7 @@ impl BackgroundManager {
     ) {
         // Iterate every visible_systems() platform — strict reconcile is
         // safe to call on systems we don't have on disk (it early-returns
-        // cheaply via list_roms_strict's missing-dir branch on local
+        // cheaply via list_roms's missing-dir branch on local
         // storage, returns Err on NFS preserving cached state). The per-
         // system rule (in `scan_and_cache_system`) ensures empty walks
         // don't poison meta on partial-mount fresh boots.

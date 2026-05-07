@@ -232,7 +232,7 @@ impl LibraryService {
 
         // Missing top-level system directory: split by storage kind.
         //   Local (SD/USB/NVMe): treat as user-initiated deletion. Fall
-        //     through to `list_roms_strict`, which returns `Ok(empty)` for
+        //     through to `list_roms`, which returns `Ok(empty)` for
         //     a non-existent dir; reconcile-to-empty per the strict rule.
         //   NFS: ambiguous — could be a transient mount blip or a real
         //     remote-side delete. Refuse to act on the silent signal:
@@ -245,7 +245,7 @@ impl LibraryService {
         }
 
         tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
-        let mut roms = replay_control_core_server::roms::list_roms_strict(
+        let mut roms = replay_control_core_server::roms::list_roms(
             storage,
             system,
             region_pref,
