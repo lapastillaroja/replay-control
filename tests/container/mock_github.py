@@ -119,7 +119,7 @@ CATALOG_TARBALL = make_catalog_tarball()
 
 def release_json(tag: str, port: int, prerelease: bool = False) -> dict:
     """Build a GitHub-style release JSON object."""
-    base = f"http://localhost:{port}"
+    base = os.environ.get("MOCK_GITHUB_PUBLIC_BASE_URL", f"http://localhost:{port}")
     return {
         "tag_name": tag,
         "name": f"v{tag}",

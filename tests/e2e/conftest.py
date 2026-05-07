@@ -157,9 +157,10 @@ def set_mock_downloads(fail: bool):
 
 
 def goto_settings(page):
-    """Navigate to /settings and wait for the update controls to be ready."""
+    """Navigate to /settings and wait for the update controls to be hydrated."""
     page.goto(f"{PI_URL}/settings", wait_until="load", timeout=30000)
     page.locator(SEL_CHANNEL_SELECT).wait_for(timeout=10000)
+    page.wait_for_timeout(1000)
 
 
 # Backward-compatible alias
