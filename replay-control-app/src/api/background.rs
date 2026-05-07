@@ -2,6 +2,7 @@ use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::roms::StorageProbe;
 use replay_control_core_server::update as update_io;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use super::AppState;
@@ -122,11 +123,7 @@ impl BackgroundManager {
         // Clean up stale update temp files from a previous run.
         update_io::nuke_update_dir();
 
-        // Spawn the ordered pipeline as an async task.
-        let pipeline_state = state.clone();
-        tokio::spawn(async move {
-            Self::run_pipeline(&pipeline_state).await;
-        });
+        Self::spawn_pipeline(state.clone());
 
         // Start watchers immediately (they're independent of the pipeline).
         state.clone().spawn_storage_watcher();
@@ -149,6 +146,16 @@ impl BackgroundManager {
                 super::now_playing::run_now_playing_loop(now_playing_state).await;
             });
         }
+    }
+
+    /// Spawn only the ordered pipeline. Used after an already-running app
+    /// swaps from one available storage device to another; the long-running
+    /// watchers already exist and must not be duplicated.
+    pub fn spawn_pipeline(state: AppState) {
+        let pipeline_state = state.clone();
+        tokio::spawn(async move {
+            Self::run_pipeline(&pipeline_state).await;
+        });
     }
 
     /// Run the ordered startup pipeline (async).
@@ -1977,6 +1984,7 @@ impl AppState {
     /// detect changes made by other NFS clients. For NFS, users trigger
     /// rescans manually via the metadata page "Update" button.
     pub fn spawn_rom_watcher(&self) {
+        let generation = self.rom_watcher_generation.load(Ordering::Relaxed);
         let storage = self.storage();
         if !storage.kind.is_local() {
             tracing::debug!(
@@ -1997,7 +2005,7 @@ impl AppState {
 
         let state = self.clone();
         tokio::spawn(async move {
-            let watcher_active = Self::try_start_rom_watcher(state, roms_dir).await;
+            let watcher_active = Self::try_start_rom_watcher(state, roms_dir, generation).await;
             if watcher_active {
                 tracing::info!("ROM directory watcher active");
             } else {
@@ -2009,6 +2017,14 @@ impl AppState {
         });
     }
 
+    /// Stop any existing local ROM watcher and start one for the current
+    /// storage if that storage supports inotify. Does not touch the storage
+    /// watcher, update checker, or now-playing detector.
+    pub fn restart_rom_watcher(&self) {
+        self.rom_watcher_generation.fetch_add(1, Ordering::Relaxed);
+        self.spawn_rom_watcher();
+    }
+
     /// Try to set up a `notify` filesystem watcher on the `roms/` directory.
     /// Returns `true` if the watcher was started successfully.
     ///
@@ -2018,7 +2034,11 @@ impl AppState {
     ///
     /// When a top-level change is detected in the `roms/` directory itself
     /// (new system directory created), triggers a `get_systems` refresh.
-    async fn try_start_rom_watcher(state: AppState, roms_dir: std::path::PathBuf) -> bool {
+    async fn try_start_rom_watcher(
+        state: AppState,
+        roms_dir: std::path::PathBuf,
+        generation: u64,
+    ) -> bool {
         use notify::{RecursiveMode, Watcher, recommended_watcher};
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
@@ -2054,10 +2074,23 @@ impl AppState {
             const DEBOUNCE: Duration = Duration::from_secs(3);
 
             loop {
-                // Wait for the next event.
-                let Some(event) = rx.recv().await else {
-                    tracing::warn!("ROM watcher channel closed");
+                if state.rom_watcher_generation.load(Ordering::Relaxed) != generation {
+                    tracing::info!("ROM watcher generation changed; stopping old watcher");
                     break;
+                }
+
+                // Wait for the next event.
+                let event = tokio::select! {
+                    event = rx.recv() => {
+                        let Some(event) = event else {
+                            tracing::warn!("ROM watcher channel closed");
+                            break;
+                        };
+                        event
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                        continue;
+                    }
                 };
 
                 if !Self::is_rom_event(&event) {

@@ -97,6 +97,7 @@ fn external_metadata_write_cache_kib() -> i64 {
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use replay_control_core_server::config::SystemConfig;
 use replay_control_core_server::data_dir::DataDir;
@@ -187,6 +188,10 @@ pub struct AppState {
     pub now_playing: Arc<std::sync::RwLock<crate::types::NowPlayingState>>,
     /// Broadcast channel for now-playing updates.
     pub now_playing_tx: tokio::sync::broadcast::Sender<crate::types::NowPlayingState>,
+    /// Generation token for the local ROM filesystem watcher. Incrementing it
+    /// asks any existing watcher task to stop before a storage swap starts a
+    /// watcher for the new `roms/` path.
+    pub(crate) rom_watcher_generation: Arc<AtomicU64>,
     /// Reportable health issues with shipped data assets (catalog schema
     /// mismatch today; future asset types via the release-asset-manifest plan).
     /// Populated at startup; consumed by the SSE init payload + the
@@ -637,6 +642,7 @@ impl AppState {
                 crate::types::NowPlayingState::NotRunning,
             )),
             now_playing_tx,
+            rom_watcher_generation: Arc::new(AtomicU64::new(0)),
             asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
 
@@ -1062,9 +1068,13 @@ impl AppState {
                 }
             }
 
-            if let Err(e) = self.cache.invalidate(&self.library_writer).await {
-                tracing::debug!("storage-change cache.invalidate skipped: {e}");
-            }
+            // The writer now points at the newly selected storage's central
+            // library DB. Do not call the destructive `invalidate()` here:
+            // it clears that DB and a Some -> Some storage swap would leave
+            // the metadata page/library empty until a manual rebuild. Drop
+            // only in-memory snapshots; the pipeline below verifies or
+            // populates L2 using the strict reconcile rules.
+            self.cache.invalidate_l1().await;
             self.invalidate_user_caches().await;
 
             // Reload user preferences from the settings store.
@@ -1081,6 +1091,10 @@ impl AppState {
             if !had_storage {
                 tracing::info!("Storage appeared — starting background pipeline and ROM watcher");
                 BackgroundManager::start(self.clone());
+            } else {
+                tracing::info!("Storage swapped — starting background verification pipeline");
+                BackgroundManager::spawn_pipeline(self.clone());
+                self.restart_rom_watcher();
             }
         }
         Ok(true)
