@@ -136,3 +136,34 @@
     color: rgba(219, 234, 254, 0.78);
     font-size: 0.72rem;
 }
+
+/* ================================================================
+   ROM Watcher Banner — shown when the local filesystem watcher
+   failed to start (typically inotify resource exhaustion). The user
+   can still use the app; new ROMs need a manual rescan or restart.
+   ================================================================ */
+
+.rom-watcher-banner {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 8px 16px;
+    background: #4a3514;
+    color: #fde7c4;
+    font-size: 0.8rem;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.rom-watcher-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rom-watcher-banner-reason {
+    color: rgba(253, 231, 196, 0.78);
+    font-size: 0.72rem;
+}

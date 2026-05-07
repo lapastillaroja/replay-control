@@ -119,6 +119,7 @@ mod ssr {
                 "none".to_string()
             };
             let storage_status = state.storage_status();
+            let rom_watcher_status = state.rom_watcher_status();
             let available_update = replay_control_core_server::update::read_available_update();
             let version = replay_control_app::VERSION;
             let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
@@ -130,6 +131,7 @@ mod ssr {
                 "skin_css": skin_css,
                 "storage_kind": storage_kind,
                 "storage_status": storage_status,
+                "rom_watcher_status": rom_watcher_status,
                 "available_update": available_update,
                 "version": version,
                 "library_corrupt": library_corrupt,

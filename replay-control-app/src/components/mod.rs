@@ -14,6 +14,7 @@ pub mod nav;
 pub mod now_playing_indicator;
 pub mod reboot_button;
 pub mod rom_list;
+pub mod rom_watcher_banner;
 pub mod setup_checklist;
 pub mod stat_card;
 pub mod storage_status_banner;

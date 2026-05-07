@@ -49,6 +49,34 @@ pub fn storage_kind_label(kind: &str) -> &'static str {
     }
 }
 
+// ── Rom watcher status ──────────────────────────────
+
+/// State of the local-filesystem ROM watcher (`notify` / inotify on Linux).
+///
+/// `Skipped` is informational (NFS storage, missing roms dir) and does not
+/// surface in the UI. `Failed` means the watcher tried to start and could
+/// not — typically `inotify` resource exhaustion — and surfaces a banner so
+/// the user knows new ROMs will not be auto-detected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum RomWatcherStatus {
+    /// Watcher is running on the active storage's roms directory.
+    Active,
+    /// Watcher was deliberately not started (NFS storage, missing dir, etc.).
+    /// `reason` is informational; no banner is shown.
+    Skipped { reason: String },
+    /// Watcher tried to start and failed. `reason` carries the OS error.
+    Failed { reason: String },
+}
+
+impl Default for RomWatcherStatus {
+    fn default() -> Self {
+        Self::Skipped {
+            reason: "Initialising".to_string(),
+        }
+    }
+}
+
 // ── Now Playing types ───────────────────────────────
 
 /// Snapshot of "what is the appliance currently playing".

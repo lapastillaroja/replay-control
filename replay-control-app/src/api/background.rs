@@ -12,6 +12,7 @@ use super::activity::{
 };
 use super::db_pools::LibraryReadPool;
 use super::library::{ScanCancellation, ScanInputs, ScanOptions, dir_mtime_secs};
+use crate::types::RomWatcherStatus;
 
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PIPELINE_ACTIVITY_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -2169,32 +2170,37 @@ impl AppState {
         let generation = self.rom_watcher_generation.load(Ordering::Relaxed);
         let storage = self.storage();
         if !storage.kind.is_local() {
-            tracing::debug!(
-                "ROM watcher skipped for {:?} storage (inotify unreliable on NFS)",
-                storage.kind
+            let reason = format!(
+                "Filesystem events are unreliable on {} storage; trigger manual rescan after copying ROMs",
+                storage.kind.as_str().to_uppercase()
             );
+            tracing::debug!("ROM watcher skipped: {reason}");
+            self.set_rom_watcher_status(RomWatcherStatus::Skipped { reason });
             return;
         }
 
         let roms_dir = storage.roms_dir();
         if !roms_dir.exists() {
-            tracing::debug!(
-                "ROM watcher skipped: roms directory does not exist ({})",
-                roms_dir.display()
-            );
+            let reason = format!("ROM directory not found at {}", roms_dir.display());
+            tracing::debug!("ROM watcher skipped: {reason}");
+            self.set_rom_watcher_status(RomWatcherStatus::Skipped { reason });
             return;
         }
 
         let state = self.clone();
         tokio::spawn(async move {
-            let watcher_active = Self::try_start_rom_watcher(state, roms_dir, generation).await;
-            if watcher_active {
-                tracing::info!("ROM directory watcher active");
-            } else {
-                tracing::warn!(
-                    "ROM directory watcher could not be started; \
-                     new ROMs will be detected on page visit or next restart"
-                );
+            match Self::try_start_rom_watcher(state.clone(), roms_dir, generation).await {
+                Ok(()) => {
+                    tracing::info!("ROM directory watcher active");
+                    state.set_rom_watcher_status(RomWatcherStatus::Active);
+                }
+                Err(reason) => {
+                    tracing::warn!(
+                        "ROM directory watcher could not be started ({reason}); \
+                         use manual rescan or restart to detect new ROMs"
+                    );
+                    state.set_rom_watcher_status(RomWatcherStatus::Failed { reason });
+                }
             }
         });
     }
@@ -2208,7 +2214,7 @@ impl AppState {
     }
 
     /// Try to set up a `notify` filesystem watcher on the `roms/` directory.
-    /// Returns `true` if the watcher was started successfully.
+    /// Returns an error string if the watcher could not be created or registered.
     ///
     /// Watches recursively for create/modify/remove events. On change,
     /// extracts the affected system folder name from the event path and
@@ -2220,31 +2226,30 @@ impl AppState {
         state: AppState,
         roms_dir: std::path::PathBuf,
         generation: u64,
-    ) -> bool {
+    ) -> Result<(), String> {
         use notify::{RecursiveMode, Watcher, recommended_watcher};
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
 
         let mut watcher =
-            match recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
+            recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
                 Ok(event) => {
                     let _ = tx.blocking_send(event);
                 }
                 Err(e) => {
                     tracing::warn!("ROM watcher error: {e}");
                 }
-            }) {
-                Ok(w) => w,
-                Err(e) => {
-                    tracing::warn!("Failed to create ROM watcher: {e}");
-                    return false;
-                }
-            };
+            })
+            .map_err(|e| format!("Could not create filesystem watcher: {e}"))?;
 
-        if let Err(e) = watcher.watch(&roms_dir, RecursiveMode::Recursive) {
-            tracing::warn!("Failed to watch roms directory {}: {e}", roms_dir.display());
-            return false;
-        }
+        watcher
+            .watch(&roms_dir, RecursiveMode::Recursive)
+            .map_err(|e| {
+                format!(
+                    "Could not watch {} (likely inotify max_user_watches exhausted): {e}",
+                    roms_dir.display()
+                )
+            })?;
 
         tracing::info!("Watching {} for ROM changes", roms_dir.display());
 
@@ -2448,7 +2453,7 @@ impl AppState {
             }
         });
 
-        true
+        Ok(())
     }
 
     /// Check whether a notify event is relevant to ROM files/directories.

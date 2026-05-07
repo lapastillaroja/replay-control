@@ -103,7 +103,7 @@ use replay_control_core_server::config::SystemConfig;
 use replay_control_core_server::data_dir::DataDir;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
-pub use crate::types::{StorageStatus, storage_kind_label};
+pub use crate::types::{RomWatcherStatus, StorageStatus, storage_kind_label};
 
 /// Config change events pushed to clients via the `/sse/config` broadcast channel.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -130,6 +130,9 @@ pub enum ConfigEvent {
     StorageStatusChanged {
         status: StorageStatus,
     },
+    RomWatcherStatusChanged {
+        status: RomWatcherStatus,
+    },
 }
 
 /// Shared application state.
@@ -137,6 +140,7 @@ pub enum ConfigEvent {
 pub struct AppState {
     pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
     pub storage_status: Arc<std::sync::RwLock<StorageStatus>>,
+    pub rom_watcher_status: Arc<std::sync::RwLock<RomWatcherStatus>>,
     pub config: Arc<std::sync::RwLock<SystemConfig>>,
     pub config_path: Option<PathBuf>,
     pub cache: Arc<LibraryService>,
@@ -567,6 +571,8 @@ impl AppState {
 
         let storage_status = Arc::new(std::sync::RwLock::new(initial_storage_status));
 
+        let rom_watcher_status = Arc::new(std::sync::RwLock::new(RomWatcherStatus::default()));
+
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
         let thumbnails = Arc::new(ThumbnailPipeline::new());
@@ -615,6 +621,7 @@ impl AppState {
         let state = Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             storage_status,
+            rom_watcher_status,
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
             cache: Arc::new(LibraryService::new()),
@@ -692,6 +699,33 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn set_storage_status_for_test(&self, status: StorageStatus) {
         self.set_storage_status(status);
+    }
+
+    pub fn rom_watcher_status(&self) -> RomWatcherStatus {
+        self.rom_watcher_status
+            .read()
+            .expect("rom watcher status lock poisoned")
+            .clone()
+    }
+
+    pub(crate) fn set_rom_watcher_status(&self, status: RomWatcherStatus) {
+        let mut guard = self
+            .rom_watcher_status
+            .write()
+            .expect("rom watcher status lock poisoned");
+        if *guard == status {
+            return;
+        }
+        *guard = status.clone();
+        drop(guard);
+        let _ = self
+            .config_tx
+            .send(ConfigEvent::RomWatcherStatusChanged { status });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_rom_watcher_status_for_test(&self, status: RomWatcherStatus) {
+        self.set_rom_watcher_status(status);
     }
 
     pub(crate) fn storage_generation(&self) -> u64 {
@@ -1645,6 +1679,52 @@ mod tests {
         assert!(html.contains("change the storage selection in RePlayOS settings"));
         assert!(html.contains("path &lt;missing&gt; &amp; not mounted"));
         assert!(!html.contains("Reboot System"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn rom_watcher_status_broadcasts_only_on_transition() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = build_waiting_page_test_state(tmp.path());
+        let mut rx = state.config_tx.subscribe();
+        let failed = RomWatcherStatus::Failed {
+            reason: "inotify max_user_watches exceeded".into(),
+        };
+
+        state.set_rom_watcher_status_for_test(failed.clone());
+        state.set_rom_watcher_status_for_test(failed);
+
+        let event = rx.try_recv().expect("first transition should broadcast");
+        assert!(matches!(
+            event,
+            ConfigEvent::RomWatcherStatusChanged {
+                status: RomWatcherStatus::Failed { .. }
+            }
+        ));
+        assert!(
+            rx.try_recv().is_err(),
+            "duplicate status should not broadcast"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn rom_watcher_status_skipped_does_not_block_active_transition() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = build_waiting_page_test_state(tmp.path());
+        let mut rx = state.config_tx.subscribe();
+
+        state.set_rom_watcher_status_for_test(RomWatcherStatus::Skipped {
+            reason: "NFS".into(),
+        });
+        state.set_rom_watcher_status_for_test(RomWatcherStatus::Active);
+
+        let _ = rx.try_recv().expect("Skipped should broadcast");
+        let event = rx.try_recv().expect("Active transition should broadcast");
+        assert!(matches!(
+            event,
+            ConfigEvent::RomWatcherStatusChanged {
+                status: RomWatcherStatus::Active
+            }
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread")]
