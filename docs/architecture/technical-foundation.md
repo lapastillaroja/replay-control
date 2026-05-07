@@ -92,11 +92,11 @@ Pages use Leptos `Resource::new_blocking` for critical-path data (page structure
 
 ## Bundled Game Databases
 
-~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME 0.285 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are baked into a read-only `catalog.sqlite` shipped alongside the binary. The catalog pool serves SQL lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with no filesystem access beyond the `mmap`-ed catalog file.
+~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and broad arcade metadata (MAME 0.285 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are baked into a read-only `catalog.sqlite` shipped alongside the binary. The catalog pool serves SQL lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with no filesystem access beyond the `mmap`-ed catalog file.
 
 For arcade ROMs the catalog stores **one row per (rom_name, source)** so each upstream's curation is preserved; the runtime merges fields per system using `arcade_source_priority`. See [Database Schema](database-schema.md#per-system-arcade-merge) for the merge semantics.
 
-Non-playable arcade machines (slot machines, gambling, etc.) are filtered at build time.
+Arcade entries are retained when they appear in the source metadata, including categories such as gambling, slot machine, computer, handheld, and electromechanical. This lets Replay Control identify ROMs that exist in user libraries even when they are outside the usual coin-op game set.
 
 Systems with bundled data include SG-1000, 32X, and all major consoles from the No-Intro catalog.
 

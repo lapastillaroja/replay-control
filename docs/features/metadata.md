@@ -4,7 +4,7 @@ How game metadata is sourced and used.
 
 ## Offline-First Design
 
-Replay Control works fully offline from the first install. Built-in databases provide genre, player count, year, and display names for ~34K console ROMs and ~15K playable arcade games without any network access.
+Replay Control works fully offline from the first install. Built-in databases provide genre, player count, year, and display names for ~34K console ROMs and broad arcade metadata without any network access.
 
 When connected to the internet, you can optionally enrich your library with additional data from external sources. These fill gaps that the built-in data does not cover but are never required.
 
@@ -16,11 +16,11 @@ Display names, year, genre, developer, player count, and region for games across
 
 Games are identified by filename, with a CRC32 hash fallback for 9 cartridge systems when the filename does not match the database.
 
-### Arcade Games (~15K playable entries)
+### Arcade Games
 
 Covers [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, and category.
 
-Non-playable machines (slot machines, gambling, etc.) are filtered out.
+Entries from the source metadata are retained, including categories such as gambling, slot machine, computer, handheld, and electromechanical, so ROMs from full MAME sets can still be identified.
 
 ### Genre Taxonomy
 

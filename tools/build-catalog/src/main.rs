@@ -678,7 +678,7 @@ fn normalize_arcade_genre(category: &str) -> &'static str {
         "Sports" => "Sports",
         "Puzzle" => "Puzzle",
         "Maze" => "Maze",
-        "Casino" | "Slot Machine" => "Board & Card",
+        "Casino" | "Gambling" | "Slot Machine" => "Board & Card",
         "Tabletop" => "Board & Card",
         "Quiz" | "Trivia" => "Quiz",
         "Pinball" => "Pinball",
@@ -765,21 +765,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         }
     };
 
-    let non_game_prefixes = [
-        "Electromechanical",
-        "Slot Machine",
-        "Gambling",
-        "Computer",
-        "Handheld",
-        "Game Console",
-        "Calculator",
-        "Printer",
-        "Utilities",
-        "System",
-    ];
-
     let mut total_inserted = 0u32;
-    let mut total_filtered = 0u32;
     let mut total_bios = 0u32;
 
     let mut stmt = conn.prepare(
@@ -793,7 +779,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let mut rd_count = 0u32;
 
     for (source, mut entries) in buckets {
-        // Apply overlays + BIOS marking + filtering per row.
+        // Apply overlays + BIOS marking per row.
         for entry in &mut entries {
             if entry.category.is_empty()
                 && let Some(c) = catver.get(&entry.rom_name)
@@ -812,15 +798,6 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         entries.sort_by(|a, b| a.rom_name.cmp(&b.rom_name));
 
         for entry in &entries {
-            let drop_non_game = !entry.is_bios
-                && !entry.category.is_empty()
-                && non_game_prefixes
-                    .iter()
-                    .any(|p| entry.category.starts_with(p));
-            if drop_non_game {
-                total_filtered += 1;
-                continue;
-            }
             if entry.is_bios {
                 total_bios += 1;
             }
@@ -853,8 +830,8 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     }
 
     eprintln!(
-        "Arcade DB: Inserted {} rows ({} BIOS), filtered {} non-game",
-        total_inserted, total_bios, total_filtered
+        "Arcade DB: Inserted {} rows ({} BIOS)",
+        total_inserted, total_bios
     );
     eprintln!("Arcade DB: Inserted {} release date rows", rd_count);
 
@@ -2291,6 +2268,68 @@ fn preflight_check(sources_dir: &Path) -> Result<(), String> {
          \nOr pass --stub to build from replay-control-core/fixtures/ instead.\n",
     );
     Err(msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temp_sources_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("build-catalog-test-{unique}"))
+    }
+
+    #[test]
+    fn insert_arcade_games_retains_full_mame_categories() {
+        let dir = temp_sources_dir();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("mame0285-arcade.xml"),
+            r#"<?xml version="1.0"?>
+<mame version="0.285">
+<m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
+<m name="100lions" rotate="0" players="1" status="good"><d>100 Lions</d><y>2006</y><f>Aristocrat</f></m>
+<m name="apple2gsr0p" rotate="0" status="good"><d>Apple IIgs (ROM00 prototype)</d><y>1986</y><f>Apple</f></m>
+</mame>
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("catver-mame-current.ini"),
+            "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\n",
+        )
+        .unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        insert_arcade_games(&conn, &dir).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM arcade_games WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+
+        let genre: String = conn
+            .query_row(
+                "SELECT normalized_genre FROM arcade_games WHERE rom_name = 'ssipkr30'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(genre, "Board & Card");
+
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 // =============================================================================
