@@ -54,6 +54,7 @@ MOCK_PORT = os.environ.get("MOCK_PORT", "9999")
 # CSS selectors
 SEL_BANNER = ".update-banner"
 SEL_UPDATING_PAGE = ".updating-page"
+SEL_HYDRATED_UPDATE_CONTROLS = ".update-controls-row.is-hydrated"
 SEL_CHANNEL_SELECT = ".update-controls-row select"
 
 
@@ -159,8 +160,8 @@ def set_mock_downloads(fail: bool):
 def goto_settings(page):
     """Navigate to /settings and wait for the update controls to be hydrated."""
     page.goto(f"{PI_URL}/settings", wait_until="load", timeout=30000)
+    page.locator(SEL_HYDRATED_UPDATE_CONTROLS).wait_for(timeout=15000)
     page.locator(SEL_CHANNEL_SELECT).wait_for(timeout=10000)
-    page.wait_for_timeout(1000)
 
 
 # Backward-compatible alias

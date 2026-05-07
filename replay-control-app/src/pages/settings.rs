@@ -367,6 +367,11 @@ fn UpdatesSection() -> impl IntoView {
     let check_error = RwSignal::new(Option::<String>::None);
     let checking = RwSignal::new(false);
     let up_to_date = RwSignal::new(false);
+    let controls_hydrated = RwSignal::new(false);
+
+    Effect::new(move || {
+        controls_hydrated.set(true);
+    });
 
     let run_check = move || {
         checking.set(true);
@@ -470,7 +475,13 @@ fn UpdatesSection() -> impl IntoView {
                 <div class="update-version">{version_text}</div>
 
                 // Controls row: channel + check button
-                <div class="update-controls-row">
+                <div class=move || {
+                    if controls_hydrated.get() {
+                        "update-controls-row is-hydrated"
+                    } else {
+                        "update-controls-row"
+                    }
+                }>
                     <select
                         class="form-input"
                         on:change=on_channel_change
