@@ -15,7 +15,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     system, rom_filename, rom_path, display_name, base_title, series_key, \
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
-    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name, \
+    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
     release_date, release_precision, release_region_used, cooperative, \
     normalized_title, normalized_title_alt";
 
@@ -405,12 +405,12 @@ impl LibraryDb {
                      base_title, series_key, region, developer, search_text,
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
-                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                      release_date, release_precision, release_region_used, cooperative,
                      normalized_title, normalized_title_alt)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                              ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
-                             ?30, ?31)",
+                             ?30, ?31, ?32)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -447,6 +447,7 @@ impl LibraryDb {
                     rom.size_bytes as i64,
                     rom.crc32.map(|c| c as i64),
                     rom.hash_mtime,
+                    rom.hash_size_bytes.map(|s| s as i64),
                     &rom.hash_matched_name,
                     &rom.release_date,
                     rom.release_precision.map(DpSql),
@@ -683,7 +684,7 @@ impl LibraryDb {
 
         let mut stmt = conn
             .prepare(
-                "SELECT rom_filename, crc32, hash_mtime, hash_matched_name
+                "SELECT rom_filename, crc32, hash_mtime, hash_size_bytes, hash_matched_name
                  FROM game_library
                  WHERE system = ?1 AND crc32 IS NOT NULL",
             )
@@ -696,7 +697,8 @@ impl LibraryDb {
                     crate::rom_hash::CachedHash {
                         crc32: row.get::<_, i64>(1)? as u32,
                         hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                        matched_name: row.get(3)?,
+                        hash_size_bytes: row.get::<_, Option<i64>>(3)?.map(|s| s as u64),
+                        matched_name: row.get(4)?,
                     },
                 ))
             })
@@ -2442,6 +2444,28 @@ mod tests {
         assert_eq!(LibraryDb::count_system_entries(&conn, "snes").unwrap(), 3);
         // Different system should return 0.
         assert_eq!(LibraryDb::count_system_entries(&conn, "gba").unwrap(), 0);
+    }
+
+    #[test]
+    fn load_cached_hashes_round_trips_hash_size() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut entry = make_game_entry("snes", "Mario.sfc", false);
+        entry.crc32 = Some(0x1234_ABCD);
+        entry.hash_mtime = Some(42);
+        entry.hash_size_bytes = Some(3_145_728);
+        entry.hash_matched_name = Some("Super Mario World (USA)".to_string());
+
+        LibraryDb::save_system_entries(&mut conn, "snes", &[entry], None).unwrap();
+
+        let hashes = LibraryDb::load_cached_hashes(&conn, "snes").unwrap();
+        let cached = hashes.get("Mario.sfc").expect("hash row should load");
+        assert_eq!(cached.crc32, 0x1234_ABCD);
+        assert_eq!(cached.hash_mtime, 42);
+        assert_eq!(cached.hash_size_bytes, Some(3_145_728));
+        assert_eq!(
+            cached.matched_name.as_deref(),
+            Some("Super Mario World (USA)")
+        );
     }
 
     #[test]

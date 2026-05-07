@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::RegionPreference;
+use replay_control_core_server::rom_hash::{CachedHash, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 
@@ -10,6 +13,67 @@ use replay_control_core_server::library_db::LibraryDb;
 
 use super::{LibraryService, dir_mtime_secs};
 use crate::api::db_pools::LibraryWritePool;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ScanOptions {
+    pub force_rehash: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ScanInputs {
+    cached_hashes: HashMap<String, CachedHash>,
+    options: ScanOptions,
+    /// None is valid for unit tests and in-process harnesses that do not need
+    /// storage-swap cancellation.
+    cancellation: Option<ScanCancellation>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ScanCancellation {
+    expected_generation: u64,
+    current_generation: Arc<AtomicU64>,
+}
+
+impl ScanCancellation {
+    pub(crate) fn new(current_generation: Arc<AtomicU64>, expected_generation: u64) -> Self {
+        Self {
+            expected_generation,
+            current_generation,
+        }
+    }
+
+    pub(crate) fn ensure_current(&self) -> Result<()> {
+        if self.current_generation.load(Ordering::Relaxed) != self.expected_generation {
+            return Err(Error::StorageChanged);
+        }
+        Ok(())
+    }
+}
+
+impl ScanInputs {
+    pub(crate) fn new(
+        cached_hashes: HashMap<String, CachedHash>,
+        options: ScanOptions,
+        cancellation: Option<ScanCancellation>,
+    ) -> Self {
+        Self {
+            cached_hashes,
+            options,
+            cancellation,
+        }
+    }
+
+    pub(crate) fn cancellation(&self) -> Option<&ScanCancellation> {
+        self.cancellation.as_ref()
+    }
+
+    pub(crate) fn ensure_current(&self) -> Result<()> {
+        if let Some(cancellation) = &self.cancellation {
+            cancellation.ensure_current()?;
+        }
+        Ok(())
+    }
+}
 
 impl LibraryService {
     /// Hash ROM files for a hash-eligible system and apply identification results.
@@ -27,24 +91,13 @@ impl LibraryService {
         storage: &StorageLocation,
         system: &str,
         roms: &mut [RomEntry],
-        db: &LibraryWritePool,
+        scan_inputs: &ScanInputs,
     ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
         use replay_control_core_server::rom_hash::{self, HashResult};
 
         if !rom_hash::is_hash_eligible(system) {
             return HashMap::new();
         }
-
-        // Load cached hashes from L2 (database). Read on a separate
-        // connection — the downstream write uses INSERT OR REPLACE so a
-        // concurrent rescan re-hashing the same file is a benign rewrite.
-        let system_owned = system.to_string();
-        let cached_hashes = db
-            .as_reader()
-            .read(move |conn| LibraryDb::load_cached_hashes(conn, &system_owned))
-            .await
-            .and_then(|r| r.ok())
-            .unwrap_or_default();
 
         // Build input list: (rom_filename, rom_path, size_bytes).
         let rom_files: Vec<(String, String, u64)> = roms
@@ -59,12 +112,22 @@ impl LibraryService {
             })
             .collect();
 
-        let results =
-            rom_hash::hash_and_identify(system, &rom_files, &cached_hashes, &storage.root).await;
+        let hash_result = rom_hash::hash_and_identify_with_options(
+            system,
+            &rom_files,
+            &scan_inputs.cached_hashes,
+            &storage.root,
+            rom_hash::HashOptions {
+                force_rehash: scan_inputs.options.force_rehash,
+            },
+        )
+        .await;
+        let stats = hash_result.stats;
+        log_hash_stats(system, stats);
 
         // Build a lookup map for applying results.
         let mut result_map: HashMap<String, HashResult> = HashMap::new();
-        for result in results {
+        for result in hash_result.results {
             result_map.insert(result.rom_filename.clone(), result);
         }
 
@@ -129,6 +192,7 @@ impl LibraryService {
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
+        scan_inputs: &ScanInputs,
     ) -> Result<()> {
         let mtime_secs = dir_mtime_secs(system_dir);
 
@@ -146,6 +210,7 @@ impl LibraryService {
         );
         let system_owned = system.to_string();
         let cached_roms_for_db = cached_roms.clone();
+        scan_inputs.ensure_current()?;
         let result = db
             .write(move |conn| {
                 LibraryDb::save_system_entries(conn, &system_owned, &cached_roms_for_db, mtime_secs)
@@ -156,11 +221,13 @@ impl LibraryService {
                 tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
 
                 // Populate TGDB aliases from embedded build-time data.
-                self.populate_tgdb_aliases(system, &cached_roms, db).await;
+                self.populate_tgdb_aliases(system, &cached_roms, db, scan_inputs)
+                    .await?;
 
                 // Populate game_series from embedded Wikidata data.
-                self.populate_wikidata_series(system, &cached_roms, db)
-                    .await;
+                self.populate_wikidata_series(system, &cached_roms, db, scan_inputs)
+                    .await?;
+                scan_inputs.ensure_current()?;
 
                 // Seed `game_release_date` in three steps:
                 //  1. Build-time static emit: TGDB per-region dates + arcade
@@ -177,6 +244,7 @@ impl LibraryService {
                 // when the XML provides it) before re-running the resolver.
                 let static_data =
                     replay_control_core_server::library_db::fetch_static_release_data().await;
+                scan_inputs.ensure_current()?;
                 let _ = db
                     .write(move |conn| {
                         let _ = LibraryDb::seed_release_dates_from_static(conn, static_data);
@@ -201,5 +269,47 @@ impl LibraryService {
                 )))
             }
         }
+    }
+}
+
+fn log_hash_stats(system: &str, stats: HashStats) {
+    if stats == HashStats::default() {
+        return;
+    }
+    tracing::info!(
+        "Hash-and-identify for {system}: exact={}, migrated={}, size_only={}, computed={}, forced={}, skipped={}",
+        stats.reused_exact,
+        stats.reused_migrated,
+        stats.reused_size_only,
+        stats.computed,
+        stats.forced_computed,
+        stats.skipped,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_inputs_without_cancellation_is_current() {
+        assert!(ScanInputs::default().ensure_current().is_ok());
+    }
+
+    #[test]
+    fn scan_inputs_detects_storage_generation_change() {
+        let current_generation = Arc::new(AtomicU64::new(7));
+        let inputs = ScanInputs::new(
+            HashMap::new(),
+            ScanOptions::default(),
+            Some(ScanCancellation::new(current_generation.clone(), 7)),
+        );
+        assert!(inputs.ensure_current().is_ok());
+
+        current_generation.store(8, Ordering::Relaxed);
+        assert!(matches!(
+            inputs.ensure_current(),
+            Err(Error::StorageChanged)
+        ));
     }
 }

@@ -4,13 +4,34 @@
 //! them against the embedded No-Intro DAT data to get definitive ROM identification.
 //! CD-based, computer/folder, and arcade systems are excluded (see [`is_hash_eligible`]).
 //!
-//! The hash result is cached in the `game_library` table keyed by file mtime,
-//! so only new or modified files are re-hashed on subsequent scans.
+//! The hash result is cached in the `game_library` table keyed by file mtime
+//! and size, so unchanged files do not need to be re-hashed on subsequent scans.
 
 use std::io;
 use std::path::Path;
 
 use crate::game_db;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HashOptions {
+    pub force_rehash: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HashStats {
+    pub reused_exact: usize,
+    pub reused_migrated: usize,
+    pub reused_size_only: usize,
+    pub computed: usize,
+    pub forced_computed: usize,
+    pub skipped: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HashIdentifyResult {
+    pub results: Vec<HashResult>,
+    pub stats: HashStats,
+}
 
 /// Systems eligible for CRC32 hash-based identification.
 ///
@@ -23,19 +44,73 @@ use crate::game_db;
 /// - Computer/folder systems (ScummVM, DOS/IBM PC, Sharp X68000, Amiga, C64, Amstrad)
 /// - Arcade (MAME, FBNeo — identified by romset name, not file content)
 /// - Nintendo DS (excluded for now — ROMs average 64 MB, first-scan too slow)
-const HASH_ELIGIBLE_SYSTEMS: &[&str] = &[
-    "nintendo_nes",
-    "nintendo_snes",
-    "nintendo_gb",
-    "nintendo_gbc",
-    "nintendo_gba",
-    "nintendo_n64",
-    "sega_sms",
-    "sega_smd",
-    "sega_gg",
-    "sega_sg",
-    "sega_32x",
+struct HashSystemRule {
+    system: &'static str,
+    extensions: &'static [&'static str],
+    excluded_name_markers: &'static [&'static str],
+}
+
+const HASH_SYSTEM_RULES: &[HashSystemRule] = &[
+    HashSystemRule {
+        system: "nintendo_nes",
+        extensions: &["nes", "unif", "unf", "fds"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "nintendo_snes",
+        extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "nintendo_gb",
+        extensions: &["gb", "sgb"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "nintendo_gbc",
+        extensions: &["gbc", "sgbc"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "nintendo_gba",
+        extensions: &["gba"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "nintendo_n64",
+        extensions: &["z64", "n64", "v64", "bin", "u1"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "sega_sms",
+        extensions: &["sms"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "sega_smd",
+        extensions: &["md", "bin", "gen", "smd"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "sega_gg",
+        extensions: &["gg"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "sega_sg",
+        extensions: &["sg"],
+        excluded_name_markers: &[],
+    },
+    HashSystemRule {
+        system: "sega_32x",
+        extensions: &["32x", "bin"],
+        excluded_name_markers: &["sega cd 32x", "mega-cd 32x"],
+    },
 ];
+
+fn hash_rule(system: &str) -> Option<&'static HashSystemRule> {
+    HASH_SYSTEM_RULES.iter().find(|rule| rule.system == system)
+}
 
 /// Check whether a system is eligible for CRC32 hash-based identification.
 ///
@@ -43,7 +118,34 @@ const HASH_ELIGIBLE_SYSTEMS: &[&str] = &[
 /// compiled into the binary. Returns `false` for CD, computer, arcade, and
 /// systems without DAT coverage.
 pub fn is_hash_eligible(system: &str) -> bool {
-    HASH_ELIGIBLE_SYSTEMS.contains(&system)
+    hash_rule(system).is_some()
+}
+
+/// Check whether this specific ROM file should be CRC-identified.
+///
+/// Some systems are hybrid at the folder level. `sega_32x` contains both
+/// cartridge ROMs and Sega CD 32X disc images; only the cartridge-shaped files
+/// should be streamed for No-Intro CRC matching.
+pub fn is_file_hash_eligible(system: &str, rom_filename: &str) -> bool {
+    let Some(rule) = hash_rule(system) else {
+        return false;
+    };
+
+    let ext = Path::new(rom_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if !rule.extensions.contains(&ext.as_str()) {
+        return false;
+    }
+
+    let name = rom_filename.to_ascii_lowercase();
+    !rule
+        .excluded_name_markers
+        .iter()
+        .any(|marker| name.contains(marker))
 }
 
 /// Compute the CRC32 hash of a file using a streaming buffered reader.
@@ -110,6 +212,8 @@ pub struct HashResult {
     pub crc32: u32,
     /// File mtime as seconds since UNIX epoch.
     pub mtime_secs: i64,
+    /// File size observed when the CRC32 was computed or reused.
+    pub size_bytes: u64,
     /// No-Intro canonical name if CRC matched, None if no match.
     pub matched_name: Option<String>,
 }
@@ -119,6 +223,7 @@ pub struct HashResult {
 pub struct CachedHash {
     pub crc32: u32,
     pub hash_mtime: i64,
+    pub hash_size_bytes: Option<u64>,
     pub matched_name: Option<String>,
 }
 
@@ -140,9 +245,30 @@ pub async fn hash_and_identify(
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
     cached_hashes: &std::collections::HashMap<String, CachedHash>,
     storage_root: &Path,
-) -> Vec<HashResult> {
+) -> HashIdentifyResult {
     if !is_hash_eligible(system) {
-        return Vec::new();
+        return HashIdentifyResult::default();
+    }
+
+    hash_and_identify_with_options(
+        system,
+        rom_files,
+        cached_hashes,
+        storage_root,
+        HashOptions::default(),
+    )
+    .await
+}
+
+pub async fn hash_and_identify_with_options(
+    system: &str,
+    rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
+    cached_hashes: &std::collections::HashMap<String, CachedHash>,
+    storage_root: &Path,
+    options: HashOptions,
+) -> HashIdentifyResult {
+    if !is_hash_eligible(system) {
+        return HashIdentifyResult::default();
     }
 
     enum Pending {
@@ -151,7 +277,14 @@ pub async fn hash_and_identify(
             rom_filename: String,
             crc32: u32,
             mtime_secs: i64,
+            size_bytes: u64,
         },
+    }
+
+    enum Reuse {
+        Exact,
+        Migrated,
+        SizeOnly,
     }
 
     // Phase 1 does per-file std::fs::metadata + File::open + read of
@@ -159,27 +292,57 @@ pub async fn hash_and_identify(
     let rom_files_owned = rom_files.to_vec();
     let cached_hashes_owned = cached_hashes.clone();
     let storage_root_owned = storage_root.to_path_buf();
-    let pending: Vec<Pending> = {
+    let system_owned = system.to_string();
+    let (pending, stats): (Vec<Pending>, HashStats) = {
         {
             tokio::task::spawn_blocking(move || {
                 let mut pending = Vec::with_capacity(rom_files_owned.len());
-                for (rom_filename, rom_path, _size_bytes) in &rom_files_owned {
+                let mut stats = HashStats::default();
+                for (rom_filename, rom_path, size_bytes) in &rom_files_owned {
+                    if !is_file_hash_eligible(&system_owned, rom_filename) {
+                        stats.skipped += 1;
+                        continue;
+                    }
+
                     let abs_path = storage_root_owned.join(rom_path.trim_start_matches('/'));
 
                     let Some(current_mtime) = file_mtime_secs(&abs_path) else {
+                        stats.skipped += 1;
                         continue;
                     };
 
-                    if let Some(cached) = cached_hashes_owned.get(rom_filename)
-                        && cached.hash_mtime == current_mtime
+                    if !options.force_rehash
+                        && let Some(cached) = cached_hashes_owned.get(rom_filename)
                     {
-                        pending.push(Pending::Cached(HashResult {
-                            rom_filename: rom_filename.clone(),
-                            crc32: cached.crc32,
-                            mtime_secs: current_mtime,
-                            matched_name: cached.matched_name.clone(),
-                        }));
-                        continue;
+                        let reuse_kind = match cached.hash_size_bytes {
+                            Some(cached_size)
+                                if cached.hash_mtime == current_mtime
+                                    && cached_size == *size_bytes =>
+                            {
+                                Some(Reuse::Exact)
+                            }
+                            None if cached.hash_mtime == current_mtime => Some(Reuse::Migrated),
+                            Some(cached_size) if cached_size == *size_bytes => {
+                                Some(Reuse::SizeOnly)
+                            }
+                            _ => None,
+                        };
+
+                        if let Some(kind) = reuse_kind {
+                            match kind {
+                                Reuse::Exact => stats.reused_exact += 1,
+                                Reuse::Migrated => stats.reused_migrated += 1,
+                                Reuse::SizeOnly => stats.reused_size_only += 1,
+                            }
+                            pending.push(Pending::Cached(HashResult {
+                                rom_filename: rom_filename.clone(),
+                                crc32: cached.crc32,
+                                mtime_secs: current_mtime,
+                                size_bytes: *size_bytes,
+                                matched_name: cached.matched_name.clone(),
+                            }));
+                            continue;
+                        }
                     }
 
                     match compute_crc32(&abs_path) {
@@ -187,13 +350,22 @@ pub async fn hash_and_identify(
                             rom_filename: rom_filename.clone(),
                             crc32,
                             mtime_secs: current_mtime,
+                            size_bytes: *size_bytes,
                         }),
                         Err(e) => {
+                            stats.skipped += 1;
                             tracing::debug!("Failed to hash {}: {e}", abs_path.display());
+                            continue;
                         }
                     }
+
+                    if options.force_rehash {
+                        stats.forced_computed += 1;
+                    } else {
+                        stats.computed += 1;
+                    }
                 }
-                pending
+                (pending, stats)
             })
             .await
             .unwrap_or_default()
@@ -213,7 +385,7 @@ pub async fn hash_and_identify(
         game_db::lookup_by_crcs_batch(system, &fresh_crcs).await
     };
 
-    pending
+    let results = pending
         .into_iter()
         .map(|p| match p {
             Pending::Cached(r) => r,
@@ -221,14 +393,17 @@ pub async fn hash_and_identify(
                 rom_filename,
                 crc32,
                 mtime_secs,
+                size_bytes,
             } => HashResult {
                 rom_filename,
                 crc32,
                 mtime_secs,
+                size_bytes,
                 matched_name: matches.get(&crc32).map(|e| e.canonical_name.clone()),
             },
         })
-        .collect()
+        .collect();
+    HashIdentifyResult { results, stats }
 }
 
 /// Get a file's mtime as seconds since the UNIX epoch.
@@ -348,7 +523,7 @@ mod tests {
             Path::new("/tmp"),
         )
         .await;
-        assert!(results.is_empty());
+        assert!(results.results.is_empty());
     }
 
     #[tokio::test]
@@ -368,6 +543,7 @@ mod tests {
             CachedHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: mtime,
+                hash_size_bytes: Some(100),
                 matched_name: Some("Cached Game Name".to_string()),
             },
         );
@@ -380,9 +556,13 @@ mod tests {
         )
         .await;
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].crc32, 0xDEADBEEF);
-        assert_eq!(results[0].matched_name.as_deref(), Some("Cached Game Name"));
+        assert_eq!(results.results.len(), 1);
+        assert_eq!(results.results[0].crc32, 0xDEADBEEF);
+        assert_eq!(
+            results.results[0].matched_name.as_deref(),
+            Some("Cached Game Name")
+        );
+        assert_eq!(results.stats.reused_exact, 1);
     }
 
     #[tokio::test]
@@ -401,6 +581,7 @@ mod tests {
             CachedHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: 0, // Very old mtime — won't match current
+                hash_size_bytes: Some(99),
                 matched_name: Some("Old Name".to_string()),
             },
         );
@@ -413,8 +594,182 @@ mod tests {
         )
         .await;
 
-        assert_eq!(results.len(), 1);
+        assert_eq!(results.results.len(), 1);
         // Should have recomputed, so CRC won't be 0xDEADBEEF
-        assert_ne!(results[0].crc32, 0xDEADBEEF);
+        assert_ne!(results.results[0].crc32, 0xDEADBEEF);
+        assert_eq!(results.stats.computed, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_reuses_migrated_cache_on_matching_mtime() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/nintendo_snes");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path_str = "/roms/nintendo_snes/game.sfc";
+        let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
+        fs::write(&abs_path, b"some rom data").unwrap();
+
+        let mtime = file_mtime_secs(&abs_path).unwrap();
+
+        let mut cache = std::collections::HashMap::new();
+        cache.insert(
+            "game.sfc".to_string(),
+            CachedHash {
+                crc32: 0xDEADBEEF,
+                hash_mtime: mtime,
+                hash_size_bytes: None,
+                matched_name: Some("Cached Game Name".to_string()),
+            },
+        );
+
+        let results = hash_and_identify(
+            "nintendo_snes",
+            &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
+            &cache,
+            &tmp,
+        )
+        .await;
+
+        assert_eq!(results.results[0].crc32, 0xDEADBEEF);
+        assert_eq!(results.results[0].size_bytes, 100);
+        assert_eq!(results.stats.reused_migrated, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_reuses_same_size_when_mtime_drifts() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/nintendo_snes");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path_str = "/roms/nintendo_snes/game.sfc";
+        let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
+        fs::write(&abs_path, b"some rom data").unwrap();
+
+        let mut cache = std::collections::HashMap::new();
+        cache.insert(
+            "game.sfc".to_string(),
+            CachedHash {
+                crc32: 0xDEADBEEF,
+                hash_mtime: 0,
+                hash_size_bytes: Some(100),
+                matched_name: Some("Cached Game Name".to_string()),
+            },
+        );
+
+        let results = hash_and_identify(
+            "nintendo_snes",
+            &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
+            &cache,
+            &tmp,
+        )
+        .await;
+
+        assert_eq!(results.results[0].crc32, 0xDEADBEEF);
+        assert_eq!(results.stats.reused_size_only, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_force_rehash_ignores_same_size_cache() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/nintendo_snes");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path_str = "/roms/nintendo_snes/game.sfc";
+        let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
+        fs::write(&abs_path, b"some rom data").unwrap();
+
+        let mut cache = std::collections::HashMap::new();
+        cache.insert(
+            "game.sfc".to_string(),
+            CachedHash {
+                crc32: 0xDEADBEEF,
+                hash_mtime: file_mtime_secs(&abs_path).unwrap(),
+                hash_size_bytes: Some(100),
+                matched_name: Some("Cached Game Name".to_string()),
+            },
+        );
+
+        let results = hash_and_identify_with_options(
+            "nintendo_snes",
+            &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
+            &cache,
+            &tmp,
+            HashOptions { force_rehash: true },
+        )
+        .await;
+
+        assert_ne!(results.results[0].crc32, 0xDEADBEEF);
+        assert_eq!(results.stats.forced_computed, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_skips_32x_cd_images() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/sega_32x");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let abs_path = tmp.join("roms/sega_32x/Corpse Killer (USA) (Sega CD 32X).chd");
+        fs::write(&abs_path, b"disc data").unwrap();
+
+        let results = hash_and_identify(
+            "sega_32x",
+            &[(
+                "Corpse Killer (USA) (Sega CD 32X).chd".to_string(),
+                "/roms/sega_32x/Corpse Killer (USA) (Sega CD 32X).chd".to_string(),
+                100,
+            )],
+            &std::collections::HashMap::new(),
+            &tmp,
+        )
+        .await;
+
+        assert!(results.results.is_empty());
+        assert_eq!(results.stats.skipped, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_skips_tagged_32x_cd_bin() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/sega_32x");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let abs_path = tmp.join("roms/sega_32x/Corpse Killer (USA) (Sega CD 32X).bin");
+        fs::write(&abs_path, b"disc track data").unwrap();
+
+        let results = hash_and_identify(
+            "sega_32x",
+            &[(
+                "Corpse Killer (USA) (Sega CD 32X).bin".to_string(),
+                "/roms/sega_32x/Corpse Killer (USA) (Sega CD 32X).bin".to_string(),
+                100,
+            )],
+            &std::collections::HashMap::new(),
+            &tmp,
+        )
+        .await;
+
+        assert!(results.results.is_empty());
+        assert_eq!(results.stats.skipped, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_hashes_32x_cartridges() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/sega_32x");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let abs_path = tmp.join("roms/sega_32x/Doom (USA).32x");
+        fs::write(&abs_path, b"cartridge data").unwrap();
+
+        let results = hash_and_identify(
+            "sega_32x",
+            &[(
+                "Doom (USA).32x".to_string(),
+                "/roms/sega_32x/Doom (USA).32x".to_string(),
+                14,
+            )],
+            &std::collections::HashMap::new(),
+            &tmp,
+        )
+        .await;
+
+        assert_eq!(results.results.len(), 1);
+        assert_eq!(results.stats.computed, 1);
+        assert_eq!(results.stats.skipped, 0);
     }
 }

@@ -11,9 +11,11 @@ use super::activity::{
     StartupPhase,
 };
 use super::db_pools::LibraryReadPool;
-use super::library::dir_mtime_secs;
+use super::library::{ScanCancellation, ScanInputs, ScanOptions, dir_mtime_secs};
 
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const PIPELINE_ACTIVITY_RETRY_DELAY: Duration = Duration::from_millis(250);
+const PIPELINE_ACTIVITY_RETRY_ATTEMPTS: usize = 240;
 
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateProgress {
@@ -48,10 +50,9 @@ fn update_rebuild_progress(state: &AppState, f: impl FnOnce(&mut RebuildProgress
 
 /// Push per-system progress into whichever Activity variant the caller
 /// owns. Startup carries a single label string; Rebuild carries counters
-/// + elapsed seconds. The `enriching` flag (set when the inline enrich
-/// step starts) appends a `(enriching)` suffix to the per-system label
-/// for both variants, so the UI shows fine-grained per-system phase
-/// without a fleet-wide RebuildPhase transition.
+/// + elapsed seconds. The `enriching` flag is forwarded as a structured
+/// field on the activity so consumers (banner, page hint) format the
+/// per-system phase via i18n instead of receiving a baked English suffix.
 fn report_system(
     state: &AppState,
     progress: PopulateProgress,
@@ -59,22 +60,24 @@ fn report_system(
     display_name: &str,
     enriching: bool,
 ) {
-    let label = if enriching {
-        format!("{display_name} (enriching)")
-    } else {
-        display_name.to_string()
-    };
     match progress {
         PopulateProgress::Startup => state.update_activity(|act| {
-            if let Activity::Startup { system, .. } = act {
-                *system = label;
+            if let Activity::Startup {
+                system,
+                enriching: e,
+                ..
+            } = act
+            {
+                *system = display_name.to_string();
+                *e = enriching;
             }
         }),
         PopulateProgress::Rebuild { start } => {
             update_rebuild_progress(state, |p| {
-                p.current_system = label;
+                p.current_system = display_name.to_string();
                 p.systems_done = i;
                 p.elapsed_secs = start.elapsed().as_secs();
+                p.enriching = enriching;
             });
         }
     }
@@ -211,17 +214,12 @@ impl BackgroundManager {
         Self::phase_title_norm_reconcile(state).await;
 
         // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
-        // Guard drops → Idle on completion or panic.
+        // A storage swap can cancel an in-flight rebuild while this pipeline is
+        // being scheduled; retry briefly so the rebuild guard can drop instead
+        // of losing the new storage verification pass.
         {
-            let _guard = match state.try_start_activity(Activity::Startup {
-                phase: StartupPhase::Scanning,
-                system: String::new(),
-            }) {
-                Ok(g) => g,
-                Err(e) => {
-                    tracing::warn!("Could not start startup pipeline: {e}");
-                    return;
-                }
+            let Some(_guard) = Self::claim_startup_activity(state).await else {
+                return;
             };
 
             Self::phase_cache_verification(state).await;
@@ -237,6 +235,75 @@ impl BackgroundManager {
 
             // _guard drops → Idle
         }
+    }
+
+    async fn claim_startup_activity(state: &AppState) -> Option<crate::api::ActivityGuard> {
+        for attempt in 0..PIPELINE_ACTIVITY_RETRY_ATTEMPTS {
+            match state.try_start_activity(Activity::Startup {
+                phase: StartupPhase::Scanning,
+                system: String::new(),
+                enriching: false,
+            }) {
+                Ok(guard) => return Some(guard),
+                Err(e) => {
+                    if attempt == 0 {
+                        tracing::info!("Startup pipeline waiting for active operation: {e}");
+                    }
+                    tokio::time::sleep(PIPELINE_ACTIVITY_RETRY_DELAY).await;
+                }
+            }
+        }
+        tracing::warn!("Could not start startup pipeline: activity stayed busy");
+        None
+    }
+
+    async fn scan_inputs_for_system(
+        state: &AppState,
+        system: &str,
+        options: ScanOptions,
+        generation: u64,
+    ) -> Result<ScanInputs, replay_control_core::error::Error> {
+        state.ensure_storage_generation(generation)?;
+
+        let cached_hashes = if !options.force_rehash
+            && replay_control_core_server::rom_hash::is_hash_eligible(system)
+        {
+            let system_owned = system.to_string();
+            match state
+                .library_reader
+                .read(move |conn| LibraryDb::load_cached_hashes(conn, &system_owned))
+                .await
+            {
+                Some(Ok(hashes)) => hashes,
+                Some(Err(e)) => {
+                    tracing::warn!(
+                        "Could not load cached hashes for {system}: {e}; CRCs will be recomputed"
+                    );
+                    std::collections::HashMap::new()
+                }
+                None => {
+                    tracing::warn!(
+                        "Could not load cached hashes for {system}: library DB unavailable; CRCs will be recomputed"
+                    );
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        Ok(ScanInputs::new(
+            cached_hashes,
+            options,
+            Some(ScanCancellation::new(
+                state.storage_generation.clone(),
+                generation,
+            )),
+        ))
+    }
+
+    fn is_storage_changed(e: &replay_control_core::error::Error) -> bool {
+        matches!(e, replay_control_core::error::Error::StorageChanged)
     }
 
     /// Spawn a background task that re-runs `phase_auto_import`. Used by the
@@ -477,6 +544,7 @@ impl BackgroundManager {
         let _guard = match state.try_start_activity(Activity::Startup {
             phase: StartupPhase::FetchingMetadata,
             system: String::new(),
+            enriching: false,
         }) {
             Ok(g) => g,
             Err(e) => {
@@ -773,6 +841,7 @@ impl BackgroundManager {
     /// - **Interrupted scan**: meta says rom_count > 0 but game_library has 0 rows → re-scan
     async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
+        let generation = state.storage_generation();
         let roms_dir = storage.roms_dir();
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
@@ -789,14 +858,25 @@ impl BackgroundManager {
 
         if cached_meta.is_empty() {
             // Fresh DB — full populate.
-            Self::populate_all_systems(
+            match Self::populate_all_systems(
                 state,
                 &storage,
                 region_pref,
                 region_secondary,
                 PopulateProgress::Startup,
+                ScanOptions {
+                    force_rehash: false,
+                },
+                generation,
             )
-            .await;
+            .await
+            {
+                Ok(()) => {}
+                Err(e) if Self::is_storage_changed(&e) => {
+                    tracing::info!("Startup populate cancelled because storage changed");
+                }
+                Err(e) => tracing::warn!("Startup populate failed: {e}"),
+            }
             return;
         }
 
@@ -837,23 +917,76 @@ impl BackgroundManager {
                         *system = display_name;
                     }
                 });
+                let scan_inputs = match Self::scan_inputs_for_system(
+                    state,
+                    &meta.system,
+                    ScanOptions {
+                        force_rehash: false,
+                    },
+                    generation,
+                )
+                .await
+                {
+                    Ok(inputs) => inputs,
+                    Err(e) if Self::is_storage_changed(&e) => {
+                        tracing::info!(
+                            "Background re-scan: storage changed, cancelling startup scan"
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Background re-scan: {} skipped before scan: {e}",
+                            meta.system
+                        );
+                        continue;
+                    }
+                };
                 match state
                     .cache
-                    .scan_and_cache_system(
+                    .scan_and_cache_system_with_inputs(
                         &storage,
                         &meta.system,
                         region_pref,
                         region_secondary,
                         &state.library_writer,
+                        &scan_inputs,
                     )
                     .await
                 {
                     Ok(_) => {
-                        state
+                        if state.ensure_storage_generation(generation).is_err() {
+                            tracing::info!("Background re-scan: storage changed before enrichment");
+                            return;
+                        }
+                        match state
                             .cache
-                            .enrich_system_cache(state, meta.system.clone())
-                            .await;
+                            .enrich_system_cache_with_cancellation(
+                                state,
+                                meta.system.clone(),
+                                scan_inputs.cancellation(),
+                            )
+                            .await
+                        {
+                            Ok(()) => {}
+                            Err(e) if Self::is_storage_changed(&e) => {
+                                tracing::info!(
+                                    "Background re-scan: storage changed during enrichment"
+                                );
+                                return;
+                            }
+                            Err(e) => tracing::warn!(
+                                "Background re-scan: {} enrichment failed: {e}",
+                                meta.system
+                            ),
+                        }
                         rescan_count += 1;
+                    }
+                    Err(e) if Self::is_storage_changed(&e) => {
+                        tracing::info!(
+                            "Background re-scan: storage changed, cancelling startup scan"
+                        );
+                        return;
                     }
                     Err(e) => tracing::warn!(
                         "Background re-scan: {} failed, preserving cached state: {e}",
@@ -1070,7 +1203,9 @@ impl BackgroundManager {
         region_pref: replay_control_core::rom_tags::RegionPreference,
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
         progress: PopulateProgress,
-    ) {
+        options: ScanOptions,
+        generation: u64,
+    ) -> Result<(), replay_control_core::error::Error> {
         // Iterate every visible_systems() platform — strict reconcile is
         // safe to call on systems we don't have on disk (it early-returns
         // cheaply via list_roms's missing-dir branch on local
@@ -1097,15 +1232,19 @@ impl BackgroundManager {
 
         let mut total_roms = 0usize;
         for (i, sys) in systems.iter().enumerate() {
+            state.ensure_storage_generation(generation)?;
             report_system(state, progress, i, sys.display_name, false);
+            let scan_inputs =
+                Self::scan_inputs_for_system(state, sys.folder_name, options, generation).await?;
             let scan_result = state
                 .cache
-                .scan_and_cache_system(
+                .scan_and_cache_system_with_inputs(
                     storage,
                     sys.folder_name,
                     region_pref,
                     region_secondary,
                     &state.library_writer,
+                    &scan_inputs,
                 )
                 .await;
             match scan_result {
@@ -1121,12 +1260,18 @@ impl BackgroundManager {
                     // Inline enrichment runs on every Ok (including
                     // Ok(empty), which clears stale game_description rows
                     // when a previously-populated system goes empty).
+                    state.ensure_storage_generation(generation)?;
                     report_system(state, progress, i, sys.display_name, true);
                     state
                         .cache
-                        .enrich_system_cache(state, sys.folder_name.to_string())
-                        .await;
+                        .enrich_system_cache_with_cancellation(
+                            state,
+                            sys.folder_name.to_string(),
+                            scan_inputs.cancellation(),
+                        )
+                        .await?;
                 }
+                Err(e) if Self::is_storage_changed(&e) => return Err(e),
                 Err(e) => tracing::warn!(
                     "L2 populate: {} skipped (preserving cached state): {e}",
                     sys.folder_name
@@ -1142,6 +1287,7 @@ impl BackgroundManager {
         );
 
         state.cache.invalidate_metadata_page().await;
+        Ok(())
     }
     // ── Update system ─────────────────────────────────────────────────
 
@@ -1721,14 +1867,25 @@ impl AppState {
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
-                BackgroundManager::populate_all_systems(
+                match BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
                     region_pref,
                     region_secondary,
                     PopulateProgress::Startup,
+                    ScanOptions {
+                        force_rehash: false,
+                    },
+                    state.storage_generation(),
                 )
-                .await;
+                .await
+                {
+                    Ok(()) => {}
+                    Err(e) if BackgroundManager::is_storage_changed(&e) => {
+                        tracing::info!("Post-import populate cancelled because storage changed");
+                    }
+                    Err(e) => tracing::warn!("Post-import populate failed: {e}"),
+                }
             } else {
                 // Enrichment-only re-pass: pick up the newly-imported
                 // external_metadata for already-cached systems. NOT
@@ -1790,22 +1947,47 @@ impl AppState {
                 });
             }
 
-            BackgroundManager::populate_all_systems(
+            let populate_result = BackgroundManager::populate_all_systems(
                 &state,
                 &storage,
                 region_pref,
                 region_secondary,
                 PopulateProgress::Rebuild { start },
+                ScanOptions {
+                    force_rehash: !scan_hint,
+                },
+                state.storage_generation(),
             )
             .await;
 
-            update_rebuild_progress(&state, |p| {
-                p.phase = RebuildPhase::Complete;
-                p.current_system = String::new();
-                p.systems_done = p.systems_total;
-                p.elapsed_secs = start.elapsed().as_secs();
-                p.error = None;
-            });
+            match populate_result {
+                Ok(()) => {
+                    update_rebuild_progress(&state, |p| {
+                        p.phase = RebuildPhase::Complete;
+                        p.current_system = String::new();
+                        p.systems_done = p.systems_total;
+                        p.elapsed_secs = start.elapsed().as_secs();
+                        p.error = None;
+                    });
+                }
+                Err(e) if BackgroundManager::is_storage_changed(&e) => {
+                    tracing::info!("Populate cancelled because storage changed");
+                    update_rebuild_progress(&state, |p| {
+                        p.phase = RebuildPhase::Cancelled;
+                        p.current_system = String::new();
+                        p.elapsed_secs = start.elapsed().as_secs();
+                        p.error = None;
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("Populate failed: {e}");
+                    update_rebuild_progress(&state, |p| {
+                        p.phase = RebuildPhase::Failed;
+                        p.elapsed_secs = start.elapsed().as_secs();
+                        p.error = Some(e.to_string());
+                    });
+                }
+            }
 
             drop(guard);
         });
@@ -2163,6 +2345,7 @@ impl AppState {
 
                 // Run the rescan as an async task.
                 let storage = state.storage();
+                let storage_generation = state.storage_generation();
                 let region_pref = state.region_preference();
                 let region_secondary = state.region_preference_secondary();
 
@@ -2188,22 +2371,69 @@ impl AppState {
                 }
 
                 for system in &to_scan {
+                    let scan_inputs = match BackgroundManager::scan_inputs_for_system(
+                        &state,
+                        system,
+                        ScanOptions {
+                            force_rehash: false,
+                        },
+                        storage_generation,
+                    )
+                    .await
+                    {
+                        Ok(inputs) => inputs,
+                        Err(e) if BackgroundManager::is_storage_changed(&e) => {
+                            tracing::info!("ROM watcher: storage changed, cancelling rescan");
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!("ROM watcher: could not prepare scan for {system}: {e}");
+                            continue;
+                        }
+                    };
                     match state
                         .cache
-                        .scan_and_cache_system(
+                        .scan_and_cache_system_with_inputs(
                             &storage,
                             system,
                             region_pref,
                             region_secondary,
                             &state.library_writer,
+                            &scan_inputs,
                         )
                         .await
                     {
                         Ok(_) => {
-                            state
+                            if state.ensure_storage_generation(storage_generation).is_err() {
+                                tracing::info!("ROM watcher: storage changed before enrichment");
+                                break;
+                            }
+                            match state
                                 .cache
-                                .enrich_system_cache(&state, system.clone())
-                                .await;
+                                .enrich_system_cache_with_cancellation(
+                                    &state,
+                                    system.clone(),
+                                    scan_inputs.cancellation(),
+                                )
+                                .await
+                            {
+                                Ok(()) => {}
+                                Err(e) if BackgroundManager::is_storage_changed(&e) => {
+                                    tracing::info!(
+                                        "ROM watcher: storage changed during enrichment"
+                                    );
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "ROM watcher: enrichment failed for {system}: {e}"
+                                    )
+                                }
+                            }
+                        }
+                        Err(e) if BackgroundManager::is_storage_changed(&e) => {
+                            tracing::info!("ROM watcher: storage changed, cancelling rescan");
+                            break;
                         }
                         Err(e) => tracing::warn!(
                             "ROM watcher: scan failed for {system}, preserving cached state: {e}"

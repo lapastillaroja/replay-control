@@ -375,6 +375,12 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::MetadataBannerRebuildingLibrary => "Rebuilding library...",
         Key::MetadataBannerRescanningLibrary => "Rescanning library...",
+        Key::MetadataBannerEnrichingLibrary => "Enriching library...",
+        Key::MetadataProgressVerbRebuilding => "Rebuilding",
+        Key::MetadataProgressVerbRescanning => "Rescanning",
+        Key::MetadataProgressVerbEnriching => "Enriching",
+        Key::MetadataProgressLibraryScanning => "Scanning game library",
+        Key::MetadataProgressLibraryEnriching => "Enriching game library",
 
         // Advanced data management
         Key::MetadataAdvancedActions => "Advanced",

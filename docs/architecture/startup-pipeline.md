@@ -49,7 +49,11 @@ Loads `game_library_meta` to get cached directory mtimes and ROM counts, then de
 2. **Stale mtime**: filesystem directory mtime differs from stored value -- re-scans that system via `scan_and_cache_system()` + `enrich_system_cache()`.
 3. **Interrupted scan**: meta says `rom_count > 0` but `game_library` has 0 rows for that system -- re-scans.
 
+For hash-eligible cartridge systems, scan inputs include cached CRC rows for that system unless the caller explicitly forces a rebuild. CRC cache validation uses the ROM filename plus the file size recorded with the hash. Exact `mtime + size` matches reuse the cached CRC; migrated rows with no stored hash size reuse only when mtime still matches; same-size mtime drift is reused as a conservative fast path for normal rescans. This avoids streaming unchanged large ROMs, especially N64/GBA/SNES sets on NFS, while manual rebuild remains the full verification path.
+
 `populate_all_systems` no longer pre-walks the filesystem to count systems; it iterates `visible_systems()` directly and lets each per-system call decide what to write (strict reconcile rule). Empty walks on local storage reconcile to empty meta; on NFS they return `Err` and preserve cached state. See `replay-control-app/src/api/library/mod.rs` and the per-system reconcile tests there.
+
+Long startup, rescan, rebuild, and watcher scans capture a storage generation token before they start. If `refresh_storage()` swaps storage, closes/reopens DB pools, or moves into a configured-storage error state, the generation changes. In-flight scans stop at the next system boundary or before the per-system DB write/enrichment step, so stale results cannot land in the wrong active storage DB. Cancellation preserves already-completed systems and leaves untouched systems' existing L2 rows in place.
 
 After all systems are verified, the pipeline continues directly into thumbnail-index recovery. WAL databases rely on SQLite's automatic checkpointing, so startup no longer forces a broad post-scan `library_pool.checkpoint()`.
 
@@ -86,7 +90,7 @@ Uses `notify::recommended_watcher` in recursive mode on the `roms/` directory. E
 
 - Extracts the affected system folder name from the event path.
 - Invalidates L1/user caches without pre-clearing L2.
-- Strict-scans each affected system and then runs `enrich_system_cache()` only when the scan succeeds.
+- Strict-scans each affected system with normal CRC cache reuse and then runs `enrich_system_cache()` only when the scan succeeds.
 - Top-level `roms/` changes iterate `visible_systems()` so newly-created system folders are discovered and removed local folders reconcile to empty.
 
 ## On-Demand Refresh Helpers

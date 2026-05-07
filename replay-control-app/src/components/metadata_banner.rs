@@ -1,7 +1,37 @@
 use leptos::prelude::*;
 
-use crate::i18n::{Key, t, use_i18n};
-use crate::server_fns::{self, Activity};
+use crate::i18n::{Key, Locale, t, use_i18n};
+use crate::server_fns::{self, Activity, RebuildPhase, RebuildProgress};
+
+/// Format the per-system progress label for a rebuild/rescan. Shared
+/// between the top banner and the rebuild/rescan card hint so both
+/// surfaces show the same text. Returns `None` when no progress text
+/// applies (terminal phases).
+pub fn format_rebuild_progress_label(locale: Locale, p: &RebuildProgress) -> Option<String> {
+    if p.phase != RebuildPhase::Scanning {
+        return None;
+    }
+    let verb_key = if p.enriching {
+        Key::MetadataProgressVerbEnriching
+    } else if p.is_rescan {
+        Key::MetadataProgressVerbRescanning
+    } else {
+        Key::MetadataProgressVerbRebuilding
+    };
+    let idle_key = if p.enriching {
+        Key::MetadataBannerEnrichingLibrary
+    } else if p.is_rescan {
+        Key::MetadataBannerRescanningLibrary
+    } else {
+        Key::MetadataBannerRebuildingLibrary
+    };
+    let verb = t(locale, verb_key);
+    Some(match (p.current_system.as_str(), p.systems_total) {
+        ("", _) => t(locale, idle_key).to_string(),
+        (sys, 0) => format!("{verb} {sys}..."),
+        (sys, total) => format!("{verb} {sys} ({}/{total})...", p.systems_done + 1),
+    })
+}
 
 /// A thin banner shown at the top of the page when any activity is running
 /// (import, thumbnail update, rebuild, startup scan, maintenance).
@@ -17,17 +47,29 @@ pub fn MetadataBusyBanner() -> impl IntoView {
 
     let busy_label = move || match activity.get() {
         Activity::Idle => String::new(),
-        Activity::Startup { phase, system } => {
+        Activity::Startup {
+            phase,
+            system,
+            enriching,
+        } => {
             use server_fns::StartupPhase;
             match phase {
                 StartupPhase::FetchingMetadata => {
                     t(i18n.locale.get(), Key::MetadataBannerFetchingGameMetadata).to_string()
                 }
                 StartupPhase::Scanning => {
+                    let phase_text = t(
+                        i18n.locale.get(),
+                        if enriching {
+                            Key::MetadataProgressLibraryEnriching
+                        } else {
+                            Key::MetadataProgressLibraryScanning
+                        },
+                    );
                     if system.is_empty() {
-                        "Scanning game library...".to_string()
+                        format!("{phase_text}...")
                     } else {
-                        format!("Scanning game library ({system})...")
+                        format!("{phase_text} ({system})...")
                     }
                 }
                 StartupPhase::RebuildingIndex => "Rebuilding thumbnail index...".to_string(),
@@ -52,24 +94,7 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             }
         }
         Activity::Rebuild { progress } => {
-            let idle_key = if progress.is_rescan {
-                Key::MetadataBannerRescanningLibrary
-            } else {
-                Key::MetadataBannerRebuildingLibrary
-            };
-            let phase_verb = if progress.is_rescan {
-                "Rescanning"
-            } else {
-                "Rebuilding"
-            };
-            match (progress.current_system.as_str(), progress.systems_total) {
-                ("", _) => t(i18n.locale.get(), idle_key).to_string(),
-                (sys, 0) => format!("{phase_verb} {sys}..."),
-                (sys, total) => format!(
-                    "{phase_verb} {sys} ({}/{total})...",
-                    progress.systems_done + 1
-                ),
-            }
+            format_rebuild_progress_label(i18n.locale.get(), &progress).unwrap_or_default()
         }
         Activity::Maintenance { kind } => {
             use server_fns::MaintenanceKind;

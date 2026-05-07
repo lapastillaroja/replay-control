@@ -81,13 +81,30 @@ pub enum NowPlayingState {
 #[serde(tag = "type")]
 pub enum Activity {
     Idle,
-    Startup { phase: StartupPhase, system: String },
-    Import { progress: ImportProgress },
-    RefreshExternalMetadata { progress: RefreshMetadataProgress },
-    ThumbnailUpdate { progress: ThumbnailProgress },
-    Rebuild { progress: RebuildProgress },
-    Maintenance { kind: MaintenanceKind },
-    Update { progress: UpdateProgress },
+    Startup {
+        phase: StartupPhase,
+        system: String,
+        #[serde(default)]
+        enriching: bool,
+    },
+    Import {
+        progress: ImportProgress,
+    },
+    RefreshExternalMetadata {
+        progress: RefreshMetadataProgress,
+    },
+    ThumbnailUpdate {
+        progress: ThumbnailProgress,
+    },
+    Rebuild {
+        progress: RebuildProgress,
+    },
+    Maintenance {
+        kind: MaintenanceKind,
+    },
+    Update {
+        progress: UpdateProgress,
+    },
 }
 
 impl Activity {
@@ -103,7 +120,7 @@ impl Activity {
             ),
             Self::Rebuild { progress } => matches!(
                 progress.phase,
-                RebuildPhase::Complete | RebuildPhase::Failed
+                RebuildPhase::Complete | RebuildPhase::Failed | RebuildPhase::Cancelled
             ),
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
@@ -161,6 +178,9 @@ impl Activity {
                         "{label} failed: {}",
                         progress.error.as_deref().unwrap_or("unknown error"),
                     ),
+                    RebuildPhase::Cancelled => {
+                        format!("{label} cancelled ({}s)", progress.elapsed_secs)
+                    }
                     _ => String::new(),
                 }
             }
@@ -256,6 +276,7 @@ pub struct ThumbnailProgress {
 pub enum RebuildPhase {
     Scanning,
     Complete,
+    Cancelled,
     Failed,
 }
 
@@ -269,6 +290,8 @@ pub struct RebuildProgress {
     pub error: Option<String>,
     #[serde(default)]
     pub is_rescan: bool,
+    #[serde(default)]
+    pub enriching: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

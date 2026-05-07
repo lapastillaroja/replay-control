@@ -16,9 +16,6 @@
 //! (`Arc`-shaped — cloning is cheap). A `mark_corrupt` on one is
 //! visible to all clones and to the parallel reader; a `reopen` swaps
 //! the inner pool for everyone.
-//!
-//! The library pool currently retains an `as_reader` escape hatch for
-//! legacy over-typed helpers; see the TODO on it (task #29).
 
 use replay_control_core_server::DbPool;
 use replay_control_core_server::db_pool::{DbError, rusqlite};
@@ -31,6 +28,10 @@ pub struct LibraryReadPool {
 }
 
 impl LibraryReadPool {
+    pub(crate) fn from_pool(inner: DbPool) -> Self {
+        Self { inner }
+    }
+
     pub async fn read<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
@@ -64,24 +65,6 @@ pub struct LibraryWritePool {
 impl LibraryWritePool {
     pub(crate) fn from_pool(inner: DbPool) -> Self {
         Self { inner }
-    }
-
-    /// Hand out a read-only view of the same underlying pool. Use this
-    /// for separate-connection reads inside a writer codepath — the
-    /// `.as_reader()` token is the call-site signal that the read is
-    /// **not** in the same SQLite transaction as any later write.
-    ///
-    /// **TODO: remove this once write paths are consolidated.** Every
-    /// callsite that needs a reader inside a writer-typed body should
-    /// instead receive `&LibraryReadPool` as a parameter (or pull it
-    /// from `&AppState`). The escape hatch exists today because a few
-    /// `LibraryService` helpers were over-typed as writer-only when
-    /// they actually only need a reader for the read portion of their
-    /// work. Tracked by task #29 in the TaskList.
-    pub fn as_reader(&self) -> LibraryReadPool {
-        LibraryReadPool {
-            inner: self.inner.clone(),
-        }
     }
 
     pub async fn write<F, R>(&self, f: F) -> Option<R>

@@ -96,6 +96,8 @@ On local storage (SD, USB, NVMe), the app watches the `roms/` directory for chan
 
 On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
 
+For cartridge systems with No-Intro CRC data, normal startup scans, manual rescans, and local watcher rescans reuse cached CRC identity when the file still has the same recorded size. This keeps common rescans fast on large ROM sets and NFS shares without dropping hash-based identification. Manual "Rebuild Game Library" is the full verification path: it ignores the CRC cache and recomputes hashes for hash-eligible ROM files. Hybrid folders such as Sega 32X only hash cartridge-shaped entries; CD/image/playlist entries are skipped.
+
 ## Startup Behavior
 
 On first launch or after a rebuild, the app scans all system directories to index your ROMs. During this process:
@@ -104,5 +106,6 @@ On first launch or after a rebuild, the app scans all system directories to inde
 - Pages are fully usable while scanning runs in the background
 - If no storage is connected, a waiting page is shown until storage becomes available
 - Interrupted scans are detected and resumed automatically
+- If the configured storage changes or becomes unavailable during a long scan, the in-flight scan is cancelled before the next system write so stale results are not saved to the wrong storage database
 
 For architecture details on the cache tiers, scan pipeline, and enrichment process, see the [Architecture](../architecture/index.md) section.

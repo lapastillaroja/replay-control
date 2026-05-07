@@ -1,7 +1,7 @@
 use replay_control_core::title_utils::fuzzy_match_key;
 use replay_control_core_server::library_db::LibraryDb;
 
-use super::LibraryService;
+use super::{LibraryService, ScanInputs};
 use crate::api::db_pools::LibraryWritePool;
 
 impl LibraryService {
@@ -14,7 +14,8 @@ impl LibraryService {
         system: &str,
         roms: &[replay_control_core_server::library_db::GameEntry],
         db: &LibraryWritePool,
-    ) {
+        scan_inputs: &ScanInputs,
+    ) -> replay_control_core::error::Result<()> {
         // Build lookup maps for matching TGDB names to library base_titles.
         let library_exact: std::collections::HashSet<&str> = roms
             .iter()
@@ -37,11 +38,12 @@ impl LibraryService {
         .await;
 
         if aliases.is_empty() {
-            return;
+            return Ok(());
         }
 
         let count = aliases.len();
         let system = system.to_owned();
+        scan_inputs.ensure_current()?;
         let result = db
             .write(move |conn| LibraryDb::bulk_insert_aliases(conn, &aliases))
             .await;
@@ -52,6 +54,7 @@ impl LibraryService {
             Some(Err(e)) => tracing::warn!("TGDB aliases for {system}: insert failed: {e}"),
             None => {}
         }
+        Ok(())
     }
 
     /// Populate game_series table with Wikidata series data for a system.
@@ -63,18 +66,20 @@ impl LibraryService {
         system: &str,
         roms: &[replay_control_core_server::library_db::GameEntry],
         db: &LibraryWritePool,
-    ) {
+        scan_inputs: &ScanInputs,
+    ) -> replay_control_core::error::Result<()> {
         // Call pure core matching function.
         let series_entries =
             replay_control_core_server::alias_matching::build_wikidata_series_tuples(system, roms)
                 .await;
 
         if series_entries.is_empty() {
-            return;
+            return Ok(());
         }
 
         let count = series_entries.len();
         let system = system.to_owned();
+        scan_inputs.ensure_current()?;
         let result = db
             .write(move |conn| LibraryDb::bulk_insert_series(conn, &series_entries))
             .await;
@@ -87,5 +92,6 @@ impl LibraryService {
             }
             None => {}
         }
+        Ok(())
     }
 }

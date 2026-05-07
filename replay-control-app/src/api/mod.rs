@@ -192,6 +192,10 @@ pub struct AppState {
     /// asks any existing watcher task to stop before a storage swap starts a
     /// watcher for the new `roms/` path.
     pub(crate) rom_watcher_generation: Arc<AtomicU64>,
+    /// Generation token for storage-bound scans. Incrementing it asks long
+    /// rebuild/rescan/startup tasks to stop before writing into a DB that no
+    /// longer belongs to the active storage.
+    pub(crate) storage_generation: Arc<AtomicU64>,
     /// Reportable health issues with shipped data assets (catalog schema
     /// mismatch today; future asset types via the release-asset-manifest plan).
     /// Populated at startup; consumed by the SSE init payload + the
@@ -599,12 +603,8 @@ impl AppState {
             });
         }
 
-        // Library uses `as_reader()` because `LibraryWritePool` retains
-        // the legacy escape hatch (task #29). The other two pools build
-        // reader + writer directly from cloned `DbPool` handles —
-        // intentional asymmetry, not drift.
+        let library_reader = db_pools::LibraryReadPool::from_pool(library_pool.clone());
         let library_writer = db_pools::LibraryWritePool::from_pool(library_pool);
-        let library_reader = library_writer.as_reader();
         let user_data_reader = db_pools::UserDataReadPool::from_pool(user_data_pool.clone());
         let user_data_writer = db_pools::UserDataWritePool::from_pool(user_data_pool);
         let external_metadata_reader =
@@ -643,6 +643,7 @@ impl AppState {
             )),
             now_playing_tx,
             rom_watcher_generation: Arc::new(AtomicU64::new(0)),
+            storage_generation: Arc::new(AtomicU64::new(0)),
             asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
 
@@ -691,6 +692,35 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn set_storage_status_for_test(&self, status: StorageStatus) {
         self.set_storage_status(status);
+    }
+
+    pub(crate) fn storage_generation(&self) -> u64 {
+        self.storage_generation
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn bump_storage_generation(&self) {
+        self.storage_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn cancel_storage_scans_if_ready(&self) {
+        if matches!(
+            self.storage_status(),
+            StorageStatus::Ready | StorageStatus::Activating
+        ) {
+            self.bump_storage_generation();
+        }
+    }
+
+    pub(crate) fn ensure_storage_generation(
+        &self,
+        expected: u64,
+    ) -> replay_control_core::error::Result<()> {
+        if self.storage_generation() != expected {
+            return Err(replay_control_core::error::Error::StorageChanged);
+        }
+        Ok(())
     }
 
     /// User-initiated mutations must not write to fallback storage while
@@ -940,6 +970,7 @@ impl AppState {
             Ok(storage) => storage,
             Err(e) => {
                 tracing::warn!("refresh_storage: configured storage unavailable: {e}");
+                self.cancel_storage_scans_if_ready();
                 self.set_storage_status(StorageStatus::Misconfigured {
                     wanted,
                     current_kind,
@@ -957,6 +988,7 @@ impl AppState {
                 "refresh_storage: {} not yet a mount point; deferring",
                 new_storage.root.display()
             );
+            self.cancel_storage_scans_if_ready();
             self.set_storage_status(StorageStatus::Misconfigured {
                 wanted,
                 current_kind,
@@ -999,6 +1031,7 @@ impl AppState {
                         "refresh_storage: probe at {} not yet ready; deferring",
                         new_storage.root.display()
                     );
+                    self.cancel_storage_scans_if_ready();
                     self.set_storage_status(StorageStatus::Misconfigured {
                         wanted,
                         current_kind,
@@ -1016,6 +1049,7 @@ impl AppState {
                 new_storage.kind,
                 new_storage.root.display()
             );
+            self.bump_storage_generation();
             self.set_storage_status(StorageStatus::Activating);
 
             let paths = match prepare_storage_dbs(

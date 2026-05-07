@@ -135,8 +135,10 @@ pub struct GameEntry {
     /// CRC32 hash of the ROM file. NULL for CD/computer/arcade systems.
     pub crc32: Option<u32>,
     /// File mtime (seconds since UNIX epoch) when the CRC32 was computed.
-    /// Used as a cache key: if the file's mtime changes, the hash is stale.
+    /// Used with `hash_size_bytes` as a cache key for the hash result.
     pub hash_mtime: Option<i64>,
+    /// File size observed when the CRC32 was computed.
+    pub hash_size_bytes: Option<u64>,
     /// No-Intro canonical name if CRC32 matched the DAT data.
     /// NULL means either not hashed, or hashed but no match.
     pub hash_matched_name: Option<String>,
@@ -274,6 +276,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         size_bytes INTEGER NOT NULL DEFAULT 0,
         crc32 INTEGER,
         hash_mtime INTEGER,
+        hash_size_bytes INTEGER,
         hash_matched_name TEXT,
         release_date TEXT,
         release_precision TEXT,
@@ -354,6 +357,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "size_bytes",
     "crc32",
     "hash_mtime",
+    "hash_size_bytes",
     "hash_matched_name",
     "release_date",
     "release_precision",
@@ -640,7 +644,9 @@ impl LibraryDb {
     ///   `game_library.normalized_title_alt`, populated at scan time so the
     ///   enrichment matcher does hashmap lookups instead of normalizing each
     ///   ROM filename per pass.
-    pub const SCHEMA_VERSION: i64 = 4;
+    /// - **v5**: adds `game_library.hash_size_bytes` so cached CRC32 results
+    ///   are validated by mtime + size without a post-upgrade rehash storm.
+    pub const SCHEMA_VERSION: i64 = 5;
 
     /// Run pending migrations.
     ///
@@ -730,6 +736,16 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("v3→v4 alter game_library: {e}")))?;
         }
 
+        // ── v4 → v5 ───────────────────────────────────────────────
+        // Add the optional hash-size column without forcing a full rehash on
+        // existing libraries. Rows with NULL size and matching mtime reuse the
+        // old cached CRC once, then get populated on the next save.
+        if (1..5).contains(&current) {
+            tracing::info!("Library DB v4 → v5: adding hash_size_bytes column");
+            conn.execute_batch("ALTER TABLE game_library ADD COLUMN hash_size_bytes INTEGER;")
+                .map_err(|e| Error::Other(format!("v4→v5 alter game_library: {e}")))?;
+        }
+
         let now = unix_now();
         conn.execute(
             "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
@@ -764,7 +780,7 @@ impl LibraryDb {
     ///   system, rom_filename, rom_path, display_name, base_title, series_key,
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
-    ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+    ///   driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
     ///   release_date, release_precision, release_region_used, cooperative,
     ///   normalized_title, normalized_title_alt
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
@@ -804,16 +820,20 @@ impl LibraryDb {
                 .unwrap_or_default()
                 .map(|c| c as u32),
             hash_mtime: row.get(22).unwrap_or_default(),
-            hash_matched_name: row.get(23).unwrap_or_default(),
-            release_date: row.get::<_, Option<String>>(24).unwrap_or_default(),
+            hash_size_bytes: row
+                .get::<_, Option<i64>>(23)
+                .unwrap_or_default()
+                .map(|s| s as u64),
+            hash_matched_name: row.get(24).unwrap_or_default(),
+            release_date: row.get::<_, Option<String>>(25).unwrap_or_default(),
             release_precision: row
-                .get::<_, Option<DpSql>>(25)
+                .get::<_, Option<DpSql>>(26)
                 .unwrap_or_default()
                 .map(|DpSql(d)| d),
-            release_region_used: row.get::<_, Option<String>>(26).unwrap_or_default(),
-            cooperative: row.get::<_, bool>(27).unwrap_or_default(),
-            normalized_title: row.get::<_, String>(28).unwrap_or_default(),
-            normalized_title_alt: row.get::<_, String>(29).unwrap_or_default(),
+            release_region_used: row.get::<_, Option<String>>(27).unwrap_or_default(),
+            cooperative: row.get::<_, bool>(28).unwrap_or_default(),
+            normalized_title: row.get::<_, String>(29).unwrap_or_default(),
+            normalized_title_alt: row.get::<_, String>(30).unwrap_or_default(),
         })
     }
 }
@@ -860,6 +880,7 @@ mod tests {
             is_special: false,
             crc32: None,
             hash_mtime: None,
+            hash_size_bytes: None,
             hash_matched_name: None,
             series_key: String::new(),
             developer: String::new(),

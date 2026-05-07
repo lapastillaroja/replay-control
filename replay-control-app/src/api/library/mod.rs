@@ -5,6 +5,7 @@ pub mod metadata_snapshot;
 pub(crate) mod query;
 mod recommendations_snapshot;
 mod scan_pipeline;
+pub(crate) use scan_pipeline::{ScanCancellation, ScanInputs, ScanOptions};
 pub mod ssr_snapshot;
 
 use std::collections::HashMap;
@@ -228,6 +229,27 @@ impl LibraryService {
         region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
+        self.scan_and_cache_system_with_inputs(
+            storage,
+            system,
+            region_pref,
+            region_secondary,
+            db,
+            &ScanInputs::default(),
+        )
+        .await
+    }
+
+    pub(crate) async fn scan_and_cache_system_with_inputs(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
+        db: &LibraryWritePool,
+        scan_inputs: &ScanInputs,
+    ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
+        scan_inputs.ensure_current()?;
         let system_dir = storage.roms_dir().join(system);
 
         // NFS missing dir is ambiguous (transient mount blip vs remote
@@ -255,10 +277,12 @@ impl LibraryService {
         )
         .await?;
         tracing::debug!("L3 reconcile scan for {system}: found {} ROMs", roms.len());
+        scan_inputs.ensure_current()?;
 
         let hash_results = self
-            .hash_roms_for_system(storage, system, &mut roms, db)
+            .hash_roms_for_system(storage, system, &mut roms, scan_inputs)
             .await;
+        scan_inputs.ensure_current()?;
 
         let arc = Arc::new(roms);
 
@@ -271,6 +295,7 @@ impl LibraryService {
             region_pref,
             region_secondary,
             db,
+            scan_inputs,
         )
         .await?;
 
@@ -436,9 +461,13 @@ impl LibraryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use replay_control_core::game_ref::GameRef;
     use replay_control_core::rom_tags::RegionPreference;
+    use replay_control_core_server::rom_hash::{CachedHash, HashResult};
+    use replay_control_core_server::roms::RomEntry;
     use replay_control_core_server::test_utils::build_library_pool;
     use replay_control_core_server::{library_db::LibraryDb, storage::StorageKind};
+    use std::sync::atomic::AtomicU64;
 
     /// `cached_systems` is strictly read-only: an empty `game_library_meta`
     /// must return an empty list rather than fall through to a filesystem
@@ -482,8 +511,7 @@ mod tests {
         let _ = opener(&db_path).unwrap();
         let pool = replay_control_core_server::db_pool::DbPool::new(db_path, "test_lib", opener, 1)
             .unwrap();
-        let writer = LibraryWritePool::from_pool(pool);
-        let reader = writer.as_reader();
+        let reader = LibraryReadPool::from_pool(pool);
 
         let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
@@ -560,6 +588,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
         let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
@@ -580,8 +609,7 @@ mod tests {
         .await
         .unwrap();
 
-        let filenames = writer
-            .as_reader()
+        let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
@@ -600,8 +628,7 @@ mod tests {
         .await
         .unwrap();
 
-        let filenames = writer
-            .as_reader()
+        let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
@@ -611,8 +638,7 @@ mod tests {
             "reconcile rescan should drop removed ROMs"
         );
 
-        let meta = writer
-            .as_reader()
+        let meta = reader
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()
@@ -634,6 +660,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
         let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
@@ -674,16 +701,14 @@ mod tests {
         assert!(arc.is_empty(), "scan returned roms for a missing dir");
 
         // Rows are gone, meta updated to rom_count=0.
-        let filenames = writer
-            .as_reader()
+        let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
             .unwrap();
         assert!(filenames.is_empty(), "cached rows should be dropped");
 
-        let meta = writer
-            .as_reader()
+        let meta = reader
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()
@@ -704,6 +729,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
         let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
@@ -748,16 +774,14 @@ mod tests {
         );
 
         // Cached rows + meta unchanged.
-        let filenames = writer
-            .as_reader()
+        let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
             .unwrap();
         assert_eq!(filenames, vec!["Game.nes".to_string()]);
 
-        let meta = writer
-            .as_reader()
+        let meta = reader
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()
@@ -767,6 +791,154 @@ mod tests {
             .find(|row| row.system == "nintendo_nes")
             .expect("system meta row should remain present");
         assert_eq!(nes.rom_count, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn migrated_hash_cache_self_heals_hash_size_on_scan_save() {
+        use replay_control_core_server::storage::StorageLocation;
+
+        let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
+        let writer = LibraryWritePool::from_pool(pool);
+        let storage_tmp = tempfile::tempdir().unwrap();
+        let roms_dir = storage_tmp.path().join("roms").join("nintendo_snes");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path = roms_dir.join("Mario.sfc");
+        std::fs::write(&rom_path, b"rom").unwrap();
+        let mtime_secs = std::fs::metadata(&rom_path)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let mut cached_hashes = HashMap::new();
+        cached_hashes.insert(
+            "Mario.sfc".to_string(),
+            CachedHash {
+                crc32: 0x1234_ABCD,
+                hash_mtime: mtime_secs,
+                hash_size_bytes: None,
+                matched_name: Some("Super Mario World (USA)".to_string()),
+            },
+        );
+        let scan_inputs = ScanInputs::new(
+            cached_hashes,
+            ScanOptions {
+                force_rehash: false,
+            },
+            None,
+        );
+
+        let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+        svc.scan_and_cache_system_with_inputs(
+            &storage,
+            "nintendo_snes",
+            RegionPreference::default(),
+            None,
+            &writer,
+            &scan_inputs,
+        )
+        .await
+        .unwrap();
+
+        let hashes = reader
+            .read(|conn| LibraryDb::load_cached_hashes(conn, "nintendo_snes"))
+            .await
+            .unwrap()
+            .unwrap();
+        let cached = hashes
+            .get("Mario.sfc")
+            .expect("cached hash should round-trip after scan save");
+        assert_eq!(cached.crc32, 0x1234_ABCD);
+        assert_eq!(cached.hash_size_bytes, Some(3));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stale_storage_generation_prevents_scan_save_write() {
+        use replay_control_core_server::storage::StorageLocation;
+
+        let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
+        let writer = LibraryWritePool::from_pool(pool);
+        let storage_tmp = tempfile::tempdir().unwrap();
+        let roms_dir = storage_tmp.path().join("roms").join("nintendo_snes");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let seed_path = roms_dir.join("Seed.sfc");
+        std::fs::write(&seed_path, b"seed").unwrap();
+
+        let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+        svc.scan_and_cache_system(
+            &storage,
+            "nintendo_snes",
+            RegionPreference::default(),
+            None,
+            &writer,
+        )
+        .await
+        .unwrap();
+
+        let current_generation = Arc::new(AtomicU64::new(2));
+        let stale_inputs = ScanInputs::new(
+            HashMap::new(),
+            ScanOptions::default(),
+            Some(ScanCancellation::new(current_generation, 1)),
+        );
+        let roms = vec![RomEntry {
+            game: GameRef::from_parts(
+                "nintendo_snes",
+                "Replacement.sfc".to_string(),
+                "/roms/nintendo_snes/Replacement.sfc".to_string(),
+                None,
+            ),
+            size_bytes: 11,
+            is_m3u: false,
+            is_favorite: false,
+            box_art_url: None,
+            driver_status: None,
+            rating: None,
+            players: None,
+        }];
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            "Replacement.sfc".to_string(),
+            HashResult {
+                rom_filename: "Replacement.sfc".to_string(),
+                crc32: 0xDEAD_BEEF,
+                mtime_secs: 123,
+                size_bytes: 11,
+                matched_name: None,
+            },
+        );
+
+        let err = svc
+            .save_roms_to_db(
+                &storage,
+                "nintendo_snes",
+                &roms,
+                &roms_dir,
+                &hash_results,
+                RegionPreference::default(),
+                None,
+                &writer,
+                &stale_inputs,
+            )
+            .await
+            .expect_err("stale generation should cancel before DB writes");
+        assert!(matches!(
+            err,
+            replay_control_core::error::Error::StorageChanged
+        ));
+
+        let filenames = reader
+            .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_snes"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(filenames, vec!["Seed.sfc".to_string()]);
     }
 
     /// File-level deletion (the realistic RePlayOS deletion case): user
@@ -779,6 +951,7 @@ mod tests {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
         let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
         let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
@@ -819,16 +992,14 @@ mod tests {
             .expect("Ok(empty) walk should succeed");
         assert!(arc.is_empty());
 
-        let filenames = writer
-            .as_reader()
+        let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
             .unwrap()
             .unwrap();
         assert!(filenames.is_empty(), "cached rows should be dropped");
 
-        let meta = writer
-            .as_reader()
+        let meta = reader
             .read(LibraryDb::load_all_system_meta)
             .await
             .unwrap()

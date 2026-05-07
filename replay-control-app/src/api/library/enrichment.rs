@@ -7,7 +7,7 @@ use replay_control_core_server::thumbnail_manifest;
 use replay_control_core_server::thumbnails::ThumbnailKind;
 use replay_control_core_server::user_data_db::UserDataDb;
 
-use super::LibraryService;
+use super::{LibraryService, ScanCancellation};
 
 impl LibraryService {
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
@@ -16,6 +16,24 @@ impl LibraryService {
     /// filesystem state. Called after L2 write-through to populate fields
     /// that `list_roms()` doesn't set.
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
+        if let Err(e) = self
+            .enrich_system_cache_with_cancellation(state, system, None)
+            .await
+        {
+            tracing::warn!("L2 enrichment cancelled or failed: {e}");
+        }
+    }
+
+    pub(crate) async fn enrich_system_cache_with_cancellation(
+        &self,
+        state: &crate::api::AppState,
+        system: String,
+        cancellation: Option<&ScanCancellation>,
+    ) -> replay_control_core::error::Result<()> {
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+
         // Fetch the visible-filename list once; image-index, launchbox load,
         // and arcade lookup all consume it. Previously each path read it
         // independently (an N+1 against the same query).
@@ -33,13 +51,16 @@ impl LibraryService {
 
         if rom_filenames.is_empty() {
             let sys = system.clone();
+            if let Some(cancellation) = cancellation {
+                cancellation.ensure_current()?;
+            }
             let _ = state
                 .library_writer
                 .write(move |conn| {
                     let _ = LibraryDb::replace_descriptions_for_system(conn, &sys, &[]);
                 })
                 .await;
-            return;
+            return Ok(());
         }
 
         // Independent setup steps that all consume `system` / `rom_filenames`.
@@ -72,8 +93,12 @@ impl LibraryService {
             .await;
 
         let Some(result) = result else {
-            return;
+            return Ok(());
         };
+
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
 
         // Queue on-demand manifest downloads. Each await throttles to
         // the orchestrator's visible queue capacity so a large fan-out
@@ -101,6 +126,9 @@ impl LibraryService {
         let release_date_rows = result.release_date_rows;
         let description_rows = result.description_rows;
         let enrichments = result.enrichments;
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
         state
             .library_writer
             .write(move |conn| {
@@ -149,6 +177,7 @@ impl LibraryService {
         tracing::debug!(
             "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {enrich_count} box+genre+players+ratings"
         );
+        Ok(())
     }
 }
 

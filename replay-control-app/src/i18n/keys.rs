@@ -356,6 +356,12 @@ pub enum Key {
     MetadataRescanGameLibraryHint,
     MetadataBannerRebuildingLibrary,
     MetadataBannerRescanningLibrary,
+    MetadataBannerEnrichingLibrary,
+    MetadataProgressVerbRebuilding,
+    MetadataProgressVerbRescanning,
+    MetadataProgressVerbEnriching,
+    MetadataProgressLibraryScanning,
+    MetadataProgressLibraryEnriching,
 
     // Advanced data management
     MetadataAdvancedActions,

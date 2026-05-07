@@ -23,6 +23,9 @@ pub enum Error {
     #[error("storage not found: no valid storage location detected")]
     StorageNotFound,
 
+    #[error("storage changed while operation was running")]
+    StorageChanged,
+
     #[error("duplicate ROM detected: {original} and {duplicate}")]
     DuplicateRom {
         original: PathBuf,

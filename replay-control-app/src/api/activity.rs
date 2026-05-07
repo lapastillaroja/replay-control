@@ -15,8 +15,14 @@ pub enum Activity {
     Idle,
 
     /// Startup pipeline (Phases 2+3: cache verify/populate + thumbnail index rebuild).
-    /// Phase 1 (auto-import) uses the Import variant instead.
-    Startup { phase: StartupPhase, system: String },
+    /// Phase 1 (auto-import) uses the Import variant instead. `enriching` is
+    /// true while the inline per-system enrichment step runs for `system`.
+    Startup {
+        phase: StartupPhase,
+        system: String,
+        #[serde(default)]
+        enriching: bool,
+    },
 
     /// Metadata import (LaunchBox XML parse or download + parse).
     Import { progress: ImportProgress },
@@ -65,7 +71,7 @@ impl Activity {
             ),
             Self::Rebuild { progress } => matches!(
                 progress.phase,
-                RebuildPhase::Complete | RebuildPhase::Failed
+                RebuildPhase::Complete | RebuildPhase::Failed | RebuildPhase::Cancelled
             ),
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
@@ -125,6 +131,9 @@ impl Activity {
                         "{label} failed: {}",
                         progress.error.as_deref().unwrap_or("unknown error"),
                     ),
+                    RebuildPhase::Cancelled => {
+                        format!("{label} cancelled ({}s)", progress.elapsed_secs)
+                    }
                     _ => String::new(),
                 }
             }
@@ -263,6 +272,8 @@ pub enum RebuildPhase {
     Scanning,
     /// Rebuild completed successfully.
     Complete,
+    /// Rebuild was cancelled because storage changed.
+    Cancelled,
     /// Rebuild failed.
     Failed,
 }
@@ -283,6 +294,11 @@ pub struct RebuildProgress {
     pub error: Option<String>,
     #[serde(default)]
     pub is_rescan: bool,
+    /// True while the inline per-system enrichment step runs for
+    /// `current_system`. Distinguishes the verb shown by the UI without
+    /// baking English text into `current_system`.
+    #[serde(default)]
+    pub enriching: bool,
 }
 
 impl RebuildProgress {
@@ -296,6 +312,7 @@ impl RebuildProgress {
             elapsed_secs: 0,
             error: None,
             is_rescan,
+            enriching: false,
         }
     }
 }
@@ -447,6 +464,7 @@ mod tests {
             *activity.write().unwrap() = Activity::Startup {
                 phase: StartupPhase::Scanning,
                 system: String::new(),
+                enriching: false,
             };
             assert!(matches!(
                 *activity.read().unwrap(),

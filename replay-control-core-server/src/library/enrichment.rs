@@ -609,6 +609,7 @@ mod tests {
             is_special: false,
             crc32: None,
             hash_mtime: None,
+            hash_size_bytes: None,
             hash_matched_name: None,
             series_key: String::new(),
             developer: String::new(),

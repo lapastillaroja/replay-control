@@ -6,22 +6,14 @@ use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
     self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataPageSnapshot,
-    RebuildPhase, RebuildProgress, SystemCoverage, ThumbnailPhase,
+    RebuildProgress, SystemCoverage, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 
-fn format_rebuild_progress(p: &RebuildProgress) -> Option<String> {
-    if p.phase != RebuildPhase::Scanning {
-        return None;
-    }
-    let action = "Scanning";
-    Some(match (p.current_system.as_str(), p.systems_total) {
-        ("", _) => format!("{action}..."),
-        (sys, 0) => format!("{action} {sys}..."),
-        (sys, total) => format!("{action} {sys}... ({}/{total})", p.systems_done + 1),
-    })
+fn format_rebuild_progress(locale: crate::i18n::Locale, p: &RebuildProgress) -> Option<String> {
+    crate::components::metadata_banner::format_rebuild_progress_label(locale, p)
 }
 
 #[component]
@@ -598,11 +590,15 @@ fn DataManagementSection(
     // Each card gets its own display memo so that during a rescan the
     // (advanced-section) Rebuild card stays blank, and vice versa.
     let rebuild_display = Memo::new(move |_| match activity.get() {
-        Activity::Rebuild { progress } if !progress.is_rescan => format_rebuild_progress(&progress),
+        Activity::Rebuild { progress } if !progress.is_rescan => {
+            format_rebuild_progress(i18n.locale.get(), &progress)
+        }
         _ => None,
     });
     let rescan_display = Memo::new(move |_| match activity.get() {
-        Activity::Rebuild { progress } if progress.is_rescan => format_rebuild_progress(&progress),
+        Activity::Rebuild { progress } if progress.is_rescan => {
+            format_rebuild_progress(i18n.locale.get(), &progress)
+        }
         _ => None,
     });
 

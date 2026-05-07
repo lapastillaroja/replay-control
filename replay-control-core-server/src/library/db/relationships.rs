@@ -196,7 +196,7 @@ impl LibraryDb {
                 SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                         release_date, release_precision, release_region_used, cooperative
                 FROM deduped WHERE rn = 1
                 ORDER BY display_name",
@@ -308,7 +308,7 @@ impl LibraryDb {
                 SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                         release_date, release_precision, release_region_used, cooperative
                 FROM deduped WHERE rn = 1
                 ORDER BY CASE

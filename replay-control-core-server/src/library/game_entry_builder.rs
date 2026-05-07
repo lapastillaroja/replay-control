@@ -174,6 +174,7 @@ fn build_single_entry(
         is_special,
         crc32: hash.map(|h| h.crc32),
         hash_mtime: hash.map(|h| h.mtime_secs),
+        hash_size_bytes: hash.map(|h| h.size_bytes),
         hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
         series_key,
         developer: developer_name,
