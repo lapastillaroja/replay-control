@@ -356,17 +356,24 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
     let region_secondary = state.region_preference_secondary();
-    state
+    match state
         .library_writer
-        .write(move |conn| {
-            let _ =
+        .try_write_with_timeout(
+            crate::api::db_pools::LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
+            move |conn| {
                 replay_control_core_server::library_db::LibraryDb::resolve_release_date_for_library(
                     conn,
                     pref,
                     region_secondary,
-                );
-        })
-        .await;
+                )
+            },
+        )
+        .await
+    {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => tracing::warn!("Region preference release-date resolve failed: {e}"),
+        Err(e) => tracing::warn!("Region preference release-date resolve write failed: {e}"),
+    }
     Ok(())
 }
 
@@ -400,20 +407,30 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
     let region_primary = state.region_preference();
-    state
+    match state
         .library_writer
-        .write(move |conn| {
-            let _ =
+        .try_write_with_timeout(
+            crate::api::db_pools::LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
+            move |conn| {
                 replay_control_core_server::library_db::LibraryDb::resolve_release_date_for_library(
                     conn,
                     region_primary,
                     pref,
-                );
-        })
-        .await;
+                )
+            },
+        )
+        .await
+    {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            tracing::warn!("Secondary region preference release-date resolve failed: {e}")
+        }
+        Err(e) => {
+            tracing::warn!("Secondary region preference release-date resolve write failed: {e}")
+        }
+    }
     Ok(())
 }
-
 /// Get the language preference from `.replay-control/settings.cfg`.
 /// Returns (primary, secondary) where each is empty string if not set.
 #[server(prefix = "/sfn")]

@@ -10,6 +10,7 @@ use replay_control_core_server::thumbnails::ThumbnailKind;
 use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::{LibraryService, ScanCancellation};
+use crate::api::db_pools::LIBRARY_MAINTENANCE_WRITE_TIMEOUT;
 
 impl LibraryService {
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
@@ -56,9 +57,9 @@ impl LibraryService {
             if let Some(cancellation) = cancellation {
                 cancellation.ensure_current()?;
             }
-            let _ = state
+            if let Err(e) = state
                 .library_writer
-                .write(move |conn| {
+                .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                     let _ = LibraryDb::replace_detail_metadata_and_resources_for_system(
                         conn,
                         &sys,
@@ -66,7 +67,10 @@ impl LibraryService {
                         &[],
                     );
                 })
-                .await;
+                .await
+            {
+                tracing::warn!("Empty enrichment cleanup write failed for {system}: {e}");
+            }
             return Ok(());
         }
 
@@ -127,11 +131,9 @@ impl LibraryService {
             queue_on_demand_download(state, &system, rom_filename, manifest_match).await;
         }
 
-        // Bundle every per-system write into a single `db.write` so a Pi's
-        // synchronous-NORMAL fsync-per-commit only happens once per
-        // enrichment pass instead of six times. Each step inside the
-        // closure logs its own failure and continues — partial enrichment
-        // is better than no enrichment.
+        // Keep the enrichment writes grouped by dependency, but release the
+        // writer between groups. Partial enrichment is better than no
+        // enrichment, so each SQL step logs and lets the pass continue.
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
         let sys = system.clone();
@@ -150,18 +152,22 @@ impl LibraryService {
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
-        state
+
+        let metadata_sys = sys.clone();
+        let metadata_result = state
             .library_writer
-            .write(move |conn| {
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 if !developer_updates.is_empty()
-                    && let Err(e) = LibraryDb::update_developers(conn, &sys, &developer_updates)
+                    && let Err(e) =
+                        LibraryDb::update_developers(conn, &metadata_sys, &developer_updates)
                 {
-                    tracing::warn!("Developer enrichment failed for {sys}: {e}");
+                    tracing::warn!("Developer enrichment failed for {metadata_sys}: {e}");
                 }
                 if !cooperative_updates.is_empty()
-                    && let Err(e) = LibraryDb::update_cooperative(conn, &sys, &cooperative_updates)
+                    && let Err(e) =
+                        LibraryDb::update_cooperative(conn, &metadata_sys, &cooperative_updates)
                 {
-                    tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
+                    tracing::warn!("Cooperative enrichment failed for {metadata_sys}: {e}");
                 }
                 // Upsert LaunchBox-sourced rows into game_release_date BEFORE
                 // the resolver runs. The resolver rebuilds game_library's
@@ -170,33 +176,65 @@ impl LibraryService {
                 if !release_date_rows.is_empty()
                     && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
                 {
-                    tracing::warn!("Release-date upsert failed for {sys}: {e}");
+                    tracing::warn!("Release-date upsert failed for {metadata_sys}: {e}");
                 }
                 // Release-date resolver: rewrites game_library mirror columns
                 // from `game_release_date` for this system's ROMs.
-                let _ = LibraryDb::resolve_release_date_for_system(
+                if let Err(e) = LibraryDb::resolve_release_date_for_system(
                     conn,
-                    &sys,
+                    &metadata_sys,
                     region_pref,
                     region_secondary,
-                );
+                ) {
+                    tracing::warn!("Release-date resolve failed for {metadata_sys}: {e}");
+                }
+            })
+            .await;
+        if let Err(e) = metadata_result {
+            tracing::warn!("Metadata enrichment write failed for {sys}: {e}");
+        }
+
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+        let detail_sys = sys.clone();
+        let detail_result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 // Always rebuilt (truncate + repopulate) so removed ROMs lose
                 // their description/resources on the next pass.
                 if let Err(e) = LibraryDb::replace_detail_metadata_and_resources_for_system(
                     conn,
-                    &sys,
+                    &detail_sys,
                     &description_rows,
                     &resource_rows,
                 ) {
-                    tracing::warn!("game detail/resource rebuild failed for {sys}: {e}");
-                }
-                if !enrichments.is_empty()
-                    && let Err(e) = LibraryDb::update_box_art_genre_rating(conn, &sys, &enrichments)
-                {
-                    tracing::warn!("Enrichment failed for {sys}: {e}");
+                    tracing::warn!("game detail/resource rebuild failed for {detail_sys}: {e}");
                 }
             })
             .await;
+        if let Err(e) = detail_result {
+            tracing::warn!("Detail/resource enrichment write failed for {sys}: {e}");
+        }
+
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+        let box_art_sys = sys.clone();
+        let box_art_result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                if !enrichments.is_empty()
+                    && let Err(e) =
+                        LibraryDb::update_box_art_genre_rating(conn, &box_art_sys, &enrichments)
+                {
+                    tracing::warn!("Enrichment failed for {box_art_sys}: {e}");
+                }
+            })
+            .await;
+        if let Err(e) = box_art_result {
+            tracing::warn!("Box art/genre/rating enrichment write failed for {sys}: {e}");
+        }
 
         tracing::debug!(
             "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
@@ -392,15 +430,18 @@ async fn queue_on_demand_download(
                     );
                     let sys = system_for_hook.clone();
                     let rom = rom_filename_for_hook.clone();
-                    let _ = library_pool
-                        .write(move |conn| {
+                    if let Err(e) = library_pool
+                        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                             if let Err(e) =
                                 LibraryDb::update_box_art_url(conn, &sys, &rom, Some(&url))
                             {
                                 tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
                             }
                         })
-                        .await;
+                        .await
+                    {
+                        tracing::warn!("Box art URL write failed: {e}");
+                    }
                     state_for_invalidate.invalidate_user_caches().await;
                 }
                 Outcome::DownloadFailed(e) | Outcome::SaveFailed(e) => {

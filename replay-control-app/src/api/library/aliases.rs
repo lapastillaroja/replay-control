@@ -2,7 +2,7 @@ use replay_control_core::title_utils::fuzzy_match_key;
 use replay_control_core_server::library_db::LibraryDb;
 
 use super::{LibraryService, ScanInputs};
-use crate::api::db_pools::LibraryWritePool;
+use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
 
 impl LibraryService {
     /// Populate game_alias table with TGDB alternate names for a system.
@@ -45,14 +45,16 @@ impl LibraryService {
         let system = system.to_owned();
         scan_inputs.ensure_current()?;
         let result = db
-            .write(move |conn| LibraryDb::bulk_insert_aliases(conn, &aliases))
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::bulk_insert_aliases(conn, &aliases)
+            })
             .await;
         match result {
-            Some(Ok(n)) => {
+            Ok(Ok(n)) => {
                 tracing::debug!("TGDB aliases for {system}: {n}/{count} inserted")
             }
-            Some(Err(e)) => tracing::warn!("TGDB aliases for {system}: insert failed: {e}"),
-            None => {}
+            Ok(Err(e)) => tracing::warn!("TGDB aliases for {system}: insert failed: {e}"),
+            Err(e) => tracing::warn!("TGDB aliases for {system}: write failed: {e}"),
         }
         Ok(())
     }
@@ -81,16 +83,18 @@ impl LibraryService {
         let system = system.to_owned();
         scan_inputs.ensure_current()?;
         let result = db
-            .write(move |conn| LibraryDb::bulk_insert_series(conn, &series_entry))
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::bulk_insert_series(conn, &series_entry)
+            })
             .await;
         match result {
-            Some(Ok(n)) => {
+            Ok(Ok(n)) => {
                 tracing::debug!("Wikidata series for {system}: {n}/{count} inserted")
             }
-            Some(Err(e)) => {
+            Ok(Err(e)) => {
                 tracing::warn!("Wikidata series for {system}: insert failed: {e}")
             }
-            None => {}
+            Err(e) => tracing::warn!("Wikidata series for {system}: write failed: {e}"),
         }
         Ok(())
     }

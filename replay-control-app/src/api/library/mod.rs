@@ -27,8 +27,8 @@ use super::db_pools::{LibraryReadPool, LibraryWritePool};
 /// (maxdepth 2). This detects changes inside organizational subdirectories
 /// like `00 Clean Romset/` without the cost of a full recursive scan.
 ///
-/// Blocking — only called from within `db.write(|conn| ...)` closures, which
-/// already run on a deadpool blocking thread.
+/// Blocking filesystem metadata read. Call from scan/rebuild paths, outside
+/// async request handlers.
 pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     let mut max_mtime = std::fs::metadata(path)
         .ok()

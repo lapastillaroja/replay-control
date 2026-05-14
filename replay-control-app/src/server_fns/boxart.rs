@@ -190,17 +190,22 @@ pub async fn set_boxart_override(
         let url = image_url.clone();
         let sys = system.clone();
         let rom = rom_filename.clone();
-        let _ = state
+        match state
             .library_writer
-            .write(move |conn| {
-                let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
+            .try_write(move |conn| {
+                replay_control_core_server::library_db::LibraryDb::update_box_art_url(
                     conn,
                     &sys,
                     &rom,
                     Some(&url),
-                );
+                )
             })
-            .await;
+            .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!("Box art override library update failed: {e}"),
+            Err(e) => tracing::warn!("Box art override library write failed: {e}"),
+        }
     }
     state.invalidate_user_caches().await;
     Ok(image_url)
@@ -228,14 +233,19 @@ pub async fn reset_boxart_override(
     {
         let sys = sys_for_db;
         let rom = rom_for_db;
-        let _ = state
+        match state
             .library_writer
-            .write(move |conn| {
-                let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
+            .try_write(move |conn| {
+                replay_control_core_server::library_db::LibraryDb::update_box_art_url(
                     conn, &sys, &rom, None,
-                );
+                )
             })
-            .await;
+            .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!("Box art reset library update failed: {e}"),
+            Err(e) => tracing::warn!("Box art reset library write failed: {e}"),
+        }
     }
     state.invalidate_user_caches().await;
 

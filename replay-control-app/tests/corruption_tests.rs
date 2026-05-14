@@ -295,9 +295,9 @@ async fn rebuild_corrupt_library_wipes_table_content() {
     let inserted = env
         .state
         .library_writer
-        .write(|conn| LibraryDb::save_system_meta(conn, "rebuild_sentinel", None, 1, 0))
+        .try_write(|conn| LibraryDb::save_system_meta(conn, "rebuild_sentinel", None, 1, 0))
         .await;
-    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+    assert!(matches!(inserted, Ok(Ok(1))), "sentinel insert failed");
 
     env.state.library_writer.mark_corrupt();
 

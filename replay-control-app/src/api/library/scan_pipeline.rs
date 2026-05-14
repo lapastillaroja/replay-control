@@ -12,7 +12,7 @@ use replay_control_core_server::storage::StorageLocation;
 use replay_control_core_server::library_db::LibraryDb;
 
 use super::{LibraryService, dir_mtime_secs};
-use crate::api::db_pools::LibraryWritePool;
+use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ScanOptions {
@@ -213,7 +213,7 @@ impl LibraryService {
         let cached_roms_for_db = cached_roms.clone();
         scan_inputs.ensure_current()?;
         let result = db
-            .write(move |conn| {
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 LibraryDb::save_system_entries(
                     conn,
                     &system_for_save,
@@ -223,7 +223,7 @@ impl LibraryService {
             })
             .await;
         match result {
-            Some(Ok(())) => {
+            Ok(Ok(())) => {
                 tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
 
                 // Populate TGDB aliases from embedded build-time data.
@@ -251,36 +251,49 @@ impl LibraryService {
                 let static_data =
                     replay_control_core_server::library_db::fetch_static_release_data().await;
                 scan_inputs.ensure_current()?;
-                let _ = db
-                    .write(move |conn| {
-                        let _ = LibraryDb::seed_release_dates_from_static_for_system(
+                let release_result = db
+                    .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                        if let Err(e) = LibraryDb::seed_release_dates_from_static_for_system(
                             conn,
                             &system_owned,
                             static_data,
-                        );
-                        let _ = LibraryDb::seed_release_dates_from_library_for_system(
+                        ) {
+                            tracing::warn!(
+                                "Static release-date seed failed for {system_owned}: {e}"
+                            );
+                        }
+                        if let Err(e) = LibraryDb::seed_release_dates_from_library_for_system(
                             conn,
                             &system_owned,
                             "builder",
-                        );
-                        let _ = LibraryDb::resolve_release_date_for_system(
+                        ) {
+                            tracing::warn!(
+                                "Library release-date seed failed for {system_owned}: {e}"
+                            );
+                        }
+                        if let Err(e) = LibraryDb::resolve_release_date_for_system(
                             conn,
                             &system_owned,
                             region_pref,
                             region_secondary,
-                        );
+                        ) {
+                            tracing::warn!("Release-date resolve failed for {system_owned}: {e}");
+                        }
                     })
                     .await;
+                if let Err(e) = release_result {
+                    tracing::warn!("Release-date write failed for {system}: {e}");
+                }
                 Ok(())
             }
-            Some(Err(e)) => {
+            Ok(Err(e)) => {
                 tracing::warn!("L2 write-through: {system} FAILED: {e}");
                 Err(e)
             }
-            None => {
-                tracing::warn!("L2 write-through: {system} skipped (DB unavailable)");
+            Err(e) => {
+                tracing::warn!("L2 write-through: {system} write failed: {e}");
                 Err(Error::Other(format!(
-                    "L2 write-through skipped for {system}: DB unavailable"
+                    "L2 write-through failed for {system}: {e}"
                 )))
             }
         }

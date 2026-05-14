@@ -10,7 +10,7 @@ use super::activity::{
     Activity, RebuildPhase, RebuildProgress, RefreshMetadataPhase, RefreshMetadataProgress,
     StartupPhase,
 };
-use super::db_pools::LibraryReadPool;
+use super::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryReadPool};
 use super::library::{ScanCancellation, ScanInputs, ScanOptions, dir_mtime_secs};
 use crate::types::RomWatcherStatus;
 
@@ -1084,7 +1084,7 @@ impl BackgroundManager {
         let version = catalog_version.clone();
         let write_result = state
             .library_writer
-            .write(move |conn| {
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 library_meta::write_meta(
                     conn,
                     library_meta::keys::CATALOG_RESOURCE_VERSION,
@@ -1093,11 +1093,11 @@ impl BackgroundManager {
             })
             .await;
         match write_result {
-            Some(Ok(())) => {
+            Ok(Ok(())) => {
                 tracing::info!("Catalog resource enrichment applied version {catalog_version}")
             }
-            Some(Err(e)) => tracing::warn!("Catalog resource version write failed: {e}"),
-            None => tracing::warn!("Catalog resource version write skipped: library unavailable"),
+            Ok(Err(e)) => tracing::warn!("Catalog resource version write failed: {e}"),
+            Err(e) => tracing::warn!("Catalog resource version write failed: {e}"),
         }
     }
 

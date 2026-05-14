@@ -38,12 +38,14 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
-    if let Some(Err(e)) = state
+    match state
         .library_writer
-        .write(|conn| LibraryDb::clear_all_box_art_urls(conn))
+        .try_write(|conn| LibraryDb::clear_all_box_art_urls(conn))
         .await
     {
-        tracing::warn!("Failed to clear box_art_url after image clear: {e}");
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => tracing::warn!("Failed to clear box_art_url after image clear: {e}"),
+        Err(e) => tracing::warn!("Failed to clear box_art_url after image clear: {e}"),
     }
 
     state.invalidate_user_caches().await;
@@ -71,14 +73,20 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
 
     let storage = state.storage();
     let storage_root = storage.root.clone();
-    let (files_deleted, bytes_freed) = state
+    let cleanup_result = state
         .library_writer
-        .write(move |conn| {
+        .try_write(move |conn| {
             replay_control_core_server::thumbnails::delete_orphaned_thumbnails(&storage_root, conn)
                 .unwrap_or((0, 0))
         })
-        .await
-        .unwrap_or((0, 0));
+        .await;
+    let (files_deleted, bytes_freed) = match cleanup_result {
+        Ok(counts) => counts,
+        Err(e) => {
+            tracing::warn!("Cleanup orphaned images skipped: {e}");
+            (0, 0)
+        }
+    };
 
     state.cache.invalidate_metadata_page().await;
     Ok((0, files_deleted, bytes_freed))

@@ -524,9 +524,9 @@ async fn delete_rom_cleanup(
         .await;
 
     // 4. Delete library.db game_library entry.
-    state
+    if let Err(e) = state
         .library_writer
-        .write({
+        .try_write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
@@ -537,7 +537,10 @@ async fn delete_rom_cleanup(
                 );
             }
         })
-        .await;
+        .await
+    {
+        tracing::warn!("ROM delete library cascade failed: {e}");
+    }
 }
 
 /// Recursively search for and delete a .fav file in the favorites directory tree.
@@ -655,9 +658,9 @@ async fn rename_rom_cascade(
         .await;
 
     // 4. Update library.db game_library entry.
-    state
+    if let Err(e) = state
         .library_writer
-        .write({
+        .try_write({
             let system = system.to_string();
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
@@ -670,7 +673,10 @@ async fn rename_rom_cascade(
                 );
             }
         })
-        .await;
+        .await
+    {
+        tracing::warn!("ROM rename library cascade failed: {e}");
+    }
 }
 
 /// Recursively find and rename a .fav file, updating its content too.

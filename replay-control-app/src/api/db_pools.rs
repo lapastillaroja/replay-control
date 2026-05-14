@@ -5,12 +5,12 @@
 //!
 //! - `…ReadPool` exposes only `read` / `try_read` (plus harmless metadata
 //!   like `is_corrupt`). A handle of this type cannot mutate the DB.
-//! - `…WritePool` exposes `write` / `try_write` / `transaction` (plus
-//!   admin ops like `reopen` / `mark_corrupt`). It does **not** expose
-//!   `read` — a writer-side read forces an explicit choice: do the read
-//!   inside a `write` / `transaction` closure (atomic, same connection),
-//!   or take a `…ReadPool` parameter for an intentional separate-
-//!   connection read.
+//! - `…WritePool` exposes mutation APIs plus admin ops like `reopen` /
+//!   `mark_corrupt`. Library writes use `try_write` so callers handle pool
+//!   failures explicitly. Writer handles do **not** expose `read` — a
+//!   writer-side read forces an explicit choice: read inside the write /
+//!   transaction closure (atomic, same connection), or take a `…ReadPool`
+//!   parameter for an intentional separate-connection read.
 //!
 //! Both newtypes for a given pool wrap the same underlying [`DbPool`]
 //! (`Arc`-shaped — cloning is cheap). A `mark_corrupt` on one is
@@ -19,6 +19,9 @@
 
 use replay_control_core_server::DbPool;
 use replay_control_core_server::db_pool::{DbError, rusqlite};
+
+pub(crate) const LIBRARY_MAINTENANCE_WRITE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(5 * 60);
 
 // ── Library ──────────────────────────────────────────────────────────
 
@@ -70,15 +73,6 @@ impl LibraryWritePool {
     }
 
     #[track_caller]
-    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
-    where
-        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.inner.write(f)
-    }
-
-    #[track_caller]
     pub fn try_write<F, R>(
         &self,
         f: F,
@@ -88,6 +82,19 @@ impl LibraryWritePool {
         R: Send + 'static,
     {
         self.inner.try_write(f)
+    }
+
+    #[track_caller]
+    pub fn try_write_with_timeout<F, R>(
+        &self,
+        timeout: std::time::Duration,
+        f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.inner.try_write_with_timeout(timeout, f)
     }
 
     pub async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>
