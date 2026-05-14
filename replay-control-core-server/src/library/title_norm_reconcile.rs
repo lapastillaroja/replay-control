@@ -124,13 +124,20 @@ async fn rebuild_system(pool: &DbPool, system: &str) -> Result<usize> {
         .collect();
 
     let sys = system.to_string();
-    let count = pool
+    let write_result = pool
         .try_write(move |conn| {
             LibraryDb::update_normalized_titles(conn, &sys, &updates).unwrap_or(0)
         })
-        .await
-        .unwrap_or(0);
-    Ok(count)
+        .await;
+    match write_result {
+        Ok(count) => Ok(count),
+        Err(e) => {
+            tracing::warn!(
+                "title_norm reconcile: normalized-title update failed for {system}: {e}"
+            );
+            Ok(0)
+        }
+    }
 }
 
 fn recompute(
