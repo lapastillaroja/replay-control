@@ -2343,6 +2343,25 @@ fn sha256_resource_id(url: &str) -> String {
     out
 }
 
+fn canonical_manual_url(url: &str) -> String {
+    let sonicretro_image_path = url
+        .strip_prefix("http://info.sonicretro.org/images/")
+        .or_else(|| url.strip_prefix("https://info.sonicretro.org/images/"));
+
+    if let Some(path) = sonicretro_image_path {
+        return match path {
+            // The SonicRetro file page still exists, but the local media URL
+            // returns 404. The file is available through the linked CDN mirror.
+            "6/6e/Sonic_Blast_GG_US_Manual.pdf" => {
+                "https://retrocdn.net/images/6/6e/Sonic_Blast_GG_US_Manual.pdf".to_string()
+            }
+            _ => format!("https://info.sonicretro.org/images/{path}"),
+        };
+    }
+
+    url.to_string()
+}
+
 fn manual_title_from_path(path: &str) -> Option<(String, String)> {
     let stem = Path::new(path).file_stem()?.to_str()?.trim();
     if stem.is_empty() {
@@ -2436,9 +2455,10 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
             else {
                 continue;
             };
-            let Some(url) = record.get(url_idx).map(str::trim).filter(|s| !s.is_empty()) else {
+            let Some(raw_url) = record.get(url_idx).map(str::trim).filter(|s| !s.is_empty()) else {
                 continue;
             };
+            let url = canonical_manual_url(raw_url);
             let Some((match_title, display_title)) = manual_title_from_path(raw_path) else {
                 continue;
             };
@@ -2450,8 +2470,8 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
                 system: system.to_string(),
                 normalized_title,
                 source: "mister_manuals",
-                resource_id: sha256_resource_id(url),
-                url: url.to_string(),
+                resource_id: sha256_resource_id(&url),
+                url,
                 title: display_title,
                 languages: "en".to_string(),
             });
@@ -2478,10 +2498,11 @@ fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuil
             }
             let title = parts[0].trim();
             let languages = parts[1].trim();
-            let url = parts[2].trim();
-            if title.is_empty() || url.is_empty() {
+            let raw_url = parts[2].trim();
+            if title.is_empty() || raw_url.is_empty() {
                 continue;
             }
+            let url = canonical_manual_url(raw_url);
             let normalized_title = title_utils::normalize_title_for_metadata(title);
             if normalized_title.is_empty() {
                 continue;
@@ -2491,8 +2512,8 @@ fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuil
                     system: system.to_string(),
                     normalized_title: normalized_title.clone(),
                     source: "retrokit",
-                    resource_id: sha256_resource_id(url),
-                    url: url.to_string(),
+                    resource_id: sha256_resource_id(&url),
+                    url: url.clone(),
                     title: title.to_string(),
                     languages: languages.to_string(),
                 });

@@ -64,6 +64,28 @@ pub fn ManualSection(
     let search_error = RwSignal::new(Option::<String>::None);
     let searched = RwSignal::new(false);
 
+    // Bundled/library manual suggestions should appear without forcing the
+    // user to run an online search. This server fn only reads library.db and
+    // never falls back to Archive.org.
+    let suggestions_resource = Resource::new(
+        || (),
+        move |_| {
+            let sys = system.get_value();
+            let fname = rom_filename.get_value();
+            let bt = base_title.get_value();
+            server_fns::get_game_manual_suggestions(sys, fname, bt)
+        },
+    );
+
+    let _sync_suggestions = Effect::new(move || {
+        if let Some(Ok(results)) = suggestions_resource.get()
+            && !results.is_empty()
+        {
+            search_results.set(results);
+            searched.set(true);
+        }
+    });
+
     // Download state
     let downloading_url = RwSignal::new(Option::<String>::None);
     let download_error = RwSignal::new(Option::<String>::None);

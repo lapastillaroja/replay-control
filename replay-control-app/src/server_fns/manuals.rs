@@ -178,6 +178,17 @@ pub async fn get_local_manuals(
 
 /// Search for game manuals via library resources, with Archive.org as an online fallback.
 #[server(prefix = "/sfn")]
+pub async fn get_game_manual_suggestions(
+    system: String,
+    rom_filename: String,
+    base_title: String,
+) -> Result<Vec<ManualRecommendation>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    library_manual_recommendations(&state, &system, &rom_filename, &base_title).await
+}
+
+/// Search for game manuals via library resources, with Archive.org as an online fallback.
+#[server(prefix = "/sfn")]
 pub async fn search_game_manuals(
     system: String,
     rom_filename: String,
@@ -186,50 +197,10 @@ pub async fn search_game_manuals(
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
     // Load user's language preferences for sorting results
     let state = expect_context::<crate::api::AppState>();
-    let preferred_langs = {
-        let primary = replay_control_core_server::settings::read_language_primary(&state.settings);
-        let secondary =
-            replay_control_core_server::settings::read_language_secondary(&state.settings);
-        let region = state.region_preference();
-        replay_control_core_server::settings::preferred_languages(
-            primary.as_deref(),
-            secondary.as_deref(),
-            region,
-        )
-    };
 
-    let saved_keys = saved_manual_resource_keys(&state, &system, &base_title).await;
-    let mut results: Vec<ManualRecommendation> = state
-        .library_reader
-        .read({
-            let system = system.clone();
-            let rom_filename = rom_filename.clone();
-            move |conn| {
-                LibraryDb::game_resources(conn, &system, &rom_filename, "manual")
-                    .unwrap_or_default()
-            }
-        })
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|row| !saved_keys.contains(&format!("url:{}", row.url)))
-        .map(|row| ManualRecommendation {
-            source: row.source,
-            title: row.title.unwrap_or_else(|| base_title.clone()),
-            url: row.url,
-            size_bytes: None,
-            language: row.languages.filter(|l| !l.trim().is_empty()),
-            source_id: row.resource_id,
-        })
-        .collect();
-
+    let results =
+        library_manual_recommendations(&state, &system, &rom_filename, &base_title).await?;
     if !results.is_empty() {
-        results.sort_by_key(|r| {
-            replay_control_core_server::settings::language_match_score(
-                r.language.as_deref().unwrap_or(""),
-                &preferred_langs,
-            )
-        });
         return Ok(results);
     }
 
@@ -310,6 +281,59 @@ pub async fn search_game_manuals(
     }
 }
 
+#[cfg(feature = "ssr")]
+async fn library_manual_recommendations(
+    state: &crate::api::AppState,
+    system: &str,
+    rom_filename: &str,
+    base_title: &str,
+) -> Result<Vec<ManualRecommendation>, ServerFnError> {
+    let preferred_langs = {
+        let primary = replay_control_core_server::settings::read_language_primary(&state.settings);
+        let secondary =
+            replay_control_core_server::settings::read_language_secondary(&state.settings);
+        let region = state.region_preference();
+        replay_control_core_server::settings::preferred_languages(
+            primary.as_deref(),
+            secondary.as_deref(),
+            region,
+        )
+    };
+
+    let saved_keys = saved_manual_resource_keys(state, system, base_title).await;
+    let mut results: Vec<ManualRecommendation> = state
+        .library_reader
+        .read({
+            let system = system.to_string();
+            let rom_filename = rom_filename.to_string();
+            move |conn| {
+                LibraryDb::game_resources(conn, &system, &rom_filename, "manual")
+                    .unwrap_or_default()
+            }
+        })
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| !saved_keys.contains(&format!("url:{}", row.url)))
+        .map(|row| ManualRecommendation {
+            source: row.source,
+            title: row.title.unwrap_or_else(|| base_title.to_string()),
+            url: row.url,
+            size_bytes: None,
+            language: row.languages.filter(|l| !l.trim().is_empty()),
+            source_id: row.resource_id,
+        })
+        .collect();
+
+    results.sort_by_key(|r| {
+        replay_control_core_server::settings::language_match_score(
+            r.language.as_deref().unwrap_or(""),
+            &preferred_langs,
+        )
+    });
+    Ok(results)
+}
+
 /// Download a manual PDF from a URL and save it locally.
 #[server(prefix = "/sfn")]
 pub async fn download_manual(
@@ -331,14 +355,15 @@ pub async fn download_manual(
         return Err(ServerFnError::new("Invalid ROM filename"));
     }
 
-    let manual_id = stable_url_id(&url);
+    let canonical_url = canonical_manual_url(&url);
+    let manual_id = stable_url_id(&canonical_url);
     let safe_id = manual_id.replace(':', "_");
     let manuals_dir = state.storage().rc_dir().join("manuals").join(&system);
     let tmp_path = manuals_dir.join(format!("{safe_id}.tmp"));
 
     // Encode the URL path for curl — retrokit TSV URLs often contain raw
     // spaces, parentheses, and apostrophes that curl rejects as malformed.
-    let encoded_url = encode_url_path(&url);
+    let encoded_url = encode_url_path(&canonical_url);
 
     tokio::fs::create_dir_all(&manuals_dir)
         .await
@@ -393,10 +418,10 @@ pub async fn download_manual(
     };
     let entry = ManualEntry {
         manual_id: manual_id.clone(),
-        resource_key: format!("url:{url}"),
+        resource_key: format!("url:{canonical_url}"),
         title,
         origin: "downloaded".to_string(),
-        url: Some(url.clone()),
+        url: Some(canonical_url.clone()),
         storage_path: Some(storage_path.clone()),
         original_filename: Some(filename.clone()),
         languages: language.unwrap_or_default(),
@@ -493,6 +518,7 @@ async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value
 /// segments while preserving the scheme, host, and `/` separators.
 #[cfg(feature = "ssr")]
 fn encode_url_path(url: &str) -> String {
+    let url = canonical_manual_url(url);
     // Find the start of the path (after "https://host")
     let path_start = if let Some(rest) = url.strip_prefix("https://") {
         rest.find('/').map(|i| i + "https://".len())
@@ -503,7 +529,7 @@ fn encode_url_path(url: &str) -> String {
     };
 
     let Some(path_start) = path_start else {
-        return url.to_string();
+        return url;
     };
 
     let (prefix, path) = url.split_at(path_start);
@@ -520,6 +546,26 @@ fn encode_url_path(url: &str) -> String {
         .join("/");
 
     format!("{prefix}{encoded_path}")
+}
+
+#[cfg(feature = "ssr")]
+fn canonical_manual_url(url: &str) -> String {
+    let sonicretro_image_path = url
+        .strip_prefix("http://info.sonicretro.org/images/")
+        .or_else(|| url.strip_prefix("https://info.sonicretro.org/images/"));
+
+    if let Some(path) = sonicretro_image_path {
+        return match path {
+            // The SonicRetro file page still exists, but the local media URL
+            // returns 404. The file is available through the linked CDN mirror.
+            "6/6e/Sonic_Blast_GG_US_Manual.pdf" => {
+                "https://retrocdn.net/images/6/6e/Sonic_Blast_GG_US_Manual.pdf".to_string()
+            }
+            _ => format!("https://info.sonicretro.org/images/{path}"),
+        };
+    }
+
+    url.to_string()
 }
 
 #[cfg(feature = "ssr")]
@@ -858,5 +904,31 @@ mod tests {
         let url =
             "https://segaretro.org/images/a/aa/The_Adventures_of_Batman_&_Robin_MD_BR_Manual.pdf";
         assert_eq!(encode_url_path(url), url);
+    }
+
+    #[test]
+    fn canonical_manual_url_rewrites_legacy_sonicretro_host() {
+        assert_eq!(
+            canonical_manual_url("http://info.sonicretro.org/images/0/0a/Sonic3_MD_JP_manual.pdf"),
+            "https://info.sonicretro.org/images/0/0a/Sonic3_MD_JP_manual.pdf"
+        );
+    }
+
+    #[test]
+    fn encode_url_path_rewrites_legacy_sonicretro_host() {
+        assert_eq!(
+            encode_url_path("http://info.sonicretro.org/images/4/40/Chaotix_32X_JP_manual.pdf"),
+            "https://info.sonicretro.org/images/4/40/Chaotix_32X_JP_manual.pdf"
+        );
+    }
+
+    #[test]
+    fn canonical_manual_url_repairs_stale_sonic_blast_media_url() {
+        assert_eq!(
+            canonical_manual_url(
+                "http://info.sonicretro.org/images/6/6e/Sonic_Blast_GG_US_Manual.pdf"
+            ),
+            "https://retrocdn.net/images/6/6e/Sonic_Blast_GG_US_Manual.pdf"
+        );
     }
 }
