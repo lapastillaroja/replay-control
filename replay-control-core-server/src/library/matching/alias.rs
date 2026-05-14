@@ -41,7 +41,7 @@ pub async fn build_tgdb_alias_tuples(
         return Vec::new();
     }
 
-    let games = game_db::system_games(system).await;
+    let games = game_db::system_games_by_id(system).await;
     if games.is_empty() {
         return Vec::new();
     }
@@ -49,7 +49,7 @@ pub async fn build_tgdb_alias_tuples(
     let mut aliases: Vec<AliasInsert> = Vec::new();
 
     for (game_id, alt_names) in alternates {
-        if let Some(game) = games.get(game_id as usize) {
+        if let Some(game) = games.get(&game_id) {
             let resolved =
                 resolve_to_library_title(&game.display_name, library_base_titles, library_fuzzy);
             if !library_base_titles.contains(resolved.as_str())
@@ -478,6 +478,41 @@ mod tests {
             assert_eq!(a.source, "tgdb");
             assert_eq!(a.system, "nintendo_snes");
         }
+    }
+
+    #[tokio::test]
+    async fn tgdb_aliases_uses_catalog_ids_not_vec_indexes() {
+        crate::catalog_pool::init_test_catalog().await;
+        if crate::catalog_pool::using_stub_data() {
+            return;
+        }
+
+        let exact: HashSet<&str> = [
+            "the super shinobi ii",
+            "shinobi iii - return of the ninja master",
+        ]
+        .into_iter()
+        .collect();
+        let fuzzy: HashMap<String, &str> = exact
+            .iter()
+            .map(|title| (fuzzy_match_key(title), *title))
+            .collect();
+
+        let result = build_tgdb_alias_tuples("sega_smd", &exact, &fuzzy).await;
+        assert!(
+            result.iter().any(|alias| {
+                alias.base_title == "the super shinobi ii"
+                    && alias.alias_name == "shinobi iii - return of the ninja master"
+            }),
+            "expected The Super Shinobi II to link to Shinobi III, got: {result:?}"
+        );
+        assert!(
+            result.iter().any(|alias| {
+                alias.base_title == "shinobi iii - return of the ninja master"
+                    && alias.alias_name == "the super shinobi ii"
+            }),
+            "expected Shinobi III to link back to The Super Shinobi II, got: {result:?}"
+        );
     }
 
     // --- resolve_launchbox_aliases ---

@@ -434,6 +434,38 @@ pub async fn system_games(system: &str) -> Vec<CanonicalGame> {
     }
 }
 
+/// Get canonical games for a system keyed by their catalog `canonical_game.id`.
+pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
+    {
+        let system = system.to_string();
+        return crate::catalog_pool::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT id, display_name, year, genre, developer, publisher, players, coop, rating, \
+                 normalized_genre FROM canonical_game WHERE system = ?1",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![system], |row| {
+                let id = row.get::<_, i64>(0)? as u32;
+                let coop_val: Option<i64> = row.get(7)?;
+                let game = CanonicalGame {
+                    display_name: row.get(1)?,
+                    year: row.get::<_, i64>(2)? as u16,
+                    genre: row.get(3)?,
+                    developer: row.get(4)?,
+                    publisher: row.get(5)?,
+                    players: row.get::<_, i64>(6)? as u8,
+                    coop: coop_val.map(|v| v != 0),
+                    rating: row.get(8)?,
+                    normalized_genre: row.get(9)?,
+                };
+                Ok((id, game))
+            })?;
+            rows.collect::<rusqlite::Result<HashMap<_, _>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+}
+
 /// All per-region release-date rows from catalog.
 ///
 /// Each tuple: `(system_folder, base_title_lowercased, region, release_date, precision, source)`.
