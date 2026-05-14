@@ -282,6 +282,7 @@ pub struct ThumbnailEntry {
 
 /// Convert parsed thumbnail entries into the (kind, filename, symlink_target)
 /// triples expected by `external_metadata::insert_thumbnail_manifest_rows`.
+#[cfg_attr(not(feature = "http"), allow(dead_code))]
 pub(crate) fn entries_to_tuples(
     entries: &[ThumbnailEntry],
 ) -> Vec<(String, String, Option<String>)> {

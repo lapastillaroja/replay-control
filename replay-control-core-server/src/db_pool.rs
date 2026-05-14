@@ -308,6 +308,7 @@ impl PoolMetrics {
 /// should layer a tighter `tokio::time::timeout` on top if they care about
 /// faster fall-back.
 const INTERACT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const SLOW_OP_LOG_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// RAII gate. While held, reads on the pool short-circuit to
 /// `Err(DbError::Busy)`. Auto-activated by `try_write` on DELETE-mode pools.
@@ -554,15 +555,31 @@ impl DbPool {
     /// as "no rows"**. Use [`Self::try_read`] when the result gates
     /// destructive work and the caller must distinguish unavailable from
     /// genuinely empty.
-    pub async fn read<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn read<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.try_read(f).await.ok()
+        let caller = std::panic::Location::caller();
+        async move { self.try_read_with_caller(f, caller).await.ok() }
     }
 
-    pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_read<F, R>(&self, f: F) -> impl std::future::Future<Output = Result<R, DbError>> + '_
+    where
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let caller = std::panic::Location::caller();
+        async move { self.try_read_with_caller(f, caller).await }
+    }
+
+    async fn try_read_with_caller<F, R>(
+        &self,
+        f: F,
+        caller: &'static std::panic::Location<'static>,
+    ) -> Result<R, DbError>
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
@@ -572,7 +589,9 @@ impl DbPool {
         // immutably via reborrow. `query_only=ON` is set on read connections
         // (see `SqliteManager::create`) so a misbehaving closure can't write.
         let result = self
-            .dispatch(Op::Read, &self.read_pool, INTERACT_TIMEOUT, |c| f(c))
+            .dispatch(Op::Read, &self.read_pool, INTERACT_TIMEOUT, caller, |c| {
+                f(c)
+            })
             .await;
         match &result {
             Ok(_) => {
@@ -595,20 +614,34 @@ impl DbPool {
     /// Run a mutable closure. On DELETE-mode pools the write gate
     /// auto-activates around this call; concurrent reads get
     /// `Err(DbError::Busy)`. On WAL pools the gate stays unset.
-    pub async fn write<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.try_write(f).await.ok()
+        let caller = std::panic::Location::caller();
+        async move {
+            self.try_write_with_timeout_and_caller(INTERACT_TIMEOUT, f, caller)
+                .await
+                .ok()
+        }
     }
 
-    pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_write<F, R>(
+        &self,
+        f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.try_write_with_timeout(INTERACT_TIMEOUT, f).await
+        let caller = std::panic::Location::caller();
+        async move {
+            self.try_write_with_timeout_and_caller(INTERACT_TIMEOUT, f, caller)
+                .await
+        }
     }
 
     /// Run a write closure with a caller-selected wall-clock cap.
@@ -616,10 +649,28 @@ impl DbPool {
     /// Use this for known long maintenance writes (for example bulk metadata
     /// imports). The default [`Self::try_write`] timeout remains intentionally
     /// short so UI/server-function writes still surface stuck closures quickly.
-    pub async fn try_write_with_timeout<F, R>(
+    #[track_caller]
+    pub fn try_write_with_timeout<F, R>(
         &self,
         timeout: std::time::Duration,
         f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let caller = std::panic::Location::caller();
+        async move {
+            self.try_write_with_timeout_and_caller(timeout, f, caller)
+                .await
+        }
+    }
+
+    async fn try_write_with_timeout_and_caller<F, R>(
+        &self,
+        timeout: std::time::Duration,
+        f: F,
+        caller: &'static std::panic::Location<'static>,
     ) -> Result<R, DbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
@@ -629,7 +680,9 @@ impl DbPool {
         let _gate = self
             .is_delete_mode()
             .then(|| WriteGate::activate(&self.write_gate));
-        let result = self.dispatch(Op::Write, &self.write_pool, timeout, f).await;
+        let result = self
+            .dispatch(Op::Write, &self.write_pool, timeout, caller, f)
+            .await;
         if result.is_ok() {
             self.metrics
                 .writes_completed
@@ -648,12 +701,14 @@ impl DbPool {
         op: Op,
         slot: &Arc<std::sync::RwLock<Option<SqlitePool>>>,
         timeout: std::time::Duration,
+        caller: &'static std::panic::Location<'static>,
         f: F,
     ) -> Result<R, DbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        let started = std::time::Instant::now();
         let label = self.label;
         let kind = op.kind();
         if self.corrupt.load(Ordering::Acquire) {
@@ -691,15 +746,19 @@ impl DbPool {
             r
         });
         match tokio::time::timeout(timeout, interact).await {
-            Ok(Ok(value)) => Ok(value),
+            Ok(Ok(value)) => {
+                log_slow_op(label, kind, started.elapsed(), timeout, caller);
+                Ok(value)
+            }
             Ok(Err(e)) => {
                 tracing::warn!("{label}: {kind} interact failed: {e}");
                 Err(DbError::Interact(e))
             }
             Err(_) => {
                 tracing::error!(
+                    caller = %format_caller(caller),
                     "{label}: {kind} exceeded {:?}; closure still running on blocking pool",
-                    timeout
+                    timeout,
                 );
                 let counter = if op == Op::Read {
                     &self.metrics.reads_timed_out
@@ -940,6 +999,28 @@ impl DbPool {
             .with_extension("db.bak")
             .exists()
     }
+}
+
+fn log_slow_op(
+    label: &'static str,
+    kind: &'static str,
+    elapsed: std::time::Duration,
+    timeout: std::time::Duration,
+    caller: &'static std::panic::Location<'static>,
+) {
+    if elapsed < SLOW_OP_LOG_THRESHOLD {
+        return;
+    }
+    tracing::warn!(
+        caller = %format_caller(caller),
+        elapsed_ms = elapsed.as_millis(),
+        timeout_ms = timeout.as_millis(),
+        "{label}: {kind} slow operation"
+    );
+}
+
+fn format_caller(caller: &std::panic::Location<'_>) -> String {
+    format!("{}:{}", caller.file(), caller.line())
 }
 
 /// Inspect the connection's most recent error code and flag the pool as

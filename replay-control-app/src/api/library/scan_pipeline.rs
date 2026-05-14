@@ -209,11 +209,17 @@ impl LibraryService {
             cached_roms.len()
         );
         let system_owned = system.to_string();
+        let system_for_save = system_owned.clone();
         let cached_roms_for_db = cached_roms.clone();
         scan_inputs.ensure_current()?;
         let result = db
             .write(move |conn| {
-                LibraryDb::save_system_entries(conn, &system_owned, &cached_roms_for_db, mtime_secs)
+                LibraryDb::save_system_entries(
+                    conn,
+                    &system_for_save,
+                    &cached_roms_for_db,
+                    mtime_secs,
+                )
             })
             .await;
         match result {
@@ -247,10 +253,19 @@ impl LibraryService {
                 scan_inputs.ensure_current()?;
                 let _ = db
                     .write(move |conn| {
-                        let _ = LibraryDb::seed_release_dates_from_static(conn, static_data);
-                        let _ = LibraryDb::seed_release_dates_from_library(conn, "builder");
-                        let _ = LibraryDb::resolve_release_date_for_library(
+                        let _ = LibraryDb::seed_release_dates_from_static_for_system(
                             conn,
+                            &system_owned,
+                            static_data,
+                        );
+                        let _ = LibraryDb::seed_release_dates_from_library_for_system(
+                            conn,
+                            &system_owned,
+                            "builder",
+                        );
+                        let _ = LibraryDb::resolve_release_date_for_system(
+                            conn,
+                            &system_owned,
                             region_pref,
                             region_secondary,
                         );

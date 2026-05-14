@@ -173,9 +173,10 @@ impl LibraryService {
                     tracing::warn!("Release-date upsert failed for {sys}: {e}");
                 }
                 // Release-date resolver: rewrites game_library mirror columns
-                // from `game_release_date` for every ROM.
-                let _ = LibraryDb::resolve_release_date_for_library(
+                // from `game_release_date` for this system's ROMs.
+                let _ = LibraryDb::resolve_release_date_for_system(
                     conn,
+                    &sys,
                     region_pref,
                     region_secondary,
                 );

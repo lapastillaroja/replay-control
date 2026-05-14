@@ -173,6 +173,7 @@ fn match_resource_key(
 /// `alt_to_primary` maps `normalized_alternate → primary normalized_title`
 /// from `provider_alternate`. Caller loads it once per system from the
 /// host-global `external_metadata.db`.
+#[allow(clippy::too_many_arguments)]
 pub fn enrich_system(
     conn: &Connection,
     system: &str,

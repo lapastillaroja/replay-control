@@ -32,60 +32,6 @@ pub struct ManualEntry {
     pub added_at: u64,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::StorageKind;
-
-    fn open_temp() -> (Connection, tempfile::TempDir) {
-        let tmp = tempfile::tempdir().unwrap();
-        let storage =
-            crate::storage::StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
-        let (conn, corrupt) = UserDataDb::open_at(&UserDataDb::db_path(&storage.root)).unwrap();
-        assert!(!corrupt);
-        (conn, tmp)
-    }
-
-    #[test]
-    fn manual_resource_round_trips_and_deletes() {
-        let (conn, _tmp) = open_temp();
-        let entry = ManualEntry {
-            manual_id: "urlhash:abc".to_string(),
-            resource_key: "url:https://example.com/manual.pdf".to_string(),
-            title: Some("Manual".to_string()),
-            origin: "downloaded".to_string(),
-            url: Some("https://example.com/manual.pdf".to_string()),
-            storage_path: Some("nintendo_snes/urlhash_abc.pdf".to_string()),
-            original_filename: Some("urlhash_abc.pdf".to_string()),
-            languages: "en,es".to_string(),
-            mime_type: "application/pdf".to_string(),
-            size_bytes: Some(123),
-            added_at: 42,
-        };
-        UserDataDb::add_game_manual(
-            &conn,
-            "nintendo_snes",
-            "Super Mario World.sfc",
-            "super mario world",
-            &entry,
-        )
-        .unwrap();
-
-        let rows =
-            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].resource_key, entry.resource_key);
-        assert_eq!(rows[0].languages, "en,es");
-
-        let removed =
-            UserDataDb::remove_game_manual(&conn, "nintendo_snes", "urlhash:abc").unwrap();
-        assert!(removed.is_some());
-        let rows =
-            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
-        assert!(rows.is_empty());
-    }
-}
-
 /// Stateless query namespace for the user data SQLite database.
 ///
 /// All methods are associated functions that take `conn: &Connection` as their
@@ -546,5 +492,59 @@ impl UserDataDb {
         ) {
             tracing::warn!("Failed to update game_manual_resource: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageKind;
+
+    fn open_temp() -> (Connection, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage =
+            crate::storage::StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
+        let (conn, corrupt) = UserDataDb::open_at(&UserDataDb::db_path(&storage.root)).unwrap();
+        assert!(!corrupt);
+        (conn, tmp)
+    }
+
+    #[test]
+    fn manual_resource_round_trips_and_deletes() {
+        let (conn, _tmp) = open_temp();
+        let entry = ManualEntry {
+            manual_id: "urlhash:abc".to_string(),
+            resource_key: "url:https://example.com/manual.pdf".to_string(),
+            title: Some("Manual".to_string()),
+            origin: "downloaded".to_string(),
+            url: Some("https://example.com/manual.pdf".to_string()),
+            storage_path: Some("nintendo_snes/urlhash_abc.pdf".to_string()),
+            original_filename: Some("urlhash_abc.pdf".to_string()),
+            languages: "en,es".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size_bytes: Some(123),
+            added_at: 42,
+        };
+        UserDataDb::add_game_manual(
+            &conn,
+            "nintendo_snes",
+            "Super Mario World.sfc",
+            "super mario world",
+            &entry,
+        )
+        .unwrap();
+
+        let rows =
+            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].resource_key, entry.resource_key);
+        assert_eq!(rows[0].languages, "en,es");
+
+        let removed =
+            UserDataDb::remove_game_manual(&conn, "nintendo_snes", "urlhash:abc").unwrap();
+        assert!(removed.is_some());
+        let rows =
+            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
+        assert!(rows.is_empty());
     }
 }

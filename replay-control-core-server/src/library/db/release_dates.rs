@@ -5,7 +5,7 @@
 //! picks the best date per the user's region preference and mirrors it into
 //! `game_library` at scan time.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, params};
 
@@ -134,92 +134,20 @@ impl LibraryDb {
         conn: &mut Connection,
         data: StaticReleaseData,
     ) -> Result<usize> {
-        // Step 1: Collect the `(system, base_title)` set that actually exists
-        // in the user's library. Grouped by system so we can look up with
-        // `&str` keys and skip cloning on every filter check.
-        let mut library_pairs: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
-        {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT DISTINCT system, base_title FROM game_library \
-                     WHERE base_title != ''",
-                )
-                .map_err(|e| Error::Other(format!("Prepare library pairs: {e}")))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })
-                .map_err(|e| Error::Other(format!("Query library pairs: {e}")))?;
-            for (system, base_title) in rows.flatten() {
-                library_pairs.entry(system).or_default().insert(base_title);
-            }
-        }
+        let library_titles = load_library_titles(conn, None)?;
+        let rows = static_release_rows(data, &library_titles);
+        Self::upsert_release_dates(conn, &rows)
+    }
 
-        let has_pair = |system: &str, base_title: &str| {
-            library_pairs
-                .get(system)
-                .is_some_and(|titles| titles.contains(base_title))
-        };
-
-        let StaticReleaseData {
-            console_rows,
-            arcade_rows,
-            arcade_rom_to_display,
-        } = data;
-
-        // Step 2: Filter console TGDB rows against the library set.
-        let mut rows: Vec<ReleaseDateRow> = Vec::new();
-        for (system, base_title, region, date, precision, source) in console_rows {
-            if !has_pair(&system, &base_title) {
-                continue;
-            }
-            let Some(prec) = DatePrecision::from_str(&precision) else {
-                continue;
-            };
-            rows.push(ReleaseDateRow {
-                system,
-                base_title,
-                region,
-                release_date: date,
-                precision: prec,
-                source,
-            });
-        }
-
-        // Step 3: Arcade rows. Each row's `rom_name` is the arcade ROM stem;
-        // we need to look up the arcade_db entry to get the display_name,
-        // then compute `base_title`. Then emit one row per arcade system
-        // folder that the user has in `game_library`.
-        let arcade_systems_in_library: Vec<&str> = library_pairs
-            .keys()
-            .filter(|s| systems::is_arcade_system(s))
-            .map(String::as_str)
-            .collect();
-
-        if !arcade_systems_in_library.is_empty() {
-            for (rom_name, year, source) in &arcade_rows {
-                let Some(display_name) = arcade_rom_to_display.get(rom_name) else {
-                    continue;
-                };
-                let base_title = title_utils::base_title(display_name);
-                if base_title.is_empty() {
-                    continue;
-                }
-                for sys in &arcade_systems_in_library {
-                    if has_pair(sys, &base_title) {
-                        rows.push(ReleaseDateRow {
-                            system: (*sys).to_string(),
-                            base_title: base_title.clone(),
-                            region: "world".to_string(),
-                            release_date: year.clone(),
-                            precision: DatePrecision::Year,
-                            source: source.clone(),
-                        });
-                    }
-                }
-            }
-        }
-
+    /// Populate `game_release_date` from build-time embedded static data for
+    /// one system only.
+    pub fn seed_release_dates_from_static_for_system(
+        conn: &mut Connection,
+        system: &str,
+        data: StaticReleaseData,
+    ) -> Result<usize> {
+        let library_titles = load_library_titles(conn, Some(system))?;
+        let rows = static_release_rows(data, &library_titles);
         Self::upsert_release_dates(conn, &rows)
     }
 
@@ -234,19 +162,38 @@ impl LibraryDb {
     /// Safe to call repeatedly — the upsert's precision-upgrade rule ensures we
     /// never downgrade an existing higher-precision entry.
     pub fn seed_release_dates_from_library(conn: &mut Connection, source: &str) -> Result<usize> {
-        // Collect distinct (system, base_title, region, release_date, precision) tuples.
+        Self::seed_release_dates_from_library_scope(conn, None, source)
+    }
+
+    /// Populate `game_release_date` from one system's current
+    /// `game_library` mirror columns.
+    pub fn seed_release_dates_from_library_for_system(
+        conn: &mut Connection,
+        system: &str,
+        source: &str,
+    ) -> Result<usize> {
+        Self::seed_release_dates_from_library_scope(conn, Some(system), source)
+    }
+
+    fn seed_release_dates_from_library_scope(
+        conn: &mut Connection,
+        system: Option<&str>,
+        source: &str,
+    ) -> Result<usize> {
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT system, base_title, \
-                        CASE WHEN region = '' THEN 'unknown' ELSE region END, \
-                        release_date, release_precision \
-                 FROM game_library \
-                 WHERE base_title != '' AND release_date IS NOT NULL",
+                "SELECT DISTINCT system, base_title,
+                        CASE WHEN region = '' THEN 'unknown' ELSE region END,
+                        release_date, release_precision
+                 FROM game_library
+                 WHERE (?1 IS NULL OR system = ?1)
+                   AND base_title != ''
+                   AND release_date IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Prepare seed_release_dates_from_library: {e}")))?;
 
         let rows: Vec<ReleaseDateRow> = stmt
-            .query_map([], |row| {
+            .query_map(params![system], |row| {
                 Ok(ReleaseDateRow {
                     system: row.get(0)?,
                     base_title: row.get(1)?,
@@ -282,6 +229,26 @@ impl LibraryDb {
         primary: RegionPreference,
         secondary: Option<RegionPreference>,
     ) -> Result<usize> {
+        Self::resolve_release_date(conn, None, primary, secondary)
+    }
+
+    /// Resolve one system's `game_library` release-date mirror columns from
+    /// `game_release_date`.
+    pub fn resolve_release_date_for_system(
+        conn: &mut Connection,
+        system: &str,
+        primary: RegionPreference,
+        secondary: Option<RegionPreference>,
+    ) -> Result<usize> {
+        Self::resolve_release_date(conn, Some(system), primary, secondary)
+    }
+
+    fn resolve_release_date(
+        conn: &mut Connection,
+        system: Option<&str>,
+        primary: RegionPreference,
+        secondary: Option<RegionPreference>,
+    ) -> Result<usize> {
         let primary_region = region_pref_to_db_region(primary);
         let secondary_region = secondary.map(region_pref_to_db_region);
 
@@ -309,6 +276,7 @@ impl LibraryDb {
                           CASE grd.precision WHEN 'day' THEN 1 WHEN 'month' THEN 2 ELSE 3 END \
                     ) AS rn \
                     FROM game_release_date grd \
+                    WHERE (?3 IS NULL OR grd.system = ?3) \
                 ) \
                 WHERE rn = 1 \
             ) \
@@ -317,16 +285,111 @@ impl LibraryDb {
                 SELECT release_date, precision, region FROM best \
                 WHERE best.system = gl.system AND best.base_title = gl.base_title \
             ) \
-            WHERE base_title != ''";
+            WHERE (?3 IS NULL OR gl.system = ?3) AND gl.base_title != ''";
 
         let affected = tx
-            .execute(sql, params![primary_region, secondary_region])
-            .map_err(|e| Error::Other(format!("resolve_release_date_for_library: {e}")))?;
+            .execute(sql, params![primary_region, secondary_region, system])
+            .map_err(|e| Error::Other(format!("resolve_release_date: {e}")))?;
 
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit: {e}")))?;
         Ok(affected)
     }
+}
+
+fn load_library_titles(
+    conn: &Connection,
+    system: Option<&str>,
+) -> Result<HashMap<String, HashSet<String>>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT system, base_title
+             FROM game_library
+             WHERE (?1 IS NULL OR system = ?1) AND base_title != ''",
+        )
+        .map_err(|e| Error::Other(format!("Prepare library release-date titles: {e}")))?;
+
+    let mut titles_by_system: HashMap<String, HashSet<String>> = HashMap::new();
+    let rows = stmt
+        .query_map(params![system], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| Error::Other(format!("Query library release-date titles: {e}")))?;
+    for (system, base_title) in rows.flatten() {
+        titles_by_system
+            .entry(system)
+            .or_default()
+            .insert(base_title);
+    }
+    Ok(titles_by_system)
+}
+
+fn static_release_rows(
+    data: StaticReleaseData,
+    library_titles: &HashMap<String, HashSet<String>>,
+) -> Vec<ReleaseDateRow> {
+    let has_title = |system: &str, base_title: &str| {
+        library_titles
+            .get(system)
+            .is_some_and(|titles| titles.contains(base_title))
+    };
+
+    let StaticReleaseData {
+        console_rows,
+        arcade_rows,
+        arcade_rom_to_display,
+    } = data;
+
+    let mut rows = Vec::new();
+    for (system, base_title, region, date, precision, source) in console_rows {
+        if !has_title(&system, &base_title) {
+            continue;
+        }
+        let Some(precision) = DatePrecision::from_str(&precision) else {
+            continue;
+        };
+        rows.push(ReleaseDateRow {
+            system,
+            base_title,
+            region,
+            release_date: date,
+            precision,
+            source,
+        });
+    }
+
+    let arcade_systems: Vec<&str> = library_titles
+        .keys()
+        .filter(|system| systems::is_arcade_system(system))
+        .map(String::as_str)
+        .collect();
+    if arcade_systems.is_empty() {
+        return rows;
+    }
+
+    for (rom_name, year, source) in arcade_rows {
+        let Some(display_name) = arcade_rom_to_display.get(&rom_name) else {
+            continue;
+        };
+        let base_title = title_utils::base_title(display_name);
+        if base_title.is_empty() {
+            continue;
+        }
+        for system in &arcade_systems {
+            if has_title(system, &base_title) {
+                rows.push(ReleaseDateRow {
+                    system: (*system).to_string(),
+                    base_title: base_title.clone(),
+                    region: "world".to_string(),
+                    release_date: year.clone(),
+                    precision: DatePrecision::Year,
+                    source: source.clone(),
+                });
+            }
+        }
+    }
+
+    rows
 }
 
 #[cfg(test)]
@@ -504,6 +567,55 @@ mod tests {
             .unwrap();
         assert_eq!(date.as_deref(), Some("1991-08-23"));
         assert_eq!(region_used.as_deref(), Some("usa"));
+    }
+
+    #[test]
+    fn system_resolver_updates_only_target_system() {
+        let (mut conn, _d) = open_temp_db();
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_entry("snes", "Mario.sfc", "mario")],
+            None,
+        )
+        .unwrap();
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "gba",
+            &[make_entry("gba", "Mario Advance.gba", "mario")],
+            None,
+        )
+        .unwrap();
+
+        LibraryDb::upsert_release_dates(
+            &mut conn,
+            &[
+                row("snes", "mario", "usa", "1991", DatePrecision::Year, "tgdb"),
+                row("gba", "mario", "usa", "2001", DatePrecision::Year, "tgdb"),
+            ],
+        )
+        .unwrap();
+
+        LibraryDb::resolve_release_date_for_system(&mut conn, "snes", RegionPreference::Usa, None)
+            .unwrap();
+
+        let snes_date: Option<String> = conn
+            .query_row(
+                "SELECT release_date FROM game_library WHERE system='snes'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let gba_date: Option<String> = conn
+            .query_row(
+                "SELECT release_date FROM game_library WHERE system='gba'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(snes_date.as_deref(), Some("1991"));
+        assert_eq!(gba_date, None);
     }
 
     #[tokio::test]

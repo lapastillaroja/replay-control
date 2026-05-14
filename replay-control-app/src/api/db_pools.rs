@@ -32,20 +32,22 @@ impl LibraryReadPool {
         Self { inner }
     }
 
-    pub async fn read<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn read<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.read(f).await
+        self.inner.read(f)
     }
 
-    pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_read<F, R>(&self, f: F) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_read(f).await
+        self.inner.try_read(f)
     }
 
     pub fn is_corrupt(&self) -> bool {
@@ -67,20 +69,25 @@ impl LibraryWritePool {
         Self { inner }
     }
 
-    pub async fn write<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.write(f).await
+        self.inner.write(f)
     }
 
-    pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_write<F, R>(
+        &self,
+        f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_write(f).await
+        self.inner.try_write(f)
     }
 
     pub async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>
@@ -138,20 +145,22 @@ impl ExternalMetadataReadPool {
         Self { inner }
     }
 
-    pub async fn read<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn read<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.read(f).await
+        self.inner.read(f)
     }
 
-    pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_read<F, R>(&self, f: F) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_read(f).await
+        self.inner.try_read(f)
     }
 
     pub fn db_path(&self) -> std::path::PathBuf {
@@ -169,32 +178,38 @@ impl ExternalMetadataWritePool {
         Self { inner }
     }
 
-    pub async fn write<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.write(f).await
+        self.inner.write(f)
     }
 
-    pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_write<F, R>(
+        &self,
+        f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_write(f).await
+        self.inner.try_write(f)
     }
 
-    pub async fn try_write_with_timeout<F, R>(
+    #[track_caller]
+    pub fn try_write_with_timeout<F, R>(
         &self,
         timeout: std::time::Duration,
         f: F,
-    ) -> Result<R, DbError>
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_write_with_timeout(timeout, f).await
+        self.inner.try_write_with_timeout(timeout, f)
     }
 
     pub async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>
@@ -236,20 +251,22 @@ impl UserDataReadPool {
         Self { inner }
     }
 
-    pub async fn read<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn read<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.read(f).await
+        self.inner.read(f)
     }
 
-    pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_read<F, R>(&self, f: F) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_read(f).await
+        self.inner.try_read(f)
     }
 
     pub fn is_corrupt(&self) -> bool {
@@ -271,20 +288,25 @@ impl UserDataWritePool {
         Self { inner }
     }
 
-    pub async fn write<F, R>(&self, f: F) -> Option<R>
+    #[track_caller]
+    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.write(f).await
+        self.inner.write(f)
     }
 
-    pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>
+    #[track_caller]
+    pub fn try_write<F, R>(
+        &self,
+        f: F,
+    ) -> impl std::future::Future<Output = Result<R, DbError>> + '_
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.inner.try_write(f).await
+        self.inner.try_write(f)
     }
 
     pub async fn transaction<F, R>(&self, f: F) -> Result<R, DbError>

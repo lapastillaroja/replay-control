@@ -24,6 +24,15 @@ pub struct LaunchboxRefreshStats {
     pub resources_written: usize,
 }
 
+/// Parsed LaunchBox data ready to apply to `external_metadata.db`.
+pub struct PreparedLaunchboxRefresh {
+    xml_crc32: String,
+    games: HashMap<(String, String), LaunchboxGameRow>,
+    alternates: Vec<(String, String, String, String)>,
+    resources: HashMap<(String, String, String), LaunchboxResourceRow>,
+    source_entries: usize,
+}
+
 /// One row destined for `provider_game`. Mirrors the schema declared in
 /// `external_metadata.rs`.
 struct LaunchboxGameRow {
@@ -120,19 +129,15 @@ fn video_resource_from_lb(g: &LbGame) -> Option<LaunchboxResourceRow> {
     }
 }
 
-/// Refresh the LaunchBox tables in `external_metadata.db` from the given XML.
+/// Parse a LaunchBox XML file and build the rows needed for refresh.
 ///
-/// Single in-place transaction. On success, stamps
-/// `external_meta.launchbox_xml_crc32` so the next boot's freshness check
-/// is a no-op until the XML changes.
-///
-/// `conn` is the `external_metadata` write connection — caller acquires it
-/// from the pool (e.g. `em_pool.write(|c| refresh_launchbox(xml, c, …))`).
-pub fn refresh_launchbox(
+/// This function does not touch SQLite. Call it before acquiring the
+/// `external_metadata.db` writer so the writer slot is held only while rows
+/// are applied.
+pub fn prepare_launchbox_refresh(
     xml_path: &Path,
-    conn: &mut Connection,
     on_progress: impl Fn(usize) + Send + Sync,
-) -> Result<LaunchboxRefreshStats> {
+) -> Result<PreparedLaunchboxRefresh> {
     // Hash before any DB work — if parsing or writing fails, the stamp is
     // never persisted and the next boot retries automatically.
     let xml_crc32 = external_metadata::hash_file_crc32(xml_path)?;
@@ -200,6 +205,33 @@ pub fn refresh_launchbox(
             }
         }
     }
+
+    on_progress(source_entries);
+    Ok(PreparedLaunchboxRefresh {
+        xml_crc32,
+        games,
+        alternates,
+        resources,
+        source_entries,
+    })
+}
+
+/// Apply parsed LaunchBox rows to `external_metadata.db`.
+///
+/// Single in-place transaction. On success, stamps
+/// `external_meta.launchbox_xml_crc32` so the next boot's freshness check
+/// is a no-op until the XML changes.
+pub fn apply_launchbox_refresh(
+    conn: &mut Connection,
+    prepared: PreparedLaunchboxRefresh,
+) -> Result<LaunchboxRefreshStats> {
+    let PreparedLaunchboxRefresh {
+        xml_crc32,
+        games,
+        alternates,
+        resources,
+        source_entries,
+    } = prepared;
 
     // External_metadata is set to synchronous=FULL at pool open so each
     // commit fsyncs.
@@ -321,7 +353,6 @@ pub fn refresh_launchbox(
         tx.commit()
             .map_err(|e| Error::Other(format!("commit: {e}")))?;
     }
-    on_progress(source_entries);
 
     tracing::info!(
         "external_metadata launchbox refresh: {source_entries} source entries, \
@@ -334,6 +365,20 @@ pub fn refresh_launchbox(
         alternates_written,
         resources_written,
     })
+}
+
+/// Refresh the LaunchBox tables in `external_metadata.db` from the given XML.
+///
+/// Convenience wrapper for synchronous callers. Async pool callers should use
+/// `prepare_launchbox_refresh` before acquiring the writer, then
+/// `apply_launchbox_refresh` inside the writer closure.
+pub fn refresh_launchbox(
+    xml_path: &Path,
+    conn: &mut Connection,
+    on_progress: impl Fn(usize) + Send + Sync,
+) -> Result<LaunchboxRefreshStats> {
+    let prepared = prepare_launchbox_refresh(xml_path, on_progress)?;
+    apply_launchbox_refresh(conn, prepared)
 }
 
 #[cfg(test)]

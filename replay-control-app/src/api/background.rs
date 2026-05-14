@@ -3,7 +3,7 @@ use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::roms::StorageProbe;
 use replay_control_core_server::update as update_io;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::AppState;
 use super::activity::{
@@ -45,6 +45,17 @@ fn update_rebuild_progress(state: &AppState, f: impl FnOnce(&mut RebuildProgress
     state.update_activity(|act| {
         if let Activity::Rebuild { progress } = act {
             f(progress);
+        }
+    });
+}
+
+fn fail_refresh_metadata(state: &AppState, start: Instant, error: impl Into<String>) {
+    let error = error.into();
+    state.update_activity(|act| {
+        if let Activity::RefreshExternalMetadata { progress } = act {
+            progress.phase = RefreshMetadataPhase::Failed;
+            progress.error = Some(error);
+            progress.elapsed_secs = start.elapsed().as_secs();
         }
     });
 }
@@ -723,24 +734,44 @@ impl BackgroundManager {
         });
 
         // Surface parse progress to SSE so the UI banner doesn't sit frozen
-        // for the 30–90 s parse on Pi. The closure runs on the blocking pool
-        // (deadpool's interact thread); update_activity is RwLock-only +
-        // broadcast, no async work.
+        // for the 30–90 s parse on Pi. Parse/build runs on the blocking pool
+        // before the SQLite writer is acquired, so the external_metadata
+        // writer slot is held only while rows are applied.
         let xml_for_task = xml_path.clone();
         let progress_state = state.clone();
+        let prepared = match tokio::task::spawn_blocking(move || {
+            replay_control_core_server::library::external_metadata_refresh::prepare_launchbox_refresh(
+                &xml_for_task,
+                move |processed| {
+                    progress_state.update_activity(|act| {
+                        if let Activity::RefreshExternalMetadata { progress } = act {
+                            progress.source_entries = processed;
+                        }
+                    });
+                },
+            )
+        })
+        .await
+        {
+            Ok(Ok(prepared)) => prepared,
+            Ok(Err(e)) => {
+                tracing::warn!("phase_auto_import: refresh prepare failed: {e}");
+                fail_refresh_metadata(state, start, e.to_string());
+                return;
+            }
+            Err(e) => {
+                tracing::warn!("phase_auto_import: refresh prepare task panicked: {e}");
+                fail_refresh_metadata(state, start, e.to_string());
+                return;
+            }
+        };
+
         let result = state
             .external_metadata_writer
             .try_write_with_timeout(EXTERNAL_METADATA_REFRESH_TIMEOUT, move |conn| {
-                replay_control_core_server::library::external_metadata_refresh::refresh_launchbox(
-                    &xml_for_task,
+                replay_control_core_server::library::external_metadata_refresh::apply_launchbox_refresh(
                     conn,
-                    move |processed| {
-                        progress_state.update_activity(|act| {
-                            if let Activity::RefreshExternalMetadata { progress } = act {
-                                progress.source_entries = processed;
-                            }
-                        });
-                    },
+                    prepared,
                 )
             })
             .await;
@@ -749,24 +780,12 @@ impl BackgroundManager {
             Ok(Ok(stats)) => stats,
             Ok(Err(e)) => {
                 tracing::warn!("phase_auto_import: refresh failed: {e}");
-                state.update_activity(|act| {
-                    if let Activity::RefreshExternalMetadata { progress } = act {
-                        progress.phase = RefreshMetadataPhase::Failed;
-                        progress.error = Some(e.to_string());
-                        progress.elapsed_secs = start.elapsed().as_secs();
-                    }
-                });
+                fail_refresh_metadata(state, start, e.to_string());
                 return;
             }
             Err(e) => {
                 tracing::warn!("phase_auto_import: external_metadata pool write failed: {e}");
-                state.update_activity(|act| {
-                    if let Activity::RefreshExternalMetadata { progress } = act {
-                        progress.phase = RefreshMetadataPhase::Failed;
-                        progress.error = Some(e.to_string());
-                        progress.elapsed_secs = start.elapsed().as_secs();
-                    }
-                });
+                fail_refresh_metadata(state, start, e.to_string());
                 return;
             }
         };
