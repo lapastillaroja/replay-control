@@ -32,7 +32,7 @@ pub async fn lookup_series(system: &str, normalized_title: &str) -> Vec<Wikidata
         let normalized_title = normalized_title.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM series_entries \
+                "SELECT {ENTRY_COLS} FROM series_entry \
                  WHERE system = ?1 AND normalized_title = ?2"
             ))?;
             let rows = stmt.query_map(rusqlite::params![system, normalized_title], row_to_entry)?;
@@ -49,7 +49,7 @@ pub async fn system_series_entries(system: &str) -> Vec<WikidataSeriesEntry> {
         let system = system.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM series_entries WHERE system = ?1"
+                "SELECT {ENTRY_COLS} FROM series_entry WHERE system = ?1"
             ))?;
             let rows = stmt.query_map(rusqlite::params![system], row_to_entry)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -64,7 +64,7 @@ pub async fn all_series_names() -> Vec<String> {
     {
         return crate::catalog_pool::with_catalog(|conn| {
             let mut stmt = conn.prepare_cached(
-                "SELECT DISTINCT series_name FROM series_entries \
+                "SELECT DISTINCT series_name FROM series_entry \
                  WHERE series_name != '' ORDER BY series_name",
             )?;
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -80,7 +80,7 @@ pub async fn all_entries() -> Vec<WikidataSeriesEntry> {
     {
         return crate::catalog_pool::with_catalog(|conn| {
             let mut stmt =
-                conn.prepare_cached(&format!("SELECT {ENTRY_COLS} FROM series_entries"))?;
+                conn.prepare_cached(&format!("SELECT {ENTRY_COLS} FROM series_entry"))?;
             let rows = stmt.query_map([], row_to_entry)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
@@ -93,7 +93,7 @@ pub async fn all_entries() -> Vec<WikidataSeriesEntry> {
 pub async fn entry_count() -> usize {
     {
         return crate::catalog_pool::with_catalog(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM series_entries", [], |row| {
+            conn.query_row("SELECT COUNT(*) FROM series_entry", [], |row| {
                 row.get::<_, i64>(0)
             })
         })

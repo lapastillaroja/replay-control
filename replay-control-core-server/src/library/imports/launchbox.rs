@@ -34,6 +34,7 @@ pub(crate) struct LbGame {
     pub(crate) release_date: Option<String>,
     pub(crate) release_precision: Option<DatePrecision>,
     pub(crate) cooperative: bool,
+    pub(crate) video_url: String,
 }
 
 /// Parse a LaunchBox `ReleaseDate` ISO 8601 datetime string.
@@ -119,6 +120,7 @@ pub(crate) fn parse_xml<R: BufRead>(
     let mut release_date: Option<String> = None;
     let mut release_precision: Option<DatePrecision> = None;
     let mut cooperative = false;
+    let mut video_url = String::new();
 
     // AlternateName fields.
     let mut alt_name = String::new();
@@ -150,6 +152,7 @@ pub(crate) fn parse_xml<R: BufRead>(
                         release_date = None;
                         release_precision = None;
                         cooperative = false;
+                        video_url.clear();
                     }
                     "GameAlternateName" => {
                         ctx = Context::AlternateName;
@@ -197,6 +200,7 @@ pub(crate) fn parse_xml<R: BufRead>(
                         "Cooperative" => {
                             cooperative = text.trim().eq_ignore_ascii_case("true");
                         }
+                        "VideoURL" => video_url.push_str(&text),
                         _ => {}
                     },
                     Context::AlternateName => match current_tag.as_str() {
@@ -233,6 +237,7 @@ pub(crate) fn parse_xml<R: BufRead>(
                                 release_date: release_date.take(),
                                 release_precision: release_precision.take(),
                                 cooperative,
+                                video_url: std::mem::take(&mut video_url),
                             };
                             for folder in system_folders {
                                 on_game(&game, folder);

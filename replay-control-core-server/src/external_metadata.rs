@@ -15,8 +15,11 @@ pub const EXTERNAL_METADATA_DB_FILE: &str = "external_metadata.db";
 
 // ── Schema ────────────────────────────────────────────────────────────────
 
-const CREATE_LAUNCHBOX_GAME_SQL: &str = "
-    CREATE TABLE IF NOT EXISTS launchbox_game (
+pub const LAUNCHBOX_PROVIDER: &str = "launchbox";
+
+const CREATE_PROVIDER_GAME_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS provider_game (
+        provider TEXT NOT NULL,
         system TEXT NOT NULL,
         normalized_title TEXT NOT NULL,
         description TEXT,
@@ -29,11 +32,12 @@ const CREATE_LAUNCHBOX_GAME_SQL: &str = "
         rating_count INTEGER,
         cooperative INTEGER NOT NULL DEFAULT 0,
         players INTEGER,
-        PRIMARY KEY (system, normalized_title)
+        PRIMARY KEY (system, normalized_title, provider)
     );
 ";
 
-const LAUNCHBOX_GAME_COLUMNS: &[&str] = &[
+const PROVIDER_GAME_COLUMNS: &[&str] = &[
+    "provider",
     "system",
     "normalized_title",
     "description",
@@ -48,21 +52,52 @@ const LAUNCHBOX_GAME_COLUMNS: &[&str] = &[
     "players",
 ];
 
-const CREATE_LAUNCHBOX_ALTERNATE_SQL: &str = "
-    CREATE TABLE IF NOT EXISTS launchbox_alternate (
+const CREATE_PROVIDER_ALTERNATE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS provider_alternate (
+        provider TEXT NOT NULL,
         system TEXT NOT NULL,
         normalized_title TEXT NOT NULL,
         alternate_name TEXT NOT NULL,
         normalized_alternate TEXT NOT NULL DEFAULT '',
-        PRIMARY KEY (system, normalized_title, alternate_name)
+        PRIMARY KEY (system, normalized_title, alternate_name, provider)
     );
 ";
 
-const LAUNCHBOX_ALTERNATE_COLUMNS: &[&str] = &[
+const PROVIDER_ALTERNATE_COLUMNS: &[&str] = &[
+    "provider",
     "system",
     "normalized_title",
     "alternate_name",
     "normalized_alternate",
+];
+
+const CREATE_PROVIDER_RESOURCE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS provider_resource (
+        provider TEXT NOT NULL,
+        system TEXT NOT NULL,
+        normalized_title TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT,
+        languages TEXT,
+        platform TEXT,
+        mime_type TEXT,
+        PRIMARY KEY (system, normalized_title, resource_type, provider, resource_id)
+    );
+";
+
+const PROVIDER_RESOURCE_COLUMNS: &[&str] = &[
+    "provider",
+    "system",
+    "normalized_title",
+    "resource_type",
+    "resource_id",
+    "url",
+    "title",
+    "languages",
+    "platform",
+    "mime_type",
 ];
 
 const CREATE_THUMBNAIL_MANIFEST_SQL: &str = "
@@ -109,8 +144,9 @@ const EXTERNAL_META_COLUMNS: &[&str] = &["key", "value"];
 
 /// Tables probed for corruption detection on open.
 const TABLES: &[&str] = &[
-    "launchbox_game",
-    "launchbox_alternate",
+    "provider_game",
+    "provider_alternate",
+    "provider_resource",
     "thumbnail_manifest",
     "data_source",
     "external_meta",
@@ -118,7 +154,7 @@ const TABLES: &[&str] = &[
 
 /// Well-known keys for `external_meta`.
 pub mod meta_keys {
-    /// CRC32 of the LaunchBox XML file last parsed into `launchbox_game`.
+    /// CRC32 of the LaunchBox XML file last parsed into provider tables.
     /// Comparison is always current-vs-stored (n=2), so CRC32's collision
     /// profile is plenty — no need for a cryptographic hash.
     pub const LAUNCHBOX_XML_CRC32: &str = "launchbox_xml_crc32";
@@ -136,7 +172,7 @@ pub mod meta_keys {
     pub const THUMBNAIL_MANIFEST_FETCHED_AT: &str = "thumbnail_manifest_fetched_at";
 
     /// `replay_control_core::title_utils::TITLE_NORM_VERSION` value at the
-    /// time `launchbox_alternate.normalized_alternate` (and any other
+    /// time `provider_alternate.normalized_alternate` (and any other
     /// host-global normalized cache) was last (re)populated. Mismatch on
     /// boot triggers a `refresh_launchbox` reparse.
     pub const TITLE_NORM_VERSION: &str = "title_norm_version";
@@ -146,16 +182,23 @@ pub mod meta_keys {
 /// so a column-set drift is recovered transparently — same pattern as
 /// `LibraryDb::init_tables`.
 pub fn init_tables(conn: &rusqlite::Connection) -> Result<()> {
+    conn.execute_batch(CREATE_EXTERNAL_META_SQL)
+        .map_err(|e| Error::Other(format!("create external_meta: {e}")))?;
     let pairs: &[(&str, &[&str], &str)] = &[
         (
-            "launchbox_game",
-            LAUNCHBOX_GAME_COLUMNS,
-            CREATE_LAUNCHBOX_GAME_SQL,
+            "provider_game",
+            PROVIDER_GAME_COLUMNS,
+            CREATE_PROVIDER_GAME_SQL,
         ),
         (
-            "launchbox_alternate",
-            LAUNCHBOX_ALTERNATE_COLUMNS,
-            CREATE_LAUNCHBOX_ALTERNATE_SQL,
+            "provider_alternate",
+            PROVIDER_ALTERNATE_COLUMNS,
+            CREATE_PROVIDER_ALTERNATE_SQL,
+        ),
+        (
+            "provider_resource",
+            PROVIDER_RESOURCE_COLUMNS,
+            CREATE_PROVIDER_RESOURCE_SQL,
         ),
         (
             "thumbnail_manifest",
@@ -169,10 +212,22 @@ pub fn init_tables(conn: &rusqlite::Connection) -> Result<()> {
             CREATE_EXTERNAL_META_SQL,
         ),
     ];
+    for legacy in ["launchbox_game", "launchbox_alternate"] {
+        if crate::sqlite::table_exists(conn, legacy) {
+            tracing::info!("external_metadata: dropping legacy {legacy}");
+            let _ = conn.execute_batch(&format!("DROP TABLE IF EXISTS {legacy};"));
+            write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
+            write_meta(conn, meta_keys::TITLE_NORM_VERSION, None)?;
+        }
+    }
     for (name, cols, ddl) in pairs {
         if crate::sqlite::table_columns_diverge(conn, name, cols) {
             tracing::warn!("external_metadata: {name} schema differs, rebuilding");
             let _ = conn.execute_batch(&format!("DROP TABLE IF EXISTS {name};"));
+            if name.starts_with("provider_") {
+                write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
+                write_meta(conn, meta_keys::TITLE_NORM_VERSION, None)?;
+            }
         }
         conn.execute_batch(ddl)
             .map_err(|e| Error::Other(format!("create {name}: {e}")))?;
@@ -436,13 +491,13 @@ pub fn clear_libretro_thumbnail_manifest(conn: &rusqlite::Connection) -> Result<
 
 // ── Per-system batched readers ────────────────────────────────────────────
 
-/// One LaunchBox metadata row, keyed by `(system, normalized_title)`.
-/// Fields mirror the `launchbox_game` schema. `release_date` is the raw
+/// One provider metadata row, keyed by `(system, normalized_title, provider)`.
+/// Fields mirror the `provider_game` schema. `release_date` is the raw
 /// ISO-8601 partial value (`"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`) and
 /// `release_precision` is its precision tag — both come straight from the
 /// LaunchBox XML.
 #[derive(Debug, Clone, Default)]
-pub struct LaunchboxRow {
+pub struct ProviderGameRow {
     pub description: Option<String>,
     pub genre: Option<String>,
     pub developer: Option<String>,
@@ -455,30 +510,44 @@ pub struct LaunchboxRow {
     pub players: Option<u8>,
 }
 
-/// Load every `launchbox_game` row for a system into a normalized-title-keyed map.
+#[derive(Debug, Clone, Default)]
+pub struct ProviderResourceRow {
+    pub provider: String,
+    pub normalized_title: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub url: String,
+    pub title: Option<String>,
+    pub languages: Option<String>,
+    pub platform: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+/// Load every `provider_game` row for a provider/system into a normalized-title-keyed map.
 /// Single SELECT — replaces the legacy "one query per field" pattern.
-pub fn system_launchbox_rows(
+pub fn system_provider_game_rows(
     conn: &rusqlite::Connection,
+    provider: &str,
     system: &str,
-) -> Result<std::collections::HashMap<String, LaunchboxRow>> {
+) -> Result<std::collections::HashMap<String, ProviderGameRow>> {
     let mut stmt = conn
         .prepare(
             "SELECT normalized_title, description, genre, developer, publisher,
                     release_date, release_precision,
                     rating, rating_count, cooperative, players
-             FROM launchbox_game
-             WHERE system = ?1",
+             FROM provider_game
+             WHERE provider = ?1 AND system = ?2",
         )
-        .map_err(|e| Error::Other(format!("prepare system_launchbox_rows: {e}")))?;
+        .map_err(|e| Error::Other(format!("prepare system_provider_game_rows: {e}")))?;
 
     let rows = stmt
-        .query_map(rusqlite::params![system], |row| {
+        .query_map(rusqlite::params![provider, system], |row| {
             let norm: String = row.get(0)?;
             let release_precision: Option<String> = row.get(6)?;
             let release_precision = release_precision
                 .as_deref()
                 .and_then(replay_control_core::DatePrecision::from_str);
-            let r = LaunchboxRow {
+            let r = ProviderGameRow {
                 description: row.get(1)?,
                 genre: row.get(2)?,
                 developer: row.get(3)?,
@@ -492,7 +561,7 @@ pub fn system_launchbox_rows(
             };
             Ok((norm, r))
         })
-        .map_err(|e| Error::Other(format!("query system_launchbox_rows: {e}")))?;
+        .map_err(|e| Error::Other(format!("query system_provider_game_rows: {e}")))?;
 
     let mut map = std::collections::HashMap::new();
     for r in rows.flatten() {
@@ -501,34 +570,52 @@ pub fn system_launchbox_rows(
     Ok(map)
 }
 
-/// Total `launchbox_game` row count — used by the setup checklist's
-/// "metadata imported?" check and by metadata coverage stats.
-pub fn launchbox_game_count(conn: &rusqlite::Connection) -> Result<i64> {
-    conn.query_row("SELECT COUNT(*) FROM launchbox_game", [], |row| row.get(0))
-        .map_err(|e| Error::Other(format!("launchbox_game_count: {e}")))
+pub fn system_launchbox_rows(
+    conn: &rusqlite::Connection,
+    system: &str,
+) -> Result<std::collections::HashMap<String, ProviderGameRow>> {
+    system_provider_game_rows(conn, LAUNCHBOX_PROVIDER, system)
 }
 
-/// Aggregate stats over `launchbox_game` for the metadata-coverage UI.
+/// Total LaunchBox provider row count — used by the setup checklist's
+/// "metadata imported?" check and by metadata coverage stats.
+pub fn provider_game_count(conn: &rusqlite::Connection, provider: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM provider_game WHERE provider = ?1",
+        [provider],
+        |row| row.get(0),
+    )
+    .map_err(|e| Error::Other(format!("provider_game_count: {e}")))
+}
+
+pub fn launchbox_game_count(conn: &rusqlite::Connection) -> Result<i64> {
+    provider_game_count(conn, LAUNCHBOX_PROVIDER)
+}
+
+/// Aggregate stats over LaunchBox provider rows for the metadata-coverage UI.
 pub fn launchbox_stats(
     conn: &rusqlite::Connection,
     db_path: &Path,
 ) -> Result<replay_control_core::library_db::MetadataStats> {
     let total_entries: usize = conn
-        .query_row("SELECT COUNT(*) FROM launchbox_game", [], |row| {
-            row.get::<_, i64>(0).map(|v| v as usize)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM provider_game WHERE provider = ?1",
+            [LAUNCHBOX_PROVIDER],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
         .map_err(|e| Error::Other(format!("launchbox_stats total: {e}")))?;
     let with_description: usize = conn
         .query_row(
-            "SELECT COUNT(*) FROM launchbox_game WHERE description IS NOT NULL AND description != ''",
-            [],
+            "SELECT COUNT(*) FROM provider_game
+             WHERE provider = ?1 AND description IS NOT NULL AND description != ''",
+            [LAUNCHBOX_PROVIDER],
             |row| row.get::<_, i64>(0).map(|v| v as usize),
         )
         .map_err(|e| Error::Other(format!("launchbox_stats with_description: {e}")))?;
     let with_rating: usize = conn
         .query_row(
-            "SELECT COUNT(*) FROM launchbox_game WHERE rating IS NOT NULL",
-            [],
+            "SELECT COUNT(*) FROM provider_game WHERE provider = ?1 AND rating IS NOT NULL",
+            [LAUNCHBOX_PROVIDER],
             |row| row.get::<_, i64>(0).map(|v| v as usize),
         )
         .map_err(|e| Error::Other(format!("launchbox_stats with_rating: {e}")))?;
@@ -542,20 +629,20 @@ pub fn launchbox_stats(
     })
 }
 
-/// Per-system count of `launchbox_game` rows with a non-empty description —
+/// Per-system count of LaunchBox provider rows with a non-empty description —
 /// the "metadata coverage" number on the per-system list. Coverage is by
 /// `(system, normalized_title)`, which is necessarily ≤ the on-disk ROM count
 /// since multiple ROM filenames can share one normalized title.
 pub fn launchbox_entries_per_system(conn: &rusqlite::Connection) -> Result<Vec<(String, usize)>> {
     let mut stmt = conn
         .prepare(
-            "SELECT system, COUNT(*) FROM launchbox_game
-             WHERE description IS NOT NULL AND description != ''
+            "SELECT system, COUNT(*) FROM provider_game
+             WHERE provider = ?1 AND description IS NOT NULL AND description != ''
              GROUP BY system ORDER BY 2 DESC",
         )
         .map_err(|e| Error::Other(format!("launchbox_entries_per_system prepare: {e}")))?;
     let rows = stmt
-        .query_map([], |row| {
+        .query_map([LAUNCHBOX_PROVIDER], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1).map(|v| v as usize)?,
@@ -569,50 +656,103 @@ pub fn launchbox_entries_per_system(conn: &rusqlite::Connection) -> Result<Vec<(
     Ok(out)
 }
 
-/// Drop every `launchbox_game` + `launchbox_alternate` row. Used by the
+/// Drop every LaunchBox provider row. Used by the
 /// "Clear metadata" UI button.
 pub fn clear_launchbox(conn: &rusqlite::Connection) -> Result<()> {
-    conn.execute("DELETE FROM launchbox_game", [])
-        .map_err(|e| Error::Other(format!("clear launchbox_game: {e}")))?;
-    conn.execute("DELETE FROM launchbox_alternate", [])
-        .map_err(|e| Error::Other(format!("clear launchbox_alternate: {e}")))?;
+    conn.execute(
+        "DELETE FROM provider_game WHERE provider = ?1",
+        [LAUNCHBOX_PROVIDER],
+    )
+    .map_err(|e| Error::Other(format!("clear provider_game launchbox: {e}")))?;
+    conn.execute(
+        "DELETE FROM provider_alternate WHERE provider = ?1",
+        [LAUNCHBOX_PROVIDER],
+    )
+    .map_err(|e| Error::Other(format!("clear provider_alternate launchbox: {e}")))?;
+    conn.execute(
+        "DELETE FROM provider_resource WHERE provider = ?1",
+        [LAUNCHBOX_PROVIDER],
+    )
+    .map_err(|e| Error::Other(format!("clear provider_resource launchbox: {e}")))?;
     write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
     write_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG, None)?;
     Ok(())
 }
 
-/// Load every `launchbox_alternate` row for a system. Returns
+/// Load every `provider_alternate` row for a provider/system. Returns
 /// `(normalized_title, alternate_name, normalized_alternate)` triples.
-///
-/// `normalized_title` keys back into `launchbox_game`. `normalized_alternate`
-/// is the same alternate-name run through `normalize_title_for_metadata` at
-/// import time, used by the enrichment matcher to fall back to LaunchBox
-/// rows when a ROM's normalized filename equals an alternate (Phase 3).
-pub fn system_launchbox_alternates(
+pub fn system_provider_alternates(
     conn: &rusqlite::Connection,
+    provider: &str,
     system: &str,
 ) -> Result<Vec<(String, String, String)>> {
     let mut stmt = conn
         .prepare(
             "SELECT normalized_title, alternate_name, normalized_alternate
-             FROM launchbox_alternate
-             WHERE system = ?1",
+             FROM provider_alternate
+             WHERE provider = ?1 AND system = ?2",
         )
-        .map_err(|e| Error::Other(format!("prepare system_launchbox_alternates: {e}")))?;
+        .map_err(|e| Error::Other(format!("prepare system_provider_alternates: {e}")))?;
 
     let rows = stmt
-        .query_map(rusqlite::params![system], |row| {
+        .query_map(rusqlite::params![provider, system], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
             ))
         })
-        .map_err(|e| Error::Other(format!("query system_launchbox_alternates: {e}")))?;
+        .map_err(|e| Error::Other(format!("query system_provider_alternates: {e}")))?;
 
     let mut out = Vec::new();
     for r in rows.flatten() {
         out.push(r);
+    }
+    Ok(out)
+}
+
+pub fn system_launchbox_alternates(
+    conn: &rusqlite::Connection,
+    system: &str,
+) -> Result<Vec<(String, String, String)>> {
+    system_provider_alternates(conn, LAUNCHBOX_PROVIDER, system)
+}
+
+pub fn system_provider_resources(
+    conn: &rusqlite::Connection,
+    provider: &str,
+    system: &str,
+    resource_type: &str,
+) -> Result<std::collections::HashMap<String, Vec<ProviderResourceRow>>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT normalized_title, resource_type, resource_id, url, title, languages, platform, mime_type
+             FROM provider_resource
+             WHERE provider = ?1 AND system = ?2 AND resource_type = ?3",
+        )
+        .map_err(|e| Error::Other(format!("prepare system_provider_resources: {e}")))?;
+    let rows = stmt
+        .query_map(rusqlite::params![provider, system, resource_type], |row| {
+            Ok(ProviderResourceRow {
+                provider: provider.to_string(),
+                normalized_title: row.get(0)?,
+                resource_type: row.get(1)?,
+                resource_id: row.get(2)?,
+                url: row.get(3)?,
+                title: row.get(4)?,
+                languages: row.get(5)?,
+                platform: row.get(6)?,
+                mime_type: row.get(7)?,
+            })
+        })
+        .map_err(|e| Error::Other(format!("query system_provider_resources: {e}")))?;
+
+    let mut out: std::collections::HashMap<String, Vec<ProviderResourceRow>> =
+        std::collections::HashMap::new();
+    for row in rows.flatten() {
+        out.entry(row.normalized_title.clone())
+            .or_default()
+            .push(row);
     }
     Ok(out)
 }
@@ -671,13 +811,17 @@ mod tests {
             .unwrap();
         }
         let conn = open_at(&path).unwrap();
-        // Old row gone; expected columns present.
+        // Legacy table gone; provider table exists with expected columns.
         let cnt: i64 = conn
-            .query_row("SELECT COUNT(*) FROM launchbox_game", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'launchbox_game'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cnt, 0);
         let has_normalized: bool = conn
-            .prepare("PRAGMA table_info(launchbox_game)")
+            .prepare("PRAGMA table_info(provider_game)")
             .unwrap()
             .query_map([], |row| row.get::<_, String>(1))
             .unwrap()
@@ -694,7 +838,7 @@ mod tests {
         let conn = open_at(&path).unwrap();
         // Tables exist after recreate.
         let cnt: i64 = conn
-            .query_row("SELECT COUNT(*) FROM launchbox_game", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM provider_game", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cnt, 0);
     }

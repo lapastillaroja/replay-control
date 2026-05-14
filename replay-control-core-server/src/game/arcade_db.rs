@@ -43,7 +43,7 @@ pub struct ArcadeGameInfo {
     pub normalized_genre: String,
 }
 
-/// Single-source row as stored in the `arcade_games` table.
+/// Single-source row as stored in the `arcade_game` table.
 #[derive(Debug, Clone)]
 struct SourceRow {
     rom_name: String,
@@ -221,7 +221,7 @@ pub async fn lookup_arcade_game(system: &str, rom_name: &str) -> Option<ArcadeGa
     let rom = rom_name.to_string();
     let rows: Vec<SourceRow> = crate::catalog_pool::with_catalog(move |conn| {
         let mut stmt = conn.prepare_cached(&format!(
-            "SELECT {ARCADE_COLS} FROM arcade_games WHERE rom_name = ?1"
+            "SELECT {ARCADE_COLS} FROM arcade_game WHERE rom_name = ?1"
         ))?;
         let rows = stmt.query_map([rom.as_str()], row_to_source_row)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -253,7 +253,7 @@ pub async fn lookup_arcade_games_batch(
     let names_json = serde_json::to_string(rom_names).unwrap_or_else(|_| "[]".into());
     let rows: Vec<SourceRow> = crate::catalog_pool::with_catalog(move |conn| {
         let mut stmt = conn.prepare_cached(&format!(
-            "SELECT {ARCADE_COLS} FROM arcade_games \
+            "SELECT {ARCADE_COLS} FROM arcade_game \
              WHERE rom_name IN (SELECT value FROM json_each(?1))"
         ))?;
         let rows = stmt.query_map([names_json.as_str()], row_to_source_row)?;
@@ -306,7 +306,7 @@ pub async fn display_name_if_arcade(system: &str, rom_filename: &str) -> Option<
 pub async fn arcade_release_dates() -> Vec<(String, String, String)> {
     crate::catalog_pool::with_catalog(|conn| {
         let mut stmt = conn.prepare_cached(
-            "SELECT rom_name, year, source FROM arcade_release_dates ORDER BY rom_name",
+            "SELECT rom_name, year, source FROM arcade_release_date ORDER BY rom_name",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -330,7 +330,7 @@ pub const MAME_VERSION: &str = "0.285";
 pub async fn entry_count() -> usize {
     crate::catalog_pool::with_catalog(|conn| {
         conn.query_row(
-            "SELECT COUNT(DISTINCT rom_name) FROM arcade_games",
+            "SELECT COUNT(DISTINCT rom_name) FROM arcade_game",
             [],
             |row| row.get::<_, i64>(0),
         )

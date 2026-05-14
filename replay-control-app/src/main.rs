@@ -518,6 +518,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLogLevelConfig>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLogLevelConfig>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetProviderGameVideos>(
+        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameVideos>();
@@ -710,6 +712,46 @@ mod ssr {
             },
         );
 
+        // Owned manuals handler: serves saved/uploaded manuals from
+        // <storage>/.replay-control/manuals/<system>/<file>.
+        let owned_manuals_state = app_state.clone();
+        let owned_manuals_handler = axum::routing::get(
+            move |axum::extract::Path(path): axum::extract::Path<String>| {
+                let state = owned_manuals_state.clone();
+                async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    if path.split('/').any(|s| s == "..") {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    let file_path = state.storage().rc_dir().join("manuals").join(&path);
+                    match tokio::fs::read(&file_path).await {
+                        Ok(data) => {
+                            let content_type = if path.ends_with(".pdf") {
+                                "application/pdf"
+                            } else if path.ends_with(".txt") {
+                                "text/plain; charset=utf-8"
+                            } else {
+                                "application/octet-stream"
+                            };
+                            (
+                                StatusCode::OK,
+                                [
+                                    ("content-type", content_type),
+                                    ("cache-control", api::CACHE_1D),
+                                ],
+                                data,
+                            )
+                                .into_response()
+                        }
+                        Err(_) => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            },
+        );
+
         let rom_docs_state = app_state.clone();
         let rom_docs_handler = axum::routing::get(
             move |axum::extract::Path(path): axum::extract::Path<String>,
@@ -770,6 +812,7 @@ mod ssr {
             .route("/sse/now-playing", now_playing_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
+            .route("/owned-manuals/*path", owned_manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)
             .route("/media/*path", media_handler)
             .nest_service(

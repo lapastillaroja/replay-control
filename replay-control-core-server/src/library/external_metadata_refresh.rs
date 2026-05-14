@@ -10,7 +10,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 
-use crate::external_metadata::{self, meta_keys};
+use crate::external_metadata::{self, LAUNCHBOX_PROVIDER, meta_keys};
 use crate::library::imports::launchbox::{LbGame, normalize_title, parse_xml, platform_map};
 use crate::library_db::{DatePrecision, DpSql};
 use replay_control_core::error::{Error, Result};
@@ -21,9 +21,10 @@ pub struct LaunchboxRefreshStats {
     pub source_entries: usize,
     pub games_written: usize,
     pub alternates_written: usize,
+    pub resources_written: usize,
 }
 
-/// One row destined for `launchbox_game`. Mirrors the schema declared in
+/// One row destined for `provider_game`. Mirrors the schema declared in
 /// `external_metadata.rs`.
 struct LaunchboxGameRow {
     description: Option<String>,
@@ -36,6 +37,14 @@ struct LaunchboxGameRow {
     rating_count: Option<u32>,
     cooperative: bool,
     players: Option<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct LaunchboxResourceRow {
+    resource_id: String,
+    url: String,
+    title: Option<String>,
+    platform: Option<String>,
 }
 
 fn skip_empty(s: &str) -> Option<String> {
@@ -74,6 +83,43 @@ fn row_from_lb(g: &LbGame) -> Option<LaunchboxGameRow> {
     })
 }
 
+fn video_resource_from_lb(g: &LbGame) -> Option<LaunchboxResourceRow> {
+    let url = g.video_url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    match replay_control_core::video_url::parse_video_url(url) {
+        Ok(parsed) => Some(LaunchboxResourceRow {
+            resource_id: format!("{}:{}", parsed.platform, parsed.video_id),
+            url: parsed.canonical_url,
+            title: if g.name.is_empty() {
+                None
+            } else {
+                Some(g.name.clone())
+            },
+            platform: Some(parsed.platform.as_str().to_string()),
+        }),
+        Err(_) => {
+            let digest = ring::digest::digest(&ring::digest::SHA256, url.as_bytes());
+            let hex = digest
+                .as_ref()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            Some(LaunchboxResourceRow {
+                resource_id: format!("urlhash:{hex}"),
+                url: url.to_string(),
+                title: if g.name.is_empty() {
+                    None
+                } else {
+                    Some(g.name.clone())
+                },
+                platform: None,
+            })
+        }
+    }
+}
+
 /// Refresh the LaunchBox tables in `external_metadata.db` from the given XML.
 ///
 /// Single in-place transaction. On success, stamps
@@ -100,15 +146,13 @@ pub fn refresh_launchbox(
     // matches the COALESCE-on-conflict semantics of the legacy importer.
     let mut games: HashMap<(String, String), LaunchboxGameRow> = HashMap::new();
     // database_id → all (system, normalized_title) rows the game ended up in.
-    // Used to attach LaunchBox alternate names to the right launchbox_game keys.
+    // Used to attach LaunchBox alternate names to the right provider_game keys.
     let mut db_id_to_keys: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    let mut resources: HashMap<(String, String, String), LaunchboxResourceRow> = HashMap::new();
     let mut source_entries = 0usize;
 
     let parse_result = parse_xml(reader, &platforms, |game, system_folder| {
         source_entries += 1;
-        let Some(row) = row_from_lb(game) else {
-            return;
-        };
         let norm = normalize_title(&game.name);
         if norm.is_empty() {
             return;
@@ -120,7 +164,15 @@ pub fn refresh_launchbox(
                 .or_default()
                 .push(key.clone());
         }
-        games.insert(key, row);
+        if let Some(row) = row_from_lb(game) {
+            games.insert(key.clone(), row);
+        }
+        if let Some(resource) = video_resource_from_lb(game) {
+            resources.insert(
+                (key.0.clone(), key.1.clone(), resource.resource_id.clone()),
+                resource,
+            );
+        }
 
         if source_entries.is_multiple_of(5000) {
             on_progress(source_entries);
@@ -153,29 +205,42 @@ pub fn refresh_launchbox(
     // commit fsyncs.
     let games_written;
     let alternates_written;
+    let resources_written;
     {
         let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("begin: {e}")))?;
-        tx.execute("DELETE FROM launchbox_game", [])
-            .map_err(|e| Error::Other(format!("clear launchbox_game: {e}")))?;
-        tx.execute("DELETE FROM launchbox_alternate", [])
-            .map_err(|e| Error::Other(format!("clear launchbox_alternate: {e}")))?;
+        tx.execute(
+            "DELETE FROM provider_game WHERE provider = ?1",
+            [LAUNCHBOX_PROVIDER],
+        )
+        .map_err(|e| Error::Other(format!("clear provider_game: {e}")))?;
+        tx.execute(
+            "DELETE FROM provider_alternate WHERE provider = ?1",
+            [LAUNCHBOX_PROVIDER],
+        )
+        .map_err(|e| Error::Other(format!("clear provider_alternate: {e}")))?;
+        tx.execute(
+            "DELETE FROM provider_resource WHERE provider = ?1",
+            [LAUNCHBOX_PROVIDER],
+        )
+        .map_err(|e| Error::Other(format!("clear provider_resource: {e}")))?;
 
         {
             let mut game_stmt = tx
                 .prepare(
-                    "INSERT INTO launchbox_game
-                       (system, normalized_title, description, genre, developer, publisher,
+                    "INSERT INTO provider_game
+                       (provider, system, normalized_title, description, genre, developer, publisher,
                         release_date, release_precision, rating, rating_count,
                         cooperative, players)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 )
                 .map_err(|e| Error::Other(format!("prepare insert game: {e}")))?;
             let mut count = 0usize;
             for ((system, normalized_title), row) in &games {
                 game_stmt
                     .execute(params![
+                        LAUNCHBOX_PROVIDER,
                         system,
                         normalized_title,
                         row.description,
@@ -189,7 +254,7 @@ pub fn refresh_launchbox(
                         row.cooperative as i32,
                         row.players.map(|p| p as i32),
                     ])
-                    .map_err(|e| Error::Other(format!("insert launchbox_game: {e}")))?;
+                    .map_err(|e| Error::Other(format!("insert provider_game: {e}")))?;
                 count += 1;
             }
             games_written = count;
@@ -197,30 +262,57 @@ pub fn refresh_launchbox(
         {
             let mut alt_stmt = tx
                 .prepare(
-                    "INSERT OR IGNORE INTO launchbox_alternate
-                       (system, normalized_title, alternate_name, normalized_alternate)
-                     VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT OR IGNORE INTO provider_alternate
+                       (provider, system, normalized_title, alternate_name, normalized_alternate)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
                 )
                 .map_err(|e| Error::Other(format!("prepare insert alt: {e}")))?;
             let mut count = 0usize;
             for (system, normalized_title, alternate_name, normalized_alternate) in &alternates {
                 alt_stmt
                     .execute(params![
+                        LAUNCHBOX_PROVIDER,
                         system,
                         normalized_title,
                         alternate_name,
                         normalized_alternate,
                     ])
-                    .map_err(|e| Error::Other(format!("insert launchbox_alternate: {e}")))?;
+                    .map_err(|e| Error::Other(format!("insert provider_alternate: {e}")))?;
                 count += 1;
             }
             alternates_written = count;
+        }
+        {
+            let mut resource_stmt = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO provider_resource
+                       (provider, system, normalized_title, resource_type, resource_id,
+                        url, title, languages, platform, mime_type)
+                     VALUES (?1, ?2, ?3, 'video', ?4, ?5, ?6, '', ?7, '')",
+                )
+                .map_err(|e| Error::Other(format!("prepare insert provider_resource: {e}")))?;
+            let mut count = 0usize;
+            for ((system, normalized_title, _resource_id), row) in &resources {
+                resource_stmt
+                    .execute(params![
+                        LAUNCHBOX_PROVIDER,
+                        system,
+                        normalized_title,
+                        row.resource_id,
+                        row.url,
+                        row.title,
+                        row.platform,
+                    ])
+                    .map_err(|e| Error::Other(format!("insert provider_resource: {e}")))?;
+                count += 1;
+            }
+            resources_written = count;
         }
 
         external_metadata::write_meta(&tx, meta_keys::LAUNCHBOX_XML_CRC32, Some(&xml_crc32))?;
         // Stamp the normalizer version so a future boot can detect
         // version skew between the deployed binary and the cached
-        // normalized values in `launchbox_alternate`.
+        // normalized values in `provider_alternate`.
         external_metadata::write_meta(
             &tx,
             meta_keys::TITLE_NORM_VERSION,
@@ -233,13 +325,14 @@ pub fn refresh_launchbox(
 
     tracing::info!(
         "external_metadata launchbox refresh: {source_entries} source entries, \
-         {games_written} games, {alternates_written} alternates"
+         {games_written} games, {alternates_written} alternates, {resources_written} resources"
     );
 
     Ok(LaunchboxRefreshStats {
         source_entries,
         games_written,
         alternates_written,
+        resources_written,
     })
 }
 
@@ -321,9 +414,9 @@ mod tests {
 
         let mario_genre: Option<String> = conn
             .query_row(
-                "SELECT genre FROM launchbox_game
-                 WHERE system = 'nintendo_nes' AND normalized_title = ?1",
-                params![normalize_title("Super Mario Bros.")],
+                "SELECT genre FROM provider_game
+                 WHERE provider = ?1 AND system = 'nintendo_nes' AND normalized_title = ?2",
+                params![LAUNCHBOX_PROVIDER, normalize_title("Super Mario Bros.")],
                 |r| r.get(0),
             )
             .unwrap();
@@ -331,9 +424,9 @@ mod tests {
 
         let alt_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM launchbox_alternate
-                 WHERE system = 'nintendo_nes' AND alternate_name = 'Zelda no Densetsu'",
-                [],
+                "SELECT COUNT(*) FROM provider_alternate
+                 WHERE provider = ?1 AND system = 'nintendo_nes' AND alternate_name = 'Zelda no Densetsu'",
+                params![LAUNCHBOX_PROVIDER],
                 |r| r.get(0),
             )
             .unwrap();
@@ -405,7 +498,11 @@ mod tests {
         assert_eq!(third.games_written, 1);
 
         let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM launchbox_game", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM provider_game WHERE provider = ?1",
+                params![LAUNCHBOX_PROVIDER],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(total, 1, "old rows wiped on refresh");
     }

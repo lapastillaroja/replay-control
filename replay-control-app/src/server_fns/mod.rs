@@ -427,7 +427,7 @@ async fn enrich_detail_fields(
     }
 
     // Fetch detail-only fields (description, publisher) from
-    // `game_description` — denormalized at enrichment time so the request
+    // `game_detail_metadata` — denormalized at enrichment time so the request
     // path stays on the library pool (no cross-pool acquire).
     let system = info.system.clone();
     let rom_filename = info.rom_filename.clone();

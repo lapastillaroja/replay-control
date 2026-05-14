@@ -41,9 +41,13 @@ Download the [LaunchBox](https://gamesdb.launchbox-app.com/) XML file (~460 MB) 
 - Boot-time freshness is content-derived (CRC32 of the XML vs. the last-parsed stamp) — newly added ROMs after a refresh pick up metadata automatically on the next enrichment
 - Per-system coverage stats refresh after enrichment completes
 
-Data imported: description, rating, rating count, publisher, developer, genre, max players, release date, and cooperative flag.
+Data imported: description, rating, rating count, publisher, developer, genre, max players, release date, cooperative flag, and LaunchBox video links.
 
-Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps. Description and publisher are denormalized into a per-storage `game_description` cache so the game-detail page reads them from a single pool.
+Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps. Description, publisher, and resource suggestions are denormalized into per-storage `library.db` tables so the game-detail page reads them from a single pool.
+
+### Bundled Manual Links
+
+Release builds also bundle manual links from MiSTer Manual Downloader and Retrokit into `catalog.sqlite`. During scan/enrichment, matching manual resources are copied into the per-storage library cache. Game detail pages can then show manual suggestions offline without fetching source indexes at request time; saving a manual downloads and validates the file so it remains available later if the appliance is offline.
 
 ### Box Art and Screenshots
 
@@ -73,6 +77,6 @@ ROMs are classified into tiers that affect their visibility in recommendations a
 
 The metadata page provides tools to manage stored data:
 
-- **Clear metadata** -- wipes `launchbox_game` + `launchbox_alternate` and resets the XML hash stamp so the next refresh re-parses from disk
+- **Clear metadata** -- wipes provider metadata/resources and resets the XML hash stamp so the next refresh re-parses from disk
 - **Clear images** -- removes downloaded box art and screenshots from disk + clears `box_art_url` from `game_library`
 - **Cleanup orphaned images** -- removes downloaded images no longer associated with any game in the library, with a safety threshold per system to prevent accidental mass deletion

@@ -1,6 +1,8 @@
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::user_data_db::{ManualEntry, UserDataDb};
 
 pub use replay_control_core::game_docs::GameDocument;
 pub use replay_control_core::retrokit_manuals::ManualRecommendation;
@@ -18,6 +20,8 @@ pub struct LocalManual {
     pub language: Option<String>,
     /// URL to serve the file
     pub url: String,
+    /// Opaque id for RePlay-owned saved manuals. Legacy/ROM-folder manuals are read-only.
+    pub delete_id: Option<String>,
 }
 
 /// Get in-folder documents for a game's ROM directory.
@@ -62,7 +66,7 @@ pub async fn get_game_documents(
     Ok(docs)
 }
 
-/// Get locally saved manuals for a game (from `<storage>/manuals/<system>/`).
+/// Get locally saved manuals for a game plus read-only legacy manuals.
 #[server(prefix = "/sfn")]
 pub async fn get_local_manuals(
     system: String,
@@ -84,13 +88,32 @@ pub async fn get_local_manuals(
         all_titles.extend(aliases);
     }
 
+    let saved_manuals = state
+        .user_data_reader
+        .read({
+            let system = system.clone();
+            let titles = all_titles.clone();
+            move |conn| {
+                let refs: Vec<&str> = titles.iter().map(String::as_str).collect();
+                UserDataDb::get_game_manuals(conn, &system, &refs).unwrap_or_default()
+            }
+        })
+        .await
+        .unwrap_or_default();
+
+    let owned_root = state.storage().rc_dir().join("manuals");
+    let mut manuals: Vec<LocalManual> = saved_manuals
+        .into_iter()
+        .filter_map(|entry| local_manual_from_user_entry(&owned_root, entry))
+        .collect();
+
     let folder =
         replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
     let manuals_dir = state.storage().manuals_dir().join(&folder);
 
     // Run all blocking filesystem I/O off the async runtime to avoid stalling
     // the tokio worker pool on slow USB or NFS storage.
-    let manuals = tokio::task::spawn_blocking(move || {
+    let legacy_manuals = tokio::task::spawn_blocking(move || {
         if !manuals_dir.is_dir() {
             return Vec::new();
         }
@@ -140,6 +163,7 @@ pub async fn get_local_manuals(
                 size_bytes,
                 language,
                 url,
+                delete_id: None,
             });
         }
 
@@ -148,26 +172,21 @@ pub async fn get_local_manuals(
     .await
     .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?;
 
+    manuals.extend(legacy_manuals);
     Ok(manuals)
 }
 
-/// Search for game manuals via two-tier lookup:
-/// 1. Retrokit TSV (deterministic, cached)
-/// 2. Archive.org search API (fuzzy fallback)
+/// Search for game manuals via library resources, with Archive.org as an online fallback.
 #[server(prefix = "/sfn")]
 pub async fn search_game_manuals(
     system: String,
+    rom_filename: String,
     base_title: String,
     display_name: String,
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
-    use replay_control_core_server::retrokit_manuals;
-
-    // Normalize the title for matching
-    let normalized = retrokit_manuals::normalize_retrokit_title(&base_title);
-
     // Load user's language preferences for sorting results
+    let state = expect_context::<crate::api::AppState>();
     let preferred_langs = {
-        let state = expect_context::<crate::api::AppState>();
         let primary = replay_control_core_server::settings::read_language_primary(&state.settings);
         let secondary =
             replay_control_core_server::settings::read_language_secondary(&state.settings);
@@ -179,51 +198,45 @@ pub async fn search_game_manuals(
         )
     };
 
-    // Tier 1: Retrokit TSV lookup
-    if let Some(folder) = retrokit_manuals::retrokit_folder_name(&system) {
-        match load_retrokit_index(folder).await {
-            Ok(index) => {
-                if let Some(sources) = index.get(&normalized) {
-                    let mut results: Vec<ManualRecommendation> = sources
-                        .iter()
-                        .map(|s| ManualRecommendation {
-                            source: "retrokit".to_string(),
-                            title: s.title.clone(),
-                            url: s.url.clone(),
-                            size_bytes: None,
-                            language: Some(s.language.clone()),
-                            source_id: String::new(),
-                        })
-                        .collect();
-                    if !results.is_empty() {
-                        // Sort by language preference
-                        results.sort_by_key(|r| {
-                            let lang = r.language.as_deref().unwrap_or("");
-                            replay_control_core_server::settings::language_match_score(
-                                lang,
-                                &preferred_langs,
-                            )
-                        });
-                        tracing::info!(
-                            "Manual search: retrokit hit for \"{normalized}\" ({} results)",
-                            results.len()
-                        );
-                        return Ok(results);
-                    }
-                }
-                tracing::info!(
-                    "Manual search: retrokit miss for \"{normalized}\", trying Archive.org"
-                );
+    let saved_keys = saved_manual_resource_keys(&state, &system, &base_title).await;
+    let mut results: Vec<ManualRecommendation> = state
+        .library_reader
+        .read({
+            let system = system.clone();
+            let rom_filename = rom_filename.clone();
+            move |conn| {
+                LibraryDb::game_resources(conn, &system, &rom_filename, "manual")
+                    .unwrap_or_default()
             }
-            Err(e) => {
-                tracing::warn!("Manual search: retrokit TSV load failed for {folder}: {e}");
-            }
-        }
+        })
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| !saved_keys.contains(&format!("url:{}", row.url)))
+        .map(|row| ManualRecommendation {
+            source: row.source,
+            title: row.title.unwrap_or_else(|| base_title.clone()),
+            url: row.url,
+            size_bytes: None,
+            language: row.languages.filter(|l| !l.trim().is_empty()),
+            source_id: row.resource_id,
+        })
+        .collect();
+
+    if !results.is_empty() {
+        results.sort_by_key(|r| {
+            replay_control_core_server::settings::language_match_score(
+                r.language.as_deref().unwrap_or(""),
+                &preferred_langs,
+            )
+        });
+        return Ok(results);
     }
 
-    // Tier 2: Archive.org Advanced Search API fallback
+    // Archive.org Advanced Search API fallback
     let clean_title = replay_control_core::title_utils::strip_tags(&display_name).trim();
-    let platform_terms = retrokit_manuals::platform_search_terms(&system);
+    let platform_terms =
+        replay_control_core_server::retrokit_manuals::platform_search_terms(&system);
 
     let query = if platform_terms.is_empty() {
         format!("collection:(consolemanuals OR gamemanuals) AND title:({clean_title})")
@@ -301,6 +314,7 @@ pub async fn search_game_manuals(
 #[server(prefix = "/sfn")]
 pub async fn download_manual(
     system: String,
+    rom_filename: String,
     base_title: String,
     url: String,
     language: Option<String>,
@@ -313,26 +327,14 @@ pub async fn download_manual(
         return Err(ServerFnError::new("Invalid title"));
     }
 
-    let folder = replay_control_core_server::retrokit_manuals::manual_folder_name(&system);
-    let manuals_dir = state.storage().manuals_dir().join(folder);
-
-    // Build filename: "<base_title> (<lang>).pdf" or "<base_title>.pdf"
-    let filename = if let Some(ref lang) = language {
-        if lang.is_empty() {
-            format!("{base_title}.pdf")
-        } else {
-            format!("{base_title} ({lang}).pdf")
-        }
-    } else {
-        format!("{base_title}.pdf")
-    };
-
-    // Validate filename
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-        return Err(ServerFnError::new("Invalid filename"));
+    if rom_filename.contains("..") || rom_filename.contains('/') || rom_filename.contains('\\') {
+        return Err(ServerFnError::new("Invalid ROM filename"));
     }
 
-    let target_path = manuals_dir.join(&filename);
+    let manual_id = stable_url_id(&url);
+    let safe_id = manual_id.replace(':', "_");
+    let manuals_dir = state.storage().rc_dir().join("manuals").join(&system);
+    let tmp_path = manuals_dir.join(format!("{safe_id}.tmp"));
 
     // Encode the URL path for curl — retrokit TSV URLs often contain raw
     // spaces, parentheses, and apostrophes that curl rejects as malformed.
@@ -345,117 +347,132 @@ pub async fn download_manual(
     // Download with reqwest
     tracing::info!(
         "Downloading manual: {encoded_url} -> {}",
-        target_path.display()
+        tmp_path.display()
     );
 
     let size = match replay_control_core_server::http::download_to_file(
         &encoded_url,
-        &target_path,
+        &tmp_path,
         std::time::Duration::from_secs(120),
     )
     .await
     {
         Ok(size) => size,
         Err(e) => {
-            let _ = tokio::fs::remove_file(&target_path).await;
+            let _ = tokio::fs::remove_file(&tmp_path).await;
             return Err(ServerFnError::new(format!("Download failed: {e}")));
         }
     };
 
     if size == 0 {
-        let _ = tokio::fs::remove_file(&target_path).await;
+        let _ = tokio::fs::remove_file(&tmp_path).await;
         return Err(ServerFnError::new("Downloaded file is empty"));
+    }
+
+    let (extension, mime_type) = match validate_downloaded_manual(&tmp_path).await {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(ServerFnError::new(e));
+        }
+    };
+    let filename = format!("{safe_id}.{extension}");
+    let target_path = manuals_dir.join(&filename);
+    if let Err(e) = tokio::fs::rename(&tmp_path, &target_path).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(ServerFnError::new(format!("Failed to save manual: {e}")));
+    }
+
+    let storage_path = format!("{system}/{filename}");
+    let title = if let Some(ref lang) = language
+        && !lang.is_empty()
+    {
+        Some(format!("{base_title} ({lang})"))
+    } else {
+        Some(base_title.clone())
+    };
+    let entry = ManualEntry {
+        manual_id: manual_id.clone(),
+        resource_key: format!("url:{url}"),
+        title,
+        origin: "downloaded".to_string(),
+        url: Some(url.clone()),
+        storage_path: Some(storage_path.clone()),
+        original_filename: Some(filename.clone()),
+        languages: language.unwrap_or_default(),
+        mime_type: mime_type.to_string(),
+        size_bytes: Some(size),
+        added_at: unix_now_secs(),
+    };
+    let db_result = state
+        .user_data_writer
+        .write({
+            let system = system.clone();
+            let rom_filename = rom_filename.clone();
+            let base_title = base_title.clone();
+            move |conn| {
+                UserDataDb::add_game_manual(conn, &system, &rom_filename, &base_title, &entry)
+            }
+        })
+        .await;
+    match db_result {
+        Some(Ok(())) => {}
+        Some(Err(e)) => {
+            let _ = tokio::fs::remove_file(&target_path).await;
+            return Err(ServerFnError::new(format!(
+                "Failed to save manual metadata: {e}"
+            )));
+        }
+        None => {
+            let _ = tokio::fs::remove_file(&target_path).await;
+            return Err(ServerFnError::new("User data database unavailable"));
+        }
     }
 
     tracing::info!("Manual saved: {} ({} bytes)", filename, size);
 
-    let serve_url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
+    let serve_url = format!("/owned-manuals/{}", urlencoding::encode(&storage_path));
     Ok(serve_url)
 }
 
-/// Delete a previously downloaded manual PDF.
+/// Delete a RePlay-owned saved manual.
 #[server(prefix = "/sfn")]
-pub async fn delete_manual(system: String, filename: String) -> Result<(), ServerFnError> {
+pub async fn delete_manual(system: String, manual_id: String) -> Result<(), ServerFnError> {
     // Path traversal protection
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-        return Err(ServerFnError::new("Invalid filename"));
+    if manual_id.contains("..") || manual_id.contains('/') || manual_id.contains('\\') {
+        return Err(ServerFnError::new("Invalid manual id"));
     }
 
     let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "delete manuals").await?;
-    let folder =
-        replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
-    let target_path = state.storage().manuals_dir().join(&folder).join(&filename);
 
-    match tokio::fs::remove_file(&target_path).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(ServerFnError::new("Manual file not found"));
+    let removed = state
+        .user_data_writer
+        .write({
+            let system = system.clone();
+            let manual_id = manual_id.clone();
+            move |conn| UserDataDb::remove_game_manual(conn, &system, &manual_id)
+        })
+        .await
+        .ok_or_else(|| ServerFnError::new("User data database unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let Some(entry) = removed else {
+        return Err(ServerFnError::new("Manual file not found"));
+    };
+    if let Some(rel) = entry.storage_path
+        && let Some(target_path) =
+            safe_owned_manual_path(&state.storage().rc_dir().join("manuals"), &rel)
+    {
+        match tokio::fs::remove_file(&target_path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(ServerFnError::new(format!("Failed to delete manual: {e}"))),
         }
-        Err(e) => return Err(ServerFnError::new(format!("Failed to delete manual: {e}"))),
     }
 
-    tracing::info!("Manual deleted: {folder}/{filename}");
+    tracing::info!("Manual deleted: {manual_id}");
     Ok(())
-}
-
-/// Load a retrokit TSV index from cache or fetch it.
-#[cfg(feature = "ssr")]
-async fn load_retrokit_index(
-    folder: &str,
-) -> Result<replay_control_core_server::retrokit_manuals::RetrokitIndex, String> {
-    use std::sync::LazyLock;
-    use std::sync::Mutex;
-    use std::time::Instant;
-
-    struct CachedIndex {
-        index: replay_control_core_server::retrokit_manuals::RetrokitIndex,
-        loaded_at: Instant,
-    }
-
-    static CACHE: LazyLock<Mutex<std::collections::HashMap<String, CachedIndex>>> =
-        LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
-
-    const TTL_SECS: u64 = 24 * 3600; // 24 hours
-
-    // Check cache
-    {
-        let cache = CACHE.lock().map_err(|e| e.to_string())?;
-        if let Some(entry) = cache.get(folder)
-            && entry.loaded_at.elapsed().as_secs() < TTL_SECS
-        {
-            return Ok(entry.index.clone());
-        }
-    }
-
-    // Fetch TSV
-    let url =
-        format!("https://archive.org/download/retrokit-manuals/{folder}/{folder}-sources.tsv");
-    tracing::info!("Fetching retrokit TSV: {url}");
-
-    let tsv_data = replay_control_core_server::http::get_text_with_timeout(
-        &url,
-        std::time::Duration::from_secs(30),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let index = replay_control_core_server::retrokit_manuals::parse_retrokit_tsv(&tsv_data);
-    tracing::info!("Retrokit TSV loaded: {folder} ({} titles)", index.len());
-
-    // Store in cache
-    {
-        let mut cache = CACHE.lock().map_err(|e| e.to_string())?;
-        cache.insert(
-            folder.to_string(),
-            CachedIndex {
-                index: index.clone(),
-                loaded_at: Instant::now(),
-            },
-        );
-    }
-
-    Ok(index)
 }
 
 /// Fetch a URL and parse the response as JSON.
@@ -503,6 +520,120 @@ fn encode_url_path(url: &str) -> String {
         .join("/");
 
     format!("{prefix}{encoded_path}")
+}
+
+#[cfg(feature = "ssr")]
+fn local_manual_from_user_entry(
+    owned_root: &std::path::Path,
+    entry: ManualEntry,
+) -> Option<LocalManual> {
+    let rel = entry.storage_path.as_deref()?;
+    let path = safe_owned_manual_path(owned_root, rel)?;
+    let filename = entry
+        .original_filename
+        .clone()
+        .unwrap_or_else(|| entry.manual_id.clone());
+    let label = entry.title.unwrap_or_else(|| filename.clone());
+    let size_bytes = entry
+        .size_bytes
+        .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()))
+        .unwrap_or(0);
+    let language = if entry.languages.trim().is_empty() {
+        None
+    } else {
+        Some(entry.languages)
+    };
+    Some(LocalManual {
+        filename,
+        label,
+        size_bytes,
+        language,
+        url: format!("/owned-manuals/{}", urlencoding::encode(rel)),
+        delete_id: Some(entry.manual_id),
+    })
+}
+
+#[cfg(feature = "ssr")]
+async fn saved_manual_resource_keys(
+    state: &crate::api::AppState,
+    system: &str,
+    base_title: &str,
+) -> std::collections::HashSet<String> {
+    let mut all_titles = vec![base_title.to_string()];
+    if let Some(aliases) = state
+        .library_reader
+        .read({
+            let system = system.to_string();
+            let base_title = base_title.to_string();
+            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
+        })
+        .await
+    {
+        all_titles.extend(aliases);
+    }
+    state
+        .user_data_reader
+        .read({
+            let system = system.to_string();
+            let titles = all_titles.clone();
+            move |conn| {
+                let refs: Vec<&str> = titles.iter().map(String::as_str).collect();
+                UserDataDb::get_game_manuals(conn, &system, &refs)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|m| m.resource_key)
+                    .collect::<std::collections::HashSet<_>>()
+            }
+        })
+        .await
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "ssr")]
+fn stable_url_id(url: &str) -> String {
+    let digest = ring::digest::digest(&ring::digest::SHA256, url.as_bytes());
+    let mut out = String::from("urlhash:");
+    for byte in digest.as_ref() {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+#[cfg(feature = "ssr")]
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+#[cfg(feature = "ssr")]
+async fn validate_downloaded_manual(
+    path: &std::path::Path,
+) -> Result<(&'static str, &'static str), String> {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| format!("Failed to validate manual: {e}"))?;
+    if bytes.starts_with(b"%PDF-") {
+        return Ok(("pdf", "application/pdf"));
+    }
+    if std::str::from_utf8(&bytes).is_ok() {
+        return Ok(("txt", "text/plain"));
+    }
+    Err("Downloaded file is not an allowed manual type (PDF or text).".to_string())
+}
+
+#[cfg(feature = "ssr")]
+fn safe_owned_manual_path(owned_root: &std::path::Path, rel: &str) -> Option<std::path::PathBuf> {
+    let rel_path = std::path::Path::new(rel);
+    if rel_path.is_absolute()
+        || rel_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    Some(owned_root.join(rel_path))
 }
 
 /// Percent-encode a single URL path segment.

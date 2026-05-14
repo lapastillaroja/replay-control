@@ -79,10 +79,11 @@ pub fn ManualSection(
         search_results.set(vec![]);
 
         let sys = system.get_value();
+        let fname = rom_filename.get_value();
         let bt = base_title.get_value();
         let dn = display_name.get_value();
         leptos::task::spawn_local(async move {
-            match server_fns::search_game_manuals(sys, bt, dn).await {
+            match server_fns::search_game_manuals(sys, fname, bt, dn).await {
                 Ok(results) => search_results.set(results),
                 Err(e) => search_error.set(Some(e.to_string())),
             }
@@ -92,6 +93,7 @@ pub fn ManualSection(
 
     let on_download = move |rec: ManualRecommendation| {
         let sys = system.get_value();
+        let fname = rom_filename.get_value();
         let bt = base_title.get_value();
         let url = rec.url.clone();
         let lang = rec.language.clone();
@@ -107,7 +109,7 @@ pub fn ManualSection(
         let bt_for_refresh = bt.clone();
 
         leptos::task::spawn_local(async move {
-            match server_fns::download_manual(sys, bt, url.clone(), lang).await {
+            match server_fns::download_manual(sys, fname, bt, url.clone(), lang).await {
                 Ok(_serve_url) => {
                     // Refresh local manuals list
                     if let Ok(manuals) =
@@ -300,18 +302,19 @@ where
         .map(|l| format!(" ({l})"))
         .unwrap_or_default();
 
-    let filename = StoredValue::new(manual.filename.clone());
+    let delete_id = manual.delete_id.clone();
+    let delete_key = StoredValue::new(delete_id.clone().unwrap_or_default());
     let is_deleting = move || {
         deleting_filename
             .read()
             .as_ref()
-            .is_some_and(|f| *f == filename.get_value())
+            .is_some_and(|f| *f == delete_key.get_value())
     };
     let is_confirming = move || {
         confirming_delete
             .read()
             .as_ref()
-            .is_some_and(|f| *f == filename.get_value())
+            .is_some_and(|f| *f == delete_key.get_value())
     };
 
     let on_delete_sv = StoredValue::new(on_delete);
@@ -320,7 +323,7 @@ where
     let on_click_delete = move |ev: leptos::ev::MouseEvent| {
         ev.prevent_default();
         ev.stop_propagation();
-        confirming_delete.set(Some(filename.get_value()));
+        confirming_delete.set(Some(delete_key.get_value()));
     };
 
     // Confirm: actually delete
@@ -328,7 +331,7 @@ where
         ev.prevent_default();
         ev.stop_propagation();
         confirming_delete.set(None);
-        (on_delete_sv.get_value())(filename.get_value());
+        (on_delete_sv.get_value())(delete_key.get_value());
     };
 
     // Cancel: revert to normal state
@@ -349,15 +352,17 @@ where
                     <span class="manual-meta">"PDF \u{00B7} "{size_display}</span>
                 </span>
             </a>
-            <Show when=move || !is_confirming()>
-                <button
-                    class="manual-delete-btn"
-                    prop:disabled=is_deleting
-                    on:click=on_click_delete
-                    title="Delete manual"
-                >
-                    "\u{00D7}"
-                </button>
+            <Show when=move || delete_id.is_some()>
+                <Show when=move || !is_confirming()>
+                    <button
+                        class="manual-delete-btn"
+                        prop:disabled=is_deleting
+                        on:click=on_click_delete
+                        title="Delete manual"
+                    >
+                        "\u{00D7}"
+                    </button>
+                </Show>
             </Show>
             <Show when=is_confirming>
                 <button
@@ -449,8 +454,6 @@ where
         parts.join(" \u{00B7} ")
     };
 
-    let is_retrokit = rec.source == "retrokit";
-
     view! {
         <div class="manual-result-item">
             <div class="manual-result-info">
@@ -466,22 +469,19 @@ where
                 >
                     {move || t(i18n.locale.get(), Key::GameDetailViewManual)}
                 </a>
-                // Only show Save for retrokit results (direct PDF URLs)
-                <Show when=move || is_retrokit>
-                    <button
-                        class="manual-result-btn manual-save-btn"
-                        prop:disabled=is_downloading
-                        on:click=on_click_save
-                    >
-                        {move || {
-                            if is_downloading() {
-                                t(i18n.locale.get(), Key::GameDetailDownloading)
-                            } else {
-                                t(i18n.locale.get(), Key::CommonSave)
-                            }
-                        }}
-                    </button>
-                </Show>
+                <button
+                    class="manual-result-btn manual-save-btn"
+                    prop:disabled=is_downloading
+                    on:click=on_click_save
+                >
+                    {move || {
+                        if is_downloading() {
+                            t(i18n.locale.get(), Key::GameDetailDownloading)
+                        } else {
+                            t(i18n.locale.get(), Key::CommonSave)
+                        }
+                    }}
+                </button>
             </div>
         </div>
     }

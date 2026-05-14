@@ -3,6 +3,7 @@
 //! The catalog is read-only and lives on local storage bundled with the binary
 //! (not USB/NFS), so WAL concerns don't apply — concurrent readers are safe.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -12,7 +13,7 @@ use deadpool_sync::SyncWrapper;
 
 static CATALOG_POOL: OnceLock<Pool<CatalogManager>> = OnceLock::new();
 
-/// Set to `true` at startup if the bundled catalog's `arcade_games` schema
+/// Set to `true` at startup if the bundled catalog's `arcade_game` schema
 /// doesn't match what the running binary expects. When set, `with_catalog`
 /// short-circuits arcade queries to `None` instead of spamming WARN-per-row
 /// SQL errors; non-arcade systems are unaffected.
@@ -120,19 +121,19 @@ pub async fn init_catalog(path: impl AsRef<std::path::Path>) -> Result<(), Catal
         .await
         .map_err(|e| CatalogInitError::Connection(e.to_string()))?;
 
-    // Two checks under one connection: arcade_games exists, and its column
+    // Two checks under one connection: arcade_game exists, and its column
     // set matches what the runtime expects. The second guards against a
     // partial upgrade where the binary was replaced but the catalog wasn't.
     let outdated = conn
         .interact(|c: &mut rusqlite::Connection| {
             c.query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'arcade_games'",
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'arcade_game'",
                 [],
                 |_| Ok(()),
             )?;
             Ok(crate::sqlite::table_columns_diverge(
                 c,
-                "arcade_games",
+                "arcade_game",
                 crate::game::arcade_db::ARCADE_COL_NAMES,
             ))
         })
@@ -148,7 +149,7 @@ pub async fn init_catalog(path: impl AsRef<std::path::Path>) -> Result<(), Catal
         tracing::error!(
             target: "telemetry",
             event = "catalog_outdated",
-            "Catalog out of date: arcade_games column set does not match runtime expectation. \
+            "Catalog out of date: arcade_game column set does not match runtime expectation. \
              Reinstall Replay Control to refresh /usr/local/bin/catalog.sqlite."
         );
     }
@@ -184,6 +185,76 @@ where
             None
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogGameResourceRow {
+    pub source: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub url: String,
+    pub title: String,
+    pub languages: String,
+    pub mime_type: String,
+}
+
+pub async fn catalog_resource_version() -> Option<String> {
+    with_catalog(|conn| {
+        conn.query_row(
+            "SELECT value FROM db_meta WHERE key = 'catalog_resource_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+    })
+    .await
+}
+
+pub async fn lookup_catalog_game_resources(
+    system: &str,
+    normalized_titles: &[String],
+    resource_type: &str,
+) -> HashMap<String, Vec<CatalogGameResourceRow>> {
+    if normalized_titles.is_empty() {
+        return HashMap::new();
+    }
+    let system = system.to_string();
+    let resource_type = resource_type.to_string();
+    let titles_json = serde_json::to_string(normalized_titles).unwrap_or_else(|_| "[]".into());
+    with_catalog(move |conn| {
+        let mut stmt = conn.prepare_cached(
+            "SELECT normalized_title, source, resource_type, resource_id, url, title, languages, mime_type
+             FROM catalog_game_resource
+             WHERE system = ?1
+               AND resource_type = ?2
+               AND normalized_title IN (SELECT value FROM json_each(?3))
+             ORDER BY normalized_title, source, title, url",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![system, resource_type, titles_json],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    CatalogGameResourceRow {
+                        source: row.get(1)?,
+                        resource_type: row.get(2)?,
+                        resource_id: row.get(3)?,
+                        url: row.get(4)?,
+                        title: row.get(5)?,
+                        languages: row.get(6)?,
+                        mime_type: row.get(7)?,
+                    },
+                ))
+            },
+        )?;
+        let mut out: HashMap<String, Vec<CatalogGameResourceRow>> = HashMap::new();
+        for row in rows {
+            let (key, value) = row?;
+            out.entry(key).or_default().push(value);
+        }
+        Ok(out)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[cfg(test)]

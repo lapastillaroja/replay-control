@@ -56,7 +56,7 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
         --
         -- The PK index `(rom_name, source)` covers `WHERE rom_name = ?` via
         -- leading-column prefix scan, so no separate index is needed.
-        CREATE TABLE arcade_games (
+        CREATE TABLE arcade_game (
             rom_name TEXT NOT NULL,
             source TEXT NOT NULL,
             display_name TEXT NOT NULL DEFAULT '',
@@ -73,7 +73,7 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (rom_name, source)
         );
 
-        CREATE TABLE canonical_games (
+        CREATE TABLE canonical_game (
             id INTEGER PRIMARY KEY,
             system TEXT NOT NULL,
             display_name TEXT NOT NULL,
@@ -86,29 +86,29 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             rating TEXT NOT NULL DEFAULT '',
             normalized_genre TEXT NOT NULL DEFAULT ''
         );
-        CREATE INDEX idx_cg_system ON canonical_games(system);
+        CREATE INDEX idx_cg_system ON canonical_game(system);
 
-        CREATE TABLE rom_entries (
+        CREATE TABLE rom_entry (
             id INTEGER PRIMARY KEY,
             system TEXT NOT NULL,
             filename_stem TEXT NOT NULL,
             region TEXT NOT NULL DEFAULT '',
             crc32 INTEGER NOT NULL DEFAULT 0,
-            canonical_game_id INTEGER NOT NULL REFERENCES canonical_games(id),
+            canonical_game_id INTEGER NOT NULL REFERENCES canonical_game(id),
             normalized_title TEXT NOT NULL DEFAULT ''
         );
-        CREATE INDEX idx_re_stem ON rom_entries(system, filename_stem);
-        CREATE INDEX idx_re_crc  ON rom_entries(system, crc32);
-        CREATE INDEX idx_re_norm ON rom_entries(system, normalized_title);
+        CREATE INDEX idx_re_stem ON rom_entry(system, filename_stem);
+        CREATE INDEX idx_re_crc  ON rom_entry(system, crc32);
+        CREATE INDEX idx_re_norm ON rom_entry(system, normalized_title);
 
-        CREATE TABLE rom_alternates (
+        CREATE TABLE rom_alternate (
             canonical_game_id INTEGER NOT NULL,
             system TEXT NOT NULL,
             alternate_name TEXT NOT NULL
         );
-        CREATE INDEX idx_ra_game ON rom_alternates(canonical_game_id, system);
+        CREATE INDEX idx_ra_game ON rom_alternate(canonical_game_id, system);
 
-        CREATE TABLE series_entries (
+        CREATE TABLE series_entry (
             id INTEGER PRIMARY KEY,
             game_title TEXT NOT NULL,
             series_name TEXT NOT NULL DEFAULT '',
@@ -118,15 +118,15 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             followed_by TEXT NOT NULL DEFAULT '',
             normalized_title TEXT NOT NULL
         );
-        CREATE INDEX idx_se_system ON series_entries(system, normalized_title);
+        CREATE INDEX idx_se_system ON series_entry(system, normalized_title);
 
-        CREATE TABLE arcade_release_dates (
+        CREATE TABLE arcade_release_date (
             rom_name TEXT NOT NULL,
             year TEXT NOT NULL,
             source TEXT NOT NULL DEFAULT 'mame'
         );
 
-        CREATE TABLE console_release_dates (
+        CREATE TABLE console_release_date (
             system TEXT NOT NULL,
             base_title TEXT NOT NULL,
             region TEXT NOT NULL,
@@ -135,6 +135,21 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             source TEXT NOT NULL DEFAULT 'tgdb',
             PRIMARY KEY (system, base_title, region)
         );
+
+        CREATE TABLE catalog_game_resource (
+            system TEXT NOT NULL,
+            normalized_title TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            resource_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            languages TEXT NOT NULL DEFAULT '',
+            mime_type TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (system, normalized_title, resource_type, source, resource_id)
+        );
+        CREATE INDEX catalog_game_resource_idx_lookup
+            ON catalog_game_resource(system, normalized_title, resource_type);
 
         CREATE TABLE db_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     ",
@@ -708,7 +723,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let arcade_dir = sources_dir.join("arcade");
 
     // Per-source row buckets. Each loader fills its own bucket; rows are
-    // written directly to arcade_games with the source tag — no merge.
+    // written directly to arcade_game with the source tag — no merge.
     // Categorisation overlays (catver, nplayers) apply to the *runtime
     // merged* result, so they're applied across all buckets indiscriminately
     // (the merge picks per-system priority so a category from one bucket
@@ -769,13 +784,13 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let mut total_bios = 0u32;
 
     let mut stmt = conn.prepare(
-        "INSERT INTO arcade_games \
+        "INSERT INTO arcade_game \
          (rom_name, source, display_name, year, manufacturer, players, rotation, status, \
           is_clone, is_bios, parent, category, normalized_genre) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?;
     let mut stmt_rd = conn
-        .prepare("INSERT INTO arcade_release_dates (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
+        .prepare("INSERT INTO arcade_release_date (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
     let mut rd_count = 0u32;
 
     for (source, mut entries) in buckets {
@@ -1744,17 +1759,17 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     let mut total_roms = 0usize;
     let mut total_games = 0usize;
     let mut total_tgdb_matches = 0usize;
-    let mut console_release_dates: Vec<(String, String, &'static str, String, &'static str)> =
+    let mut console_release_date: Vec<(String, String, &'static str, String, &'static str)> =
         Vec::new();
 
     let mut stmt_cg = conn.prepare(
-        "INSERT INTO canonical_games (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        "INSERT INTO canonical_game (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
     )?;
     let mut stmt_re = conn.prepare(
-        "INSERT OR IGNORE INTO rom_entries (system, filename_stem, region, crc32, canonical_game_id, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        "INSERT OR IGNORE INTO rom_entry (system, filename_stem, region, crc32, canonical_game_id, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
     )?;
     let mut stmt_alt = conn.prepare(
-        "INSERT INTO rom_alternates (canonical_game_id, system, alternate_name) VALUES (?1, ?2, ?3)"
+        "INSERT INTO rom_alternate (canonical_game_id, system, alternate_name) VALUES (?1, ?2, ?3)",
     )?;
 
     for sys in GAME_DB_SYSTEMS {
@@ -1831,13 +1846,13 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         let mut group_keys: Vec<String> = game_groups.keys().cloned().collect();
         group_keys.sort();
 
-        let mut canonical_games: Vec<CanonicalGameBuild> = Vec::new();
-        let mut rom_entries: Vec<RomEntryBuild> = Vec::new();
+        let mut canonical_game: Vec<CanonicalGameBuild> = Vec::new();
+        let mut rom_entry: Vec<RomEntryBuild> = Vec::new();
         let mut tgdb_match_count = 0usize;
 
         for group_key in &group_keys {
             let indices = &game_groups[group_key];
-            let game_id = canonical_games.len();
+            let game_id = canonical_game.len();
 
             let best_idx = indices
                 .iter()
@@ -1868,7 +1883,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                         if let Some((date_str, precision)) = classify_tgdb_date(&row.release_date) {
                             let region = tgdb_region_id_to_str(row.region_id);
                             if region_dates_seen.insert((region, date_str.clone())) {
-                                console_release_dates.push((
+                                console_release_date.push((
                                     sys.folder_name.to_string(),
                                     base_title_lc.clone(),
                                     region,
@@ -1965,7 +1980,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                 final_genre = tgdb_genre;
             }
 
-            canonical_games.push(CanonicalGameBuild {
+            canonical_game.push(CanonicalGameBuild {
                 display_name,
                 year,
                 genre: final_genre,
@@ -1984,7 +1999,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                     .rfind('.')
                     .map(|i| &entry.rom_filename[..i])
                     .unwrap_or(&entry.rom_filename);
-                rom_entries.push(RomEntryBuild {
+                rom_entry.push(RomEntryBuild {
                     filename_stem: stem.to_string(),
                     region: entry.region.clone(),
                     crc32: entry.crc32,
@@ -1996,14 +2011,14 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         eprintln!(
             "Game DB: {} - {} canonical games, {} ROM entries, {} TGDB matches",
             sys.folder_name,
-            canonical_games.len(),
-            rom_entries.len(),
+            canonical_game.len(),
+            rom_entry.len(),
             tgdb_match_count
         );
 
         // Insert canonical games and collect their actual SQLite rowids
-        let mut canonical_game_ids: Vec<i64> = Vec::with_capacity(canonical_games.len());
-        for game in canonical_games.iter() {
+        let mut canonical_game_ids: Vec<i64> = Vec::with_capacity(canonical_game.len());
+        for game in canonical_game.iter() {
             let norm_genre = normalize_console_genre(&game.genre);
             let coop_val: Option<i64> = game.coop.map(|b| b as i64);
             stmt_cg.execute(params![
@@ -2030,7 +2045,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         // Insert ROM entries (deduplicated by stem)
         let mut seen_stems: HashSet<&str> = HashSet::new();
 
-        for entry in &rom_entries {
+        for entry in &rom_entry {
             let stem = entry.filename_stem.as_str();
             if !seen_stems.insert(stem) {
                 continue;
@@ -2047,8 +2062,8 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
             ])?;
         }
 
-        total_roms += rom_entries.len();
-        total_games += canonical_games.len();
+        total_roms += rom_entry.len();
+        total_games += canonical_game.len();
         total_tgdb_matches += tgdb_match_count;
     }
 
@@ -2058,17 +2073,17 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     );
 
     // Insert console release dates
-    console_release_dates.sort();
-    console_release_dates.dedup();
+    console_release_date.sort();
+    console_release_date.dedup();
     let mut stmt_crd = conn.prepare(
-        "INSERT OR REPLACE INTO console_release_dates (system, base_title, region, release_date, precision, source) VALUES (?1, ?2, ?3, ?4, ?5, 'tgdb')"
+        "INSERT OR REPLACE INTO console_release_date (system, base_title, region, release_date, precision, source) VALUES (?1, ?2, ?3, ?4, ?5, 'tgdb')"
     )?;
-    for (system, base_title, region, release_date, precision) in &console_release_dates {
+    for (system, base_title, region, release_date, precision) in &console_release_date {
         stmt_crd.execute(params![system, base_title, region, release_date, precision])?;
     }
     eprintln!(
         "Game DB: Inserted {} console release date rows",
-        console_release_dates.len()
+        console_release_date.len()
     );
 
     Ok(())
@@ -2199,7 +2214,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
     }
 
     let mut stmt = conn.prepare(
-        "INSERT INTO series_entries (game_title, series_name, system, series_order, follows, followed_by, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+        "INSERT INTO series_entry (game_title, series_name, system, series_order, follows, followed_by, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
     )?;
     let mut count = 0usize;
 
@@ -2229,6 +2244,286 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
 
     eprintln!("Series DB: Inserted {} entries", count);
     Ok(())
+}
+
+// =============================================================================
+// Catalog game resources
+// =============================================================================
+
+const MISTER_MANUAL_REPOS: &[(&str, &str)] = &[
+    ("manualsdb-3do", "panasonic_3do"),
+    ("manualsdb-atari2600", "atari_2600"),
+    ("manualsdb-atari5200", "atari_5200"),
+    ("manualsdb-atari7800", "atari_7800"),
+    ("manualsdb-atarilynx", "atari_lynx"),
+    ("manualsdb-cdi", "philips_cdi"),
+    ("manualsdb-fds", "nintendo_nes"),
+    ("manualsdb-gameboy", "nintendo_gb"),
+    ("manualsdb-gamegear", "sega_gg"),
+    ("manualsdb-gba", "nintendo_gba"),
+    ("manualsdb-gbc", "nintendo_gbc"),
+    ("manualsdb-jaguar", "atari_jaguar"),
+    ("manualsdb-jaguarcd", "atari_jaguar"),
+    ("manualsdb-megadrive", "sega_smd"),
+    ("manualsdb-n64", "nintendo_n64"),
+    ("manualsdb-neogeoaes", "snk_ng"),
+    ("manualsdb-neogeocd", "snk_ngcd"),
+    ("manualsdb-nes", "nintendo_nes"),
+    ("manualsdb-ngp", "snk_ngp"),
+    ("manualsdb-ngpc", "snk_ngp"),
+    ("manualsdb-psx", "sony_psx"),
+    ("manualsdb-sega32x", "sega_32x"),
+    ("manualsdb-segasaturn", "sega_st"),
+    ("manualsdb-segasg1000", "sega_sg"),
+    ("manualsdb-segacd", "sega_cd"),
+    ("manualsdb-sms", "sega_sms"),
+    ("manualsdb-snes", "nintendo_snes"),
+    ("manualsdb-turbografx16", "nec_pce"),
+    ("manualsdb-turbografxcd", "nec_pcecd"),
+];
+
+const RETROKIT_MANUAL_FOLDERS: &[(&str, &[&str])] = &[
+    ("3do", &["panasonic_3do"]),
+    ("amiga", &["commodore_ami"]),
+    (
+        "arcade",
+        &[
+            "arcade_mame",
+            "arcade_fbneo",
+            "arcade_mame_2k3p",
+            "arcade_dc",
+        ],
+    ),
+    ("atari2600", &["atari_2600"]),
+    ("atari5200", &["atari_5200"]),
+    ("atari7800", &["atari_7800"]),
+    ("atarijaguar", &["atari_jaguar"]),
+    ("atarilynx", &["atari_lynx"]),
+    ("c64", &["commodore_c64"]),
+    ("dreamcast", &["sega_dc"]),
+    ("gamegear", &["sega_gg"]),
+    ("gb", &["nintendo_gb"]),
+    ("gba", &["nintendo_gba"]),
+    ("gbc", &["nintendo_gbc"]),
+    ("mastersystem", &["sega_sms"]),
+    ("megadrive", &["sega_smd"]),
+    ("n64", &["nintendo_n64"]),
+    ("nds", &["nintendo_ds"]),
+    ("neogeo", &["snk_ng"]),
+    ("neogeocd", &["snk_ngcd"]),
+    ("nes", &["nintendo_nes"]),
+    ("ngp", &["snk_ngp"]),
+    ("pc", &["ibm_pc", "scummvm"]),
+    ("pcengine", &["nec_pce"]),
+    ("pce-cd", &["nec_pcecd"]),
+    ("psx", &["sony_psx"]),
+    ("saturn", &["sega_st"]),
+    ("sega32x", &["sega_32x"]),
+    ("segacd", &["sega_cd"]),
+    ("sg-1000", &["sega_sg"]),
+    ("snes", &["nintendo_snes"]),
+];
+
+struct CatalogResourceBuild {
+    system: String,
+    normalized_title: String,
+    source: &'static str,
+    resource_id: String,
+    url: String,
+    title: String,
+    languages: String,
+}
+
+fn sha256_resource_id(url: &str) -> String {
+    let digest = ring::digest::digest(&ring::digest::SHA256, url.as_bytes());
+    let mut out = String::from("urlhash:");
+    for byte in digest.as_ref() {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+fn manual_title_from_path(path: &str) -> Option<(String, String)> {
+    let stem = Path::new(path).file_stem()?.to_str()?.trim();
+    if stem.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = stem.strip_prefix("![")
+        && let Some((tag, title)) = rest.split_once("] ")
+    {
+        let title = title.trim();
+        if !title.is_empty() {
+            return Some((title.to_string(), format!("{title} ({})", tag.trim())));
+        }
+    }
+
+    Some((stem.to_string(), stem.to_string()))
+}
+
+fn insert_catalog_resources(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
+    let mut resources = Vec::new();
+    resources.extend(load_mister_manual_resources(sources_dir));
+    resources.extend(load_retrokit_manual_resources(sources_dir));
+
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO catalog_game_resource
+         (system, normalized_title, resource_type, source, resource_id, url, title, languages, mime_type)
+         VALUES (?1, ?2, 'manual', ?3, ?4, ?5, ?6, ?7, 'application/pdf')",
+    )?;
+    for row in &resources {
+        stmt.execute(params![
+            row.system,
+            row.normalized_title,
+            row.source,
+            row.resource_id,
+            row.url,
+            row.title,
+            row.languages,
+        ])?;
+    }
+
+    eprintln!(
+        "Catalog resources: Inserted {} manual rows",
+        resources.len()
+    );
+    Ok(())
+}
+
+fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
+    let mut out = Vec::new();
+    let dir = sources_dir.join("mister-manuals");
+    for &(repo, system) in MISTER_MANUAL_REPOS {
+        let path = dir.join(format!("{repo}.csv"));
+        if !path.exists() {
+            continue;
+        }
+        let mut rdr = match csv::Reader::from_path(&path) {
+            Ok(rdr) => rdr,
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to open MiSTer manuals CSV {}: {e}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        let headers = match rdr.headers() {
+            Ok(h) => h.clone(),
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to read MiSTer manuals CSV headers {}: {e}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        let path_idx = headers.iter().position(|h| h.eq_ignore_ascii_case("Path"));
+        let url_idx = headers.iter().position(|h| h.eq_ignore_ascii_case("URL"));
+        let (Some(path_idx), Some(url_idx)) = (path_idx, url_idx) else {
+            eprintln!(
+                "Warning: MiSTer manuals CSV {} missing Path/URL columns",
+                path.display()
+            );
+            continue;
+        };
+
+        for record in rdr.records().flatten() {
+            let Some(raw_path) = record
+                .get(path_idx)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(url) = record.get(url_idx).map(str::trim).filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            let Some((match_title, display_title)) = manual_title_from_path(raw_path) else {
+                continue;
+            };
+            let normalized_title = title_utils::normalize_title_for_metadata(&match_title);
+            if normalized_title.is_empty() {
+                continue;
+            }
+            out.push(CatalogResourceBuild {
+                system: system.to_string(),
+                normalized_title,
+                source: "mister_manuals",
+                resource_id: sha256_resource_id(url),
+                url: url.to_string(),
+                title: display_title,
+                languages: "en".to_string(),
+            });
+        }
+    }
+    out
+}
+
+fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
+    let mut out = Vec::new();
+    let dir = sources_dir.join("retrokit-manuals");
+    for &(folder, systems) in RETROKIT_MANUAL_FOLDERS {
+        let path = dir.join(format!("{folder}-sources.tsv"));
+        if !path.exists() {
+            continue;
+        }
+        let Ok(file) = File::open(&path) else {
+            continue;
+        };
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            let parts: Vec<&str> = line.trim().splitn(3, '\t').collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let title = parts[0].trim();
+            let languages = parts[1].trim();
+            let url = parts[2].trim();
+            if title.is_empty() || url.is_empty() {
+                continue;
+            }
+            let normalized_title = title_utils::normalize_title_for_metadata(title);
+            if normalized_title.is_empty() {
+                continue;
+            }
+            for &system in systems {
+                out.push(CatalogResourceBuild {
+                    system: system.to_string(),
+                    normalized_title: normalized_title.clone(),
+                    source: "retrokit",
+                    resource_id: sha256_resource_id(url),
+                    url: url.to_string(),
+                    title: title.to_string(),
+                    languages: languages.to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+fn catalog_resource_version(conn: &Connection) -> rusqlite::Result<String> {
+    let mut context = ring::digest::Context::new(&ring::digest::SHA256);
+    let mut stmt = conn.prepare(
+        "SELECT system, normalized_title, resource_type, source, resource_id, url, title, languages, mime_type
+         FROM catalog_game_resource
+         ORDER BY system, normalized_title, resource_type, source, resource_id",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        for idx in 0..9 {
+            let value: String = row.get(idx)?;
+            context.update(value.as_bytes());
+            context.update(b"\0");
+        }
+        context.update(b"\n");
+    }
+    let digest = context.finish();
+    let mut out = String::new();
+    for byte in digest.as_ref() {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    Ok(out)
 }
 
 // =============================================================================
@@ -2325,6 +2620,7 @@ fn main() {
     insert_arcade_games(&conn, &sources_dir).expect("Failed to insert arcade games");
     insert_console_games(&conn, &sources_dir).expect("Failed to insert console games");
     insert_series(&conn, &sources_dir).expect("Failed to insert series");
+    insert_catalog_resources(&conn, &sources_dir).expect("Failed to insert catalog resources");
 
     // Metadata
     let is_stub = if args.stub { "1" } else { "0" };
@@ -2347,26 +2643,39 @@ fn main() {
         params![is_stub],
     )
     .expect("Failed to insert is_stub");
+    let resource_version =
+        catalog_resource_version(&conn).expect("Failed to compute catalog_resource_version");
+    conn.execute(
+        "INSERT INTO db_meta (key, value) VALUES ('catalog_resource_version', ?1)",
+        params![resource_version],
+    )
+    .expect("Failed to insert catalog_resource_version");
 
     // Final stats
     let arcade_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM arcade_games", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM arcade_game", [], |r| r.get(0))
         .unwrap_or(0);
     let canonical_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM canonical_games", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM canonical_game", [], |r| r.get(0))
         .unwrap_or(0);
     let rom_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM rom_entries", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM rom_entry", [], |r| r.get(0))
         .unwrap_or(0);
     let series_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM series_entries", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM series_entry", [], |r| r.get(0))
+        .unwrap_or(0);
+    let resource_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM catalog_game_resource", [], |r| {
+            r.get(0)
+        })
         .unwrap_or(0);
 
     println!("catalog.sqlite written to {}", args.output.display());
-    println!("  arcade_games:    {}", arcade_count);
-    println!("  canonical_games: {}", canonical_count);
-    println!("  rom_entries:     {}", rom_count);
-    println!("  series_entries:  {}", series_count);
+    println!("  arcade_game:    {}", arcade_count);
+    println!("  canonical_game: {}", canonical_count);
+    println!("  rom_entry:     {}", rom_count);
+    println!("  series_entry:  {}", series_count);
+    println!("  game_resource: {}", resource_count);
     println!("  is_stub:         {}", is_stub);
 }
 
@@ -2412,7 +2721,7 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM arcade_games WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
+                "SELECT COUNT(*) FROM arcade_game WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
                 [],
                 |r| r.get(0),
             )
@@ -2421,7 +2730,7 @@ mod tests {
 
         let genre: String = conn
             .query_row(
-                "SELECT normalized_genre FROM arcade_games WHERE rom_name = 'ssipkr30'",
+                "SELECT normalized_genre FROM arcade_game WHERE rom_name = 'ssipkr30'",
                 [],
                 |r| r.get(0),
             )

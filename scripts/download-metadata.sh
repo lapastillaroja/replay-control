@@ -6,6 +6,7 @@
 #   1. No-Intro DAT files from libretro-database (for ROM identification)
 #   2. libretro-database metadata files (maxusers, genre) for supplementary data
 #   3. TheGamesDB JSON dump for rich metadata (year, genre, developer, players)
+#   4. URL indexes for MiSTer and Retrokit manuals (PDFs are not downloaded)
 #
 # These files are NOT checked into git. Run this script after cloning or when
 # you want to refresh the data.
@@ -31,6 +32,8 @@ DATA_DIR="$PROJECT_ROOT/data"
 mkdir -p "$DATA_DIR/no-intro"
 mkdir -p "$DATA_DIR/libretro-meta/maxusers"
 mkdir -p "$DATA_DIR/libretro-meta/genre"
+mkdir -p "$DATA_DIR/mister-manuals"
+mkdir -p "$DATA_DIR/retrokit-manuals"
 
 LIBRETRO_DB_RAW="https://raw.githubusercontent.com/libretro/libretro-database/master"
 
@@ -168,6 +171,47 @@ download \
 }
 
 echo
+echo "=== Manual URL indexes ==="
+echo
+
+MISTER_RAW_BASE="https://raw.githubusercontent.com/ajgowans"
+MISTER_MANUAL_REPOS=(
+    manualsdb-3do manualsdb-atari2600 manualsdb-atari5200 manualsdb-atari7800
+    manualsdb-atarilynx manualsdb-cdi manualsdb-fds manualsdb-gameboy
+    manualsdb-gamegear manualsdb-gba manualsdb-gbc manualsdb-jaguar
+    manualsdb-jaguarcd manualsdb-megadrive manualsdb-n64 manualsdb-neogeoaes
+    manualsdb-neogeocd manualsdb-nes manualsdb-ngp manualsdb-ngpc
+    manualsdb-psx manualsdb-sega32x manualsdb-segasaturn manualsdb-segasg1000
+    manualsdb-segacd manualsdb-sms manualsdb-snes manualsdb-turbografx16
+    manualsdb-turbografxcd
+)
+
+for repo in "${MISTER_MANUAL_REPOS[@]}"; do
+    download \
+        "$MISTER_RAW_BASE/$repo/main/external_files.csv" \
+        "$DATA_DIR/mister-manuals/$repo.csv" \
+        "MiSTer manuals index: $repo" || true
+    download \
+        "$MISTER_RAW_BASE/$repo/main/LICENSE" \
+        "$DATA_DIR/mister-manuals/$repo.LICENSE" \
+        "MiSTer manuals license: $repo" || true
+done
+
+RETROKIT_FOLDERS=(
+    3do amiga arcade atari2600 atari5200 atari7800 atarijaguar atarilynx
+    c64 dreamcast gamegear gb gba gbc mastersystem megadrive n64 nds
+    neogeo neogeocd nes ngp pc pcengine pce-cd psx saturn sega32x segacd
+    sg-1000 snes
+)
+
+for folder in "${RETROKIT_FOLDERS[@]}"; do
+    download \
+        "https://archive.org/download/retrokit-manuals/$folder/$folder-sources.tsv" \
+        "$DATA_DIR/retrokit-manuals/$folder-sources.tsv" \
+        "Retrokit manuals index: $folder" || true
+done
+
+echo
 echo "=== Summary ==="
 echo "Downloaded metadata to: $DATA_DIR"
 echo
@@ -185,5 +229,9 @@ if [ -f "$TGDB_DEST" ]; then
 else
     echo "TheGamesDB: NOT DOWNLOADED"
 fi
+echo
+echo "Manual indexes:"
+echo "  MiSTer:   $(find "$DATA_DIR/mister-manuals" -name '*.csv' 2>/dev/null | wc -l | tr -d ' ') CSV files"
+echo "  Retrokit: $(find "$DATA_DIR/retrokit-manuals" -name '*-sources.tsv' 2>/dev/null | wc -l | tr -d ' ') TSV files"
 echo
 echo "Done. You can now build replay-control-core to generate the game metadata DB."

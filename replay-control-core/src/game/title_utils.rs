@@ -10,7 +10,7 @@
 /// - `library_meta.title_norm_version` (per-storage `library.db`) — covers
 ///   `game_library.normalized_title` / `normalized_title_alt`.
 /// - `external_meta.title_norm_version` (host-global `external_metadata.db`)
-///   — covers `launchbox_alternate.normalized_alternate`.
+///   — covers `provider_alternate.normalized_alternate`.
 ///
 /// On boot the app compares the stored value against this constant and, on
 /// mismatch, rebuilds the affected columns. The two stamps are independent

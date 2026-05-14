@@ -196,7 +196,7 @@ pub enum RefreshMetadataPhase {
     /// Streaming the XML into `external_metadata.db`.
     Parsing,
     /// Re-running enrichment so launchbox data flows into game_library /
-    /// game_description.
+    /// game_detail_metadata.
     Enriching,
     Complete,
     Failed,

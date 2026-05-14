@@ -23,6 +23,10 @@ pub mod keys {
     /// `replay_control_core::title_utils::TITLE_NORM_VERSION` at the time
     /// `game_library.normalized_title{,_alt}` was last (re)populated.
     pub const TITLE_NORM_VERSION: &str = "title_norm_version";
+
+    /// `catalog.sqlite.db_meta.catalog_resource_version` last copied into
+    /// `library_game_resource` by enrichment for this storage.
+    pub const CATALOG_RESOURCE_VERSION: &str = "catalog_resource_version";
 }
 
 /// Read a value from `library_meta`. Returns `None` for missing keys.

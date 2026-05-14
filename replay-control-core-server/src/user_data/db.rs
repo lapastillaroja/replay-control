@@ -17,6 +17,75 @@ pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
 pub use replay_control_core::user_data_db::VideoEntry;
 
+#[derive(Debug, Clone)]
+pub struct ManualEntry {
+    pub manual_id: String,
+    pub resource_key: String,
+    pub title: Option<String>,
+    pub origin: String,
+    pub url: Option<String>,
+    pub storage_path: Option<String>,
+    pub original_filename: Option<String>,
+    pub languages: String,
+    pub mime_type: String,
+    pub size_bytes: Option<u64>,
+    pub added_at: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageKind;
+
+    fn open_temp() -> (Connection, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage =
+            crate::storage::StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
+        let (conn, corrupt) = UserDataDb::open_at(&UserDataDb::db_path(&storage.root)).unwrap();
+        assert!(!corrupt);
+        (conn, tmp)
+    }
+
+    #[test]
+    fn manual_resource_round_trips_and_deletes() {
+        let (conn, _tmp) = open_temp();
+        let entry = ManualEntry {
+            manual_id: "urlhash:abc".to_string(),
+            resource_key: "url:https://example.com/manual.pdf".to_string(),
+            title: Some("Manual".to_string()),
+            origin: "downloaded".to_string(),
+            url: Some("https://example.com/manual.pdf".to_string()),
+            storage_path: Some("nintendo_snes/urlhash_abc.pdf".to_string()),
+            original_filename: Some("urlhash_abc.pdf".to_string()),
+            languages: "en,es".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size_bytes: Some(123),
+            added_at: 42,
+        };
+        UserDataDb::add_game_manual(
+            &conn,
+            "nintendo_snes",
+            "Super Mario World.sfc",
+            "super mario world",
+            &entry,
+        )
+        .unwrap();
+
+        let rows =
+            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].resource_key, entry.resource_key);
+        assert_eq!(rows[0].languages, "en,es");
+
+        let removed =
+            UserDataDb::remove_game_manual(&conn, "nintendo_snes", "urlhash:abc").unwrap();
+        assert!(removed.is_some());
+        let rows =
+            UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
+        assert!(rows.is_empty());
+    }
+}
+
 /// Stateless query namespace for the user data SQLite database.
 ///
 /// All methods are associated functions that take `conn: &Connection` as their
@@ -26,7 +95,7 @@ pub struct UserDataDb;
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos"];
+    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_manual_resource"];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
     /// without touching the filesystem. Useful for callers that need the path
@@ -87,7 +156,33 @@ impl UserDataDb {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_game_videos_base_title
-                    ON game_videos (system, base_title);",
+                    ON game_videos (system, base_title);
+
+                CREATE TABLE IF NOT EXISTS game_manual_resource (
+                    system TEXT NOT NULL,
+                    base_title TEXT NOT NULL DEFAULT '',
+                    rom_filename TEXT NOT NULL,
+                    manual_id TEXT NOT NULL,
+                    resource_key TEXT NOT NULL,
+                    title TEXT,
+                    origin TEXT NOT NULL,
+                    url TEXT,
+                    storage_path TEXT,
+                    original_filename TEXT,
+                    languages TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    size_bytes INTEGER,
+                    added_at INTEGER NOT NULL,
+                    CHECK (origin IN ('downloaded', 'upload')),
+                    CHECK (origin != 'downloaded' OR (url IS NOT NULL AND storage_path IS NOT NULL)),
+                    CHECK (origin != 'upload' OR (url IS NULL AND storage_path IS NOT NULL)),
+                    PRIMARY KEY (system, rom_filename, manual_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS game_manual_resource_idx_base_title
+                    ON game_manual_resource(system, base_title);
+                CREATE INDEX IF NOT EXISTS game_manual_resource_idx_resource_key
+                    ON game_manual_resource(system, rom_filename, resource_key);",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
@@ -285,7 +380,137 @@ impl UserDataDb {
         Ok(())
     }
 
-    /// Delete all user data entries for a ROM (box art overrides + videos).
+    pub fn get_game_manuals(
+        conn: &Connection,
+        system: &str,
+        base_titles: &[&str],
+    ) -> Result<Vec<ManualEntry>> {
+        if base_titles.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (0..base_titles.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect();
+        let sql = format!(
+            "SELECT manual_id, resource_key, title, origin, url, storage_path,
+                    original_filename, languages, mime_type, size_bytes, added_at
+             FROM game_manual_resource
+             WHERE system = ?1 AND base_title IN ({})
+             ORDER BY added_at DESC",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare get_game_manuals: {e}")))?;
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            Vec::with_capacity(1 + base_titles.len());
+        param_values.push(Box::new(system.to_string()));
+        for bt in base_titles {
+            param_values.push(Box::new(bt.to_string()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                let size_bytes: Option<i64> = row.get(9)?;
+                Ok(ManualEntry {
+                    manual_id: row.get(0)?,
+                    resource_key: row.get(1)?,
+                    title: row.get(2)?,
+                    origin: row.get(3)?,
+                    url: row.get(4)?,
+                    storage_path: row.get(5)?,
+                    original_filename: row.get(6)?,
+                    languages: row.get(7)?,
+                    mime_type: row.get(8)?,
+                    size_bytes: size_bytes.map(|v| v.max(0) as u64),
+                    added_at: row.get::<_, i64>(10)? as u64,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query game_manual_resource: {e}")))?;
+        let mut manuals = Vec::new();
+        for row in rows.flatten() {
+            manuals.push(row);
+        }
+        Ok(manuals)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_game_manual(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        base_title: &str,
+        entry: &ManualEntry,
+    ) -> Result<()> {
+        conn.execute(
+            "INSERT OR REPLACE INTO game_manual_resource
+                (system, base_title, rom_filename, manual_id, resource_key, title, origin, url,
+                 storage_path, original_filename, languages, mime_type, size_bytes, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                system,
+                base_title,
+                rom_filename,
+                &entry.manual_id,
+                &entry.resource_key,
+                &entry.title,
+                &entry.origin,
+                &entry.url,
+                &entry.storage_path,
+                &entry.original_filename,
+                &entry.languages,
+                &entry.mime_type,
+                entry.size_bytes.map(|v| v as i64),
+                entry.added_at as i64,
+            ],
+        )
+        .map_err(|e| Error::Other(format!("Failed to add game_manual_resource: {e}")))?;
+        Ok(())
+    }
+
+    pub fn remove_game_manual(
+        conn: &Connection,
+        system: &str,
+        manual_id: &str,
+    ) -> Result<Option<ManualEntry>> {
+        let entry = conn
+            .query_row(
+                "SELECT manual_id, resource_key, title, origin, url, storage_path,
+                        original_filename, languages, mime_type, size_bytes, added_at
+                 FROM game_manual_resource
+                 WHERE system = ?1 AND manual_id = ?2",
+                params![system, manual_id],
+                |row| {
+                    let size_bytes: Option<i64> = row.get(9)?;
+                    Ok(ManualEntry {
+                        manual_id: row.get(0)?,
+                        resource_key: row.get(1)?,
+                        title: row.get(2)?,
+                        origin: row.get(3)?,
+                        url: row.get(4)?,
+                        storage_path: row.get(5)?,
+                        original_filename: row.get(6)?,
+                        languages: row.get(7)?,
+                        mime_type: row.get(8)?,
+                        size_bytes: size_bytes.map(|v| v.max(0) as u64),
+                        added_at: row.get::<_, i64>(10)? as u64,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to query game_manual_resource: {e}")))?;
+        if entry.is_some() {
+            conn.execute(
+                "DELETE FROM game_manual_resource WHERE system = ?1 AND manual_id = ?2",
+                params![system, manual_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove game_manual_resource: {e}")))?;
+        }
+        Ok(entry)
+    }
+
+    /// Delete all user data entries for a ROM (box art overrides, videos, manuals).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -295,9 +520,13 @@ impl UserDataDb {
             "DELETE FROM game_videos WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
+        let _ = conn.execute(
+            "DELETE FROM game_manual_resource WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
     }
 
-    /// Rename a ROM across all user data tables (box art overrides + videos).
+    /// Rename a ROM across all user data tables.
     pub fn rename_for_rom(conn: &Connection, system: &str, old_filename: &str, new_filename: &str) {
         if let Err(e) = conn.execute(
             "UPDATE box_art_overrides SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
@@ -310,6 +539,12 @@ impl UserDataDb {
             params![system, old_filename, new_filename],
         ) {
             tracing::warn!("Failed to update game_videos: {e}");
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE game_manual_resource SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_manual_resource: {e}");
         }
     }
 }

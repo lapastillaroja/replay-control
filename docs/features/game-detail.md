@@ -27,16 +27,18 @@ Screenshots captured on RePlayOS are matched to games by filename and displayed 
 
 ## Videos
 
-Paste a video URL directly, or search for gameplay videos using privacy-respecting Invidious/Piped instances (no YouTube API or tracking). Pin a result to save it for the game. Pinned videos appear on future visits without re-searching.
+Paste a video URL directly, or search for gameplay videos using privacy-respecting Invidious/Piped instances (no YouTube API or tracking). Replay Control also suggests video links imported from metadata providers such as LaunchBox when they match the game. Pin a result to save it for the game. Pinned videos appear on future visits without re-searching.
 
 ## Game Manuals
 
-Two sources for manuals:
+Manuals can come from several places:
 
-- **In-folder detection** -- PDF or image files in the same ROM directory are detected and offered for viewing
-- **Internet Archive download** -- search and download manuals from the Internet Archive directly from the detail page
+- **Bundled catalog suggestions** -- MiSTer Manual Downloader and Retrokit manual links are matched during library enrichment and shown without live index fetching
+- **Internet Archive fallback** -- if no bundled suggestions are available, Replay Control can search Internet Archive directly from the detail page
+- **Saved manuals** -- selecting **Save** downloads the PDF/text manual into `<storage>/.replay-control/manuals`, validates the file type, and records it in `user_data.db`
+- **Legacy local manuals** -- existing manuals in `<storage>/manuals` or ROM-folder side files are displayed read-only when detected
 
-Language preferences from Settings are respected when multiple manual languages are available.
+Language preferences from Settings are respected when multiple manual languages are available, but other languages can still be shown. Saved manuals can be removed from Replay Control later; read-only legacy files are left untouched.
 
 ## Box Art Swap
 

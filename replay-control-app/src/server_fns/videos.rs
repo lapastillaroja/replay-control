@@ -49,6 +49,42 @@ pub async fn get_game_videos(
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
+/// Get provider-supplied video suggestions copied into the library cache.
+#[server(prefix = "/sfn")]
+pub async fn get_provider_game_videos(
+    system: String,
+    rom_filename: String,
+) -> Result<Vec<VideoRecommendation>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let resources = state
+        .library_reader
+        .read(move |conn| LibraryDb::game_resources(conn, &system, &rom_filename, "video"))
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let mut out = Vec::new();
+    for row in resources {
+        let Ok(parsed) = replay_control_core::video_url::parse_video_url(&row.url) else {
+            continue;
+        };
+        if parsed.platform.as_str() != "youtube" {
+            continue;
+        }
+        out.push(VideoRecommendation {
+            url: parsed.canonical_url,
+            title: row.title.unwrap_or_else(|| "Provider video".to_string()),
+            thumbnail_url: Some(format!(
+                "https://i.ytimg.com/vi/{}/mqdefault.jpg",
+                parsed.video_id
+            )),
+            duration_text: None,
+            channel: Some(row.source),
+        });
+    }
+    Ok(out)
+}
+
 /// Add a video to a game (from manual paste or recommendation pin).
 #[server(prefix = "/sfn")]
 pub async fn add_game_video(

@@ -33,6 +33,23 @@ pub fn GameVideoSection(
         }
     });
 
+    let provider_results = RwSignal::new(Vec::<VideoRecommendation>::new());
+    let provider_searching = RwSignal::new(false);
+    let provider_error = RwSignal::new(false);
+    let provider_resource = Resource::new(
+        || (),
+        move |_| {
+            let sys = system.get_value();
+            let fname = rom_filename.get_value();
+            server_fns::get_provider_game_videos(sys, fname)
+        },
+    );
+    let _sync_provider = Effect::new(move || {
+        if let Some(Ok(results)) = provider_resource.get() {
+            provider_results.set(results);
+        }
+    });
+
     // Add video state
     let add_url = RwSignal::new(String::new());
     let add_error = RwSignal::new(Option::<Key>::None);
@@ -199,6 +216,20 @@ pub fn GameVideoSection(
                             {move || format!(" ({})", saved_videos.read().len())}
                         </button>
                     </Show>
+                </div>
+            </Show>
+
+            <Show when=move || !provider_results.read().is_empty()>
+                <div class="video-search-group">
+                    <h3 class="video-search-title">"From metadata"</h3>
+                    <VideoRecommendations
+                        results=provider_results
+                        is_searching=provider_searching
+                        has_error=provider_error
+                        tag="metadata".to_string()
+                        saved_videos=saved_videos
+                        on_pin=pin_video
+                    />
                 </div>
             </Show>
 

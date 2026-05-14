@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
-use replay_control_core_server::external_metadata::{self, LaunchboxRow, ThumbnailManifestEntry};
+use replay_control_core_server::external_metadata::{
+    self, LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow, ThumbnailManifestEntry,
+};
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::thumbnail_manifest;
 use replay_control_core_server::thumbnails::ThumbnailKind;
@@ -57,7 +59,12 @@ impl LibraryService {
             let _ = state
                 .library_writer
                 .write(move |conn| {
-                    let _ = LibraryDb::replace_descriptions_for_system(conn, &sys, &[]);
+                    let _ = LibraryDb::replace_detail_metadata_and_resources_for_system(
+                        conn,
+                        &sys,
+                        &[],
+                        &[],
+                    );
                 })
                 .await;
             return Ok(());
@@ -66,10 +73,20 @@ impl LibraryService {
         // Independent setup steps that all consume `system` / `rom_filenames`.
         // Two pools (library, external_metadata) plus the arcade lookup;
         // `join!` lets the slowest overlap with the others.
-        let (index, launchbox_rows, alt_to_primary, arcade_lookup) = tokio::join!(
+        let catalog_titles = catalog_resource_lookup_titles(&rom_filenames);
+        let (
+            index,
+            launchbox_rows,
+            alt_to_primary,
+            provider_resources,
+            catalog_resources,
+            arcade_lookup,
+        ) = tokio::join!(
             build_image_index(state, &system),
             load_launchbox_rows(&state.external_metadata_reader, &system),
             load_launchbox_alt_to_primary(&state.external_metadata_reader, &system),
+            load_launchbox_resources(&state.external_metadata_reader, &system),
+            load_catalog_manual_resources(&system, catalog_titles),
             ArcadeInfoLookup::build(&system, &rom_filenames),
         );
 
@@ -88,6 +105,8 @@ impl LibraryService {
                     &arcade_lookup,
                     &launchbox_rows,
                     &alt_to_primary,
+                    &provider_resources,
+                    &catalog_resources,
                 )
             })
             .await;
@@ -120,11 +139,13 @@ impl LibraryService {
         let coop_count = result.cooperative_updates.len();
         let date_count = result.release_date_rows.len();
         let desc_count = result.description_rows.len();
+        let resource_count = result.resource_rows.len();
         let enrich_count = result.enrichments.len();
         let developer_updates = result.developer_updates;
         let cooperative_updates = result.cooperative_updates;
         let release_date_rows = result.release_date_rows;
         let description_rows = result.description_rows;
+        let resource_rows = result.resource_rows;
         let enrichments = result.enrichments;
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
@@ -159,12 +180,14 @@ impl LibraryService {
                     region_secondary,
                 );
                 // Always rebuilt (truncate + repopulate) so removed ROMs lose
-                // their description on the next pass.
-                if !description_rows.is_empty()
-                    && let Err(e) =
-                        LibraryDb::replace_descriptions_for_system(conn, &sys, &description_rows)
-                {
-                    tracing::warn!("game_description rebuild failed for {sys}: {e}");
+                // their description/resources on the next pass.
+                if let Err(e) = LibraryDb::replace_detail_metadata_and_resources_for_system(
+                    conn,
+                    &sys,
+                    &description_rows,
+                    &resource_rows,
+                ) {
+                    tracing::warn!("game detail/resource rebuild failed for {sys}: {e}");
                 }
                 if !enrichments.is_empty()
                     && let Err(e) = LibraryDb::update_box_art_genre_rating(conn, &sys, &enrichments)
@@ -175,20 +198,20 @@ impl LibraryService {
             .await;
 
         tracing::debug!(
-            "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {enrich_count} box+genre+players+ratings"
+            "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
         );
         Ok(())
     }
 }
 
-/// Load the per-system `launchbox_game` rows from the host-global
+/// Load the per-system LaunchBox provider rows from the host-global
 /// `external_metadata.db`. Returns an empty map when the pool is unavailable
 /// or the read fails (the design treats LaunchBox as optional — users
 /// without it still get scan-time + catalog enrichment).
 async fn load_launchbox_rows(
     em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
     system: &str,
-) -> HashMap<String, LaunchboxRow> {
+) -> HashMap<String, ProviderGameRow> {
     let sys = system.to_string();
     em_reader
         .read(move |conn| external_metadata::system_launchbox_rows(conn, &sys).unwrap_or_default())
@@ -215,6 +238,44 @@ async fn load_launchbox_alt_to_primary(
         })
         .await
         .unwrap_or_default()
+}
+
+async fn load_launchbox_resources(
+    em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
+    system: &str,
+) -> HashMap<String, Vec<ProviderResourceRow>> {
+    let sys = system.to_string();
+    em_reader
+        .read(move |conn| {
+            external_metadata::system_provider_resources(conn, LAUNCHBOX_PROVIDER, &sys, "video")
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default()
+}
+
+fn catalog_resource_lookup_titles(rom_filenames: &[String]) -> Vec<String> {
+    let mut titles = std::collections::HashSet::new();
+    for filename in rom_filenames {
+        let stem = replay_control_core::title_utils::filename_stem(filename);
+        let normalized = replay_control_core::title_utils::normalize_title_for_metadata(stem);
+        if !normalized.is_empty() {
+            titles.insert(normalized);
+        }
+    }
+    titles.into_iter().collect()
+}
+
+async fn load_catalog_manual_resources(
+    system: &str,
+    normalized_titles: Vec<String>,
+) -> HashMap<String, Vec<replay_control_core_server::catalog_pool::CatalogGameResourceRow>> {
+    replay_control_core_server::catalog_pool::lookup_catalog_game_resources(
+        system,
+        &normalized_titles,
+        "manual",
+    )
+    .await
 }
 
 /// Load the per-system libretro repo manifest data from

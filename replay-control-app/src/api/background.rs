@@ -224,6 +224,7 @@ impl BackgroundManager {
             };
 
             Self::phase_cache_verification(state).await;
+            Self::phase_catalog_resource_reconcile(state).await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
 
@@ -687,7 +688,7 @@ impl BackgroundManager {
         };
 
         // Re-parse on either input change: XML content (hash) or normalizer
-        // version (the keys stored in `launchbox_alternate.normalized_alternate`
+        // version (the keys stored in `provider_alternate.normalized_alternate`
         // become stale when `title_utils::normalize_title_for_metadata`
         // changes its output). `refresh_launchbox` writes both stamps in one
         // transaction, so a single pass clears both gates.
@@ -777,8 +778,8 @@ impl BackgroundManager {
             stats.source_entries
         );
 
-        // Re-enrichment: launchbox data just changed, so flush it through
-        // game_library + game_description for every system the user has.
+        // Re-enrichment: provider data just changed, so flush it through
+        // game_library + game_detail_metadata for every system the user has.
         // Without this, the request path keeps showing pre-refresh data
         // until something else triggers enrichment (storage swap, rebuild).
         state.update_activity(|act| {
@@ -801,8 +802,8 @@ impl BackgroundManager {
     }
 
     /// After an external_metadata refresh, iterate every system in the
-    /// library cache and re-run enrichment so the new launchbox data
-    /// flows into `game_library` + `game_description`. Does nothing on a
+    /// library cache and re-run enrichment so the new provider data
+    /// flows into `game_library` + `game_detail_metadata`. Does nothing on a
     /// fresh / empty library.
     async fn reenrich_all_systems(state: &AppState) {
         let storage = state.storage();
@@ -1003,6 +1004,81 @@ impl BackgroundManager {
                 "Background cache verification: all {} system(s) fresh",
                 cached_meta.len()
             );
+        }
+    }
+
+    async fn phase_catalog_resource_reconcile(state: &AppState) {
+        use replay_control_core_server::library_db::library_meta;
+
+        let Some(catalog_version) =
+            replay_control_core_server::catalog_pool::catalog_resource_version().await
+        else {
+            return;
+        };
+
+        let stored_version = state
+            .library_reader
+            .read(|conn| {
+                library_meta::read_meta(conn, library_meta::keys::CATALOG_RESOURCE_VERSION)
+            })
+            .await
+            .unwrap_or_default();
+        if stored_version.as_deref() == Some(catalog_version.as_str()) {
+            return;
+        }
+
+        let storage = state.storage();
+        let systems = state
+            .cache
+            .cached_systems(&storage, &state.library_reader)
+            .await;
+        let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
+        if with_games.is_empty() {
+            return;
+        }
+
+        tracing::info!(
+            "Catalog resource version changed; enriching {} system(s)",
+            with_games.len()
+        );
+        let mut failed = false;
+        for sys in &with_games {
+            if let Err(e) = state
+                .cache
+                .enrich_system_cache_with_cancellation(state, sys.folder_name.clone(), None)
+                .await
+            {
+                tracing::warn!(
+                    "Catalog resource enrichment failed for {}: {e}",
+                    sys.folder_name
+                );
+                failed = true;
+            }
+        }
+        if failed {
+            tracing::warn!(
+                "Catalog resource version not stamped; startup will retry resource enrichment"
+            );
+            return;
+        }
+
+        let version = catalog_version.clone();
+        let write_result = state
+            .library_writer
+            .write(move |conn| {
+                library_meta::write_meta(
+                    conn,
+                    library_meta::keys::CATALOG_RESOURCE_VERSION,
+                    Some(&version),
+                )
+            })
+            .await;
+        match write_result {
+            Some(Ok(())) => {
+                tracing::info!("Catalog resource enrichment applied version {catalog_version}")
+            }
+            Some(Err(e)) => tracing::warn!("Catalog resource version write failed: {e}"),
+            None => tracing::warn!("Catalog resource version write skipped: library unavailable"),
         }
     }
 
@@ -1258,7 +1334,7 @@ impl BackgroundManager {
                         total_roms += roms.len();
                     }
                     // Inline enrichment runs on every Ok (including
-                    // Ok(empty), which clears stale game_description rows
+                    // Ok(empty), which clears stale game_detail_metadata rows
                     // when a previously-populated system goes empty).
                     state.ensure_storage_generation(generation)?;
                     report_system(state, progress, i, sys.display_name, true);

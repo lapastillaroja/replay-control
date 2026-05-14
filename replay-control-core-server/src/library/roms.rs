@@ -118,7 +118,7 @@ pub async fn list_roms(
     let roms_root = storage.roms_dir();
 
     let raw = walk_raw_roms_blocking(system_dir, roms_root.clone(), system).await?;
-    let mut roms = materialize_rom_entries(system, raw).await;
+    let mut roms = materialize_rom_entry(system, raw).await;
 
     roms = apply_m3u_dedup_blocking(roms, roms_root).await;
 
@@ -984,7 +984,7 @@ fn collect_raw_roms_recursive(
 
 /// Resolve display names for a raw scan in one batch per system, then build
 /// `RomEntry` rows.
-async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEntry> {
+async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntry> {
     use crate::arcade_db;
     use crate::game_db;
 

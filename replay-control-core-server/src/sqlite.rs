@@ -137,6 +137,16 @@ pub fn table_columns_diverge(conn: &Connection, table: &str, expected: &[&str]) 
     expected.iter().any(|col| !actual.contains(*col))
 }
 
+/// Returns true when `table` exists in the current SQLite schema.
+pub fn table_exists(conn: &Connection, table: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
 /// Probe tables for corruption. Returns `Err` if any table is unreadable.
 ///
 /// `PRAGMA quick_check` misses corrupt data pages, so we touch every table
@@ -351,10 +361,10 @@ mod tests {
         // Arcade trap, in miniature: runtime expects `source` but
         // the on-disk schema (the user's stale catalog) doesn't have it.
         let conn =
-            open_in_memory_with("CREATE TABLE arcade_games (rom_name TEXT, display_name TEXT);");
+            open_in_memory_with("CREATE TABLE arcade_game (rom_name TEXT, display_name TEXT);");
         assert!(table_columns_diverge(
             &conn,
-            "arcade_games",
+            "arcade_game",
             &["rom_name", "source", "display_name"],
         ));
     }

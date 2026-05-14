@@ -4,7 +4,7 @@ Four SQLite databases:
 
 - **catalog.sqlite** — read-only, bundled with the binary; built from upstream DATs/XMLs at compile time (No-Intro, MAME, FBNeo, Flycast, Wikidata, etc.).
 - **library.db** — rebuildable cache at `/var/lib/replay-control/storages/<storage-id>/library.db` on the host SD. Centralised + keyed by a stable per-storage id so it stays on ext4/WAL and survives storage swaps. See [Design Decision #15](design-decisions.md#15-library-db-centralised-on-the-host-sd-keyed-by-storage-id).
-- **external_metadata.db** — host-global at `/var/lib/replay-control/external_metadata.db`. Holds source-derived data that's identical across storages (LaunchBox text, libretro thumbnail manifests, source-version stamps). Read **only by enrichment** — never at request time.
+- **external_metadata.db** — host-global at `/var/lib/replay-control/external_metadata.db`. Holds source-derived data that's identical across storages (provider metadata/resources, libretro thumbnail manifests, source-version stamps). Read **only by enrichment** — never at request time.
 - **user_data.db** — persistent user customizations at `<storage>/.replay-control/user_data.db`. Stays on the ROM storage so it travels with the ROMs; never auto-deleted.
 
 Schema defined in `tools/build-catalog/src/main.rs` (catalog), `replay-control-core-server/src/library/db/mod.rs` (library), `replay-control-core-server/src/external_metadata.rs` (external metadata), and `replay-control-core-server/src/user_data/db.rs` (user data).
@@ -13,7 +13,7 @@ Schema defined in `tools/build-catalog/src/main.rs` (catalog), `replay-control-c
 
 Read-only, mounted via the catalog pool (`replay-control-core-server/src/catalog_pool.rs`). Lives next to the binary on disk; auto-update swaps it atomically alongside the binary on each release.
 
-### arcade_games
+### arcade_game
 
 One row per `(rom_name, source)`. Each upstream curates ROMs in its own style — for example, MAME current ships `display_name="Galaga88"` for `rom_name="galaga88"` while FBNeo ships `"Galaga '88"`. Storing one row per source preserves each upstream's data; the runtime [merges fields by per-system priority](#per-system-arcade-merge) so each system shows its own upstream's curated values, with field-level fallback to other sources for fields the primary doesn't fill.
 
@@ -53,9 +53,9 @@ After the priority list is exhausted, the merge walks any remaining sources (`Ar
 
 For each field the first source with a non-default value wins. Booleans (`is_clone`, `is_bios`) take the value from the first source that has the row at all, since `false` is a valid value rather than "missing".
 
-### canonical_games
+### canonical_game
 
-One row per canonical console game identity. ROM filename variants in `rom_entries` point at this table.
+One row per canonical console game identity. ROM filename variants in `rom_entry` point at this table.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -73,9 +73,9 @@ One row per canonical console game identity. ROM filename variants in `rom_entri
 
 **PRIMARY KEY**: `id`
 
-**Index**: `idx_cg_system ON canonical_games(system)` — supports system-scoped catalog scans and stats.
+**Index**: `idx_cg_system ON canonical_game(system)` — supports system-scoped catalog scans and stats.
 
-### rom_entries
+### rom_entry
 
 One row per known No-Intro/libretro ROM filename stem. Maps concrete filenames and CRC32 values to a canonical game.
 
@@ -86,7 +86,7 @@ One row per known No-Intro/libretro ROM filename stem. Maps concrete filenames a
 | filename_stem | TEXT | ROM filename without extension |
 | region | TEXT | Parsed region tag |
 | crc32 | INTEGER | No-Intro CRC32, `0` when unavailable |
-| canonical_game_id | INTEGER | FK to `canonical_games.id` |
+| canonical_game_id | INTEGER | FK to `canonical_game.id` |
 | normalized_title | TEXT | Normalized title for fuzzy lookup |
 
 **PRIMARY KEY**: `id`
@@ -99,23 +99,23 @@ One row per known No-Intro/libretro ROM filename stem. Maps concrete filenames a
 | `idx_re_crc` | `(system, crc32)` | Hash-based ROM identification |
 | `idx_re_norm` | `(system, normalized_title)` | Normalized-title fallback lookup |
 
-### rom_alternates
+### rom_alternate
 
 Alternate names for canonical console games. Used to seed `library.db.game_alias` during enrichment.
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| canonical_game_id | INTEGER | FK to `canonical_games.id` |
+| canonical_game_id | INTEGER | FK to `canonical_game.id` |
 | system | TEXT | RePlay system folder |
 | alternate_name | TEXT | Alternate title/name |
 
 **PRIMARY KEY**: none. Rows are source-derived aliases; duplicates are tolerated by downstream `INSERT OR IGNORE` / de-duplication paths.
 
-**Index**: `idx_ra_game ON rom_alternates(canonical_game_id, system)` — covers alternate lookup for matched canonical games.
+**Index**: `idx_ra_game ON rom_alternate(canonical_game_id, system)` — covers alternate lookup for matched canonical games.
 
 **Sample usage**: catalog matching loads aliases for a matched `canonical_game_id` and inserts them into `library.db.game_alias` for search/detail enrichment.
 
-### series_entries
+### series_entry
 
 Wikidata-derived series/franchise relationships.
 
@@ -132,9 +132,9 @@ Wikidata-derived series/franchise relationships.
 
 **PRIMARY KEY**: `id`
 
-**Index**: `idx_se_system ON series_entries(system, normalized_title)` — supports per-system series lookup for a matched game.
+**Index**: `idx_se_system ON series_entry(system, normalized_title)` — supports per-system series lookup for a matched game.
 
-### arcade_release_dates
+### arcade_release_date
 
 Per-source arcade release year attribution. Seeded into `library.db.game_release_date` for arcade systems.
 
@@ -148,7 +148,7 @@ Per-source arcade release year attribution. Seeded into `library.db.game_release
 
 **Sample usage**: `arcade_db::arcade_release_dates()` reads all rows ordered by `rom_name`; the resolver merges them with matched arcade ROMs during scan/enrichment.
 
-### console_release_dates
+### console_release_date
 
 Per-region console release dates, sourced from TGDB during catalog build.
 
@@ -165,6 +165,26 @@ Per-region console release dates, sourced from TGDB during catalog build.
 
 **Sample usage**: `game_db::console_release_dates()` streams rows into `library.db.game_release_date`; the per-storage resolver mirrors the preferred row into `game_library.release_date`.
 
+### catalog_game_resource
+
+Catalog-bundled resources linked to normalized game titles. Currently used for manuals from MiSTer Manual Downloader and Retrokit. These rows are copied into `library.db.library_game_resource` during scan/enrichment so game-detail reads stay on the library DB.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | RePlay system folder (PK part 1) |
+| normalized_title | TEXT | Normalized game title (PK part 2) |
+| resource_type | TEXT | Resource kind, currently `"manual"` (PK part 3) |
+| source | TEXT | Catalog source, e.g. `"mister_manuals"` or `"retrokit"` (PK part 4) |
+| resource_id | TEXT | Source-stable resource identifier or URL hash (PK part 5) |
+| url | TEXT | Download URL |
+| title | TEXT | Human-readable resource title |
+| languages | TEXT | Comma-separated BCP-47-ish language tags, e.g. `"en"` or `"en,es,it"` |
+| mime_type | TEXT | Expected content type such as `"application/pdf"` |
+
+**PRIMARY KEY**: `(system, normalized_title, resource_type, source, resource_id)`
+
+**Index**: `catalog_game_resource_idx_lookup ON catalog_game_resource(system, normalized_title, resource_type)` — supports enrichment lookups for all known titles in one system.
+
 ### db_meta
 
 Build metadata for the bundled catalog.
@@ -176,13 +196,13 @@ Build metadata for the bundled catalog.
 
 **PRIMARY KEY**: `key`
 
-Known keys include `mame_version`, `generated_at`, and `is_stub`.
+Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_resource_version` (a content hash over bundled catalog resources; startup compares it with `library_meta.catalog_resource_version` to decide whether existing libraries need resource re-enrichment).
 
 ## library.db
 
 Per-storage rebuildable cache. Lives at `/var/lib/replay-control/storages/<id>/library.db` on the host SD.
 
-Schema is built by `init_tables()` (creates the current v5 shape on a fresh DB) and patched by `run_migrations()` (drops v1 tables on existing DBs from older binaries and applies additive migrations).
+Schema is built by `init_tables()` (creates the current v6 shape on a fresh DB) and patched by `run_migrations()` (drops v1 tables on existing DBs from older binaries and applies additive migrations).
 
 ### Write-isolation rule
 
@@ -260,7 +280,7 @@ Per-system scan metadata. Used by the startup pipeline for mtime-based cache ver
 
 **PRIMARY KEY**: `system`
 
-### game_description
+### game_detail_metadata
 
 Long-form description + publisher per ROM, denormalized so the game-detail server fn stays on the library pool (no cross-pool acquire to `external_metadata.db`). One row per matched ROM; rebuilt at every enrichment pass.
 
@@ -273,9 +293,32 @@ Long-form description + publisher per ROM, denormalized so the game-detail serve
 
 **PRIMARY KEY**: `(system, rom_filename)`
 
+### library_game_resource
+
+Per-ROM resource suggestions copied from provider and catalog sources during enrichment. Game-detail request paths read this table only; they do not query `external_metadata.db` or `catalog.sqlite`.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1, FK to `game_library`) |
+| rom_filename | TEXT | ROM filename (PK part 2, FK to `game_library`) |
+| source | TEXT | Source tag, e.g. `"launchbox"`, `"mister_manuals"`, `"retrokit"` (PK part 3) |
+| resource_type | TEXT | Resource kind, e.g. `"manual"` or `"video"` (PK part 4) |
+| resource_id | TEXT | Source-stable resource ID (PK part 5) |
+| url | TEXT | External URL |
+| title | TEXT | Display title |
+| languages | TEXT | Comma-separated language tags |
+| platform | TEXT | Platform hint for video resources, e.g. `"youtube"` |
+| mime_type | TEXT | Expected content type for downloadable resources |
+
+**PRIMARY KEY**: `(system, rom_filename, source, resource_type, resource_id)`
+
+**Foreign key**: `(system, rom_filename) REFERENCES game_library(system, rom_filename) ON DELETE CASCADE`
+
+**Index**: `library_game_resource_idx_rom_type ON library_game_resource(system, rom_filename, resource_type)` — supports game-detail manual/video suggestions.
+
 ### game_release_date
 
-Multi-region, full-precision release dates. Seeded from the bundled catalog (`console_release_dates` / `arcade_release_dates`) at scan time; resolver picks the user's preferred region and mirrors into `game_library.release_date` / `release_precision` / `release_region_used`.
+Multi-region, full-precision release dates. Seeded from the bundled catalog (`console_release_date` / `arcade_release_date`) at scan time; resolver picks the user's preferred region and mirrors into `game_library.release_date` / `release_precision` / `release_region_used`.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -297,7 +340,7 @@ Multi-region, full-precision release dates. Seeded from the bundled catalog (`co
 
 ### game_alias
 
-Alternative names for games. Populated by enrichment from `external_metadata.db.launchbox_alternate` UNION the catalog `rom_alternates`.
+Alternative names for games. Populated by enrichment from `external_metadata.db.provider_alternate` UNION the catalog `rom_alternate`.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -351,7 +394,12 @@ Per-storage key/value metadata that does not deserve a dedicated table.
 
 **PRIMARY KEY**: `key`
 
-Known keys include `title_norm_version`, which records the `replay_control_core::title_utils::TITLE_NORM_VERSION` used when `game_library.normalized_title` / `normalized_title_alt` were last reconciled.
+Known keys include:
+
+| Key | Purpose |
+|-----|---------|
+| `title_norm_version` | `replay_control_core::title_utils::TITLE_NORM_VERSION` used when `game_library.normalized_title` / `normalized_title_alt` were last reconciled |
+| `catalog_resource_version` | Bundled `catalog_game_resource` content hash that was last flushed into `library_game_resource` |
 
 ### schema_version
 
@@ -366,22 +414,23 @@ Records the applied schema version. Used by the downgrade guard: `LibraryDb::ope
 
 ## external_metadata.db
 
-Host-global. Lives at `/var/lib/replay-control/external_metadata.db`. Holds source-derived metadata that doesn't depend on which storage is mounted (LaunchBox text + libretro thumbnail manifests + source-version stamps). Schema in `replay-control-core-server/src/external_metadata.rs`.
+Host-global. Lives at `/var/lib/replay-control/external_metadata.db`. Holds source-derived metadata that doesn't depend on which storage is mounted (provider metadata/resources + libretro thumbnail manifests + source-version stamps). Schema in `replay-control-core-server/src/external_metadata.rs`.
 
 Read mostly by enrichment, metadata maintenance, thumbnail planning, and box-art variant lookups. Normal game-detail/list request paths read `library.db`. Exposed on `AppState::external_metadata_pool` with a 2-reader / 1-writer pool.
 
-### launchbox_game
+### provider_game
 
-Per-system LaunchBox entries, keyed by normalized title (not ROM filename — the same DB serves every storage, so the row exists once regardless of how many storages have a matching ROM).
+Per-system provider entries, keyed by normalized title and provider (not ROM filename — the same DB serves every storage, so the row exists once regardless of how many storages have a matching ROM). LaunchBox currently writes provider `"launchbox"`.
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| system | TEXT | PK part 1 |
-| normalized_title | TEXT | PK part 2 (output of `replay_control_core::title_utils::normalize_title_for_metadata`) |
+| provider | TEXT | Provider tag, currently `"launchbox"` (PK part 3) |
+| system | TEXT | RePlay system folder (PK part 1) |
+| normalized_title | TEXT | Normalized title (PK part 2) |
 | description | TEXT | Long-form description |
-| genre | TEXT | LaunchBox genre |
-| developer | TEXT | LaunchBox developer |
-| publisher | TEXT | LaunchBox publisher |
+| genre | TEXT | Provider genre |
+| developer | TEXT | Provider developer |
+| publisher | TEXT | Provider publisher |
 | release_date | TEXT | ISO 8601 partial/full |
 | release_precision | TEXT | `"day"` / `"month"` / `"year"` |
 | rating | REAL | Community rating |
@@ -389,20 +438,40 @@ Per-system LaunchBox entries, keyed by normalized title (not ROM filename — th
 | cooperative | INTEGER | Co-op flag |
 | players | INTEGER | Max players |
 
-**PRIMARY KEY**: `(system, normalized_title)`
+**PRIMARY KEY**: `(system, normalized_title, provider)`
 
-### launchbox_alternate
+### provider_alternate
 
-Per-system alternate names from the LaunchBox `<GameAlternateName>` entries.
+Per-system alternate names from provider data. LaunchBox populates this from `<GameAlternateName>` entries.
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| system | TEXT | PK part 1 |
-| normalized_title | TEXT | PK part 2 (matches `launchbox_game.normalized_title`) |
+| provider | TEXT | Provider tag (PK part 4) |
+| system | TEXT | RePlay system folder (PK part 1) |
+| normalized_title | TEXT | Normalized primary title (PK part 2, matches `provider_game.normalized_title`) |
 | alternate_name | TEXT | PK part 3 |
 | normalized_alternate | TEXT | Normalized alternate title used by enrichment matching |
 
-**PRIMARY KEY**: `(system, normalized_title, alternate_name)`
+**PRIMARY KEY**: `(system, normalized_title, alternate_name, provider)`
+
+### provider_resource
+
+Provider-supplied links attached to a normalized game title. LaunchBox currently writes video URLs as `"video"` resources.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| provider | TEXT | Provider tag (PK part 4) |
+| system | TEXT | RePlay system folder (PK part 1) |
+| normalized_title | TEXT | Normalized game title (PK part 2) |
+| resource_type | TEXT | Resource kind, e.g. `"video"` (PK part 3) |
+| resource_id | TEXT | Source-stable ID or URL hash (PK part 5) |
+| url | TEXT | External URL |
+| title | TEXT | Display title |
+| languages | TEXT | Comma-separated language tags |
+| platform | TEXT | Platform hint such as `"youtube"` |
+| mime_type | TEXT | Expected content type for downloadable resources |
+
+**PRIMARY KEY**: `(system, normalized_title, resource_type, provider, resource_id)`
 
 ### thumbnail_manifest
 
@@ -452,7 +521,7 @@ Known keys:
 | `launchbox_xml_crc32` | CRC32 of the last-parsed LaunchBox XML — content-derived freshness check at boot |
 | `launchbox_upstream_etag` | ETag from the last successful upstream LaunchBox `Metadata.zip` download |
 | `thumbnail_manifest_fetched_at` | Unix timestamp for the last successful libretro manifest fetch; short TTL for repeated update clicks |
-| `title_norm_version` | Title normalizer version used for `launchbox_alternate.normalized_alternate` |
+| `title_norm_version` | Title normalizer version used for `provider_alternate.normalized_alternate` |
 
 ## user_data.db
 
@@ -493,22 +562,53 @@ User-saved video links for games.
 
 **Index**: `idx_game_videos_base_title ON (system, base_title)` — enables sharing videos across ROMs of the same game.
 
+### game_manual_resource
+
+User-saved manual resources for a game. Downloaded manuals are stored under `<storage>/.replay-control/manuals/` and tracked here; uploaded manuals use the same table. Legacy manuals found in `<storage>/manuals` remain read-only and are not inserted.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1) |
+| base_title | TEXT | Base title for cross-ROM manual sharing |
+| rom_filename | TEXT | ROM filename (PK part 2) |
+| manual_id | TEXT | Stable saved-manual ID (PK part 3) |
+| resource_key | TEXT | Original source/resource key for duplicate suppression |
+| title | TEXT | Display title |
+| origin | TEXT | `"downloaded"` or `"upload"` |
+| url | TEXT | Source URL for downloaded manuals |
+| storage_path | TEXT | Relative path under `.replay-control/manuals` |
+| original_filename | TEXT | Original upload/download filename when known |
+| languages | TEXT | Comma-separated language tags |
+| mime_type | TEXT | Validated content type (`application/pdf` or `text/plain`) |
+| size_bytes | INTEGER | Saved file size |
+| added_at | INTEGER | Unix timestamp |
+
+**PRIMARY KEY**: `(system, rom_filename, manual_id)`
+
+**Indexes**:
+
+| Index | Columns | Covers |
+|-------|---------|--------|
+| `game_manual_resource_idx_base_title` | `(system, base_title)` | Sharing saved manuals across ROM variants of the same game |
+| `game_manual_resource_idx_resource_key` | `(system, rom_filename, resource_key)` | Suppressing duplicate suggestions after a manual is saved |
+
 ## Schema Migrations
 
-`library.db` has a versioned migration handler in `LibraryDb::run_migrations`. The current `SCHEMA_VERSION` is **5**.
+`library.db` has a versioned migration handler in `LibraryDb::run_migrations`. The current `SCHEMA_VERSION` is **6**.
 
 History:
 - **v1**: original shape (`game_library`, `game_metadata`, `thumbnail_index`, `data_sources`, `game_release_date`, `game_alias`, `game_series`).
 - **v2**: external_metadata.db redesign — drops `game_metadata`, `thumbnail_index`, and `data_sources`. Their content moves to `external_metadata.db` (LaunchBox text + libretro manifests + source version stamps).
-- **v3**: adds `game_description` (description + publisher denormalized from `external_metadata.launchbox_game` so the game-detail page stays on the library pool).
+- **v3**: adds `game_description` (description + publisher denormalized from external metadata so the game-detail page stays on the library pool).
 - **v4**: adds `game_library.normalized_title` and `normalized_title_alt`, populated at scan time for faster enrichment matching and reconciled via `library_meta.title_norm_version`.
 - **v5**: adds `game_library.hash_size_bytes`, allowing CRC32 cache validation by mtime + size without a full post-upgrade rehash storm.
+- **v6**: renames `game_description` to `game_detail_metadata` and adds `library_game_resource` for manual/video suggestions copied from provider/catalog sources during enrichment.
 
 `run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL.
 
 A **downgrade guard** at the top of `run_migrations` refuses to open a DB stamped with a version newer than the binary — silently treating new-shape rows as old-shape would corrupt them on subsequent writes.
 
-`external_metadata.db` and `user_data.db` use a different pattern: column-set drift triggers drop-and-recreate via `crate::sqlite::table_columns_diverge`. Their content is reproducible (LaunchBox XML, libretro repos, on-disk image scan) so a destructive rebuild costs only the next refresh cycle.
+`external_metadata.db` uses a different pattern: column-set drift triggers drop-and-recreate via `crate::sqlite::table_columns_diverge`. Its content is reproducible (LaunchBox XML, libretro repos, on-disk image scan) so a destructive rebuild costs only the next refresh cycle. `user_data.db` is treated as user-owned data and is not auto-dropped for schema drift.
 
 ## Corruption Handling
 

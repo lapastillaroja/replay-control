@@ -591,7 +591,7 @@ pub fn is_arcade_system(folder_name: &str) -> bool {
 /// Which upstream curates a given arcade ROM's metadata.
 ///
 /// Each upstream (FBNeo DAT, MAME 2003+ XML, MAME current XML, Flycast CSV)
-/// has its own row per ROM in `arcade_games`. The runtime merges these by
+/// has its own row per ROM in `arcade_game`. The runtime merges these by
 /// per-system priority — see [`arcade_source_priority`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(usize)]
@@ -612,7 +612,7 @@ impl ArcadeSource {
         ArcadeSource::Naomi,
     ];
 
-    /// String tag stored in `arcade_games.source` and `arcade_release_dates.source`.
+    /// String tag stored in `arcade_game.source` and `arcade_release_date.source`.
     pub const fn as_str(self) -> &'static str {
         match self {
             ArcadeSource::Fbneo => "fbneo",

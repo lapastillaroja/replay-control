@@ -1,5 +1,6 @@
 pub mod asset_health;
 pub mod error;
+pub mod languages;
 pub mod locale;
 pub mod search_scoring;
 pub mod update;

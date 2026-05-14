@@ -9,8 +9,9 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use crate::external_metadata::LaunchboxRow;
-use crate::library_db::{BoxArtGenreRating, LibraryDb, ReleaseDateRow};
+use crate::catalog_pool::CatalogGameResourceRow;
+use crate::external_metadata::{LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow};
+use crate::library_db::{BoxArtGenreRating, LibraryDb, LibraryGameResource, ReleaseDateRow};
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::DatePrecision;
 use replay_control_core::developer::normalize_developer;
@@ -37,21 +38,23 @@ pub struct EnrichmentResult {
     pub release_date_rows: Vec<ReleaseDateRow>,
     /// Cooperative flag updates: rom_filenames that should be set to cooperative=1.
     pub cooperative_updates: Vec<String>,
-    /// `game_description` rows for this system: `(rom_filename, description, publisher)`.
+    /// `game_detail_metadata` rows for this system: `(rom_filename, description, publisher)`.
     /// Caller calls `LibraryDb::replace_descriptions_for_system` to truncate
     /// + repopulate atomically.
     pub description_rows: Vec<(String, Option<String>, Option<String>)>,
+    /// Derived game resources (videos/manuals/etc.) for `library_game_resource`.
+    pub resource_rows: Vec<LibraryGameResource>,
     /// On-demand manifest matches that need background downloads.
     /// Each entry is (rom_filename, ManifestMatch).
     pub manifest_downloads: Vec<(String, ManifestMatch)>,
 }
 
-/// Pick the first matching `launchbox_game` row for each ROM. Match strength
+/// Pick the first matching LaunchBox provider row for each ROM. Match strength
 /// in descending order:
 ///
 /// 1. Stored primary `normalized_title`.
 /// 2. Stored arcade-clone parent's `normalized_title` (`normalized_title_alt`).
-/// 3. LaunchBox `launchbox_alternate.normalized_alternate` → primary
+/// 3. `provider_alternate.normalized_alternate` → primary
 ///    `normalized_title` (covers regional renames where the ROM filename
 ///    matches an alternate name rather than the primary).
 /// 4. No-Intro `hash_matched_name` canonical filename normalized → primary
@@ -60,9 +63,9 @@ pub struct EnrichmentResult {
 fn match_launchbox_rows<'a>(
     norm_by_rom: &HashMap<String, (String, String)>,
     hash_matched_names: &HashMap<String, String>,
-    launchbox_rows: &'a HashMap<String, LaunchboxRow>,
+    launchbox_rows: &'a HashMap<String, ProviderGameRow>,
     alt_to_primary: &HashMap<String, String>,
-) -> HashMap<String, &'a LaunchboxRow> {
+) -> HashMap<String, &'a ProviderGameRow> {
     let mut out = HashMap::with_capacity(norm_by_rom.len());
     for (rom, (norm, norm_alt)) in norm_by_rom {
         if let Some(row) = match_for_rom(
@@ -82,9 +85,9 @@ fn match_for_rom<'a>(
     norm: &str,
     norm_alt: &str,
     hash_name: Option<&str>,
-    launchbox_rows: &'a HashMap<String, LaunchboxRow>,
+    launchbox_rows: &'a HashMap<String, ProviderGameRow>,
     alt_to_primary: &HashMap<String, String>,
-) -> Option<&'a LaunchboxRow> {
+) -> Option<&'a ProviderGameRow> {
     if let Some(row) = launchbox_rows.get(norm) {
         return Some(row);
     }
@@ -115,6 +118,41 @@ fn match_for_rom<'a>(
     None
 }
 
+fn match_resource_key(
+    norm: &str,
+    norm_alt: &str,
+    hash_name: Option<&str>,
+    resource_keys: &HashSet<&str>,
+    alt_to_primary: Option<&HashMap<String, String>>,
+) -> Option<String> {
+    if resource_keys.contains(norm) {
+        return Some(norm.to_string());
+    }
+    if !norm_alt.is_empty() && resource_keys.contains(norm_alt) {
+        return Some(norm_alt.to_string());
+    }
+    if let Some(aliases) = alt_to_primary {
+        if let Some(prim) = aliases.get(norm)
+            && resource_keys.contains(prim.as_str())
+        {
+            return Some(prim.clone());
+        }
+        if !norm_alt.is_empty()
+            && let Some(prim) = aliases.get(norm_alt)
+            && resource_keys.contains(prim.as_str())
+        {
+            return Some(prim.clone());
+        }
+    }
+    if let Some(hn) = hash_name {
+        let hn_norm = normalize_title_for_metadata(filename_stem(hn));
+        if !hn_norm.is_empty() && resource_keys.contains(hn_norm.as_str()) {
+            return Some(hn_norm);
+        }
+    }
+    None
+}
+
 /// Run the full enrichment pipeline for a system.
 ///
 /// Pure data function: reads from DB + filesystem, returns all updates.
@@ -125,23 +163,25 @@ fn match_for_rom<'a>(
 /// * `system` - System folder name.
 /// * `index` - Pre-built image index for this system.
 /// * `arcade_lookup` - Per-system arcade-game info (display_name etc.).
-/// * `launchbox_rows` - Per-system LaunchBox metadata, keyed by
-///   normalized title (from `external_metadata::system_launchbox_rows`).
+/// * `launchbox_rows` - Per-system LaunchBox provider metadata, keyed by
+///   normalized title.
 ///
 /// `arcade_lookup` is unused at match time — the normalized title for each
 /// ROM is read from `game_library` (populated at scan time). The parameter
 /// stays in the signature because the box-art resolver still consumes it.
 ///
 /// `alt_to_primary` maps `normalized_alternate → primary normalized_title`
-/// from `launchbox_alternate`. Caller loads it once per system from the
+/// from `provider_alternate`. Caller loads it once per system from the
 /// host-global `external_metadata.db`.
 pub fn enrich_system(
     conn: &Connection,
     system: &str,
     index: &ImageIndex,
     arcade_lookup: &ArcadeInfoLookup,
-    launchbox_rows: &HashMap<String, LaunchboxRow>,
+    launchbox_rows: &HashMap<String, ProviderGameRow>,
     alt_to_primary: &HashMap<String, String>,
+    provider_resources: &HashMap<String, Vec<ProviderResourceRow>>,
+    catalog_resources: &HashMap<String, Vec<CatalogGameResourceRow>>,
 ) -> EnrichmentResult {
     // Load existing game_library values to know which are already set.
     let existing_genres: HashSet<String> = LibraryDb::system_rom_genres(conn, system)
@@ -162,11 +202,12 @@ pub fn enrich_system(
             release_date_rows: Vec::new(),
             cooperative_updates: Vec::new(),
             description_rows: Vec::new(),
+            resource_rows: Vec::new(),
             manifest_downloads: Vec::new(),
         };
     }
 
-    // Resolve each ROM filename to its launchbox_game row using the
+    // Resolve each ROM filename to its LaunchBox provider row using the
     // normalized titles stored in `game_library` at scan time, the LB
     // alt-name index, and the No-Intro hash-matched canonical name.
     let norm_by_rom = LibraryDb::visible_normalized_titles(conn, system).unwrap_or_default();
@@ -178,6 +219,68 @@ pub fn enrich_system(
         launchbox_rows,
         alt_to_primary,
     );
+
+    let mut resource_rows = Vec::new();
+    let provider_resource_keys: HashSet<&str> =
+        provider_resources.keys().map(String::as_str).collect();
+    let catalog_resource_keys: HashSet<&str> =
+        catalog_resources.keys().map(String::as_str).collect();
+    for (rom_filename, (norm, norm_alt)) in &norm_by_rom {
+        let provider_key = match_resource_key(
+            norm,
+            norm_alt,
+            hash_matched_names.get(rom_filename).map(String::as_str),
+            &provider_resource_keys,
+            Some(alt_to_primary),
+        );
+        if let Some(rows) = provider_key
+            .as_deref()
+            .and_then(|matched_key| provider_resources.get(matched_key))
+        {
+            for row in rows {
+                resource_rows.push(LibraryGameResource {
+                    rom_filename: rom_filename.clone(),
+                    source: if row.provider.is_empty() {
+                        LAUNCHBOX_PROVIDER.to_string()
+                    } else {
+                        row.provider.clone()
+                    },
+                    resource_type: row.resource_type.clone(),
+                    resource_id: row.resource_id.clone(),
+                    url: row.url.clone(),
+                    title: row.title.clone(),
+                    languages: row.languages.clone(),
+                    platform: row.platform.clone(),
+                    mime_type: row.mime_type.clone(),
+                });
+            }
+        }
+        let catalog_key = match_resource_key(
+            norm,
+            norm_alt,
+            hash_matched_names.get(rom_filename).map(String::as_str),
+            &catalog_resource_keys,
+            None,
+        );
+        if let Some(rows) = catalog_key
+            .as_deref()
+            .and_then(|matched_key| catalog_resources.get(matched_key))
+        {
+            for row in rows {
+                resource_rows.push(LibraryGameResource {
+                    rom_filename: rom_filename.clone(),
+                    source: row.source.clone(),
+                    resource_type: row.resource_type.clone(),
+                    resource_id: row.resource_id.clone(),
+                    url: row.url.clone(),
+                    title: Some(row.title.clone()),
+                    languages: Some(row.languages.clone()),
+                    platform: None,
+                    mime_type: Some(row.mime_type.clone()),
+                });
+            }
+        }
+    }
 
     // Build enrichment entries + collect manifest download requests.
     let mut manifest_downloads: Vec<(String, ManifestMatch)> = Vec::new();
@@ -306,7 +409,7 @@ pub fn enrich_system(
         .cloned()
         .collect();
 
-    // game_description rows: per-ROM denormalized description + publisher.
+    // game_detail_metadata rows: per-ROM denormalized description + publisher.
     // Always rebuild the full set for the system (not just newly-matched
     // ROMs) so removing a ROM also removes its description on the next
     // enrichment pass.
@@ -326,6 +429,7 @@ pub fn enrich_system(
         release_date_rows,
         cooperative_updates,
         description_rows,
+        resource_rows,
         manifest_downloads,
     }
 }
@@ -447,8 +551,8 @@ mod tests {
 
     // ── match_for_rom tests (Phase 3 chain) ──────────────────────────
 
-    fn lb_row_with_developer(dev: &str) -> LaunchboxRow {
-        LaunchboxRow {
+    fn lb_row_with_developer(dev: &str) -> ProviderGameRow {
+        ProviderGameRow {
             description: None,
             genre: None,
             developer: Some(dev.to_string()),
@@ -558,7 +662,7 @@ mod tests {
     fn match_for_rom_skips_hash_name_when_it_normalises_to_primary() {
         // hash_name normalises identically to `norm`. We've already tried
         // that key — bail out instead of reprobing the same map.
-        let rows: HashMap<String, LaunchboxRow> = HashMap::new();
+        let rows: HashMap<String, ProviderGameRow> = HashMap::new();
         let alt_to_primary = HashMap::new();
         let result = match_for_rom("samename", "", Some("samename.rom"), &rows, &alt_to_primary);
         assert!(result.is_none());
@@ -566,7 +670,7 @@ mod tests {
 
     #[test]
     fn match_for_rom_returns_none_when_all_keys_miss() {
-        let rows: HashMap<String, LaunchboxRow> = HashMap::new();
+        let rows: HashMap<String, ProviderGameRow> = HashMap::new();
         let alt_to_primary = HashMap::new();
         let result = match_for_rom("nope", "", Some("nope.rom"), &rows, &alt_to_primary);
         assert!(result.is_none());

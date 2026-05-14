@@ -69,19 +69,19 @@ impl LibraryService {
         scan_inputs: &ScanInputs,
     ) -> replay_control_core::error::Result<()> {
         // Call pure core matching function.
-        let series_entries =
+        let series_entry =
             replay_control_core_server::alias_matching::build_wikidata_series_tuples(system, roms)
                 .await;
 
-        if series_entries.is_empty() {
+        if series_entry.is_empty() {
             return Ok(());
         }
 
-        let count = series_entries.len();
+        let count = series_entry.len();
         let system = system.to_owned();
         scan_inputs.ensure_current()?;
         let result = db
-            .write(move |conn| LibraryDb::bulk_insert_series(conn, &series_entries))
+            .write(move |conn| LibraryDb::bulk_insert_series(conn, &series_entry))
             .await;
         match result {
             Some(Ok(n)) => {

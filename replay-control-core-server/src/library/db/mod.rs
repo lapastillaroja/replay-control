@@ -9,6 +9,7 @@
 mod aliases_series;
 pub mod game_description;
 mod game_library;
+pub mod game_resource;
 pub mod library_meta;
 mod recommendations;
 mod relationships;
@@ -201,6 +202,20 @@ pub struct BoxArtGenreRating {
     pub rating_count: Option<u32>,
 }
 
+/// A derived per-ROM game resource shown on the game-detail page.
+#[derive(Debug, Clone)]
+pub struct LibraryGameResource {
+    pub rom_filename: String,
+    pub source: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub url: String,
+    pub title: Option<String>,
+    pub languages: Option<String>,
+    pub platform: Option<String>,
+    pub mime_type: Option<String>,
+}
+
 /// A game alias entry for bulk insertion into the `game_alias` table.
 #[derive(Debug, Clone)]
 pub struct AliasInsert {
@@ -299,14 +314,13 @@ const CREATE_GAME_LIBRARY_META_SQL: &str = "
     );
 ";
 
-/// SQL to create the `game_description` table.
+/// SQL to create the `game_detail_metadata` table.
 ///
 /// Denormalizes long-form description + publisher per ROM so the
 /// game-detail server fn doesn't have to acquire the host-global
-/// `external_metadata_pool` (which would need a normalized-title lookup
-/// too). Populated at enrichment from `external_metadata.launchbox_game`.
-const CREATE_GAME_DESCRIPTION_SQL: &str = "
-    CREATE TABLE IF NOT EXISTS game_description (
+/// `external_metadata_pool`. Populated at enrichment from provider rows.
+const CREATE_GAME_DETAIL_METADATA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_detail_metadata (
         system TEXT NOT NULL,
         rom_filename TEXT NOT NULL,
         description TEXT,
@@ -315,7 +329,42 @@ const CREATE_GAME_DESCRIPTION_SQL: &str = "
     );
 ";
 
-const GAME_DESCRIPTION_COLUMNS: &[&str] = &["system", "rom_filename", "description", "publisher"];
+const GAME_DETAIL_METADATA_COLUMNS: &[&str] =
+    &["system", "rom_filename", "description", "publisher"];
+
+const CREATE_LIBRARY_GAME_RESOURCE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS library_game_resource (
+        system TEXT NOT NULL,
+        rom_filename TEXT NOT NULL,
+        source TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT,
+        languages TEXT,
+        platform TEXT,
+        mime_type TEXT,
+        PRIMARY KEY (system, rom_filename, source, resource_type, resource_id),
+        FOREIGN KEY (system, rom_filename)
+            REFERENCES game_library(system, rom_filename)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS library_game_resource_idx_rom_type
+        ON library_game_resource(system, rom_filename, resource_type);
+";
+
+const LIBRARY_GAME_RESOURCE_COLUMNS: &[&str] = &[
+    "system",
+    "rom_filename",
+    "source",
+    "resource_type",
+    "resource_id",
+    "url",
+    "title",
+    "languages",
+    "platform",
+    "mime_type",
+];
 
 /// SQL to create the per-storage `library_meta` k/v table.
 ///
@@ -388,7 +437,8 @@ impl LibraryDb {
     pub const TABLES: &[&str] = &[
         "game_library",
         "game_library_meta",
-        "game_description",
+        "game_detail_metadata",
+        "library_game_resource",
         "game_release_date",
         "game_alias",
         "game_series",
@@ -527,14 +577,17 @@ impl LibraryDb {
         if Self::table_needs_rebuild(conn, "game_release_date", GAME_RELEASE_DATE_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS game_release_date;");
         }
-        if Self::table_needs_rebuild(conn, "game_description", GAME_DESCRIPTION_COLUMNS) {
-            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_description;");
+        if Self::table_needs_rebuild(conn, "game_detail_metadata", GAME_DETAIL_METADATA_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_detail_metadata;");
+        }
+        if Self::table_needs_rebuild(conn, "library_game_resource", LIBRARY_GAME_RESOURCE_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS library_game_resource;");
         }
 
         conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_release_date: {e}")))?;
-        conn.execute_batch(CREATE_GAME_DESCRIPTION_SQL)
-            .map_err(|e| Error::Other(format!("Failed to create game_description: {e}")))?;
+        conn.execute_batch(CREATE_GAME_DETAIL_METADATA_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_detail_metadata: {e}")))?;
 
         conn.execute_batch(CREATE_GAME_LIBRARY_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_library: {e}")))?;
@@ -542,6 +595,8 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("Failed to create game_library_meta: {e}")))?;
         conn.execute_batch(CREATE_LIBRARY_META_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_meta: {e}")))?;
+        conn.execute_batch(CREATE_LIBRARY_GAME_RESOURCE_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create library_game_resource: {e}")))?;
 
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
@@ -638,7 +693,7 @@ impl LibraryDb {
     ///   thumbnail_index, and data_sources (now per-host in
     ///   external_metadata.db).
     /// - **v3**: adds game_description (per-storage description + publisher
-    ///   denormalized from external_metadata.launchbox_game so the
+    ///   denormalized from external metadata so the
     ///   game-detail server fn can stay on the library pool).
     /// - **v4**: adds `game_library.normalized_title` and
     ///   `game_library.normalized_title_alt`, populated at scan time so the
@@ -646,7 +701,9 @@ impl LibraryDb {
     ///   ROM filename per pass.
     /// - **v5**: adds `game_library.hash_size_bytes` so cached CRC32 results
     ///   are validated by mtime + size without a post-upgrade rehash storm.
-    pub const SCHEMA_VERSION: i64 = 5;
+    /// - **v6**: renames `game_description` to `game_detail_metadata` and
+    ///   adds derived `library_game_resource`.
+    pub const SCHEMA_VERSION: i64 = 6;
 
     /// Run pending migrations.
     ///
@@ -744,6 +801,32 @@ impl LibraryDb {
             tracing::info!("Library DB v4 → v5: adding hash_size_bytes column");
             conn.execute_batch("ALTER TABLE game_library ADD COLUMN hash_size_bytes INTEGER;")
                 .map_err(|e| Error::Other(format!("v4→v5 alter game_library: {e}")))?;
+        }
+
+        if (1..6).contains(&current) {
+            tracing::info!(
+                "Library DB v5 → v6: migrating game_description to game_detail_metadata"
+            );
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS game_detail_metadata (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    description TEXT,
+                    publisher TEXT,
+                    PRIMARY KEY (system, rom_filename)
+                );",
+            )
+            .map_err(|e| Error::Other(format!("v5→v6 create game_detail_metadata: {e}")))?;
+            if crate::sqlite::table_exists(conn, "game_description") {
+                conn.execute_batch(
+                    "INSERT OR REPLACE INTO game_detail_metadata
+                        (system, rom_filename, description, publisher)
+                     SELECT system, rom_filename, description, publisher
+                     FROM game_description;
+                     DROP TABLE IF EXISTS game_description;",
+                )
+                .map_err(|e| Error::Other(format!("v5→v6 migrate game_description: {e}")))?;
+            }
         }
 
         let now = unix_now();

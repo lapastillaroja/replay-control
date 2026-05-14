@@ -1,9 +1,9 @@
-//! Operations on the `game_description` table.
+//! Operations on the `game_detail_metadata` table.
 //!
 //! Denormalized per-ROM cache of LaunchBox `description` + `publisher` —
 //! the long-form fields the game-detail page needs. Lives in `library.db`
 //! so the request path stays on a single pool; written by the enrichment
-//! pass which already holds the matched `LaunchboxRow` for each ROM.
+//! pass which already holds the matched `ProviderGameRow` for each ROM.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -11,7 +11,7 @@ use replay_control_core::error::{Error, Result};
 
 use super::LibraryDb;
 
-/// One row from `game_description`.
+/// One row from `game_detail_metadata`.
 #[derive(Debug, Clone, Default)]
 pub struct GameDescription {
     pub description: Option<String>,
@@ -27,7 +27,7 @@ impl LibraryDb {
         rom_filename: &str,
     ) -> Result<Option<GameDescription>> {
         conn.query_row(
-            "SELECT description, publisher FROM game_description
+            "SELECT description, publisher FROM game_detail_metadata
              WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
             |row| {
@@ -41,7 +41,7 @@ impl LibraryDb {
         .map_err(|e| Error::Other(format!("lookup_description: {e}")))
     }
 
-    /// Replace every `game_description` row for `system` with the supplied
+    /// Replace every `game_detail_metadata` row for `system` with the supplied
     /// list. Run inside the enrichment write closure so the truncate +
     /// repopulate stays atomic from a reader's perspective. Rows whose
     /// description AND publisher are both `None` are dropped — empty rows
@@ -55,25 +55,25 @@ impl LibraryDb {
             .transaction()
             .map_err(|e| Error::Other(format!("begin replace_descriptions: {e}")))?;
         tx.execute(
-            "DELETE FROM game_description WHERE system = ?1",
+            "DELETE FROM game_detail_metadata WHERE system = ?1",
             params![system],
         )
-        .map_err(|e| Error::Other(format!("clear game_description for {system}: {e}")))?;
+        .map_err(|e| Error::Other(format!("clear game_detail_metadata for {system}: {e}")))?;
         let mut count = 0usize;
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_description
+                    "INSERT INTO game_detail_metadata
                        (system, rom_filename, description, publisher)
                      VALUES (?1, ?2, ?3, ?4)",
                 )
-                .map_err(|e| Error::Other(format!("prepare insert game_description: {e}")))?;
+                .map_err(|e| Error::Other(format!("prepare insert game_detail_metadata: {e}")))?;
             for (rom_filename, description, publisher) in rows {
                 if description.is_none() && publisher.is_none() {
                     continue;
                 }
                 stmt.execute(params![system, rom_filename, description, publisher])
-                    .map_err(|e| Error::Other(format!("insert game_description: {e}")))?;
+                    .map_err(|e| Error::Other(format!("insert game_detail_metadata: {e}")))?;
                 count += 1;
             }
         }

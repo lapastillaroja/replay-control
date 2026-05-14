@@ -75,8 +75,8 @@ pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry>
         let stem = filename_stem.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                "SELECT {ENTRY_COLS} FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 AND re.filename_stem = ?2"
             ))?;
             stmt.query_row(rusqlite::params![system, stem], row_to_game_entry)
@@ -98,8 +98,8 @@ pub async fn lookup_games_batch(system: &str, stems: &[&str]) -> HashMap<String,
         let stems_json = serde_json::to_string(stems).unwrap_or_else(|_| "[]".into());
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                "SELECT {ENTRY_COLS} FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 \
                    AND re.filename_stem IN (SELECT value FROM json_each(?2))"
             ))?;
@@ -120,8 +120,8 @@ pub async fn lookup_by_crc(system: &str, crc32: u32) -> Option<GameEntry> {
         let system = system.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                "SELECT {ENTRY_COLS} FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 AND re.crc32 = ?2 \
                  LIMIT 1"
             ))?;
@@ -144,8 +144,8 @@ pub async fn lookup_by_crcs_batch(system: &str, crcs: &[u32]) -> HashMap<u32, Ga
         let crcs_json = serde_json::to_string(&crcs_i64).unwrap_or_else(|_| "[]".into());
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                "SELECT {ENTRY_COLS} FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 \
                    AND re.crc32 IN (SELECT value FROM json_each(?2))"
             ))?;
@@ -174,8 +174,8 @@ pub async fn lookup_by_normalized_title(system: &str, normalized: &str) -> Optio
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
                 "SELECT {CANONICAL_COLS} \
-                 FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                 FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 AND re.normalized_title = ?2 \
                  LIMIT 1"
             ))?;
@@ -202,8 +202,8 @@ pub async fn lookup_by_normalized_titles_batch(
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
                 "SELECT re.normalized_title, {CANONICAL_COLS} \
-                 FROM rom_entries re \
-                 JOIN canonical_games cg ON cg.id = re.canonical_game_id \
+                 FROM rom_entry re \
+                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
                  WHERE re.system = ?1 \
                    AND re.normalized_title IN (SELECT value FROM json_each(?2))"
             ))?;
@@ -335,7 +335,7 @@ pub async fn supported_systems() -> Vec<String> {
     {
         return crate::catalog_pool::with_catalog(|conn| {
             let mut stmt =
-                conn.prepare_cached("SELECT DISTINCT system FROM canonical_games ORDER BY system")?;
+                conn.prepare_cached("SELECT DISTINCT system FROM canonical_game ORDER BY system")?;
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
@@ -348,7 +348,7 @@ pub async fn supported_systems() -> Vec<String> {
 pub async fn total_rom_entries() -> usize {
     {
         return crate::catalog_pool::with_catalog(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM rom_entries", [], |row| {
+            conn.query_row("SELECT COUNT(*) FROM rom_entry", [], |row| {
                 row.get::<_, i64>(0)
             })
         })
@@ -362,7 +362,7 @@ pub async fn system_count() -> usize {
     {
         return crate::catalog_pool::with_catalog(|conn| {
             conn.query_row(
-                "SELECT COUNT(DISTINCT system) FROM canonical_games",
+                "SELECT COUNT(DISTINCT system) FROM canonical_game",
                 [],
                 |row| row.get::<_, i64>(0),
             )
@@ -377,7 +377,7 @@ pub async fn has_system(system: &str) -> bool {
         let system = system.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn
-                .prepare_cached("SELECT COUNT(*) FROM canonical_games WHERE system = ?1 LIMIT 1")?;
+                .prepare_cached("SELECT COUNT(*) FROM canonical_game WHERE system = ?1 LIMIT 1")?;
             stmt.query_row(rusqlite::params![system], |row| row.get::<_, i64>(0))
         })
         .await
@@ -394,7 +394,7 @@ pub async fn system_alternates(system: &str) -> Vec<(u32, Vec<String>)> {
         let system = system.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
-                "SELECT canonical_game_id, alternate_name FROM rom_alternates \
+                "SELECT canonical_game_id, alternate_name FROM rom_alternate \
                  WHERE system = ?1 ORDER BY canonical_game_id",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], |row| {
@@ -424,7 +424,7 @@ pub async fn system_games(system: &str) -> Vec<CanonicalGame> {
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre FROM canonical_games WHERE system = ?1 ORDER BY id",
+                 normalized_genre FROM canonical_game WHERE system = ?1 ORDER BY id",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], row_to_canonical_game)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -442,7 +442,7 @@ pub async fn console_release_dates() -> Vec<(String, String, String, String, Str
         return crate::catalog_pool::with_catalog(|conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT system, base_title, region, release_date, precision, source \
-                 FROM console_release_dates ORDER BY system, base_title",
+                 FROM console_release_date ORDER BY system, base_title",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok((

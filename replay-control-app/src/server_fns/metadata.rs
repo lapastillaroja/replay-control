@@ -279,9 +279,8 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
     })
 }
 
-/// Clear cached LaunchBox metadata. Drops every row in `launchbox_game` and
-/// `launchbox_alternate` and resets the XML hash stamp so the next boot
-/// re-parses from disk.
+/// Clear cached provider metadata and reset the XML hash stamp so the next
+/// boot re-parses LaunchBox metadata from disk.
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();

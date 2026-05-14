@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 url = "2"
 crc32fast = "1"
+ring = "0.17"
 semver = "1"
 rusqlite = { version = "0.38", features = ["bundled"] }
 deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
