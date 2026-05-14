@@ -121,14 +121,14 @@ pub async fn add_game_video(
 
     state
         .user_data_writer
-        .write({
+        .try_write({
             let entry = entry.clone();
             move |conn| {
                 UserDataDb::add_game_video(conn, &system, &rom_filename, &base_title, &entry)
             }
         })
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     Ok(entry)
@@ -145,9 +145,11 @@ pub async fn remove_game_video(
     super::require_storage_mutation_allowed(&state, "remove videos").await?;
     state
         .user_data_writer
-        .write(move |conn| UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id))
+        .try_write(move |conn| {
+            UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id)
+        })
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 

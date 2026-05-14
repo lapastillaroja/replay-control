@@ -441,16 +441,25 @@ impl BackgroundManager {
                     // Store the upstream ETag so the next "Refresh metadata" can
                     // detect an unchanged file without re-downloading.
                     if let Some(etag) = upstream_etag {
-                        let _ = state
+                        match state
                             .external_metadata_writer
-                            .write(move |conn| {
+                            .try_write(move |conn| {
                                 external_metadata::write_meta(
                                     conn,
                                     meta_keys::LAUNCHBOX_UPSTREAM_ETAG,
                                     Some(&etag),
                                 )
                             })
-                            .await;
+                            .await
+                        {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                tracing::warn!("LaunchBox upstream ETag SQL failed: {e}");
+                            }
+                            Err(e) => {
+                                tracing::warn!("LaunchBox upstream ETag write failed: {e}");
+                            }
+                        }
                     }
                     Self::phase_auto_import_inner(&state, Some(guard)).await;
                 }
@@ -821,20 +830,15 @@ impl BackgroundManager {
     }
 
     /// After an external_metadata refresh, iterate every system in the
-    /// library cache and re-run enrichment so the new provider data
+    /// library DB that has ROM rows and re-run enrichment so the new provider data
     /// flows into `game_library` + `game_detail_metadata`. Does nothing on a
     /// fresh / empty library.
     async fn reenrich_all_systems(state: &AppState) {
-        let storage = state.storage();
-        let systems = state
-            .cache
-            .cached_systems(&storage, &state.library_reader)
-            .await;
-        let active: Vec<String> = systems
-            .into_iter()
-            .filter(|s| s.game_count > 0)
-            .map(|s| s.folder_name)
-            .collect();
+        let active = super::library_systems::active_library_systems_with_roms(
+            &state.library_reader,
+            "post_refresh_reenrich",
+        )
+        .await;
         if active.is_empty() {
             return;
         }
@@ -1046,12 +1050,11 @@ impl BackgroundManager {
             return;
         }
 
-        let storage = state.storage();
-        let systems = state
-            .cache
-            .cached_systems(&storage, &state.library_reader)
-            .await;
-        let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
+        let with_games = super::library_systems::active_library_systems_with_roms(
+            &state.library_reader,
+            "catalog_resource_reconcile",
+        )
+        .await;
         if with_games.is_empty() {
             return;
         }
@@ -1061,16 +1064,13 @@ impl BackgroundManager {
             with_games.len()
         );
         let mut failed = false;
-        for sys in &with_games {
+        for system in &with_games {
             if let Err(e) = state
                 .cache
-                .enrich_system_cache_with_cancellation(state, sys.folder_name.clone(), None)
+                .enrich_system_cache_with_cancellation(state, system.clone(), None)
                 .await
             {
-                tracing::warn!(
-                    "Catalog resource enrichment failed for {}: {e}",
-                    sys.folder_name
-                );
+                tracing::warn!("Catalog resource enrichment failed for {system}: {e}");
                 failed = true;
             }
         }
@@ -1204,7 +1204,7 @@ impl BackgroundManager {
         // Now write all collected data to external_metadata.db in one txn.
         let write_result = state
             .external_metadata_writer
-            .write(move |db| {
+            .try_write(move |db| {
                 let tx = match db.transaction() {
                     Ok(t) => t,
                     Err(e) => {
@@ -1279,7 +1279,10 @@ impl BackgroundManager {
             })
             .await;
 
-        let Some((total_entries, total_repos)) = write_result else {
+        let Ok((total_entries, total_repos)) = write_result else {
+            tracing::warn!(
+                "Thumbnail index disk rebuild write skipped: external_metadata unavailable"
+            );
             return; // DB unavailable
         };
 
@@ -1987,11 +1990,11 @@ impl AppState {
                 // gated because enrich_system_cache reads from the DB
                 // and the write gate blocks ALL reads on the same pool.
                 // Enrichment writes are small per-system UPDATEs.
-                let systems = state
-                    .cache
-                    .cached_systems(&storage, &state.library_reader)
-                    .await;
-                let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
+                let with_games = super::library_systems::active_library_systems_with_roms(
+                    &state.library_reader,
+                    "post_import_enrichment",
+                )
+                .await;
 
                 if !with_games.is_empty() {
                     tracing::info!(
@@ -1999,11 +2002,8 @@ impl AppState {
                         with_games.len()
                     );
                     let enrich_start = std::time::Instant::now();
-                    for sys in &with_games {
-                        state
-                            .cache
-                            .enrich_system_cache(&state, sys.folder_name.clone())
-                            .await;
+                    for system in with_games {
+                        state.cache.enrich_system_cache(&state, system).await;
                     }
                     tracing::info!(
                         "Post-import enrichment: done in {:.1}s",

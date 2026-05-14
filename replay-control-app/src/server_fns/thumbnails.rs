@@ -105,11 +105,11 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
 
     state
         .external_metadata_writer
-        .write(|conn| {
+        .try_write(|conn| {
             replay_control_core_server::external_metadata::clear_libretro_thumbnail_manifest(conn)
         })
         .await
-        .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state.cache.invalidate_metadata_page().await;

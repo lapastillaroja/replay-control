@@ -5,6 +5,7 @@ pub(crate) mod core_api;
 pub mod db_pools;
 pub mod favorites;
 pub(crate) mod library;
+pub(crate) mod library_systems;
 mod mountinfo_watcher;
 pub mod now_playing;
 pub mod recents;

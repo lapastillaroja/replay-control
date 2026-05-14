@@ -199,10 +199,10 @@ pub enum DbError {
 /// - **Read pool**: `max_size=3` (both WAL and DELETE modes support concurrent readers)
 /// - **Write pool**: `max_size=1` (SQLite serialises writes)
 ///
-/// Provides async `read()` / `write()` helpers that use deadpool's native async
-/// API: `pool.get().await` for connection acquisition and `conn.interact()` for
-/// running closures on a blocking thread. This ensures waiting for a connection
-/// never pins a tokio worker thread.
+/// Provides async `read()` / `try_read()` / `try_write()` helpers that use
+/// deadpool's native async API: `pool.get().await` for connection acquisition
+/// and `conn.interact()` for running closures on a blocking thread. This
+/// ensures waiting for a connection never pins a tokio worker thread.
 ///
 /// The pools are wrapped in `Arc<RwLock<>>` so that `close()` / `reopen()` can
 /// swap them across all clones of the same `DbPool`.
@@ -614,20 +614,6 @@ impl DbPool {
     /// Run a mutable closure. On DELETE-mode pools the write gate
     /// auto-activates around this call; concurrent reads get
     /// `Err(DbError::Busy)`. On WAL pools the gate stays unset.
-    #[track_caller]
-    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
-    where
-        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let caller = std::panic::Location::caller();
-        async move {
-            self.try_write_with_timeout_and_caller(INTERACT_TIMEOUT, f, caller)
-                .await
-                .ok()
-        }
-    }
-
     #[track_caller]
     pub fn try_write<F, R>(
         &self,
@@ -1072,7 +1058,7 @@ mod tests {
         let pool = build_test_pool(&tmp);
 
         let written = pool
-            .write(|conn| conn.execute("INSERT INTO kv VALUES ('greeting', 'hello')", []))
+            .try_write(|conn| conn.execute("INSERT INTO kv VALUES ('greeting', 'hello')", []))
             .await
             .unwrap()
             .unwrap();
@@ -1126,7 +1112,10 @@ mod tests {
     async fn closed_pool_returns_none() {
         let pool = DbPool::new_closed("test_db");
         assert!(pool.read(|_| 1u32).await.is_none());
-        assert!(pool.write(|_| 1u32).await.is_none());
+        assert!(matches!(
+            pool.try_write(|_| 1u32).await,
+            Err(DbError::Closed)
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1136,7 +1125,10 @@ mod tests {
         let pool = DbPool::new_deferred("test_db", test_opener, 2, 2048, 1024);
 
         assert!(pool.read(|_| 1u32).await.is_none());
-        assert!(pool.write(|_| 1u32).await.is_none());
+        assert!(matches!(
+            pool.try_write(|_| 1u32).await,
+            Err(DbError::Closed)
+        ));
 
         assert!(pool.reopen(&path).await);
         assert_eq!(pool.db_path(), path);
@@ -1195,7 +1187,7 @@ mod tests {
         assert_eq!(m0.gate_blocked_reads, 0);
 
         pool.read(|_| 1u32).await.unwrap();
-        pool.write(|_| 1u32).await.unwrap();
+        pool.try_write(|_| 1u32).await.unwrap();
 
         let m1 = pool.metrics();
         assert_eq!(m1.reads_started, 1);
@@ -1222,14 +1214,17 @@ mod tests {
         assert_eq!(pool.read(|_| 42u32).await, Some(42));
         pool.close().await;
         assert!(pool.read(|_| 42u32).await.is_none());
-        assert!(pool.write(|_| 42u32).await.is_none());
+        assert!(matches!(
+            pool.try_write(|_| 42u32).await,
+            Err(DbError::Closed)
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn reopen_after_close_resumes_traffic() {
         let tmp = tempfile::tempdir().unwrap();
         let pool = build_test_pool(&tmp);
-        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
+        pool.try_write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
             .await
             .unwrap()
             .unwrap();
@@ -1263,7 +1258,10 @@ mod tests {
 
         assert!(pool.is_corrupt());
         assert!(pool.read(|_| 1u32).await.is_none());
-        assert!(pool.write(|_| 1u32).await.is_none());
+        assert!(matches!(
+            pool.try_write(|_| 1u32).await,
+            Err(DbError::Corrupt)
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1317,7 +1315,7 @@ mod tests {
             "gate should block reads"
         );
         // Writes are *not* gated — they still work.
-        assert!(pool.write(|_| 1u32).await.is_some());
+        assert!(pool.try_write(|_| 1u32).await.is_ok());
 
         drop(gate);
 
@@ -1348,7 +1346,7 @@ mod tests {
 
         // Force lazy connection creation by holding several reads
         // concurrently. The first commit happens here.
-        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('seed', 'one')", []))
+        pool.try_write(|conn| conn.execute("INSERT INTO kv VALUES ('seed', 'one')", []))
             .await
             .unwrap()
             .unwrap();
@@ -1379,7 +1377,7 @@ mod tests {
         }
 
         // Second commit, then read again — a fresh post-commit fan-out.
-        pool.write(|conn| conn.execute("UPDATE kv SET v = 'two' WHERE k = 'seed'", []))
+        pool.try_write(|conn| conn.execute("UPDATE kv SET v = 'two' WHERE k = 'seed'", []))
             .await
             .unwrap()
             .unwrap();
@@ -1417,7 +1415,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let pool = build_test_pool_with(&tmp, 2);
 
-        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
+        pool.try_write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
             .await
             .unwrap()
             .unwrap();
@@ -1482,7 +1480,7 @@ mod tests {
 
         {
             let pool = DbPool::new(path.clone(), "crash", test_opener, 1).unwrap();
-            pool.write(|conn| {
+            pool.try_write(|conn| {
                 conn.execute("INSERT INTO kv VALUES ('survive_crash', 'committed')", [])
             })
             .await
@@ -1554,7 +1552,7 @@ mod tests {
     }
 
     /// The auto-gate is conditional on journal mode: WAL pools never
-    /// activate the gate from `write()`. This test runs on whatever FS
+    /// activate the gate from `try_write()`. This test runs on whatever FS
     /// the temp dir lives on — typically ext4 in CI, so WAL — and
     /// asserts a write doesn't briefly block reads.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1573,7 +1571,7 @@ mod tests {
         let writer_pool = pool.clone();
         let writer = tokio::spawn(async move {
             writer_pool
-                .write(|conn| {
+                .try_write(|conn| {
                     std::thread::sleep(std::time::Duration::from_millis(200));
                     conn.execute("INSERT INTO kv VALUES ('w', 'late')", [])
                 })

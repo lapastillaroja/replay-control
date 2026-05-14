@@ -175,13 +175,13 @@ pub async fn set_boxart_override(
     let override_path = format!("{boxart_dir}/{variant_filename}.png");
     state
         .user_data_writer
-        .write({
+        .try_write({
             let system = system.clone();
             let rom_filename = rom_filename.clone();
             move |conn| UserDataDb::set_override(conn, &system, &rom_filename, &override_path)
         })
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Update game_library.box_art_url so the override is visible immediately in list views.
@@ -224,9 +224,9 @@ pub async fn reset_boxart_override(
     let rom_for_db = rom_filename.clone();
     state
         .user_data_writer
-        .write(move |conn| UserDataDb::remove_override(conn, &system, &rom_filename))
+        .try_write(move |conn| UserDataDb::remove_override(conn, &system, &rom_filename))
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear box_art_url so it reverts to enrichment-resolved value on next enrichment run.

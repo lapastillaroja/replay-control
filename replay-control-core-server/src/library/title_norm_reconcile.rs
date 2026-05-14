@@ -66,14 +66,20 @@ pub async fn reconcile_library_normalized_titles(pool: &DbPool) -> Result<Reconc
         }
     }
 
-    pool.write(|conn| {
-        library_meta::write_meta(
-            conn,
-            library_meta::keys::TITLE_NORM_VERSION,
-            Some(&TITLE_NORM_VERSION.to_string()),
-        )
-    })
-    .await;
+    match pool
+        .try_write(|conn| {
+            library_meta::write_meta(
+                conn,
+                library_meta::keys::TITLE_NORM_VERSION,
+                Some(&TITLE_NORM_VERSION.to_string()),
+            )
+        })
+        .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!("title_norm reconcile: stamp SQL failed: {e}"),
+        Err(e) => tracing::warn!("title_norm reconcile: stamp write failed: {e}"),
+    }
 
     tracing::info!(
         "title_norm reconcile: bumped {:?} → v{TITLE_NORM_VERSION}, {} systems / {} rows",
@@ -119,7 +125,9 @@ async fn rebuild_system(pool: &DbPool, system: &str) -> Result<usize> {
 
     let sys = system.to_string();
     let count = pool
-        .write(move |conn| LibraryDb::update_normalized_titles(conn, &sys, &updates).unwrap_or(0))
+        .try_write(move |conn| {
+            LibraryDb::update_normalized_titles(conn, &sys, &updates).unwrap_or(0)
+        })
         .await
         .unwrap_or(0);
     Ok(count)

@@ -133,7 +133,7 @@ Each is a self-contained patch; none depends on the others.
 When adding a new write path, decide:
 
 - **Does it write `library.db`?** If yes, claim a relevant `Activity` (Rebuild / Maintenance) before touching the writer pool. Skip only if the write is per-row idempotent (INSERT OR REPLACE) and the column is owned by an L5-class hook.
-- **Does it run for more than a couple of seconds?** If yes, capture `storage_generation` at start, plumb it through `ScanInputs`, and check `ensure_current()` before each `db.write(...)` boundary.
+- **Does it run for more than a couple of seconds?** If yes, capture `storage_generation` at start, plumb it through `ScanInputs`, and check `ensure_current()` before each `try_write(...)` boundary.
 - **Is it user-initiated?** Gate with `require_configured_storage_ready_for_mutation` so it fails loudly when storage is misconfigured, instead of silently writing to fallback storage.
 - **Does it touch L1 caches?** Caches are independent of activity guards by design; invalidate freely.
 - **Is it a destructive lifecycle op (`reset_to_empty`, `reopen`, `replace_with_file`)?** Trust the pool drain; do not invent a parallel mutex.

@@ -294,9 +294,9 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 
     state
         .external_metadata_writer
-        .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
+        .try_write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
-        .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state.cache.invalidate_metadata_page().await;
@@ -311,9 +311,9 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     super::require_storage_mutation_allowed(&state, "regenerate metadata").await?;
     state
         .external_metadata_writer
-        .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
+        .try_write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
-        .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());
     Ok(())

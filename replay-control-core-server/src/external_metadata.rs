@@ -2,7 +2,7 @@
 //!
 //! Lives at `<data_dir>/external_metadata.db` (default `/var/lib/replay-control/`).
 //! Read-only at request time — only background enrichment ever queries it.
-//! Writes happen via in-place transactions on the `DbPool::write` connection;
+//! Writes happen via in-place transactions on the `DbPool::try_write` connection;
 //! the host pool is constructed in the app layer (`AppState::external_metadata_pool`)
 //! and passed down via `&Connection` like every other pool in the codebase.
 

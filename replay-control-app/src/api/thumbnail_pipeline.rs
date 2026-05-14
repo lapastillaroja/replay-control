@@ -156,9 +156,9 @@ impl ThumbnailPipeline {
             // can skip phase 1.
             if matches!(result, Ok(ref s) if !s.rate_limited) {
                 let ts = now_secs.to_string();
-                let _ = state
+                match state
                     .external_metadata_writer
-                    .write(move |conn| {
+                    .try_write(move |conn| {
                         use replay_control_core_server::external_metadata::{self, meta_keys};
                         external_metadata::write_meta(
                             conn,
@@ -166,7 +166,16 @@ impl ThumbnailPipeline {
                             Some(&ts),
                         )
                     })
-                    .await;
+                    .await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        tracing::warn!("Thumbnail manifest timestamp SQL failed: {e}");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Thumbnail manifest timestamp write failed: {e}");
+                    }
+                }
             }
             result
         };
@@ -278,21 +287,17 @@ impl ThumbnailPipeline {
             }
         });
 
-        // Collect systems that have ROMs and a thumbnail repo.
-        let storage = state.storage();
-        let systems = state
-            .cache
-            .cached_systems(&storage, &state.library_reader)
-            .await;
-        let supported: Vec<String> = systems
-            .into_iter()
-            .filter(|s| s.game_count > 0)
-            .filter(|s| {
-                replay_control_core_server::thumbnails::thumbnail_repo_names(&s.folder_name)
-                    .is_some()
-            })
-            .map(|s| s.folder_name)
-            .collect();
+        // Collect systems that have ROM rows and a thumbnail repo.
+        let supported: Vec<String> = super::library_systems::active_library_systems_with_roms(
+            &state.library_reader,
+            "thumbnail_update_active_systems",
+        )
+        .await
+        .into_iter()
+        .filter(|system| {
+            replay_control_core_server::thumbnails::thumbnail_repo_names(system).is_some()
+        })
+        .collect();
 
         let total_systems = supported.len();
         let mut total_downloaded = 0usize;

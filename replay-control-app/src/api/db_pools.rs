@@ -186,15 +186,6 @@ impl ExternalMetadataWritePool {
     }
 
     #[track_caller]
-    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
-    where
-        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.inner.write(f)
-    }
-
-    #[track_caller]
     pub fn try_write<F, R>(
         &self,
         f: F,
@@ -293,15 +284,6 @@ pub struct UserDataWritePool {
 impl UserDataWritePool {
     pub(crate) fn from_pool(inner: DbPool) -> Self {
         Self { inner }
-    }
-
-    #[track_caller]
-    pub fn write<F, R>(&self, f: F) -> impl std::future::Future<Output = Option<R>> + '_
-    where
-        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.inner.write(f)
     }
 
     #[track_caller]

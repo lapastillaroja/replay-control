@@ -508,9 +508,9 @@ async fn delete_rom_cleanup(
     }
 
     // 3. Delete user_data.db entries (videos, box art overrides).
-    state
+    if let Err(e) = state
         .user_data_writer
-        .write({
+        .try_write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
@@ -521,7 +521,10 @@ async fn delete_rom_cleanup(
                 );
             }
         })
-        .await;
+        .await
+    {
+        tracing::warn!("ROM delete user-data cascade failed: {e}");
+    }
 
     // 4. Delete library.db game_library entry.
     if let Err(e) = state
@@ -640,9 +643,9 @@ async fn rename_rom_cascade(
     }
 
     // 3. Update user_data.db (box art overrides, game videos).
-    state
+    if let Err(e) = state
         .user_data_writer
-        .write({
+        .try_write({
             let system = system.to_string();
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
@@ -655,7 +658,10 @@ async fn rename_rom_cascade(
                 );
             }
         })
-        .await;
+        .await
+    {
+        tracing::warn!("ROM rename user-data cascade failed: {e}");
+    }
 
     // 4. Update library.db game_library entry.
     if let Err(e) = state

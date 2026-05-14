@@ -38,7 +38,7 @@ pub async fn insert_game_library_row(
     let system = system.to_string();
     let base_title = base_title.to_string();
     let rom = rom_filename.to_string();
-    pool.write(move |db| {
+    pool.try_write(move |db| {
         db.execute(
             "INSERT INTO game_library
              (system, rom_filename, rom_path, display_name,

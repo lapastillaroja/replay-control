@@ -54,7 +54,7 @@ pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>;
 
 `DbError::{Closed, Corrupt, Busy, Timeout, Sql, Acquire, Interact, Other}` distinguishes "pool can't answer" from "query ran and returned nothing." Cascade gates (e.g. *is the library empty?* before a destructive populate) **must** use `try_read` and treat `Err(_)` as "skip — pool unavailable", never as "no rows" — silently defaulting `None`/`Err` to a destructive default is what produced the visible "library shows 0 games" regression.
 
-`read()` / `write()` are kept as `try_*().ok()` adapters for sites where best-effort is genuinely correct (cache-clearing afterthoughts, log-only metrics queries).
+`read()` remains as a lossy convenience for best-effort reads. Writes do not have a lossy adapter: mutation callers use `try_write()` or `try_write_with_timeout()` so pool lifecycle, corruption, acquire, interact, and timeout failures are handled explicitly.
 
 ## Write Gate (DELETE-mode only)
 
@@ -84,4 +84,4 @@ After every `interact()` closure runs, `check_for_corruption` reads `sqlite3_err
 
 ## WAL Checkpointing
 
-WAL pools use SQLite's default automatic checkpointing. The app does not disable `wal_autocheckpoint` and normal heavy-write paths do not force broad post-scan checkpoints through the generic `DbPool::write` timeout window.
+WAL pools use SQLite's default automatic checkpointing. The app does not disable `wal_autocheckpoint` and normal heavy-write paths do not force broad post-scan checkpoints through a generic write timeout window.

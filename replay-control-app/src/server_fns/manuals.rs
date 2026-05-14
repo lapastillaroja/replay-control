@@ -431,7 +431,7 @@ pub async fn download_manual(
     };
     let db_result = state
         .user_data_writer
-        .write({
+        .try_write({
             let system = system.clone();
             let rom_filename = rom_filename.clone();
             let base_title = base_title.clone();
@@ -441,16 +441,18 @@ pub async fn download_manual(
         })
         .await;
     match db_result {
-        Some(Ok(())) => {}
-        Some(Err(e)) => {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
             let _ = tokio::fs::remove_file(&target_path).await;
             return Err(ServerFnError::new(format!(
                 "Failed to save manual metadata: {e}"
             )));
         }
-        None => {
+        Err(e) => {
             let _ = tokio::fs::remove_file(&target_path).await;
-            return Err(ServerFnError::new("User data database unavailable"));
+            return Err(ServerFnError::new(format!(
+                "User data database unavailable: {e}"
+            )));
         }
     }
 
@@ -473,13 +475,13 @@ pub async fn delete_manual(system: String, manual_id: String) -> Result<(), Serv
 
     let removed = state
         .user_data_writer
-        .write({
+        .try_write({
             let system = system.clone();
             let manual_id = manual_id.clone();
             move |conn| UserDataDb::remove_game_manual(conn, &system, &manual_id)
         })
         .await
-        .ok_or_else(|| ServerFnError::new("User data database unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let Some(entry) = removed else {

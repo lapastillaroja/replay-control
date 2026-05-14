@@ -464,7 +464,7 @@ pub async fn import_all_manifests(
         let source_name_w = source_name.clone();
         let actual_branch_w = actual_branch.to_string();
         let result = em_pool
-            .write(move |conn| -> Result<usize> {
+            .try_write(move |conn| -> Result<usize> {
                 let tx = conn
                     .transaction()
                     .map_err(|e| Error::Other(format!("begin: {e}")))?;
@@ -498,19 +498,19 @@ pub async fn import_all_manifests(
             .await;
 
         match result {
-            Some(Ok(count)) => {
+            Ok(Ok(count)) => {
                 stats.total_entries += count;
                 stats.repos_fetched += 1;
                 consecutive_failures = 0;
             }
-            Some(Err(e)) => {
+            Ok(Err(e)) => {
                 stats.errors.push(format!("{}: {e}", repo.display_name));
                 consecutive_failures += 1;
             }
-            None => {
+            Err(e) => {
                 stats.errors.push(format!(
-                    "{}: external_metadata pool unavailable",
-                    repo.display_name
+                    "{}: external_metadata write failed: {e}",
+                    repo.display_name,
                 ));
                 consecutive_failures += 1;
             }

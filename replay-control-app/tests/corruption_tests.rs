@@ -330,7 +330,7 @@ async fn repair_corrupt_user_data_wipes_table_content() {
     let inserted = env
         .state
         .user_data_writer
-        .write(|conn| {
+        .try_write(|conn| {
             conn.execute(
                 "INSERT INTO box_art_overrides \
                  (system, rom_filename, override_path, set_at) \
@@ -339,7 +339,7 @@ async fn repair_corrupt_user_data_wipes_table_content() {
             )
         })
         .await;
-    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+    assert!(matches!(inserted, Ok(Ok(1))), "sentinel insert failed");
 
     env.state.user_data_writer.mark_corrupt();
 
@@ -380,7 +380,7 @@ async fn restore_user_data_backup_actually_restores_content() {
     let inserted = env
         .state
         .user_data_writer
-        .write(|conn| {
+        .try_write(|conn| {
             conn.execute(
                 "INSERT INTO box_art_overrides \
                  (system, rom_filename, override_path, set_at) \
@@ -389,14 +389,16 @@ async fn restore_user_data_backup_actually_restores_content() {
             )
         })
         .await;
-    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+    assert!(matches!(inserted, Ok(Ok(1))), "sentinel insert failed");
 
     // Test setup only: fold the WAL into the main file before copying it as
     // a manual .bak snapshot; otherwise the copied main file can miss the row.
-    env.state
+    let checkpoint = env
+        .state
         .user_data_writer
-        .write(|conn| conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"))
+        .try_write(|conn| conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"))
         .await;
+    assert!(matches!(checkpoint, Ok(Ok(()))), "WAL checkpoint failed");
 
     // Manually refresh the .bak so it carries the sentinel row.
     let ud_path = env.state.user_data_writer.db_path();
