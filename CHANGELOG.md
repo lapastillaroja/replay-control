@@ -4,6 +4,43 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.10](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.10) - 2026-05-15
+
+### Highlights
+
+- **Game pages have better resource links.** Replay Control now bundles catalog/manual links, surfaces metadata video suggestions, lets you save manuals for offline use, and lets you add your own PDF/text manuals by URL or upload.
+- **Game browsing feels more predictable.** Random Game now picks from actual library rows, related/series games sort by release date when known, and stale browser state after random navigation is fixed.
+- **Large libraries stay accurate after storage changes.** System summaries are derived from `library.db` metadata instead of stale in-memory cache, and background maintenance uses actual active systems from the library.
+- **Manual links are cleaner.** Broken legacy manual URL families are filtered or rewritten so game pages do not show suggestions that fail immediately.
+- **Upgrades are less likely to hit stale browser files.** Non-fingerprinted WebAssembly helper snippets now revalidate after deploys, preventing startup failures caused by old cached helper scripts.
+
+### Added
+
+- Bundled catalog now includes manual resource links from MiSTer Manual Downloader and Retrokit. They are matched during library enrichment and exposed on game detail pages without runtime source-index downloads.
+- Saved manuals are tracked in `user_data.db` and stored under `.replay-control/manuals`. Downloads are validated as PDF or text before they are added, and duplicate suggestions are hidden after a manual is saved.
+- User-provided manuals can be added from game detail pages by pasting a PDF/text URL or uploading a PDF/text file up to 64 MiB. Uploaded manuals use the same local storage and delete flow as downloaded manuals.
+- LaunchBox video URLs are imported as provider resources and shown as metadata video suggestions that can be pinned like search results.
+
+### Changed
+
+- External metadata storage now uses generic provider tables instead of LaunchBox-only table names, leaving the metadata pipeline ready for additional sources without changing the game-detail read path.
+- Game-detail description/publisher and manual/video suggestions are now copied into per-storage library tables during enrichment. Request-time game pages stay on `library.db`; provider and catalog databases are not queried on page load.
+- System summaries are now a derived read view over the static `SYSTEMS` catalog plus `game_library_meta` counts, not an in-memory library cache. System-list endpoints still return every visible system, while info and metadata coverage paths read `game_library_meta` directly when they only need counts.
+- Background maintenance paths now use a distinct `active_systems` helper backed by actual `game_library` rows. Rebuild/rescan discovery still walks every `visible_systems()` entry so systems that were previously empty are not missed.
+- The game detail video section now presents saved videos, suggested metadata videos, URL entry, and online search as separate compact groups so the source labels do not dominate the card layout.
+
+### Fixed
+
+- Wikidata series enrichment now chunks queries by series QID to avoid long WDQS requests timing out.
+- TGDB alias resolution now uses catalog IDs, improving matches for games whose external names differ from library filenames.
+- Random Game now picks directly from actual `game_library` rows and navigates through the Leptos router, fixing stale browser-back state after jumping to a random game's detail page.
+- Related games now sort by release date when known, making series and franchise lists read in a more natural order.
+- Stale manual URL families from older catalog data are filtered/rewritten so broken legacy manual suggestions do not appear on game pages.
+- Horizontal scrolling of related-game rows on iOS Safari no longer snaps back to the start while a game is running. Elapsed-time displays now update once per minute instead of every second, avoiding layout invalidations during momentum scroll.
+- Browsers no longer keep stale wasm-bindgen inline snippet files across upgrades. Fingerprinted JS/WASM remains long-cacheable, while non-fingerprinted snippet files now revalidate so a freshly deployed app does not fail during startup with a WASM import error.
+
+---
+
 ## [0.4.0-beta.9](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.9) - 2026-05-07
 
 ### Highlights
@@ -15,8 +52,6 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Faster cold boot.** Library startup work is streamlined so systems begin appearing sooner, with artwork and metadata filling in as each system finishes instead of waiting for the whole library.
 - **Rebuild is now safe to interrupt.** If storage drops, NFS hiccups, or power is lost during a rebuild/rescan, already-cached library data is preserved instead of disappearing or being written to the wrong storage.
 - **Metadata coverage is much better.** More games now get release dates, descriptions, developers, genres, ratings, and player counts from LaunchBox and built-in catalogs, including harder cases such as arcade clones, alternate regional titles, and filename-only matches.
-- **More manuals are available from game pages.** Replay Control now bundles manual links from trusted community catalogs, shows matching manuals directly on the game detail page, and saves downloaded manuals locally so they still work later without internet.
-- **Metadata videos can be pinned from game pages.** Video links found in imported metadata appear alongside video search results, so common trailers/gameplay links can be saved without a separate search.
 - **Full arcade sets are easier to browse.** Replay Control now keeps arcade entries from the source catalogs even when they are outside the usual coin-op game set, so full MAME-style libraries can show names and metadata for more files instead of falling back to raw filenames.
 - **Local ROM auto-detection failures are visible.** If the filesystem watcher cannot start, the app now shows a banner explaining that new ROMs need a manual rescan or restart instead of silently missing changes.
 
@@ -30,20 +65,17 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - New `use_focus_scroll` hook (`ResizeObserver` on `<body>`, manual-scroll override) — the home-hero "Manual" button deep-links to `#manuals` and lands on the section even when cover-art images and lazy sections finish laying out after the initial scroll.
 - New `MANUALS_FRAGMENT` const in `pages::game_detail` consumed by the home hero card link.
 - New `docs/features/now-playing.md` covering the user surfaces, the `/proc` detection algorithm, robustness defenses, and perf numbers.
-- `game_library.normalized_title` and `normalized_title_alt` columns populated at scan time (arcade clones store the parent's normalized title in `_alt`); enrichment matching is now a hashmap probe against stored keys instead of a per-ROM `normalize_title()` call. `provider_alternate.normalized_alternate` mirrors this on the LaunchBox side. Schema bumped to v4 with an `ALTER TABLE` migration that preserves existing libraries.
+- `game_library.normalized_title` and `normalized_title_alt` columns populated at scan time (arcade clones store the parent's normalized title in `_alt`); enrichment matching is now a hashmap probe against stored keys instead of a per-ROM `normalize_title()` call. `launchbox_alternate.normalized_alternate` mirrors this on the LaunchBox side. Schema bumped to v4 with an `ALTER TABLE` migration that preserves existing libraries.
 - New per-storage `library_meta` k/v table (first inhabitant: `title_norm_version`) and a host-side `external_meta.title_norm_version` stamp. `replay_control_core::title_utils::TITLE_NORM_VERSION` (currently `1`) is bumped any time `normalize_title_for_metadata` changes its output. On boot, mismatch on either side rebuilds the stored normalized columns silently — future matcher improvements reach deployed appliances on the next reboot without user action.
-- New `match_for_rom` chain in `replay-control-core-server/src/library/enrichment.rs`: primary `normalized_title` → arcade-clone parent's `normalized_title` → `provider_alternate.normalized_alternate` → No-Intro `hash_matched_name` canonical filename (probed against both primary and alt-name maps). Stops at the first hit; strength descending.
+- New `match_for_rom` chain in `replay-control-core-server/src/library/enrichment.rs`: primary `normalized_title` → arcade-clone parent's `normalized_title` → `launchbox_alternate.normalized_alternate` → No-Intro `hash_matched_name` canonical filename (probed against both primary and alt-name maps). Stops at the first hit; strength descending.
 - New `game_library.hash_size_bytes` migration. Existing CRC cache rows with a matching mtime are reused and self-heal by writing the observed file size on the next scan, avoiding a one-time post-upgrade rehash storm on large NFS libraries.
 - New storage-generation cancellation token for long scan/rebuild work. Storage swaps bump the generation, stale scans return a typed `StorageChanged` cancellation, and write boundaries re-check the token before mutating `library.db`.
-- Bundled catalog now includes manual resource links from MiSTer Manual Downloader and Retrokit. They are matched during library enrichment and exposed on game detail pages without runtime source-index downloads.
-- Saved manuals are tracked in `user_data.db` and stored under `.replay-control/manuals`. Downloads are validated as PDF or text before they are added, and duplicate suggestions are hidden after a manual is saved.
-- LaunchBox video URLs are imported as provider resources and shown as metadata video suggestions that can be pinned like search results.
 
 ### Changed
 
 - "Rescan Library" no longer just adds. Each visible system is reconciled to current disk state via a per-system strict scan that errors on permission / I/O failures, so a flaky NFS mount can't silently truncate the cached ROM list. Missing top-level system dirs become empty rows; recursive read failures preserve the previous cache.
 - `phase_auto_import` is now the single entry point that re-parses the cached LaunchBox XML on boot. It checks both `launchbox_xml_crc32` and `title_norm_version` in one read; either mismatch triggers a re-parse, and `refresh_launchbox` writes both stamps inside the same transaction. The previously-separate `reconcile_external_normalized_titles` path is gone, removing a known race where the secondary writer would `pool unavailable` while the work was actually still committing on the deadpool thread.
-- LaunchBox-sourced release dates now flow through `game_release_date` via `upsert_release_dates(source="launchbox")` *before* `resolve_release_date_for_library` runs. The resolver rebuilds `game_library.release_date` from the precision-aware table, so the previous wipe-on-resolve behavior (which zeroed the column for any system whose catalog had no `console_release_date` rows) is gone. Day-precision LB dates upgrade year-precision catalog rows; year-precision LB dates fill systems with no catalog data at all.
+- LaunchBox-sourced release dates now flow through `game_release_date` via `upsert_release_dates(source="launchbox")` *before* `resolve_release_date_for_library` runs. The resolver rebuilds `game_library.release_date` from the precision-aware table, so the previous wipe-on-resolve behavior (which zeroed the column for any system whose catalog had no `console_release_dates` rows) is gone. Day-precision LB dates upgrade year-precision catalog rows; year-precision LB dates fill systems with no catalog data at all.
 - `launch.rs::check_game_loaded` (used by the post-launch health-check) now consumes the shared `replay_proc` helpers, picking up the `avtest` exclusion that was previously only applied by the `pgrep`-based check.
 - `system_display_name` hoisted from `core::game_ref` to `core::platform::systems` so non-`GameRef` callers can use it.
 - Generic `install_sse_listener::<T>(url, on_payload)` helper extracted from the duplicated Activity / NowPlaying / Config listener boilerplate in `lib.rs`.
@@ -56,8 +88,6 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Cached hashes are loaded once per system by the background orchestrator instead of from the writer-only scan path. `LibraryWritePool::as_reader()` was removed, keeping read and write pool boundaries honest.
 - Hybrid cartridge/CD systems are handled per file: Sega 32X cartridge ROMs remain hash-eligible, while Sega CD 32X disc images are skipped even when they use `.bin` tracks.
 - Arcade catalog builds now retain source entries for categories such as gambling, slot machine, computer, handheld, and electromechanical instead of filtering them out. Those rows are still sourced from MAME/FBNeo/Flycast metadata and normalize into the existing genre taxonomy where possible.
-- External metadata storage now uses generic provider tables instead of LaunchBox-only table names, leaving the metadata pipeline ready for additional sources without changing the game-detail read path.
-- Game-detail description/publisher and manual/video suggestions are now copied into per-storage library tables during enrichment. Request-time game pages stay on `library.db`; provider and catalog databases are not queried on page load.
 - `docs/features/benchmarks.md` now includes measured beta.9 NFS library-maintenance timings on the Pi/NFS development library (95,495 ROMs across 41 systems): fresh startup verification ~4.5 s, manual rescan 194.1 s, manual rebuild 636.0 s.
 - Removed `scan_systems` and the silent walker family (`list_roms`, `walk_raw_roms_blocking`, `collect_raw_roms_recursive`), `count_roms_recursive`/`count_roms_inner`, `m3u_has_target_on_disk`, `ScanError::AllSystemsMissing`. The strict walker variants drop their `_strict` suffix and become the only walker. `find_duplicates` and the `library_report` binary migrated to the strict API. `StorageProbe::HasRoms` renamed to `HasVisibleEntries` — the new probe is a depth-1 dirent check (no recursion). `StorageProbe`'s strict-walker assumption was validated on a Pi NFS rig: drop-caches + immediate `read_dir` returns the correct entries synchronously, never spurious `Ok(empty)`.
 
