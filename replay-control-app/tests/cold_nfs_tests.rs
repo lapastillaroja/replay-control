@@ -2,8 +2,9 @@
 //! Regression tests for the layers that block read-time writes to
 //! `library.db` during the NFS partial-mount window:
 //!
-//!   1. `cached_systems` is strictly read-only — an empty L2 returns
-//!      `[]` rather than falling through to a filesystem scan.
+//!   1. `system_summaries` is strictly read-only — an empty L2 derives
+//!      zero-count summaries from the static system catalog rather than
+//!      falling through to a filesystem scan.
 //!   2. `GET /api/systems/<sys>/roms` is L2-only — no L3 fallback.
 //!
 //! The strict reconcile rule (per-system) replaces the older
@@ -88,11 +89,16 @@ async fn get_systems_on_partial_mount_does_not_poison_library_db() {
 
     let json = assert_json_ok(resp).await;
     let systems = json.as_array().expect("array");
+    assert_eq!(
+        systems.len(),
+        replay_control_core::systems::visible_systems().count(),
+        "GET /systems on cold cache should derive visible systems without scanning"
+    );
     assert!(
-        systems.is_empty(),
-        "GET /systems on cold cache must return [] (got {} entries) — \
-         the L3 fallback used to fire here and persist all-zero rows",
-        systems.len()
+        systems
+            .iter()
+            .all(|system| system["game_count"].as_u64() == Some(0)),
+        "GET /systems on cold cache should return only zero-count summaries"
     );
 
     assert_eq!(
@@ -121,6 +127,10 @@ async fn get_info_on_partial_mount_does_not_poison_library_db() {
         .unwrap();
 
     let json = assert_json_ok(resp).await;
+    assert_eq!(
+        json["total_systems"].as_u64().unwrap(),
+        replay_control_core::systems::visible_systems().count() as u64
+    );
     assert_eq!(json["total_games"].as_u64().unwrap(), 0);
     assert_eq!(json["systems_with_games"].as_u64().unwrap(), 0);
 

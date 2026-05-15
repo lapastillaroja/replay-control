@@ -9,12 +9,7 @@ use super::AppState;
 async fn list_systems(
     State(state): State<AppState>,
 ) -> Json<Vec<replay_control_core_server::roms::SystemSummary>> {
-    Json(
-        state
-            .cache
-            .cached_systems(&state.storage(), &state.library_reader)
-            .await,
-    )
+    Json(super::library_systems::system_summaries(&state.library_reader).await)
 }
 
 async fn list_system_roms(

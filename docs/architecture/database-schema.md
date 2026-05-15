@@ -206,7 +206,7 @@ Schema is built by `init_tables()` (creates the current v6 shape on a fresh DB) 
 
 ### Write-isolation rule
 
-Writes to `library.db` are restricted to **scan / rebuild / enrichment / watcher / explicit-user-action** paths — never request-time SSR or HTTP read handlers. The `cached_systems` and `load_roms_from_db` reader entry points sit on top of `LibraryService` and intentionally do **not** fall through to a filesystem scan; population is the job of `BackgroundManager::populate_all_systems`, which iterates `visible_systems()` and calls `scan_and_cache_system` (strict reconcile) per system.
+Writes to `library.db` are restricted to **scan / rebuild / enrichment / watcher / explicit-user-action** paths — never request-time SSR or HTTP read handlers. The `system_summaries` derived view and `LibraryService::load_roms_from_db` reader entry point intentionally do **not** fall through to a filesystem scan; population is the job of `BackgroundManager::populate_all_systems`, which iterates `visible_systems()` and calls `scan_and_cache_system` (strict reconcile) per system. `system_summaries` is not a cache: static system fields come from the core `SYSTEMS` catalog, while counts come from `game_library_meta`.
 
 Rationale: an earlier read-time L3 fallback wrote the result of a silent walker straight back to `game_library_meta`. On a partially-mounted NFS the walk returned 41 zero-rom rows that no recovery path could undo (mtime was stamped, `rom_count > 0` guard skipped). Removing the read-time write closes the vector at its source.
 

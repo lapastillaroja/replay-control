@@ -8,7 +8,6 @@ mod scan_pipeline;
 pub(crate) use scan_pipeline::{ScanCancellation, ScanInputs, ScanOptions};
 pub mod ssr_snapshot;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
@@ -17,7 +16,7 @@ use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::db_pool::DbError;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::recents::RecentEntry;
-use replay_control_core_server::roms::{RomEntry, SystemSummary};
+use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 use tokio::sync::RwLock;
 
@@ -64,7 +63,6 @@ use ssr_snapshot::SsrSnapshot;
 
 pub struct LibraryService {
     pub(crate) query_cache: query::QueryCache,
-    pub(super) systems: RwLock<Option<Vec<SystemSummary>>>,
     pub(super) favorites: RwLock<Option<FavoritesCache>>,
     pub(super) recents: RwLock<Option<Vec<RecentEntry>>>,
     /// In-memory snapshot of the `/settings/metadata` page payload. Backed
@@ -82,7 +80,6 @@ impl LibraryService {
     pub(crate) fn new() -> Self {
         let query_cache = query::QueryCache::new();
         Self {
-            systems: RwLock::new(None),
             favorites: RwLock::new(None),
             recents: RwLock::new(None),
             metadata_page: SsrSnapshot::new(),
@@ -127,82 +124,6 @@ impl LibraryService {
     /// (`AppState::invalidate_user_caches`).
     pub async fn invalidate_recommendations(&self) {
         self.recommendations.invalidate().await;
-    }
-
-    /// Cached systems list from L1 (in-memory) → L2 (`game_library_meta`).
-    /// Read-only: never falls through to a filesystem scan and never
-    /// writes to L2. Discovery and persistence are owned by the
-    /// background pipeline. See `docs/architecture/database-schema.md`.
-    ///
-    /// Single-flight on miss; misses and unavailable-pool states return
-    /// an empty vec without caching so the next call retries.
-    pub async fn cached_systems(
-        &self,
-        _storage: &StorageLocation,
-        db: &LibraryReadPool,
-    ) -> Vec<SystemSummary> {
-        if let Some(ref cached) = *self.systems.read().await {
-            return cached.clone();
-        }
-
-        let mut guard = self.systems.write().await;
-        if let Some(ref cached) = *guard {
-            return cached.clone();
-        }
-
-        match self.load_systems_from_db(db).await {
-            Some(summaries) if !summaries.is_empty() => {
-                *guard = Some(summaries.clone());
-                summaries
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    /// Reconstruct the SystemSummary list from `game_library_meta`.
-    /// `None` = pool unavailable (closed / write-gated / SQL error);
-    /// `Some(empty)` = DB reachable, no rows yet; `Some(non-empty)` = hit.
-    async fn load_systems_from_db(&self, db: &LibraryReadPool) -> Option<Vec<SystemSummary>> {
-        use replay_control_core::systems;
-
-        let cached_meta = db.read(LibraryDb::load_all_system_meta).await?;
-        let cached_meta = cached_meta.ok()?;
-
-        if cached_meta.is_empty() {
-            return Some(Vec::new());
-        }
-
-        // Build a lookup map from cached data.
-        let meta_map: HashMap<String, &replay_control_core_server::library_db::SystemMeta> =
-            cached_meta.iter().map(|m| (m.system.clone(), m)).collect();
-
-        let mut summaries = Vec::new();
-        for system in systems::visible_systems() {
-            let (game_count, total_size_bytes) =
-                if let Some(meta) = meta_map.get(system.folder_name) {
-                    (meta.rom_count, meta.total_size_bytes)
-                } else {
-                    (0, 0)
-                };
-
-            summaries.push(SystemSummary {
-                folder_name: system.folder_name.to_string(),
-                display_name: system.display_name.to_string(),
-                manufacturer: system.manufacturer.to_string(),
-                category: format!("{:?}", system.category).to_lowercase(),
-                game_count,
-                total_size_bytes,
-            });
-        }
-
-        // Sort: systems with games first, then alphabetically.
-        summaries.sort_by(|a, b| {
-            let a_has = a.game_count > 0;
-            let b_has = b.game_count > 0;
-            b_has.cmp(&a_has).then(a.display_name.cmp(&b.display_name))
-        });
-
-        Some(summaries)
     }
 
     /// Strict-reconcile per-system scan + write-through to L2.
@@ -442,7 +363,6 @@ impl LibraryService {
     /// rescan that reconcile rows in place without clearing the whole
     /// library. Destructive flows should call `invalidate()` instead.
     pub async fn invalidate_l1(&self) {
-        *self.systems.write().await = None;
         *self.favorites.write().await = None;
         *self.recents.write().await = None;
         self.metadata_page.invalidate().await;
@@ -469,7 +389,6 @@ impl LibraryService {
         system: String,
         db: &LibraryWritePool,
     ) -> Result<(), DbError> {
-        *self.systems.write().await = None;
         self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
         let sys = system.clone();
@@ -498,59 +417,29 @@ mod tests {
     use replay_control_core_server::roms::RomEntry;
     use replay_control_core_server::test_utils::build_library_pool;
     use replay_control_core_server::{library_db::LibraryDb, storage::StorageKind};
-    use std::sync::atomic::AtomicU64;
+    use std::{collections::HashMap, sync::atomic::AtomicU64};
 
-    /// `cached_systems` is strictly read-only: an empty `game_library_meta`
-    /// must return an empty list rather than fall through to a filesystem
-    /// scan. Discovering and persisting systems is the job of the
-    /// background pipeline (`populate_all_systems` walks `visible_systems()`
+    /// `system_summaries` is strictly read-only: an empty
+    /// `game_library_meta` derives zero-count summaries from the static
+    /// system catalog rather than falling through to a filesystem scan.
+    /// Discovering and persisting systems is the job of the background
+    /// pipeline (`populate_all_systems` walks `visible_systems()`
     /// per-system) — letting a request handler do it was the cold-NFS
     /// poisoning vector traced in the write-isolation investigation.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn cached_systems_returns_empty_on_empty_db_without_writing() {
-        use replay_control_core_server::storage::{StorageKind, StorageLocation};
-        use std::path::Path;
-
-        // Populated roms_dir so a hypothetical L3 fallback would find ROMs
-        // (we then assert it does NOT and the DB stays empty).
-        let tmp = tempfile::tempdir().unwrap();
-        let roms = tmp.path().join("roms");
-        std::fs::create_dir_all(roms.join("nintendo_nes")).unwrap();
-        std::fs::write(roms.join("nintendo_nes/Game.nes"), b"x").unwrap();
-
-        // Empty library DB (no game_library_meta rows, no game_library rows).
-        let db_path = tmp.path().join("library.db");
-        fn opener(
-            db_path: &Path,
-        ) -> replay_control_core::error::Result<
-            replay_control_core_server::db_pool::rusqlite::Connection,
-        > {
-            let conn = replay_control_core_server::sqlite::open_connection(db_path, "test_lib")
-                .map_err(|e| replay_control_core::error::Error::Other(format!("open: {e}")))?;
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS game_library_meta (
-                    system TEXT PRIMARY KEY,
-                    dir_mtime_secs INTEGER,
-                    scanned_at INTEGER NOT NULL,
-                    rom_count INTEGER NOT NULL,
-                    total_size_bytes INTEGER NOT NULL
-                );",
-            )
-            .map_err(|e| replay_control_core::error::Error::Other(format!("schema: {e}")))?;
-            Ok(conn)
-        }
-        let _ = opener(&db_path).unwrap();
-        let pool = replay_control_core_server::db_pool::DbPool::new(db_path, "test_lib", opener, 1)
-            .unwrap();
+    async fn system_summaries_returns_visible_systems_on_empty_db_without_writing() {
+        let (pool, _db_tmp) = build_library_pool();
         let reader = LibraryReadPool::from_pool(pool);
 
-        let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
-        let svc = LibraryService::new();
-
-        let summaries = svc.cached_systems(&storage, &reader).await;
+        let summaries = super::super::library_systems::system_summaries(&reader).await;
+        assert_eq!(
+            summaries.len(),
+            replay_control_core::systems::visible_systems().count(),
+            "system_summaries should derive visible systems from the static catalog"
+        );
         assert!(
-            summaries.is_empty(),
-            "cached_systems must not fall through to L3 scan; got {summaries:?}"
+            summaries.iter().all(|s| s.game_count == 0),
+            "empty game_library_meta should derive zero-count summaries"
         );
 
         // Confirm no rows were persisted.
@@ -561,7 +450,7 @@ mod tests {
             .unwrap();
         assert!(
             meta.is_empty(),
-            "cached_systems must not write to game_library_meta from a read path"
+            "system_summaries must not write to game_library_meta from a read path"
         );
     }
 

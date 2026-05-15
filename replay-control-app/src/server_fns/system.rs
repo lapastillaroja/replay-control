@@ -35,10 +35,12 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let summaries = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
+    let system_meta = state
+        .library_reader
+        .read(LibraryDb::load_all_system_meta)
+        .await
+        .and_then(Result::ok)
+        .unwrap_or_default();
     let total_favorites = state.cache.get_favorites_count(&storage).await;
 
     let disk =
@@ -51,8 +53,8 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
                 used_bytes: 0,
             });
 
-    let systems_with_games = summaries.iter().filter(|s| s.game_count > 0).count();
-    let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
+    let systems_with_games = system_meta.iter().filter(|s| s.rom_count > 0).count();
+    let total_games: usize = system_meta.iter().map(|s| s.rom_count).sum();
 
     let (ethernet_ip, wifi_ip) = get_network_ips().await;
 
@@ -67,7 +69,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         disk_total_bytes: disk.total_bytes,
         disk_used_bytes: disk.used_bytes,
         disk_available_bytes: disk.available_bytes,
-        total_systems: summaries.len(),
+        total_systems: replay_control_core::systems::visible_systems().count(),
         systems_with_games,
         total_games,
         total_favorites,
@@ -108,10 +110,7 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
-    let result = state
-        .cache
-        .cached_systems(&state.storage(), &state.library_reader)
-        .await;
+    let result = crate::api::library_systems::system_summaries(&state.library_reader).await;
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),

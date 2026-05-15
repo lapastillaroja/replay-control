@@ -20,10 +20,12 @@ struct SystemInfo {
 
 async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let storage = state.storage();
-    let summaries = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
+    let system_meta = state
+        .library_reader
+        .read(replay_control_core_server::library_db::LibraryDb::load_all_system_meta)
+        .await
+        .and_then(Result::ok)
+        .unwrap_or_default();
     let favorites = replay_control_core_server::favorites::list_favorites(&storage)
         .await
         .unwrap_or_default();
@@ -38,8 +40,8 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
                 used_bytes: 0,
             });
 
-    let systems_with_games = summaries.iter().filter(|s| s.game_count > 0).count();
-    let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
+    let systems_with_games = system_meta.iter().filter(|s| s.rom_count > 0).count();
+    let total_games: usize = system_meta.iter().map(|s| s.rom_count).sum();
 
     Json(SystemInfo {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
@@ -47,7 +49,7 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
         disk_total_bytes: disk.total_bytes,
         disk_used_bytes: disk.used_bytes,
         disk_available_bytes: disk.available_bytes,
-        total_systems: summaries.len(),
+        total_systems: replay_control_core::systems::visible_systems().count(),
         systems_with_games,
         total_games,
         total_favorites: favorites.len(),

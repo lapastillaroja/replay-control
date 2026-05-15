@@ -834,11 +834,9 @@ impl BackgroundManager {
     /// flows into `game_library` + `game_detail_metadata`. Does nothing on a
     /// fresh / empty library.
     async fn reenrich_all_systems(state: &AppState) {
-        let active = super::library_systems::active_library_systems_with_roms(
-            &state.library_reader,
-            "post_refresh_reenrich",
-        )
-        .await;
+        let active =
+            super::library_systems::active_systems(&state.library_reader, "post_refresh_reenrich")
+                .await;
         if active.is_empty() {
             return;
         }
@@ -856,8 +854,8 @@ impl BackgroundManager {
 
     /// Phase 2: Verify L2 cache freshness on startup and re-scan stale/incomplete systems.
     ///
-    /// Works directly with the DB and filesystem — does NOT use the cache layer
-    /// (cached_systems, cached_roms, etc.) to avoid circular dependencies.
+    /// Works directly with the DB and filesystem — does NOT use UI summary
+    /// views or cached ROM readers to avoid circular dependencies.
     ///
     /// Detects three cases:
     /// - **Fresh DB**: `game_library_meta` is empty → full populate
@@ -1048,7 +1046,7 @@ impl BackgroundManager {
             return;
         }
 
-        let with_games = super::library_systems::active_library_systems_with_roms(
+        let with_games = super::library_systems::active_systems(
             &state.library_reader,
             "catalog_resource_reconcile",
         )
@@ -2001,7 +1999,7 @@ impl AppState {
                 // gated because enrich_system_cache reads from the DB
                 // and the write gate blocks ALL reads on the same pool.
                 // Enrichment writes are small per-system UPDATEs.
-                let with_games = super::library_systems::active_library_systems_with_roms(
+                let with_games = super::library_systems::active_systems(
                     &state.library_reader,
                     "post_import_enrichment",
                 )

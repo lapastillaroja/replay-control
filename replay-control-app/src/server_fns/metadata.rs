@@ -127,7 +127,7 @@ pub struct MetadataPageSnapshot {
 /// cancellation could orphan multiple in-flight closures. This server fn
 /// returns the whole page in one call from an in-memory snapshot, with one
 /// pool acquisition on cache miss. Invalidated at the same write-completion
-/// sites that already invalidate `cached_systems`.
+/// sites that invalidate the other user-facing caches.
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -187,23 +187,17 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .await
         .unwrap_or_default();
 
-    let (thumbnails_per_system, coverage_stats, driver_status) = state
+    let (system_meta, thumbnails_per_system, coverage_stats, driver_status) = state
         .library_reader
         .read(|conn| {
+            let system_meta = LibraryDb::load_all_system_meta(conn).unwrap_or_default();
             let thumbnails = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
             let stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
             let drivers = LibraryDb::driver_status_per_system(conn).unwrap_or_default();
-            (thumbnails, stats, drivers)
+            (system_meta, thumbnails, stats, drivers)
         })
         .await
         .unwrap_or_default();
-
-    // Get total games per system from game library.
-    let storage = state.storage();
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
@@ -218,24 +212,23 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .collect();
     let mut driver_map = driver_status;
 
-    let mut coverage: Vec<SystemCoverage> = systems
+    let mut coverage: Vec<SystemCoverage> = system_meta
         .into_iter()
-        .filter(|s| s.game_count > 0)
+        .filter(|s| s.rom_count > 0)
         .map(|s| {
-            let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
-            let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
-            let stats = stats_map.remove(&s.folder_name).unwrap_or_default();
-            let driver_status = driver_map.remove(&s.folder_name);
+            let with_metadata = meta_map.remove(&s.system).unwrap_or(0);
+            let with_thumbnail = thumb_map.remove(&s.system).unwrap_or(0);
+            let stats = stats_map.remove(&s.system).unwrap_or_default();
+            let driver_status = driver_map.remove(&s.system);
             SystemCoverage {
-                system: s.folder_name,
-                display_name: s.display_name,
-                total_games: s.game_count,
-                with_thumbnail: with_thumbnail.min(s.game_count),
+                display_name: replay_control_core::systems::system_display_name(&s.system),
+                total_games: s.rom_count,
+                with_thumbnail: with_thumbnail.min(s.rom_count),
                 with_genre: stats.with_genre,
                 with_developer: stats.with_developer,
                 with_rating: stats.with_rating,
                 size_bytes: stats.size_bytes,
-                with_description: with_metadata.min(s.game_count),
+                with_description: with_metadata.min(s.rom_count),
                 clone_count: stats.clone_count,
                 hack_count: stats.hack_count,
                 translation_count: stats.translation_count,
@@ -245,6 +238,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
                 min_year: stats.min_year,
                 max_year: stats.max_year,
                 driver_status,
+                system: s.system,
             }
         })
         .collect();

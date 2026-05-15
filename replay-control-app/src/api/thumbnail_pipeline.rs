@@ -288,7 +288,7 @@ impl ThumbnailPipeline {
         });
 
         // Collect systems that have ROM rows and a thumbnail repo.
-        let supported: Vec<String> = super::library_systems::active_library_systems_with_roms(
+        let supported: Vec<String> = super::library_systems::active_systems(
             &state.library_reader,
             "thumbnail_update_active_systems",
         )

@@ -8,7 +8,7 @@
 
 use replay_control_core::library_db::{DriverStatusCounts, SystemCoverage};
 use replay_control_core_server::external_metadata::{self, DataSourceStats};
-use replay_control_core_server::library_db::{LibraryDb, SystemCoverageStats};
+use replay_control_core_server::library_db::{LibraryDb, SystemCoverageStats, SystemMeta};
 
 use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
@@ -21,7 +21,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let storage = state.storage();
     let em_db_path = state.external_metadata_reader.db_path();
 
-    // 8 independent reads across two pools. The pools serialize them on their
+    // 9 independent reads across two pools. The pools serialize them on their
     // slot counts; fanning them out lets the slowest queries overlap with the
     // others instead of running back-to-back. `unwrap_or_default()` keeps the
     // snapshot best-effort: a single transient pool failure degrades that one
@@ -31,6 +31,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let (
         stats,
         library_summary,
+        system_meta,
         entries_per_system,
         thumbnails_per_system,
         coverage_stats,
@@ -41,6 +42,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         em_pool
             .read(move |c| external_metadata::launchbox_stats(c, &em_db_path).unwrap_or_default()),
         lib_pool.read(|c| LibraryDb::library_summary(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::load_all_system_meta(c).unwrap_or_default()),
         em_pool.read(|c| external_metadata::launchbox_entries_per_system(c).unwrap_or_default()),
         lib_pool.read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default()),
         lib_pool.read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default()),
@@ -50,6 +52,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     );
     let stats = stats?;
     let library_summary = library_summary?;
+    let system_meta = system_meta?;
     let entries_per_system = entries_per_system?;
     let thumbnails_per_system = thumbnails_per_system?;
     let coverage_stats = coverage_stats?;
@@ -57,12 +60,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let data_source_stats = data_source_stats?;
     let image_count_pair: (usize, usize) = image_count_pair?;
 
-    // Off-pool work: the L1 systems cache, the on-disk media size, and the
-    // bundled-catalog read-only stats.
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
+    // Off-pool work: on-disk media size and bundled-catalog read-only stats.
     let storage_root = storage.root.clone();
     let media_size = tokio::task::spawn_blocking(move || {
         replay_control_core_server::thumbnails::media_dir_size(&storage_root)
@@ -72,7 +70,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let image_stats = (image_count_pair.0, image_count_pair.1, media_size);
 
     let coverage = build_coverage(
-        systems,
+        system_meta,
         entries_per_system,
         thumbnails_per_system,
         coverage_stats,
@@ -95,7 +93,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
 }
 
 fn build_coverage(
-    systems: Vec<replay_control_core_server::roms::SystemSummary>,
+    system_meta: Vec<SystemMeta>,
     entries_per_system: Vec<(String, usize)>,
     thumbnails_per_system: Vec<(String, usize)>,
     coverage_stats: Vec<SystemCoverageStats>,
@@ -111,24 +109,23 @@ fn build_coverage(
         .collect();
     let mut driver_map = driver_status;
 
-    let mut coverage: Vec<SystemCoverage> = systems
+    let mut coverage: Vec<SystemCoverage> = system_meta
         .into_iter()
-        .filter(|s| s.game_count > 0)
+        .filter(|s| s.rom_count > 0)
         .map(|s| {
-            let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
-            let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
-            let stats = stats_map.remove(&s.folder_name).unwrap_or_default();
-            let driver_status = driver_map.remove(&s.folder_name);
+            let with_metadata = meta_map.remove(&s.system).unwrap_or(0);
+            let with_thumbnail = thumb_map.remove(&s.system).unwrap_or(0);
+            let stats = stats_map.remove(&s.system).unwrap_or_default();
+            let driver_status = driver_map.remove(&s.system);
             SystemCoverage {
-                system: s.folder_name,
-                display_name: s.display_name,
-                total_games: s.game_count,
-                with_thumbnail: with_thumbnail.min(s.game_count),
+                display_name: replay_control_core::systems::system_display_name(&s.system),
+                total_games: s.rom_count,
+                with_thumbnail: with_thumbnail.min(s.rom_count),
                 with_genre: stats.with_genre,
                 with_developer: stats.with_developer,
                 with_rating: stats.with_rating,
                 size_bytes: stats.size_bytes,
-                with_description: with_metadata.min(s.game_count),
+                with_description: with_metadata.min(s.rom_count),
                 clone_count: stats.clone_count,
                 hack_count: stats.hack_count,
                 translation_count: stats.translation_count,
@@ -138,6 +135,7 @@ fn build_coverage(
                 min_year: stats.min_year,
                 max_year: stats.max_year,
                 driver_status,
+                system: s.system,
             }
         })
         .collect();
