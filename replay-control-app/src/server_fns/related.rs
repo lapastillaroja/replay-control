@@ -169,7 +169,7 @@ pub async fn get_related_games(
                 .unwrap_or_default();
 
             // Series siblings: prefer Wikidata (has ordering), fall back to algorithmic series_key.
-            let (series_raw, series_name_raw) = {
+            let (mut series_raw, series_name_raw) = {
                 let wikidata = LibraryDb::wikidata_series_siblings(
                     conn,
                     &system_cl,
@@ -197,9 +197,9 @@ pub async fn get_related_games(
                 }
             };
 
-            // Skip when Wikidata series data covers cross-system entries, or for clones/hacks.
+            // Same-title cross-system entries and series entries are distinct sections.
             let is_primary = current_entry.is_none_or(|e| !e.is_clone && !e.is_hack);
-            let cross_system_raw = if series_raw.is_empty() && is_primary {
+            let cross_system_raw = if is_primary {
                 LibraryDb::cross_system_availability(
                     conn,
                     &system_cl,
@@ -211,6 +211,15 @@ pub async fn get_related_games(
             } else {
                 Vec::new()
             };
+            if !cross_system_raw.is_empty() {
+                let cross_keys: std::collections::HashSet<(&str, &str)> = cross_system_raw
+                    .iter()
+                    .map(|entry| (entry.system.as_str(), entry.rom_filename.as_str()))
+                    .collect();
+                series_raw.retain(|entry| {
+                    !cross_keys.contains(&(entry.system.as_str(), entry.rom_filename.as_str()))
+                });
+            }
 
             // Alias variants: cross-name variants via game_alias table.
             let alias_raw = LibraryDb::alias_variants(

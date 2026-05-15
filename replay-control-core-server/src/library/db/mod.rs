@@ -1117,6 +1117,37 @@ mod tests {
         assert!(nested.exists());
     }
 
+    #[test]
+    fn cross_system_availability_orders_by_release_date_before_system_kind() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut current = make_game_entry("nintendo_nes", "Game.nes", false);
+        current.base_title = "game".into();
+
+        let mut later_arcade = make_game_entry("arcade_fbneo", "zgame.zip", false);
+        later_arcade.base_title = "game".into();
+        later_arcade.display_name = Some("Z Game".into());
+        later_arcade.release_date = Some("1991".into());
+        later_arcade.release_precision = Some(DatePrecision::Year);
+
+        let mut earlier_console = make_game_entry("nintendo_snes", "A Game.sfc", false);
+        earlier_console.base_title = "game".into();
+        earlier_console.display_name = Some("A Game".into());
+        earlier_console.release_date = Some("1984".into());
+        earlier_console.release_precision = Some(DatePrecision::Year);
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_nes", &[current], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "arcade_fbneo", &[later_arcade], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[earlier_console], None)
+            .unwrap();
+
+        let results =
+            LibraryDb::cross_system_availability(&conn, "nintendo_nes", "game", "usa", 10).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].system, "nintendo_snes");
+        assert_eq!(results[1].system, "arcade_fbneo");
+    }
+
     pub(crate) fn make_game_entry_with_genre(
         system: &str,
         filename: &str,

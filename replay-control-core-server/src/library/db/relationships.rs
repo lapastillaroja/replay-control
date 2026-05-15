@@ -311,10 +311,17 @@ impl LibraryDb {
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                         release_date, release_precision, release_region_used, cooperative
                 FROM deduped WHERE rn = 1
-                ORDER BY CASE
-                    WHEN system LIKE 'arcade_%' THEN 0
-                    ELSE 1
-                END, display_name
+                ORDER BY
+                    release_date IS NULL,
+                    substr(release_date, 1, 4),
+                    release_date,
+                    CASE release_precision
+                        WHEN 'day' THEN 0
+                        WHEN 'month' THEN 1
+                        WHEN 'year' THEN 2
+                        ELSE 3
+                    END,
+                    display_name
                 LIMIT ?4",
             )
             .map_err(|e| Error::Other(format!("Prepare cross_system_availability: {e}")))?;

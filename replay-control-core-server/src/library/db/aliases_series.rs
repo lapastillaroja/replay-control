@@ -205,7 +205,7 @@ impl LibraryDb {
                       AND gl.is_translation = 0
                       AND gl.is_hack = 0
                       AND gl.is_special = 0
-                      AND NOT (gl.system = ?1 AND gl.base_title = ?2 COLLATE NOCASE)
+                      AND gl.base_title != ?2 COLLATE NOCASE
                 )
                 SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
@@ -213,7 +213,19 @@ impl LibraryDb {
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                         release_date, release_precision, release_region_used, cooperative, series_order
                 FROM deduped WHERE rn = 1
-                ORDER BY series_order NULLS LAST, display_name
+                ORDER BY
+                    release_date IS NULL,
+                    substr(release_date, 1, 4),
+                    release_date,
+                    CASE release_precision
+                        WHEN 'day' THEN 0
+                        WHEN 'month' THEN 1
+                        WHEN 'year' THEN 2
+                        ELSE 3
+                    END,
+                    series_order IS NULL,
+                    series_order,
+                    display_name
                 LIMIT ?4",
             )
             .map_err(|e| Error::Other(format!("Prepare wikidata_series_siblings: {e}")))?;
@@ -673,13 +685,13 @@ mod tests {
             sibling_titles
         );
 
-        // "final fight" on SNES should appear (same game, different system).
+        // Same-title ports belong in "Also Available On", not "More from Series".
         let snes_ff = siblings
             .iter()
             .find(|(e, _)| e.base_title == "final fight" && e.system == "nintendo_snes");
         assert!(
-            snes_ff.is_some(),
-            "Final Fight on SNES should appear in arcade FF's series. Got: {:?}",
+            snes_ff.is_none(),
+            "Final Fight on SNES should not appear in arcade FF's series. Got: {:?}",
             sibling_titles
         );
 
