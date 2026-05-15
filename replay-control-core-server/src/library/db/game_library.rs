@@ -675,6 +675,21 @@ impl LibraryDb {
         Ok(result)
     }
 
+    /// Pick one random non-special ROM from actual `game_library` rows.
+    pub fn random_library_rom(conn: &Connection) -> Result<Option<(String, String)>> {
+        conn.query_row(
+            "SELECT system, rom_filename
+             FROM game_library
+             WHERE is_special = 0
+             ORDER BY RANDOM()
+             LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Query random_library_rom: {e}")))
+    }
+
     /// Load cached hash data for all ROMs of a system from the game_library table.
     pub fn load_cached_hashes(
         conn: &Connection,
@@ -2466,6 +2481,40 @@ mod tests {
             cached.matched_name.as_deref(),
             Some("Super Mario World (USA)")
         );
+    }
+
+    #[test]
+    fn random_library_rom_returns_real_non_special_row() {
+        let (mut conn, _dir) = open_temp_db();
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_game_entry("snes", "Mario.sfc", false),
+                make_game_entry("snes", "Bios.sfc", true),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let random = LibraryDb::random_library_rom(&conn).unwrap();
+        assert_eq!(random, Some(("snes".to_string(), "Mario.sfc".to_string())));
+    }
+
+    #[test]
+    fn random_library_rom_empty_or_special_only_returns_none() {
+        let (mut conn, _dir) = open_temp_db();
+        assert_eq!(LibraryDb::random_library_rom(&conn).unwrap(), None);
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "Bios.sfc", true)],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(LibraryDb::random_library_rom(&conn).unwrap(), None);
     }
 
     #[test]

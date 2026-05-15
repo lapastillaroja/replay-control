@@ -559,65 +559,17 @@ pub async fn get_developer_games(
 /// Returns (system_folder_name, rom_filename).
 #[server(prefix = "/sfn")]
 pub async fn random_game() -> Result<(String, String), ServerFnError> {
-    use rand::RngExt;
-
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
-
-    // Build a weighted list: (system_folder, game_count).
-    let weighted: Vec<(String, usize)> = systems
-        .iter()
-        .filter(|s| s.game_count > 0)
-        .map(|s| (s.folder_name.clone(), s.game_count))
-        .collect();
-
-    if weighted.is_empty() {
-        return Err(ServerFnError::new("No games available"));
-    }
-
-    let total: usize = weighted.iter().map(|(_, c)| c).sum();
-
-    // Pick system using a block-scoped RNG so it doesn't live across await points
-    // (rand::rng() returns an Rc-based thread-local RNG that isn't Send).
-    let chosen_system = {
-        let mut rng = rand::rng();
-        let pick = rng.random_range(0..total);
-
-        let mut cumulative = 0;
-        let mut chosen_system = weighted[0].0.clone();
-        for (sys, count) in &weighted {
-            cumulative += count;
-            if pick < cumulative {
-                chosen_system = sys.clone();
-                break;
-            }
-        }
-        chosen_system
-    };
-
-    // Pick a random ROM filename from L2 (SQLite).
-    let sys = chosen_system.clone();
-    let filename: Option<String> = state
+    let random = state
         .library_reader
-        .read(move |conn| {
-            conn.query_row(
-                "SELECT rom_filename FROM game_library
-                 WHERE system = ?1 AND is_special = 0
-                 ORDER BY RANDOM() LIMIT 1",
-                [&sys],
-                |row| row.get(0),
-            )
-            .ok()
-        })
+        .read(LibraryDb::random_library_rom)
         .await
+        .transpose()
+        .map_err(|e| ServerFnError::new(e.to_string()))?
         .flatten();
 
-    match filename {
-        Some(f) => Ok((chosen_system, f)),
-        None => Err(ServerFnError::new("No ROMs in selected system")),
+    match random {
+        Some((system, filename)) => Ok((system, filename)),
+        None => Err(ServerFnError::new("No games available")),
     }
 }
