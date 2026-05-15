@@ -14,7 +14,7 @@ use crate::util::format_size_short;
 #[component]
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
-    let now_playing = crate::hooks::use_now_playing();
+    let now_playing = expect_context::<Resource<crate::types::NowPlayingState>>();
     let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
@@ -32,65 +32,25 @@ pub fn HomePage() -> impl IntoView {
             </section>
 
             <section class="section">
-                <Show
-                    when=move || matches!(now_playing.get(), crate::types::NowPlayingState::Playing { .. })
-                    fallback=move || view! {
-                        <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeLastPlayed)}</h2>
-                        <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
-                            {move || Suspend::new(async move {
-                                let locale = i18n.locale.get();
-                                let entries = recents.await?;
-                                Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
-                                    let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
-                                    let sys = last.entry.game.system_display.clone();
-                                    let sys_folder = last.entry.game.system.clone();
-                                    let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
-                                    let art_url = last.box_art_url.clone();
-                                    view! {
-                                        <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
-                                    }.into_any()
-                                } else {
-                                    view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
-                                })
-                            })}
-                        </Suspense>
-                    }
-                >
-                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeNowPlaying)}</h2>
-                    <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
-                        {move || Suspend::new(async move {
-                            let state = now_playing.get();
-                            // Fetching detail inline (rather than via a derived
-                            // Resource that depends on `now_playing`) keeps every
-                            // Resource read inside this Suspend's reactive owner.
-                            // Chaining `Resource::new(source-reads-resource, …)`
-                            // makes leptos eagerly evaluate the source closure
-                            // during construction, in a Memo owner that doesn't
-                            // inherit the surrounding SuspenseContext — which
-                            // surfaces as the use_now_playing.rs:10:37 hydrate
-                            // warning.
-                            let detail = if let crate::types::NowPlayingState::Playing {
-                                ref system,
-                                ref filename,
+                <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
+                    {move || Suspend::new(async move {
+                        let locale = i18n.locale.get();
+                        let state = now_playing.await;
+                        Ok::<_, ServerFnError>(match state {
+                            crate::types::NowPlayingState::Playing {
+                                system,
+                                system_display,
+                                filename,
+                                display_name,
+                                box_art_url,
+                                started_at_unix_secs,
                                 ..
-                            } = state
-                            {
-                                server_fns::get_rom_detail(system.clone(), filename.clone())
+                            } => {
+                                let detail = server_fns::get_rom_detail(system.clone(), filename.clone())
                                     .await
-                                    .ok()
-                            } else {
-                                None
-                            };
-                            Ok::<_, ServerFnError>(match state {
-                                crate::types::NowPlayingState::Playing {
-                                    system,
-                                    system_display,
-                                    filename,
-                                    display_name,
-                                    box_art_url,
-                                    started_at_unix_secs,
-                                    ..
-                                } => view! {
+                                    .ok();
+                                view! {
+                                    <h2 class="section-title">{t(locale, Key::HomeNowPlaying)}</h2>
                                     <NowPlayingHeroCard
                                         system
                                         system_display
@@ -100,12 +60,34 @@ pub fn HomePage() -> impl IntoView {
                                         started_at_unix_secs
                                         detail
                                     />
-                                }.into_any(),
-                                _ => ().into_any(),
-                            })
-                        })}
-                    </Suspense>
-                </Show>
+                                }.into_any()
+                            }
+                            _ => {
+                                view! {
+                                    <h2 class="section-title">{t(locale, Key::HomeLastPlayed)}</h2>
+                                    <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
+                                        {move || Suspend::new(async move {
+                                            let locale = i18n.locale.get();
+                                            let entries = recents.await?;
+                                            Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
+                                                let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
+                                                let sys = last.entry.game.system_display.clone();
+                                                let sys_folder = last.entry.game.system.clone();
+                                                let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
+                                                let art_url = last.box_art_url.clone();
+                                                view! {
+                                                    <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
+                                                }.into_any()
+                                            } else {
+                                                view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
+                                            })
+                                        })}
+                                    </Suspense>
+                                }.into_any()
+                            }
+                        })
+                    })}
+                </Suspense>
             </section>
 
             <section class="section">
