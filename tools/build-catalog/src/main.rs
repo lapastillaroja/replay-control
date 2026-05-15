@@ -2362,6 +2362,30 @@ fn canonical_manual_url(url: &str) -> String {
     url.to_string()
 }
 
+fn should_skip_manual_url(url: &str) -> bool {
+    let url = url.trim();
+    let lower = url.to_ascii_lowercase();
+
+    // These legacy/manual-host families were audited in May 2026. They are
+    // dead, stale, access-controlled, robot-protected, or require invalid TLS,
+    // which makes them poor catalog resources for end-user Save/download flows.
+    lower.starts_with("https://the-eye.eu/public/books/retrowith.in/manuals/")
+        || lower.starts_with("https://amiga.abime.net/manual/")
+        || lower.starts_with(
+            "https://forums.atariage.com/applications/core/interface/file/attachment.php",
+        )
+        || lower.starts_with("https://dl3.emu-land.net/manuals/")
+        || lower.starts_with("https://commodore.bombjack.org/")
+        || lower.starts_with("http://commodore.bombjack.org/")
+        || lower.starts_with("https://www.nintendo.com/consumer/gameslist/manuals/")
+        || lower.starts_with("http://www.nintendo.com/consumer/gameslist/manuals/")
+        || lower.starts_with("https://retro-commodore.eu/files/downloads/amigamanuals-xiik.net/")
+        || lower
+            .starts_with("https://www.retro-commodore.eu/files/downloads/amigamanuals-xiik.net/")
+        || lower.starts_with("http://www.stadium64.com/manuals/")
+        || lower.starts_with("https://www.stadium64.com/manuals/")
+}
+
 fn manual_title_from_path(path: &str) -> Option<(String, String)> {
     let stem = Path::new(path).file_stem()?.to_str()?.trim();
     if stem.is_empty() {
@@ -2459,6 +2483,9 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
                 continue;
             };
             let url = canonical_manual_url(raw_url);
+            if should_skip_manual_url(&url) {
+                continue;
+            }
             let Some((match_title, display_title)) = manual_title_from_path(raw_path) else {
                 continue;
             };
@@ -2503,6 +2530,9 @@ fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuil
                 continue;
             }
             let url = canonical_manual_url(raw_url);
+            if should_skip_manual_url(&url) {
+                continue;
+            }
             let normalized_title = title_utils::normalize_title_for_metadata(title);
             if normalized_title.is_empty() {
                 continue;

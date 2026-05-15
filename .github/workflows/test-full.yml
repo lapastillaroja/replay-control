@@ -49,7 +49,6 @@ jobs:
             data/tgdb-genres.json
             data/tgdb-publishers.json
             data/wikidata
-            catalog.sqlite
           key: upstream-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/download-tgdb-lookups.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py', 'scripts/wikidata-series-extract.py') }}
 
       - name: Download arcade data
@@ -74,10 +73,7 @@ jobs:
           fi
 
       - name: Build game catalog (full data)
-        run: |
-          if [[ ! -f catalog.sqlite ]]; then
-            cargo run --release -p build-catalog -- --output catalog.sqlite
-          fi
+        run: cargo run --release -p build-catalog -- --output catalog.sqlite
 
       - name: Unit tests (core, full data)
         run: cargo test -p replay-control-core
