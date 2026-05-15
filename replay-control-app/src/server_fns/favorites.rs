@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
 /// A favorite enriched with box art URL and genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,10 +220,6 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     }
 
     let storage = state.storage();
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
@@ -267,7 +263,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             let mut sections: Vec<(
                 String,
                 Vec<String>,
-                Vec<replay_control_core_server::library_db::GameEntry>,
+                Vec<GameEntry>,
                 Option<String>,
             )> = Vec::new();
 
@@ -424,11 +420,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
     let mut result_sections = Vec::new();
     for (title_key, title_args, games, see_all_href) in raw_sections {
-        let picks: Vec<RecommendedGame> = games
-            .iter()
-            .take(6)
-            .filter_map(|rom| super::to_recommended(&rom.system, rom, &systems))
-            .collect();
+        let picks: Vec<RecommendedGame> = games.iter().take(6).map(super::to_recommended).collect();
         if picks.is_empty() {
             continue;
         }

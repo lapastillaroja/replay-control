@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
 /// A recommended game card with display info and navigation link.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -67,13 +67,9 @@ pub(crate) async fn compute_recommendations(
     count: usize,
 ) -> Option<RecommendationData> {
     let storage = state.storage();
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
     let count = count.clamp(1, 12);
 
-    let favorites_info = collect_favorites_info_sync(state, &storage, &systems).await;
+    let favorites_info = collect_favorites_info_sync(state, &storage).await;
     let favorites_info_for_picks = favorites_info.clone();
 
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
@@ -104,11 +100,6 @@ pub(crate) async fn compute_recommendations(
     };
 
     let (region_str, region_secondary_str) = super::region_strings(state);
-
-    let systems_for_spotlight: Vec<(String, String)> = systems
-        .iter()
-        .map(|s| (s.folder_name.clone(), s.display_name.clone()))
-        .collect();
 
     let cached_genres = state.cache.query_cache.get_top_genres();
     let cached_developers = state.cache.query_cache.get_top_developers();
@@ -146,7 +137,7 @@ pub(crate) async fn compute_recommendations(
 
             #[allow(clippy::type_complexity)]
             let spotlight_result: Option<(
-                Vec<replay_control_core_server::library_db::GameEntry>,
+                Vec<GameEntry>,
                 String,
                 Vec<String>,
                 Option<String>,
@@ -206,11 +197,7 @@ pub(crate) async fn compute_recommendations(
                         if games.len() < spotlight_min {
                             None
                         } else {
-                            let display = systems_for_spotlight
-                                .iter()
-                                .find(|s| s.0 == *sys)
-                                .map(|s| s.1.clone())
-                                .unwrap_or_else(|| sys.clone());
+                            let display = replay_control_core::systems::system_display_name(sys);
                             let href = Some(format!("/games/{sys}?min_rating=3.5"));
                             Some((games, "SpotlightBestOf".to_string(), vec![display], href))
                         }
@@ -391,16 +378,11 @@ pub(crate) async fn compute_recommendations(
     state.cache.query_cache.set_active_systems(&active_systems);
 
     // --- Post-process random picks: ensure system diversity ---
-    let random_picks = diversify_picks(random_pool, count, &systems);
+    let random_picks = diversify_picks(random_pool, count);
 
     // --- Discover pills: build pool and pick 5 ---
-    let discover_pills = build_discover_pills(
-        &top_genres,
-        &top_developers,
-        &decades,
-        &active_systems,
-        &systems,
-    );
+    let discover_pills =
+        build_discover_pills(&top_genres, &top_developers, &decades, &active_systems);
 
     // --- Favorites picks (pool already randomized by SQL) ---
     let favorites_picks = favorites_info_for_picks.and_then(|fi| {
@@ -408,11 +390,7 @@ pub(crate) async fn compute_recommendations(
         if roms.is_empty() {
             return None;
         }
-        let picks: Vec<RecommendedGame> = roms
-            .iter()
-            .take(count)
-            .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
-            .collect();
+        let picks: Vec<RecommendedGame> = roms.iter().take(count).map(to_recommended).collect();
         if picks.is_empty() {
             return None;
         }
@@ -437,10 +415,10 @@ pub(crate) async fn compute_recommendations(
             spotlight_pool
                 .iter()
                 .take(count)
-                .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+                .map(to_recommended)
                 .collect()
         } else {
-            diversify_picks(spotlight_pool, count, &systems)
+            diversify_picks(spotlight_pool, count)
         };
         if games.is_empty() {
             None
@@ -489,7 +467,6 @@ struct FavoritesInfo {
 async fn collect_favorites_info_sync(
     state: &crate::api::AppState,
     storage: &replay_control_core_server::storage::StorageLocation,
-    systems: &[SystemSummary],
 ) -> Option<FavoritesInfo> {
     let all_favorites = state.cache.get_all_favorited_systems(storage).await?;
     if all_favorites.is_empty() {
@@ -517,11 +494,7 @@ async fn collect_favorites_info_sync(
     let idx = rand::rng().random_range(0..weighted.len());
     let (chosen_system, fav_filenames) = weighted[idx];
 
-    let system_display = systems
-        .iter()
-        .find(|s| s.folder_name == chosen_system)
-        .map(|s| s.display_name.clone())
-        .unwrap_or_else(|| chosen_system.to_string());
+    let system_display = replay_control_core::systems::system_display_name(chosen_system);
 
     Some(FavoritesInfo {
         system: chosen_system.to_string(),
@@ -540,7 +513,6 @@ fn build_discover_pills(
     top_developers: &[String],
     decades: &[u16],
     active_systems: &[String],
-    systems: &[SystemSummary],
 ) -> Vec<DiscoverPill> {
     use rand::RngExt;
 
@@ -617,11 +589,7 @@ fn build_discover_pills(
     if !active_systems.is_empty() {
         let idx = rng.random_range(0..active_systems.len());
         let sys = &active_systems[idx];
-        let display = systems
-            .iter()
-            .find(|s| s.folder_name == *sys)
-            .map(|s| s.display_name.clone())
-            .unwrap_or_else(|| sys.clone());
+        let display = replay_control_core::systems::system_display_name(sys);
         candidates.push((
             "system",
             DiscoverPill {
@@ -685,11 +653,7 @@ fn build_discover_pills(
 
 /// Select diverse picks from a pool: prefer one per system, then fill with a cap.
 #[cfg(feature = "ssr")]
-fn diversify_picks(
-    pool: Vec<replay_control_core_server::library_db::GameEntry>,
-    count: usize,
-    systems: &[SystemSummary],
-) -> Vec<RecommendedGame> {
+fn diversify_picks(pool: Vec<GameEntry>, count: usize) -> Vec<RecommendedGame> {
     use std::collections::HashMap;
 
     let mut picks = Vec::with_capacity(count);
@@ -703,10 +667,9 @@ fn diversify_picks(
         if system_counts.contains_key(&rom.system) {
             continue;
         }
-        if let Some(game) = to_recommended(&rom.system, rom, systems) {
-            *system_counts.entry(rom.system.clone()).or_default() += 1;
-            picks.push(game);
-        }
+        let game = to_recommended(rom);
+        *system_counts.entry(rom.system.clone()).or_default() += 1;
+        picks.push(game);
     }
 
     // Second pass: fill remaining, but cap each system to ensure diversity.
@@ -726,10 +689,9 @@ fn diversify_picks(
         {
             continue;
         }
-        if let Some(game) = to_recommended(&rom.system, rom, systems) {
-            *system_counts.entry(rom.system.clone()).or_default() += 1;
-            picks.push(game);
-        }
+        let game = to_recommended(rom);
+        *system_counts.entry(rom.system.clone()).or_default() += 1;
+        picks.push(game);
     }
 
     picks
@@ -741,33 +703,25 @@ fn diversify_picks(
 
 /// Convert GameEntry to RecommendedGame. box_art_url is resolved later by the caller.
 #[cfg(feature = "ssr")]
-pub(super) fn to_recommended(
-    system: &str,
-    rom: &replay_control_core_server::library_db::GameEntry,
-    systems: &[SystemSummary],
-) -> Option<RecommendedGame> {
+pub(super) fn to_recommended(rom: &GameEntry) -> RecommendedGame {
     let display_name = rom
         .display_name
         .as_deref()
         .unwrap_or(&rom.rom_filename)
         .to_string();
-    let system_display = systems
-        .iter()
-        .find(|s| s.folder_name == system)
-        .map(|s| s.display_name.clone())
-        .unwrap_or_else(|| system.to_string());
+    let system_display = replay_control_core::systems::system_display_name(&rom.system);
     let href = format!(
         "/games/{}/{}",
-        system,
+        rom.system,
         urlencoding::encode(&rom.rom_filename)
     );
-    Some(RecommendedGame {
-        system: system.to_string(),
+    RecommendedGame {
+        system: rom.system.clone(),
         system_display,
         rom_filename: rom.rom_filename.clone(),
         display_name,
         box_art_url: rom.box_art_url.clone(),
         href,
         label: None,
-    })
+    }
 }

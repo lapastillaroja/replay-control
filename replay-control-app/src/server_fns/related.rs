@@ -123,11 +123,6 @@ pub async fn get_related_games(
     filename: String,
 ) -> Result<RelatedGamesData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let systems = state
-        .cache
-        .cached_systems(&storage, &state.library_reader)
-        .await;
 
     let is_arcade = replay_control_core::systems::is_arcade_system(&system);
 
@@ -437,8 +432,8 @@ pub async fn get_related_games(
     let current_bt = &base_title;
     let alias_variants: Vec<RecommendedGame> = alias_raw
         .iter()
-        .filter_map(|rom| {
-            let mut game = to_recommended(&rom.system, rom, &systems)?;
+        .map(|rom| {
+            let mut game = to_recommended(rom);
             let tags = replay_control_core::rom_tags::extract_tags(&rom.rom_filename);
             let name = rom.display_name.as_deref().unwrap_or(&rom.rom_filename);
             let title = name.find(" (").map(|i| &name[..i]).unwrap_or(name);
@@ -453,30 +448,21 @@ pub async fn get_related_games(
                 title.to_string()
             };
             game.label = Some(label);
-            Some(game)
+            game
         })
         .collect();
 
     // Build cross-system availability (same game on other systems).
-    let cross_system: Vec<RecommendedGame> = cross_system_raw
-        .iter()
-        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
-        .collect();
+    let cross_system: Vec<RecommendedGame> = cross_system_raw.iter().map(to_recommended).collect();
 
     // Build series siblings (other games in the same franchise, cross-system).
-    let series_siblings: Vec<RecommendedGame> = series_raw
-        .iter()
-        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
-        .collect();
+    let series_siblings: Vec<RecommendedGame> = series_raw.iter().map(to_recommended).collect();
 
     // Build similar games. The two-tier similar_by_genre query already orders
     // by exact genre match first (relevance=2) then genre_group (relevance=1),
     // so we just take the top results.
-    let similar_games: Vec<RecommendedGame> = similar_pool
-        .iter()
-        .take(8)
-        .filter_map(|rom| to_recommended(&system, rom, &systems))
-        .collect();
+    let similar_games: Vec<RecommendedGame> =
+        similar_pool.iter().take(8).map(to_recommended).collect();
 
     // Build sequel/prequel links.
     let sequel_prev = sequel_chain.follows_title.map(|title| {
