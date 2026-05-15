@@ -105,9 +105,7 @@ pub async fn get_roms_page(
     use replay_control_core::systems as sys_db;
 
     let state = expect_context::<crate::api::AppState>();
-    let system_display = sys_db::find_system(&system)
-        .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| system.clone());
+    let system_display = sys_db::system_display_name(&system);
     let is_arcade = sys_db::is_arcade_system(&system);
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();

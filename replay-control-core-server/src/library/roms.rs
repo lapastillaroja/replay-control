@@ -988,7 +988,7 @@ async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntr
     use crate::arcade_db;
     use crate::game_db;
 
-    let is_arcade = systems::is_arcade_system(system.folder_name);
+    let is_arcade = system.is_arcade();
     let mut out: Vec<RomEntry> = Vec::with_capacity(raw.len());
 
     if is_arcade {

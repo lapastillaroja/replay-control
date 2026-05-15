@@ -451,9 +451,7 @@ fn criteria_folder_raw(
     };
 
     match criteria {
-        OrganizeCriteria::System => systems::find_system(system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.to_string()),
+        OrganizeCriteria::System => systems::system_display_name(system),
         OrganizeCriteria::Genre => {
             let raw_genre = if is_arcade {
                 arcade_info.map(|i| i.category.as_str()).unwrap_or_default()

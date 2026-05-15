@@ -1,4 +1,5 @@
 use super::*;
+use replay_control_core::systems;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
@@ -183,13 +184,11 @@ pub async fn search_game_videos(
         s.trim().to_string()
     };
 
-    // Determine system label: arcade systems -> "arcade", others -> display name
-    let system_label = if system.starts_with("arcade_") {
+    // Keep arcade video searches broad; non-arcade systems use their platform name.
+    let system_label = if systems::is_arcade_system(&system) {
         "arcade".to_string()
     } else {
-        replay_control_core::systems::find_system(&system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.clone())
+        systems::system_display_name(&system)
     };
 
     let query_suffix = match query_type.as_str() {

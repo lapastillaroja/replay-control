@@ -933,9 +933,7 @@ impl BackgroundManager {
                     "mtime changed"
                 };
                 tracing::info!("Background re-scan: {} ({reason})", meta.system);
-                let display_name = replay_control_core::systems::find_system(&meta.system)
-                    .map(|s| s.display_name.to_string())
-                    .unwrap_or_else(|| meta.system.clone());
+                let display_name = replay_control_core::systems::system_display_name(&meta.system);
                 state.update_activity(|act| {
                     if let Activity::Startup { system, .. } = act {
                         *system = display_name;

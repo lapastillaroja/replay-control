@@ -299,10 +299,7 @@ pub(crate) async fn build_game_detail(
     use replay_control_core::systems;
     use replay_control_core_server::arcade_db;
 
-    let sys_info = systems::find_system(&entry.system);
-    let system_display = sys_info
-        .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| entry.system.clone());
+    let system_display = systems::system_display_name(&entry.system);
     let is_arcade = systems::is_arcade_system(&entry.system);
 
     // Arcade-only fields from static arcade_db lookup.

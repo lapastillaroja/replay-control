@@ -533,6 +533,11 @@ impl System {
         HIDDEN_SYSTEMS.contains(&self.folder_name)
     }
 
+    /// Whether this system is arcade-class according to the system registry.
+    pub fn is_arcade(&self) -> bool {
+        self.category == SystemCategory::Arcade
+    }
+
     /// Whether this system's ROM sizes should be displayed in Megabit (Mbit/Kbit)
     /// rather than the default KB/MB/GB.
     ///
@@ -585,7 +590,7 @@ pub fn system_display_name(folder_name: &str) -> String {
 /// Check whether a system folder name refers to an arcade system.
 /// Uses the system registry rather than hardcoded folder name lists.
 pub fn is_arcade_system(folder_name: &str) -> bool {
-    find_system(folder_name).is_some_and(|s| s.category == SystemCategory::Arcade)
+    find_system(folder_name).is_some_and(System::is_arcade)
 }
 
 /// Which upstream curates a given arcade ROM's metadata.
@@ -683,6 +688,14 @@ mod tests {
     #[test]
     fn find_unknown_system() {
         assert!(find_system("unknown_system").is_none());
+    }
+
+    #[test]
+    fn arcade_classification_comes_from_system_registry() {
+        assert!(find_system("arcade_fbneo").unwrap().is_arcade());
+        assert!(is_arcade_system("arcade_dc"));
+        assert!(!is_arcade_system("nintendo_snes"));
+        assert!(!is_arcade_system("unknown_arcade_like_name"));
     }
 
     #[test]

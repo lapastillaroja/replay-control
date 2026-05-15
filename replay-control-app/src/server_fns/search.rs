@@ -254,9 +254,7 @@ pub async fn global_search(
         let match_count = system_scored.len();
         total_results += match_count;
 
-        let system_display = sys_db::find_system(&system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.clone());
+        let system_display = sys_db::system_display_name(&system);
 
         // Take top N entries for this system.
         let top: Vec<GameEntry> = system_scored
@@ -533,9 +531,7 @@ pub async fn get_developer_games(
     let systems: Vec<DeveloperSystem> = systems_raw
         .into_iter()
         .map(|(sys, count)| {
-            let display = sys_db::find_system(&sys)
-                .map(|s| s.display_name.to_string())
-                .unwrap_or_else(|| sys.clone());
+            let display = sys_db::system_display_name(&sys);
             DeveloperSystem {
                 system: sys,
                 system_display: display,

@@ -246,9 +246,7 @@ async fn main() {
         }
 
         // Print system report
-        let display_name = systems::find_system(system_name)
-            .map(|s| s.display_name)
-            .unwrap_or(system_name.as_str());
+        let display_name = systems::system_display_name(system_name);
         println!(
             "┌──────────────────────────────────────────────────────────────────────────────┐"
         );

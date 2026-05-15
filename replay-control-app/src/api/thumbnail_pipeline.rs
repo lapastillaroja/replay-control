@@ -308,9 +308,7 @@ impl ThumbnailPipeline {
                 break;
             }
 
-            let system_display = replay_control_core::systems::find_system(system)
-                .map(|s| s.display_name.to_string())
-                .unwrap_or_else(|| system.to_string());
+            let system_display = replay_control_core::systems::system_display_name(system);
 
             // Update progress for this system.
             state.update_activity(|act| {
