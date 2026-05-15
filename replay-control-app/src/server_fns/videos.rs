@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(feature = "ssr")]
 use replay_control_core::systems;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
