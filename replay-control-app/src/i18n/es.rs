@@ -275,6 +275,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFindTrailers => "Buscar tráilers",
         Key::GameDetailFindGameplay => "Buscar gameplay",
         Key::GameDetailFind1cc => "Buscar 1CC",
+        Key::GameDetailSuggestedVideos => "Sugeridos",
+        Key::GameDetailAddVideoUrl => "Añadir vídeo",
+        Key::GameDetailFindOnlineVideos => "Buscar en línea",
         Key::GameDetailNoResults => "No se encontraron vídeos",
         Key::GameDetailSearchError => {
             "Búsqueda de vídeo no disponible. Pega las URLs directamente."
@@ -289,7 +292,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailViewAllCaptures => "Ver todas",
         Key::GameDetailManual => "Manual",
         Key::GameDetailNoManual => "Manual no disponible",
-        Key::GameDetailFindManual => "Buscar manual",
+        Key::GameDetailSuggestedManuals => "Sugeridos",
+        Key::GameDetailAddManual => "Añadir manual",
+        Key::GameDetailManualUrlPlaceholder => "Pega una URL de manual PDF o texto",
+        Key::GameDetailUploadManual => "Subir archivo",
+        Key::GameDetailManualChooseFile => "Elige primero un archivo PDF o de texto.",
+        Key::GameDetailManualInvalidFileType => {
+            "Los manuales subidos deben ser archivos PDF o de texto."
+        }
+        Key::GameDetailManualUploadBrowserOnly => {
+            "La subida de manuales solo está disponible en el navegador."
+        }
         Key::GameDetailViewManual => "Ver",
         Key::GameDetailNoManualResults => "No se encontraron manuales",
         Key::GameDetailManualSaved => "Manual guardado",

@@ -2,7 +2,7 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::user_data_db::{ManualEntry, UserDataDb};
+use replay_control_core_server::user_data_db::{ManualEntry, ManualOrigin, UserDataDb};
 
 pub use replay_control_core::game_docs::GameDocument;
 pub use replay_control_core::retrokit_manuals::ManualRecommendation;
@@ -20,6 +20,10 @@ pub struct LocalManual {
     pub language: Option<String>,
     /// URL to serve the file
     pub url: String,
+    /// Original source URL, when this is a RePlay-owned downloaded manual.
+    pub source_url: Option<String>,
+    /// Provider/source that supplied the manual.
+    pub provider: Option<String>,
     /// Opaque id for RePlay-owned saved manuals. Legacy/ROM-folder manuals are read-only.
     pub delete_id: Option<String>,
 }
@@ -163,6 +167,8 @@ pub async fn get_local_manuals(
                 size_bytes,
                 language,
                 url,
+                source_url: None,
+                provider: None,
                 delete_id: None,
             });
         }
@@ -176,7 +182,7 @@ pub async fn get_local_manuals(
     Ok(manuals)
 }
 
-/// Search for game manuals via library resources, with Archive.org as an online fallback.
+/// Bundled/library manual suggestions copied into the library DB by enrichment.
 #[server(prefix = "/sfn")]
 pub async fn get_game_manual_suggestions(
     system: String,
@@ -185,100 +191,6 @@ pub async fn get_game_manual_suggestions(
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     library_manual_recommendations(&state, &system, &rom_filename, &base_title).await
-}
-
-/// Search for game manuals via library resources, with Archive.org as an online fallback.
-#[server(prefix = "/sfn")]
-pub async fn search_game_manuals(
-    system: String,
-    rom_filename: String,
-    base_title: String,
-    display_name: String,
-) -> Result<Vec<ManualRecommendation>, ServerFnError> {
-    // Load user's language preferences for sorting results
-    let state = expect_context::<crate::api::AppState>();
-
-    let results =
-        library_manual_recommendations(&state, &system, &rom_filename, &base_title).await?;
-    if !results.is_empty() {
-        return Ok(results);
-    }
-
-    // Archive.org Advanced Search API fallback
-    let clean_title = replay_control_core::title_utils::strip_tags(&display_name).trim();
-    let platform_terms =
-        replay_control_core_server::retrokit_manuals::platform_search_terms(&system);
-
-    let query = if platform_terms.is_empty() {
-        format!("collection:(consolemanuals OR gamemanuals) AND title:({clean_title})")
-    } else {
-        format!(
-            "collection:(consolemanuals OR gamemanuals OR arcademanuals) AND title:({clean_title}) AND ({platform_terms})"
-        )
-    };
-
-    let encoded_query = urlencoding::encode(&query);
-    let api_url = format!(
-        "https://archive.org/advancedsearch.php?q={encoded_query}&output=json&fl[]=identifier&fl[]=title&fl[]=description&fl[]=item_size&rows=10&page=1"
-    );
-
-    tracing::info!("Manual search: Archive.org query=\"{query}\"");
-
-    match http_get_json(&api_url, 15).await {
-        Ok(body) => {
-            let docs = body
-                .pointer("/response/docs")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-
-            if docs.is_empty() {
-                tracing::info!("Manual search: Archive.org returned 0 results");
-                return Ok(Vec::new());
-            }
-
-            tracing::info!("Manual search: Archive.org returned {} results", docs.len());
-
-            let mut results = Vec::new();
-            for doc in &docs {
-                let identifier = doc
-                    .get("identifier")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let title = doc
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Manual");
-                let item_size = doc.get("item_size").and_then(|v| v.as_u64());
-
-                if identifier.is_empty() {
-                    continue;
-                }
-
-                // For Archive.org items, construct a direct PDF URL.
-                // The actual PDF filename varies — we'll use the item download page
-                // and let the user download from there, or try to find the PDF.
-                let url = format!("https://archive.org/details/{identifier}");
-
-                results.push(ManualRecommendation {
-                    source: "archive.org".to_string(),
-                    title: title.to_string(),
-                    url,
-                    size_bytes: item_size,
-                    language: None,
-                    source_id: identifier.to_string(),
-                });
-            }
-
-            Ok(results)
-        }
-        Err(e) => {
-            tracing::error!("Manual search: Archive.org request failed: {e}");
-            Err(ServerFnError::new(format!(
-                "Manual search unavailable: {e}"
-            )))
-        }
-    }
 }
 
 #[cfg(feature = "ssr")]
@@ -342,6 +254,8 @@ pub async fn download_manual(
     base_title: String,
     url: String,
     language: Option<String>,
+    title: Option<String>,
+    source: Option<String>,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "download manuals").await?;
@@ -409,18 +323,19 @@ pub async fn download_manual(
     }
 
     let storage_path = format!("{system}/{filename}");
-    let title = if let Some(ref lang) = language
-        && !lang.is_empty()
-    {
-        Some(format!("{base_title} ({lang})"))
-    } else {
-        Some(base_title.clone())
-    };
+    let title = title
+        .map(|title| title.trim().to_string())
+        .filter(|title| !title.is_empty())
+        .or_else(|| Some(base_title.clone()));
+    let provider = source
+        .map(|source| source.trim().to_string())
+        .filter(|source| !source.is_empty());
     let entry = ManualEntry {
         manual_id: manual_id.clone(),
         resource_key: format!("url:{canonical_url}"),
         title,
-        origin: "downloaded".to_string(),
+        origin: ManualOrigin::Downloaded,
+        provider,
         url: Some(canonical_url.clone()),
         storage_path: Some(storage_path.clone()),
         original_filename: Some(filename.clone()),
@@ -500,17 +415,6 @@ pub async fn delete_manual(system: String, manual_id: String) -> Result<(), Serv
 
     tracing::info!("Manual deleted: {manual_id}");
     Ok(())
-}
-
-/// Fetch a URL and parse the response as JSON.
-#[cfg(feature = "ssr")]
-async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    replay_control_core_server::http::get_json_with_timeout(
-        url,
-        std::time::Duration::from_secs(timeout_secs),
-    )
-    .await
-    .map_err(|e| e.to_string())
 }
 
 /// Percent-encode unsafe characters in the path portion of a URL.
@@ -597,6 +501,8 @@ fn local_manual_from_user_entry(
         size_bytes,
         language,
         url: format!("/owned-manuals/{}", urlencoding::encode(rel)),
+        source_url: entry.url,
+        provider: entry.provider,
         delete_id: Some(entry.manual_id),
     })
 }

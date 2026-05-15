@@ -163,6 +163,9 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::RescanGameLibrary>();
     server_fn::axum::register_explicit::<server_fns::GetSetupStatus>();
     server_fn::axum::register_explicit::<server_fns::DismissSetup>();
+    server_fn::axum::register_explicit::<server_fns::GetLocalManuals>();
+    server_fn::axum::register_explicit::<server_fns::DownloadManual>();
+    server_fn::axum::register_explicit::<server_fns::DeleteManual>();
 }
 
 /// Initialize the Leptos async executor for SSR.

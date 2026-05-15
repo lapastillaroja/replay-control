@@ -59,9 +59,14 @@ web-sys = { version = "0.3", features = [
     "EventSource",
     "MessageEvent",
     "Storage",
+    "File",
+    "FileList",
+    "FormData",
     "Document",
     "Element",
     "KeyboardEvent",
+    "RequestInit",
+    "Response",
     "ScrollBehavior",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",
@@ -70,6 +75,7 @@ web-sys = { version = "0.3", features = [
     "Event",
     "EventTarget",
     "AddEventListenerOptions",
+    "Window",
 ], optional = true }
 gloo-timers = { version = "0.4", features = ["futures"], optional = true }
 send_wrapper = { version = "0.6", optional = true }

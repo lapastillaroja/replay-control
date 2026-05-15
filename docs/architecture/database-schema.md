@@ -268,7 +268,7 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 
 ### game_library_meta
 
-Per-system scan metadata. Used by the startup pipeline for mtime-based cache verification.
+Per-system scan metadata. Used by the startup pipeline for mtime-based cache verification, by `system_summaries` to derive UI counts, and by aggregate info/coverage endpoints that only need per-system counts.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -575,6 +575,7 @@ User-saved manual resources for a game. Downloaded manuals are stored under `<st
 | resource_key | TEXT | Original source/resource key for duplicate suppression |
 | title | TEXT | Display title |
 | origin | TEXT | `"downloaded"` or `"upload"` |
+| provider | TEXT | Optional source/provider attribution for downloaded manuals, e.g. `"retrokit"` or `"mister_manuals"` |
 | url | TEXT | Source URL for downloaded manuals |
 | storage_path | TEXT | Relative path under `.replay-control/manuals` |
 | original_filename | TEXT | Original upload/download filename when known |

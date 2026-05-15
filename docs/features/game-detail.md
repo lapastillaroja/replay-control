@@ -34,8 +34,8 @@ Paste a video URL directly, or search for gameplay videos using privacy-respecti
 Manuals can come from several places:
 
 - **Bundled catalog suggestions** -- MiSTer Manual Downloader and Retrokit manual links are matched during library enrichment and shown without live index fetching
-- **Internet Archive fallback** -- if no bundled suggestions are available, Replay Control can search Internet Archive directly from the detail page
-- **Saved manuals** -- selecting **Save** downloads the PDF/text manual into `<storage>/.replay-control/manuals`, validates the file type, and records it in `user_data.db`
+- **Saved URLs** -- pasting a manual URL downloads the PDF/text manual into `<storage>/.replay-control/manuals`, validates the file type, and records it in `user_data.db`
+- **Uploaded manuals** -- PDF and plain-text files can be uploaded from the detail page and are stored under `<storage>/.replay-control/manuals`
 - **Legacy local manuals** -- existing manuals in `<storage>/manuals` or ROM-folder side files are displayed read-only when detected
 
 Language preferences from Settings are respected when multiple manual languages are available, but other languages can still be shown. Saved manuals can be removed from Replay Control later; read-only legacy files are left untouched.

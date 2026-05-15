@@ -17,12 +17,35 @@ pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
 pub use replay_control_core::user_data_db::VideoEntry;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManualOrigin {
+    Downloaded,
+    Upload,
+}
+
+impl ManualOrigin {
+    fn from_db(value: String) -> Self {
+        match value.trim() {
+            "upload" => Self::Upload,
+            _ => Self::Downloaded,
+        }
+    }
+
+    fn to_db_value(&self) -> &str {
+        match self {
+            Self::Downloaded => "downloaded",
+            Self::Upload => "upload",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ManualEntry {
     pub manual_id: String,
     pub resource_key: String,
     pub title: Option<String>,
-    pub origin: String,
+    pub origin: ManualOrigin,
+    pub provider: Option<String>,
     pub url: Option<String>,
     pub storage_path: Option<String>,
     pub original_filename: Option<String>,
@@ -112,6 +135,7 @@ impl UserDataDb {
                     resource_key TEXT NOT NULL,
                     title TEXT,
                     origin TEXT NOT NULL,
+                    provider TEXT,
                     url TEXT,
                     storage_path TEXT,
                     original_filename TEXT,
@@ -131,6 +155,18 @@ impl UserDataDb {
                     ON game_manual_resource(system, rom_filename, resource_key);",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
+        Self::migrate_tables(conn)?;
+        Ok(())
+    }
+
+    fn migrate_tables(conn: &Connection) -> Result<()> {
+        if !table_has_column(conn, "game_manual_resource", "provider") {
+            conn.execute(
+                "ALTER TABLE game_manual_resource ADD COLUMN provider TEXT",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to add manual provider column: {e}")))?;
+        }
         Ok(())
     }
 
@@ -338,7 +374,7 @@ impl UserDataDb {
             .map(|i| format!("?{}", i + 2))
             .collect();
         let sql = format!(
-            "SELECT manual_id, resource_key, title, origin, url, storage_path,
+            "SELECT manual_id, resource_key, title, origin, provider, url, storage_path,
                     original_filename, languages, mime_type, size_bytes, added_at
              FROM game_manual_resource
              WHERE system = ?1 AND base_title IN ({})
@@ -358,19 +394,20 @@ impl UserDataDb {
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
-                let size_bytes: Option<i64> = row.get(9)?;
+                let size_bytes: Option<i64> = row.get(10)?;
                 Ok(ManualEntry {
                     manual_id: row.get(0)?,
                     resource_key: row.get(1)?,
                     title: row.get(2)?,
-                    origin: row.get(3)?,
-                    url: row.get(4)?,
-                    storage_path: row.get(5)?,
-                    original_filename: row.get(6)?,
-                    languages: row.get(7)?,
-                    mime_type: row.get(8)?,
+                    origin: ManualOrigin::from_db(row.get(3)?),
+                    provider: row.get(4)?,
+                    url: row.get(5)?,
+                    storage_path: row.get(6)?,
+                    original_filename: row.get(7)?,
+                    languages: row.get(8)?,
+                    mime_type: row.get(9)?,
                     size_bytes: size_bytes.map(|v| v.max(0) as u64),
-                    added_at: row.get::<_, i64>(10)? as u64,
+                    added_at: row.get::<_, i64>(11)? as u64,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query game_manual_resource: {e}")))?;
@@ -391,9 +428,10 @@ impl UserDataDb {
     ) -> Result<()> {
         conn.execute(
             "INSERT OR REPLACE INTO game_manual_resource
-                (system, base_title, rom_filename, manual_id, resource_key, title, origin, url,
-                 storage_path, original_filename, languages, mime_type, size_bytes, added_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                (system, base_title, rom_filename, manual_id, resource_key, title, origin,
+                 provider, url, storage_path, original_filename, languages, mime_type, size_bytes,
+                 added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 system,
                 base_title,
@@ -401,7 +439,8 @@ impl UserDataDb {
                 &entry.manual_id,
                 &entry.resource_key,
                 &entry.title,
-                &entry.origin,
+                entry.origin.to_db_value(),
+                &entry.provider,
                 &entry.url,
                 &entry.storage_path,
                 &entry.original_filename,
@@ -422,25 +461,26 @@ impl UserDataDb {
     ) -> Result<Option<ManualEntry>> {
         let entry = conn
             .query_row(
-                "SELECT manual_id, resource_key, title, origin, url, storage_path,
+                "SELECT manual_id, resource_key, title, origin, provider, url, storage_path,
                         original_filename, languages, mime_type, size_bytes, added_at
                  FROM game_manual_resource
                  WHERE system = ?1 AND manual_id = ?2",
                 params![system, manual_id],
                 |row| {
-                    let size_bytes: Option<i64> = row.get(9)?;
+                    let size_bytes: Option<i64> = row.get(10)?;
                     Ok(ManualEntry {
                         manual_id: row.get(0)?,
                         resource_key: row.get(1)?,
                         title: row.get(2)?,
-                        origin: row.get(3)?,
-                        url: row.get(4)?,
-                        storage_path: row.get(5)?,
-                        original_filename: row.get(6)?,
-                        languages: row.get(7)?,
-                        mime_type: row.get(8)?,
+                        origin: ManualOrigin::from_db(row.get(3)?),
+                        provider: row.get(4)?,
+                        url: row.get(5)?,
+                        storage_path: row.get(6)?,
+                        original_filename: row.get(7)?,
+                        languages: row.get(8)?,
+                        mime_type: row.get(9)?,
                         size_bytes: size_bytes.map(|v| v.max(0) as u64),
-                        added_at: row.get::<_, i64>(10)? as u64,
+                        added_at: row.get::<_, i64>(11)? as u64,
                     })
                 },
             )
@@ -495,6 +535,17 @@ impl UserDataDb {
     }
 }
 
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> bool {
+    let Ok(mut stmt) = conn.prepare(&format!("PRAGMA table_info({table})")) else {
+        return false;
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
+        return false;
+    };
+    rows.filter_map(std::result::Result::ok)
+        .any(|name| name == column)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,7 +567,8 @@ mod tests {
             manual_id: "urlhash:abc".to_string(),
             resource_key: "url:https://example.com/manual.pdf".to_string(),
             title: Some("Manual".to_string()),
-            origin: "downloaded".to_string(),
+            origin: ManualOrigin::Downloaded,
+            provider: Some("retrokit".to_string()),
             url: Some("https://example.com/manual.pdf".to_string()),
             storage_path: Some("nintendo_snes/urlhash_abc.pdf".to_string()),
             original_filename: Some("urlhash_abc.pdf".to_string()),
@@ -538,6 +590,8 @@ mod tests {
             UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].resource_key, entry.resource_key);
+        assert_eq!(rows[0].origin, ManualOrigin::Downloaded);
+        assert_eq!(rows[0].provider.as_deref(), Some("retrokit"));
         assert_eq!(rows[0].languages, "en,es");
 
         let removed =

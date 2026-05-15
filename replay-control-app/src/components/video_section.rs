@@ -6,6 +6,31 @@ use crate::server_fns::{self, VideoEntry, VideoRecommendation};
 /// Maximum number of embedded videos shown before "Show all".
 const INITIAL_VIDEO_COUNT: usize = 3;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VideoSearchKind {
+    Trailer,
+    Gameplay,
+    OneCc,
+}
+
+impl VideoSearchKind {
+    fn query_type(self) -> &'static str {
+        match self {
+            Self::Trailer => "trailer",
+            Self::Gameplay => "gameplay",
+            Self::OneCc => "1cc",
+        }
+    }
+
+    fn label_key(self) -> Key {
+        match self {
+            Self::Trailer => Key::GameDetailFindTrailers,
+            Self::Gameplay => Key::GameDetailFindGameplay,
+            Self::OneCc => Key::GameDetailFind1cc,
+        }
+    }
+}
+
 /// Full video section: saved videos, add input, search buttons, and results.
 #[component]
 pub fn GameVideoSection(
@@ -36,6 +61,7 @@ pub fn GameVideoSection(
     let provider_results = RwSignal::new(Vec::<VideoRecommendation>::new());
     let provider_searching = RwSignal::new(false);
     let provider_error = RwSignal::new(false);
+    let provider_loaded = RwSignal::new(false);
     let provider_resource = Resource::new(
         || (),
         move |_| {
@@ -45,8 +71,12 @@ pub fn GameVideoSection(
         },
     );
     let _sync_provider = Effect::new(move || {
-        if let Some(Ok(results)) = provider_resource.get() {
-            provider_results.set(results);
+        if let Some(result) = provider_resource.get() {
+            provider_loaded.set(true);
+            match result {
+                Ok(results) => provider_results.set(results),
+                Err(_) => provider_error.set(true),
+            }
         }
     });
 
@@ -101,65 +131,33 @@ pub fn GameVideoSection(
         });
     };
 
-    // Search state
-    let trailer_results = RwSignal::new(Vec::<VideoRecommendation>::new());
-    let gameplay_results = RwSignal::new(Vec::<VideoRecommendation>::new());
-    let onecc_results = RwSignal::new(Vec::<VideoRecommendation>::new());
-    let trailer_searching = RwSignal::new(false);
-    let gameplay_searching = RwSignal::new(false);
-    let onecc_searching = RwSignal::new(false);
-    let trailer_error = RwSignal::new(false);
-    let gameplay_error = RwSignal::new(false);
-    let onecc_error = RwSignal::new(false);
-    let trailer_searched = RwSignal::new(false);
-    let gameplay_searched = RwSignal::new(false);
-    let onecc_searched = RwSignal::new(false);
+    // Search state: one visible results panel. Replacing the panel avoids hiding
+    // later searches below earlier result blocks.
+    let active_search = RwSignal::new(Option::<VideoSearchKind>::None);
+    let active_results = RwSignal::new(Vec::<VideoRecommendation>::new());
+    let active_searching = RwSignal::new(false);
+    let active_error = RwSignal::new(false);
+    let active_tag = Signal::derive(move || {
+        active_search
+            .get()
+            .map(|kind| kind.query_type())
+            .unwrap_or("video")
+            .to_string()
+    });
 
-    let on_search_trailers = move |_| {
-        trailer_searching.set(true);
-        trailer_error.set(false);
-        trailer_searched.set(true);
-        trailer_results.set(vec![]);
+    let start_search = move |kind: VideoSearchKind| {
+        active_search.set(Some(kind));
+        active_searching.set(true);
+        active_error.set(false);
+        active_results.set(vec![]);
         let sys = system.get_value();
         let dn = display_name.get_value();
         leptos::task::spawn_local(async move {
-            match server_fns::search_game_videos(sys, dn, "trailer".to_string()).await {
-                Ok(results) => trailer_results.set(results),
-                Err(_) => trailer_error.set(true),
+            match server_fns::search_game_videos(sys, dn, kind.query_type().to_string()).await {
+                Ok(results) => active_results.set(results),
+                Err(_) => active_error.set(true),
             }
-            trailer_searching.set(false);
-        });
-    };
-
-    let on_search_gameplay = move |_| {
-        gameplay_searching.set(true);
-        gameplay_error.set(false);
-        gameplay_searched.set(true);
-        gameplay_results.set(vec![]);
-        let sys = system.get_value();
-        let dn = display_name.get_value();
-        leptos::task::spawn_local(async move {
-            match server_fns::search_game_videos(sys, dn, "gameplay".to_string()).await {
-                Ok(results) => gameplay_results.set(results),
-                Err(_) => gameplay_error.set(true),
-            }
-            gameplay_searching.set(false);
-        });
-    };
-
-    let on_search_onecc = move |_| {
-        onecc_searching.set(true);
-        onecc_error.set(false);
-        onecc_searched.set(true);
-        onecc_results.set(vec![]);
-        let sys = system.get_value();
-        let dn = display_name.get_value();
-        leptos::task::spawn_local(async move {
-            match server_fns::search_game_videos(sys, dn, "1cc".to_string()).await {
-                Ok(results) => onecc_results.set(results),
-                Err(_) => onecc_error.set(true),
-            }
-            onecc_searching.set(false);
+            active_searching.set(false);
         });
     };
 
@@ -189,15 +187,19 @@ pub fn GameVideoSection(
         }
     };
     let has_more = move || saved_videos.read().len() > INITIAL_VIDEO_COUNT && !show_all.get();
+    let visible_provider_results = Signal::derive(move || {
+        visible_recommendations(&provider_results.read(), &saved_videos.read())
+    });
+    let has_provider_results = move || !visible_provider_results.read().is_empty();
+    let show_empty_state =
+        move || !has_videos() && provider_loaded.get() && provider_results.read().is_empty();
 
     view! {
         <section class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailVideos)}</h2>
 
             // Saved videos list
-            <Show when=has_videos fallback=move || view! {
-                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoVideos)}</p>
-            }>
+            <Show when=has_videos>
                 <div class="video-list">
                     <For
                         each=visible_videos
@@ -218,12 +220,19 @@ pub fn GameVideoSection(
                     </Show>
                 </div>
             </Show>
+            <Show when=show_empty_state>
+                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoVideos)}</p>
+            </Show>
 
-            <Show when=move || !provider_results.read().is_empty()>
-                <div class="video-search-group">
-                    <h3 class="video-search-title">"From metadata"</h3>
+            <Show when=has_provider_results>
+                <div class="video-subsection">
+                    <Show when=has_videos>
+                        <h3 class="video-subsection-title">
+                            {move || t(i18n.locale.get(), Key::GameDetailSuggestedVideos)}
+                        </h3>
+                    </Show>
                     <VideoRecommendations
-                        results=provider_results
+                        results=visible_provider_results
                         is_searching=provider_searching
                         has_error=provider_error
                         tag="metadata".to_string()
@@ -234,6 +243,7 @@ pub fn GameVideoSection(
             </Show>
 
             // Add video input
+            <h3 class="video-subsection-title">{move || t(i18n.locale.get(), Key::GameDetailAddVideoUrl)}</h3>
             <div class="video-add-form">
                 <input
                     type="text"
@@ -267,79 +277,61 @@ pub fn GameVideoSection(
             </Show>
 
             // Search buttons
+            <h3 class="video-subsection-title">{move || t(i18n.locale.get(), Key::GameDetailFindOnlineVideos)}</h3>
             <div class="video-search-buttons">
                 <button
                     class="game-action-btn"
-                    prop:disabled=move || trailer_searching.get()
-                    on:click=on_search_trailers
+                    class:active=move || active_search.get() == Some(VideoSearchKind::Trailer)
+                    prop:disabled=move || active_searching.get()
+                    on:click=move |_| start_search(VideoSearchKind::Trailer)
                 >
                     {move || {
-                        if trailer_searching.get() {
+                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::Trailer) {
                             t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), Key::GameDetailFindTrailers)
+                            t(i18n.locale.get(), VideoSearchKind::Trailer.label_key())
                         }
                     }}
                 </button>
                 <button
                     class="game-action-btn"
-                    prop:disabled=move || gameplay_searching.get()
-                    on:click=on_search_gameplay
+                    class:active=move || active_search.get() == Some(VideoSearchKind::Gameplay)
+                    prop:disabled=move || active_searching.get()
+                    on:click=move |_| start_search(VideoSearchKind::Gameplay)
                 >
                     {move || {
-                        if gameplay_searching.get() {
+                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::Gameplay) {
                             t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), Key::GameDetailFindGameplay)
+                            t(i18n.locale.get(), VideoSearchKind::Gameplay.label_key())
                         }
                     }}
                 </button>
                 <button
                     class="game-action-btn"
-                    prop:disabled=move || onecc_searching.get()
-                    on:click=on_search_onecc
+                    class:active=move || active_search.get() == Some(VideoSearchKind::OneCc)
+                    prop:disabled=move || active_searching.get()
+                    on:click=move |_| start_search(VideoSearchKind::OneCc)
                 >
                     {move || {
-                        if onecc_searching.get() {
+                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::OneCc) {
                             t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), Key::GameDetailFind1cc)
+                            t(i18n.locale.get(), VideoSearchKind::OneCc.label_key())
                         }
                     }}
                 </button>
             </div>
 
-            // Trailer results
-            <Show when=move || trailer_searched.get()>
+            // Active online search results
+            <Show when=move || active_search.get().is_some()>
                 <VideoRecommendations
-                    results=trailer_results
-                    is_searching=trailer_searching
-                    has_error=trailer_error
-                    tag="trailer".to_string()
-                    saved_videos=saved_videos
-                    on_pin=pin_video
-                />
-            </Show>
-
-            // Gameplay results
-            <Show when=move || gameplay_searched.get()>
-                <VideoRecommendations
-                    results=gameplay_results
-                    is_searching=gameplay_searching
-                    has_error=gameplay_error
-                    tag="gameplay".to_string()
-                    saved_videos=saved_videos
-                    on_pin=pin_video
-                />
-            </Show>
-
-            // 1CC results
-            <Show when=move || onecc_searched.get()>
-                <VideoRecommendations
-                    results=onecc_results
-                    is_searching=onecc_searching
-                    has_error=onecc_error
-                    tag="1cc".to_string()
+                    results=Signal::derive(move || {
+                        visible_recommendations(&active_results.read(), &saved_videos.read())
+                    })
+                    is_searching=active_searching
+                    has_error=active_error
+                    tag=active_tag
                     saved_videos=saved_videos
                     on_pin=pin_video
                 />
@@ -401,10 +393,10 @@ where
 /// Panel showing video search results with pin buttons.
 #[component]
 fn VideoRecommendations<F>(
-    results: RwSignal<Vec<VideoRecommendation>>,
+    #[prop(into)] results: Signal<Vec<VideoRecommendation>>,
     is_searching: RwSignal<bool>,
     has_error: RwSignal<bool>,
-    tag: String,
+    #[prop(into)] tag: Signal<String>,
     saved_videos: RwSignal<Vec<VideoEntry>>,
     on_pin: F,
 ) -> impl IntoView
@@ -412,7 +404,6 @@ where
     F: Fn(VideoRecommendation, String) + Clone + Send + 'static,
 {
     let i18n = use_i18n();
-    let tag_sv = StoredValue::new(tag);
 
     view! {
         <div class="video-recommendations">
@@ -429,7 +420,7 @@ where
             >
                 <RecommendationItem
                     rec=rec.clone()
-                    tag=tag_sv
+                    tag=tag
                     saved_videos=saved_videos
                     on_pin=on_pin.clone()
                 />
@@ -438,11 +429,33 @@ where
     }
 }
 
+fn visible_recommendations(
+    results: &[VideoRecommendation],
+    saved_videos: &[VideoEntry],
+) -> Vec<VideoRecommendation> {
+    results
+        .iter()
+        .filter(|rec| !is_video_saved(rec, saved_videos))
+        .cloned()
+        .collect()
+}
+
+fn is_video_saved(rec: &VideoRecommendation, saved_videos: &[VideoEntry]) -> bool {
+    let parsed = replay_control_core::video_url::parse_video_url(&rec.url).ok();
+    saved_videos.iter().any(|saved| {
+        saved.url == rec.url
+            || parsed.as_ref().is_some_and(|video| {
+                saved.platform == video.platform.as_str() && saved.video_id == video.video_id
+            })
+            || rec.url.contains(&saved.video_id)
+    })
+}
+
 /// A single recommendation result with thumbnail, inline player, and pin button.
 #[component]
 fn RecommendationItem<F>(
     rec: VideoRecommendation,
-    tag: StoredValue<String>,
+    tag: Signal<String>,
     saved_videos: RwSignal<Vec<VideoEntry>>,
     on_pin: F,
 ) -> impl IntoView
@@ -477,7 +490,7 @@ where
     let on_pin = on_pin.clone();
     let on_click_pin = move |_| {
         let r = rec_sv.get_value();
-        let t = tag.get_value();
+        let t = tag.get();
         on_pin(r, t);
     };
 

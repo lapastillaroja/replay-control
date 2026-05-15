@@ -275,6 +275,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFindTrailers => "トレーラーを検索",
         Key::GameDetailFindGameplay => "ゲームプレイを検索",
         Key::GameDetailFind1cc => "1CCを検索",
+        Key::GameDetailSuggestedVideos => "おすすめ",
+        Key::GameDetailAddVideoUrl => "動画を追加",
+        Key::GameDetailFindOnlineVideos => "オンラインで検索",
         Key::GameDetailNoResults => "動画が見つかりません",
         Key::GameDetailSearchError => "動画検索は利用できません。URLを直接貼り付けてください。",
         Key::GameDetailPinVideo => "固定",
@@ -287,7 +290,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailViewAllCaptures => "すべて見る",
         Key::GameDetailManual => "マニュアル",
         Key::GameDetailNoManual => "マニュアルなし",
-        Key::GameDetailFindManual => "マニュアルを検索",
+        Key::GameDetailSuggestedManuals => "おすすめ",
+        Key::GameDetailAddManual => "マニュアルを追加",
+        Key::GameDetailManualUrlPlaceholder => "PDFまたはテキストのマニュアルURLを貼り付け",
+        Key::GameDetailUploadManual => "ファイルをアップロード",
+        Key::GameDetailManualChooseFile => "先にPDFまたはテキストファイルを選択してください。",
+        Key::GameDetailManualInvalidFileType => {
+            "アップロードできるマニュアルはPDFまたはテキストファイルのみです。"
+        }
+        Key::GameDetailManualUploadBrowserOnly => {
+            "マニュアルのアップロードはブラウザでのみ利用できます。"
+        }
         Key::GameDetailViewManual => "表示",
         Key::GameDetailNoManualResults => "マニュアルが見つかりません",
         Key::GameDetailManualSaved => "マニュアルを保存しました",

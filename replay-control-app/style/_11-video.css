@@ -62,11 +62,27 @@
     color: var(--error);
 }
 
+.video-list {
+    margin-bottom: 12px;
+}
+
+.video-subsection {
+    margin-top: 12px;
+}
+
+.video-subsection-title {
+    margin: 16px 0 8px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 /* Add video form */
 .video-add-form {
     display: flex;
     gap: 8px;
-    margin-top: 8px;
 }
 
 .video-add-form .form-input {
@@ -102,9 +118,15 @@
     flex: 1;
 }
 
+.video-search-buttons .game-action-btn.active {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+    color: var(--accent-hover);
+}
+
 /* Video recommendations panel */
 .video-recommendations {
-    margin-top: 12px;
+    margin-top: 8px;
 }
 
 .recommendation-item {

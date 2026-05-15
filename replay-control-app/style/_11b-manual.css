@@ -1,5 +1,5 @@
 /* ================================================================
-   Manual — In-folder docs, local manuals, search, results
+   Manual — In-folder docs, local manuals, suggestions, add actions
    ================================================================ */
 
 /* Manual document list */
@@ -57,14 +57,75 @@
     color: var(--text-secondary);
 }
 
-/* Error message */
+/* Feedback */
 .manual-error {
     font-size: 0.8rem;
     color: var(--error);
     margin-top: 4px;
 }
 
-/* Search results panel */
+.manual-success {
+    font-size: 0.8rem;
+    color: var(--success, var(--accent));
+    margin-top: 4px;
+}
+
+.manual-subsection-title {
+    margin: 16px 0 8px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.manual-add-form,
+.manual-upload-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.manual-add-form .form-input,
+.manual-file-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.manual-add-form .game-action-btn,
+.manual-upload-form .game-action-btn {
+    flex: 0 0 auto;
+    width: auto;
+    justify-content: center;
+    white-space: nowrap;
+    padding: 10px 16px;
+}
+
+.manual-file-input {
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.85rem;
+}
+
+.manual-file-input::file-selector-button {
+    margin-right: 10px;
+    padding: 6px 10px;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.manual-file-input::file-selector-button:hover {
+    border-color: var(--accent);
+}
+
+/* Suggestion results panel */
 .manual-search-results {
     margin-top: 12px;
 }
