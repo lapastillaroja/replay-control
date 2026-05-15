@@ -1,5 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_query_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
@@ -20,6 +22,8 @@ const MAX_RECENT_SEARCHES: usize = 8;
 pub fn SearchPage() -> impl IntoView {
     let i18n = use_i18n();
     let query_map = use_query_map();
+    #[cfg(feature = "hydrate")]
+    let navigate = StoredValue::new(use_navigate());
 
     // Read initial values from URL query params.
     let qm = query_map.read_untracked();
@@ -198,14 +202,13 @@ pub fn SearchPage() -> impl IntoView {
         random_loading.set(true);
         #[cfg(feature = "hydrate")]
         {
+            let navigate = navigate.get_value();
             leptos::task::spawn_local(async move {
                 match server_fns::random_game().await {
                     Ok((system, rom_filename)) => {
                         let href =
                             format!("/games/{}/{}", system, urlencoding::encode(&rom_filename));
-                        if let Some(w) = web_sys::window() {
-                            let _ = w.location().set_href(&href);
-                        }
+                        navigate(&href, Default::default());
                     }
                     Err(_) => {
                         random_loading.set(false);
