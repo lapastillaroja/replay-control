@@ -228,14 +228,17 @@ fn GameDetailContent(
         _ => None,
     };
     let is_now_playing = move || active_started_at().is_some();
-    let active_elapsed = move || {
+    // Memo (not a plain closure) so the clock's 1 Hz signal can't propagate to
+    // the text node every second — `PartialEq` on the `Option<String>` output
+    // gates the subscriber to per-minute updates only.
+    let active_elapsed = Memo::new(move |_| {
         let started_at = active_started_at()?;
         let elapsed = clock
             .map(|c| c.now())
             .unwrap_or(0)
             .saturating_sub(started_at);
-        Some(crate::util::format_elapsed_short(elapsed))
-    };
+        crate::util::format_elapsed_short(elapsed)
+    });
 
     // Box art variant picker state.
     // Suppress "Change cover" for hack and special ROMs — they should inherit the base ROM's cover.
@@ -346,8 +349,11 @@ fn GameDetailContent(
                     <span class="game-live-pill">
                         {move || {
                             let locale = i18n.locale.get();
-                            let elapsed = active_elapsed().unwrap_or_default();
-                            format!("{} · {}", t(locale, Key::GameDetailNowPlaying), elapsed)
+                            let label = t(locale, Key::GameDetailNowPlaying);
+                            match active_elapsed.get() {
+                                Some(elapsed) => format!("{label} · {elapsed}"),
+                                None => label.to_string(),
+                            }
                         }}
                     </span>
                 </Show>

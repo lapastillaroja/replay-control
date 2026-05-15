@@ -211,13 +211,14 @@ fn NowPlayingHeroCard(
     let fav_filename = format!("{system}@{filename}.fav");
 
     let system_display_for_meta = system_display.clone();
-    let meta = move || {
-        format!(
-            "{} \u{00B7} {}",
-            system_display_for_meta,
-            crate::util::format_elapsed_short(elapsed.get()),
-        )
-    };
+    // Memo so the 1 Hz clock signal can't propagate to the text node every
+    // second — only fires the subscriber when the formatted output changes.
+    let meta = Memo::new(
+        move |_| match crate::util::format_elapsed_short(elapsed.get()) {
+            Some(text) => format!("{system_display_for_meta} \u{00B7} {text}"),
+            None => system_display_for_meta.clone(),
+        },
+    );
 
     let on_toggle_fav = move |_| {
         let fav = is_favorite.get();
@@ -252,7 +253,7 @@ fn NowPlayingHeroCard(
                 }}
                 <div class="hero-info">
                     <h3 class="hero-title">{display_name}</h3>
-                    <p class="hero-system">{meta}</p>
+                    <p class="hero-system">{move || meta.get()}</p>
                 </div>
             </A>
             <div class="hero-actions">

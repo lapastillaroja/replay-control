@@ -266,6 +266,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Scroll card row (horizontal game cards) */

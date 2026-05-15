@@ -17,13 +17,18 @@ pub fn NowPlayingIndicator() -> impl IntoView {
             {move || match now_playing.get() {
                 NowPlayingState::Playing {
                     system,
-                    system_display,
                     filename,
                     display_name,
                     started_at_unix_secs,
                     ..
                 } => {
                     let elapsed = use_live_elapsed_secs(started_at_unix_secs);
+                    // Memo so the 1 Hz clock signal can't propagate to the text
+                    // node every second — only fires the subscriber when the
+                    // minute-granularity output actually changes.
+                    let elapsed_text = Memo::new(move |_| {
+                        format_elapsed_short(elapsed.get()).unwrap_or_default()
+                    });
                     let title = display_name.clone();
                     let href = format!(
                         "/games/{}/{}",
@@ -34,12 +39,7 @@ pub fn NowPlayingIndicator() -> impl IntoView {
                         <A href=href attr:class="now-playing-indicator" attr:title=title>
                             <span class="now-playing-dot" aria-hidden="true"></span>
                             <span class="now-playing-name">{display_name}</span>
-                            <span class="now-playing-elapsed">
-                                {move || format!(
-                                    "{system_display} \u{00B7} {}",
-                                    format_elapsed_short(elapsed.get()),
-                                )}
-                            </span>
+                            <span class="now-playing-elapsed">{move || elapsed_text.get()}</span>
                         </A>
                     }
                         .into_any()

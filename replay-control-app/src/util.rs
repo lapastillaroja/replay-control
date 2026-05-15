@@ -127,16 +127,28 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn format_elapsed_short(secs: u64) -> String {
+/// Format an elapsed-time duration for live "now playing" displays.
+///
+/// Returns `None` for the first minute (when minute-granularity would just
+/// read "0m"); callers should omit the elapsed segment in that window.
+/// Minute granularity is deliberate: 1 Hz text updates reflow the page and
+/// iOS Safari cancels in-flight horizontal momentum scrolls on any reflow,
+/// resetting `scrollLeft` to 0 on neighboring `.scroll-card-row` rows.
+pub fn format_elapsed_short(secs: u64) -> Option<String> {
     if secs < 60 {
-        return format!("{secs}s");
+        return None;
     }
     let minutes = secs / 60;
     let hours = minutes / 60;
     if hours > 0 {
-        format!("{hours}h {}m", minutes % 60)
+        let mins_part = minutes % 60;
+        if mins_part == 0 {
+            Some(format!("{hours}h"))
+        } else {
+            Some(format!("{hours}h {mins_part}m"))
+        }
     } else {
-        format!("{minutes}m")
+        Some(format!("{minutes}m"))
     }
 }
 
