@@ -26,6 +26,7 @@ pub use thumbnail_pipeline::ThumbnailPipeline;
 pub const CACHE_1H: &str = "public, max-age=3600";
 pub const CACHE_1D: &str = "public, max-age=86400";
 pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
+pub const CACHE_REVALIDATE: &str = "public, max-age=0, must-revalidate";
 
 /// Read pool size for the library DB. WAL on ext4 SD lets concurrent reads
 /// actually parallelise. Two readers with 2 MiB caches were the best

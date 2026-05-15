@@ -199,7 +199,7 @@ Full UI available in English, Spanish, and Japanese. Translation keys are define
 
 Installable as a home screen app on mobile devices. The service worker precaches the app shell (CSS, WASM, JS, icons) for offline loading. When the Pi is unreachable, a fallback page is shown instead of a browser error. Pull-to-refresh support on iOS standalone mode.
 
-Static assets under `pkg/` use 1-hour cache-control headers; other static assets use standard caching.
+Fingerprint-named JS/WASM assets under `pkg/` use immutable cache-control headers. Wasm-bindgen `pkg/snippets/` files are not safely content-fingerprinted, so they are served with revalidation to prevent stale inline JS imports after upgrades.
 
 ## Responsive Design
 

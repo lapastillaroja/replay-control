@@ -818,6 +818,17 @@ mod ssr {
             .route("/rom-docs/*path", rom_docs_handler)
             .route("/media/*path", media_handler)
             .nest_service(
+                "/static/pkg/snippets",
+                tower::ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::overriding(
+                        http::header::CACHE_CONTROL,
+                        http::HeaderValue::from_static(api::CACHE_REVALIDATE),
+                    ))
+                    .service(
+                        ServeDir::new(format!("{site_root}/pkg/snippets")).precompressed_gzip(),
+                    ),
+            )
+            .nest_service(
                 "/static/pkg",
                 tower::ServiceBuilder::new()
                     .layer(SetResponseHeaderLayer::overriding(
