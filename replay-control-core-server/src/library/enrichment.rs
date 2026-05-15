@@ -173,17 +173,29 @@ fn match_resource_key(
 /// `alt_to_primary` maps `normalized_alternate → primary normalized_title`
 /// from `provider_alternate`. Caller loads it once per system from the
 /// host-global `external_metadata.db`.
-#[allow(clippy::too_many_arguments)]
-pub fn enrich_system(
-    conn: &Connection,
-    system: &str,
-    index: &ImageIndex,
-    arcade_lookup: &ArcadeInfoLookup,
-    launchbox_rows: &HashMap<String, ProviderGameRow>,
-    alt_to_primary: &HashMap<String, String>,
-    provider_resources: &HashMap<String, Vec<ProviderResourceRow>>,
-    catalog_resources: &HashMap<String, Vec<CatalogGameResourceRow>>,
-) -> EnrichmentResult {
+pub struct EnrichSystemInput<'a> {
+    pub conn: &'a Connection,
+    pub system: &'a str,
+    pub index: &'a ImageIndex,
+    pub arcade_lookup: &'a ArcadeInfoLookup,
+    pub launchbox_rows: &'a HashMap<String, ProviderGameRow>,
+    pub alt_to_primary: &'a HashMap<String, String>,
+    pub provider_resources: &'a HashMap<String, Vec<ProviderResourceRow>>,
+    pub catalog_resources: &'a HashMap<String, Vec<CatalogGameResourceRow>>,
+}
+
+pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
+    let EnrichSystemInput {
+        conn,
+        system,
+        index,
+        arcade_lookup,
+        launchbox_rows,
+        alt_to_primary,
+        provider_resources,
+        catalog_resources,
+    } = input;
+
     // Load existing game_library values to know which are already set.
     let existing_genres: HashSet<String> = LibraryDb::system_rom_genres(conn, system)
         .map(|map| map.into_keys().collect())

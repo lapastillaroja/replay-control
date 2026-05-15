@@ -16,6 +16,63 @@ use replay_control_core::{systems, title_utils};
 
 use super::{DatePrecision, DpSql, LibraryDb};
 
+// Rank every game_release_date row once via ROW_NUMBER(), then assign each
+// game_library row the rank-1 match via a row-value UPDATE. If no match exists
+// in `best`, the subquery yields (NULL, NULL, NULL), which clears stale mirror
+// values without a separate NULL-out pass.
+const GLOBAL_RESOLVE_RELEASE_DATE_SQL: &str = "\
+    WITH best AS ( \
+        SELECT system, base_title, release_date, precision, region FROM ( \
+            SELECT grd.*, ROW_NUMBER() OVER ( \
+                PARTITION BY grd.system, grd.base_title \
+                ORDER BY \
+                  CASE \
+                    WHEN grd.region = ?1 THEN 1 \
+                    WHEN ?2 IS NOT NULL AND grd.region = ?2 THEN 2 \
+                    WHEN grd.region = 'world' THEN 3 \
+                    WHEN grd.region = 'unknown' THEN 5 \
+                    ELSE 4 \
+                  END, \
+                  CASE grd.precision WHEN 'day' THEN 1 WHEN 'month' THEN 2 ELSE 3 END \
+            ) AS rn \
+            FROM game_release_date grd \
+        ) \
+        WHERE rn = 1 \
+    ) \
+    UPDATE game_library AS gl \
+    SET (release_date, release_precision, release_region_used) = ( \
+        SELECT release_date, precision, region FROM best \
+        WHERE best.system = gl.system AND best.base_title = gl.base_title \
+    ) \
+    WHERE gl.base_title != ''";
+
+const SCOPED_RESOLVE_RELEASE_DATE_SQL: &str = "\
+    WITH best AS ( \
+        SELECT system, base_title, release_date, precision, region FROM ( \
+            SELECT grd.*, ROW_NUMBER() OVER ( \
+                PARTITION BY grd.system, grd.base_title \
+                ORDER BY \
+                  CASE \
+                    WHEN grd.region = ?1 THEN 1 \
+                    WHEN ?2 IS NOT NULL AND grd.region = ?2 THEN 2 \
+                    WHEN grd.region = 'world' THEN 3 \
+                    WHEN grd.region = 'unknown' THEN 5 \
+                    ELSE 4 \
+                  END, \
+                  CASE grd.precision WHEN 'day' THEN 1 WHEN 'month' THEN 2 ELSE 3 END \
+            ) AS rn \
+            FROM game_release_date grd \
+            WHERE grd.system = ?3 \
+        ) \
+        WHERE rn = 1 \
+    ) \
+    UPDATE game_library AS gl \
+    SET (release_date, release_precision, release_region_used) = ( \
+        SELECT release_date, precision, region FROM best \
+        WHERE best.system = gl.system AND best.base_title = gl.base_title \
+    ) \
+    WHERE gl.system = ?3 AND gl.base_title != ''";
+
 /// A row to insert into `game_release_date`.
 #[derive(Debug, Clone)]
 pub struct ReleaseDateRow {
@@ -180,37 +237,52 @@ impl LibraryDb {
         system: Option<&str>,
         source: &str,
     ) -> Result<usize> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT system, base_title,
-                        CASE WHEN region = '' THEN 'unknown' ELSE region END,
-                        release_date, release_precision
-                 FROM game_library
-                 WHERE (?1 IS NULL OR system = ?1)
-                   AND base_title != ''
-                   AND release_date IS NOT NULL",
-            )
-            .map_err(|e| Error::Other(format!("Prepare seed_release_dates_from_library: {e}")))?;
+        let mut rows = Vec::new();
+        if let Some(system) = system {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT DISTINCT system, base_title,
+                            CASE WHEN region = '' THEN 'unknown' ELSE region END,
+                            release_date, release_precision
+                     FROM game_library
+                     WHERE system = ?1
+                       AND base_title != ''
+                       AND release_date IS NOT NULL",
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Prepare seed_release_dates_from_library: {e}"))
+                })?;
+            let mapped = stmt
+                .query_map(params![system], release_date_row(source))
+                .map_err(|e| Error::Other(format!("Query seed_release_dates_from_library: {e}")))?;
+            for row in mapped {
+                rows.push(row.map_err(|e| {
+                    Error::Other(format!("Read seed_release_dates_from_library row: {e}"))
+                })?);
+            }
+        } else {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT DISTINCT system, base_title,
+                            CASE WHEN region = '' THEN 'unknown' ELSE region END,
+                            release_date, release_precision
+                     FROM game_library
+                     WHERE base_title != ''
+                       AND release_date IS NOT NULL",
+                )
+                .map_err(|e| {
+                    Error::Other(format!("Prepare seed_release_dates_from_library: {e}"))
+                })?;
+            let mapped = stmt
+                .query_map([], release_date_row(source))
+                .map_err(|e| Error::Other(format!("Query seed_release_dates_from_library: {e}")))?;
+            for row in mapped {
+                rows.push(row.map_err(|e| {
+                    Error::Other(format!("Read seed_release_dates_from_library row: {e}"))
+                })?);
+            }
+        }
 
-        let rows: Vec<ReleaseDateRow> = stmt
-            .query_map(params![system], |row| {
-                Ok(ReleaseDateRow {
-                    system: row.get(0)?,
-                    base_title: row.get(1)?,
-                    region: row.get(2)?,
-                    release_date: row.get(3)?,
-                    precision: row
-                        .get::<_, Option<DpSql>>(4)?
-                        .map(|DpSql(d)| d)
-                        .unwrap_or(DatePrecision::Year),
-                    source: source.to_string(),
-                })
-            })
-            .map_err(|e| Error::Other(format!("Query seed_release_dates_from_library: {e}")))?
-            .flatten()
-            .collect();
-
-        drop(stmt);
         Self::upsert_release_dates(conn, &rows)
     }
 
@@ -256,40 +328,18 @@ impl LibraryDb {
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start: {e}")))?;
 
-        // Rank every game_release_date row once via ROW_NUMBER(), then assign
-        // each game_library row the rank-1 match via a row-value UPDATE.
-        // If no match exists in `best`, the subquery yields (NULL, NULL, NULL),
-        // which clears any stale mirror values — no separate NULL-out pass needed.
-        let sql = "\
-            WITH best AS ( \
-                SELECT system, base_title, release_date, precision, region FROM ( \
-                    SELECT grd.*, ROW_NUMBER() OVER ( \
-                        PARTITION BY grd.system, grd.base_title \
-                        ORDER BY \
-                          CASE \
-                            WHEN grd.region = ?1 THEN 1 \
-                            WHEN ?2 IS NOT NULL AND grd.region = ?2 THEN 2 \
-                            WHEN grd.region = 'world' THEN 3 \
-                            WHEN grd.region = 'unknown' THEN 5 \
-                            ELSE 4 \
-                          END, \
-                          CASE grd.precision WHEN 'day' THEN 1 WHEN 'month' THEN 2 ELSE 3 END \
-                    ) AS rn \
-                    FROM game_release_date grd \
-                    WHERE (?3 IS NULL OR grd.system = ?3) \
-                ) \
-                WHERE rn = 1 \
-            ) \
-            UPDATE game_library AS gl \
-            SET (release_date, release_precision, release_region_used) = ( \
-                SELECT release_date, precision, region FROM best \
-                WHERE best.system = gl.system AND best.base_title = gl.base_title \
-            ) \
-            WHERE (?3 IS NULL OR gl.system = ?3) AND gl.base_title != ''";
-
-        let affected = tx
-            .execute(sql, params![primary_region, secondary_region, system])
-            .map_err(|e| Error::Other(format!("resolve_release_date: {e}")))?;
+        let affected = if let Some(system) = system {
+            tx.execute(
+                SCOPED_RESOLVE_RELEASE_DATE_SQL,
+                params![primary_region, secondary_region, system],
+            )
+        } else {
+            tx.execute(
+                GLOBAL_RESOLVE_RELEASE_DATE_SQL,
+                params![primary_region, secondary_region],
+            )
+        }
+        .map_err(|e| Error::Other(format!("resolve_release_date: {e}")))?;
 
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit: {e}")))?;
@@ -297,29 +347,71 @@ impl LibraryDb {
     }
 }
 
+fn release_date_row<'a>(
+    source: &'a str,
+) -> impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<ReleaseDateRow> + 'a {
+    move |row| {
+        Ok(ReleaseDateRow {
+            system: row.get(0)?,
+            base_title: row.get(1)?,
+            region: row.get(2)?,
+            release_date: row.get(3)?,
+            precision: row
+                .get::<_, Option<DpSql>>(4)?
+                .map(|DpSql(d)| d)
+                .unwrap_or(DatePrecision::Year),
+            source: source.to_string(),
+        })
+    }
+}
+
 fn load_library_titles(
     conn: &Connection,
     system: Option<&str>,
 ) -> Result<HashMap<String, HashSet<String>>> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT system, base_title
-             FROM game_library
-             WHERE (?1 IS NULL OR system = ?1) AND base_title != ''",
-        )
-        .map_err(|e| Error::Other(format!("Prepare library release-date titles: {e}")))?;
-
     let mut titles_by_system: HashMap<String, HashSet<String>> = HashMap::new();
-    let rows = stmt
-        .query_map(params![system], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|e| Error::Other(format!("Query library release-date titles: {e}")))?;
-    for (system, base_title) in rows.flatten() {
-        titles_by_system
-            .entry(system)
-            .or_default()
-            .insert(base_title);
+    if let Some(system) = system {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT system, base_title
+                 FROM game_library
+                 WHERE system = ?1 AND base_title != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare library release-date titles: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query library release-date titles: {e}")))?;
+        for row in rows {
+            let (system, base_title) =
+                row.map_err(|e| Error::Other(format!("Read library release-date title: {e}")))?;
+            titles_by_system
+                .entry(system)
+                .or_default()
+                .insert(base_title);
+        }
+    } else {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT system, base_title
+                 FROM game_library
+                 WHERE base_title != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare library release-date titles: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query library release-date titles: {e}")))?;
+        for row in rows {
+            let (system, base_title) =
+                row.map_err(|e| Error::Other(format!("Read library release-date title: {e}")))?;
+            titles_by_system
+                .entry(system)
+                .or_default()
+                .insert(base_title);
+        }
     }
     Ok(titles_by_system)
 }

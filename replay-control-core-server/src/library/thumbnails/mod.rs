@@ -591,10 +591,15 @@ pub fn delete_orphaned_thumbnails(
     conn: &rusqlite::Connection,
 ) -> Result<(usize, u64)> {
     let orphans = find_orphaned_thumbnails(storage_root, conn)?;
+    Ok(delete_thumbnail_files(&orphans))
+}
+
+/// Delete thumbnail files previously returned by [`find_orphaned_thumbnails`].
+pub fn delete_thumbnail_files(orphans: &[(String, PathBuf)]) -> (usize, u64) {
     let mut deleted = 0usize;
     let mut bytes_freed = 0u64;
 
-    for (_system, path) in &orphans {
+    for (_system, path) in orphans {
         let size = path.metadata().map(|m| m.len()).unwrap_or(0);
         match std::fs::remove_file(path) {
             Ok(()) => {
@@ -610,7 +615,7 @@ pub fn delete_orphaned_thumbnails(
         }
     }
 
-    Ok((deleted, bytes_freed))
+    (deleted, bytes_freed)
 }
 
 #[cfg(test)]

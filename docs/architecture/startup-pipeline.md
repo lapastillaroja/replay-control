@@ -30,7 +30,7 @@ Flow:
 3. **Hash + stamp-read in parallel** (`tokio::join!`) — stream-CRC32 the XML on the blocking pool while reading the stored `external_meta.launchbox_xml_crc32` from the read pool.
 4. **Skip if hashes match** — drop the guard, no work to do.
 5. **Refresh** — switch phase to `Parsing`; parse/build LaunchBox rows on the blocking pool, then apply them inside `external_metadata_pool.try_write_with_timeout`. The SQLite writer is held only while rows are written.
-6. **Re-enrich every system** — switch phase to `Enriching`; call `Self::reenrich_all_systems(state)` which iterates `cached_systems` and runs `enrich_system_cache` per system. Without this, post-boot refreshes silently produce stale UI until something else triggers enrichment.
+6. **Re-enrich every system** — switch phase to `Enriching`; call `Self::reenrich_all_systems(state)` which reads active systems directly from `game_library` and runs `enrich_system_cache` per system. Without this, post-boot refreshes silently produce stale UI until something else triggers enrichment.
 7. **Complete** — switch phase to `Complete`; guard drops → `Idle`.
 
 Failure paths set `phase = Failed` with an `error` string before dropping the guard.

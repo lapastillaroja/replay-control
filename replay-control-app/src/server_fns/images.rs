@@ -71,22 +71,26 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let storage = state.storage();
-    let storage_root = storage.root.clone();
-    let cleanup_result = state
-        .library_writer
-        .try_write(move |conn| {
-            replay_control_core_server::thumbnails::delete_orphaned_thumbnails(&storage_root, conn)
-                .unwrap_or((0, 0))
+    let storage_root = state.storage().root.clone();
+    let orphan_result = state
+        .library_reader
+        .try_read(move |conn| {
+            replay_control_core_server::thumbnails::find_orphaned_thumbnails(&storage_root, conn)
         })
         .await;
-    let (files_deleted, bytes_freed) = match cleanup_result {
-        Ok(counts) => counts,
+    let orphans = match orphan_result {
+        Ok(Ok(orphans)) => orphans,
+        Ok(Err(e)) => {
+            tracing::warn!("Cleanup orphaned images skipped: {e}");
+            Vec::new()
+        }
         Err(e) => {
             tracing::warn!("Cleanup orphaned images skipped: {e}");
-            (0, 0)
+            Vec::new()
         }
     };
+    let (files_deleted, bytes_freed) =
+        replay_control_core_server::thumbnails::delete_thumbnail_files(&orphans);
 
     state.cache.invalidate_metadata_page().await;
     Ok((0, files_deleted, bytes_freed))

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
+use replay_control_core::error::{Error, Result};
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
 use replay_control_core_server::external_metadata::{
     self, LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow, ThumbnailManifestEntry,
@@ -32,7 +34,8 @@ impl LibraryService {
         state: &crate::api::AppState,
         system: String,
         cancellation: Option<&ScanCancellation>,
-    ) -> replay_control_core::error::Result<()> {
+    ) -> Result<()> {
+        let enrichment_started = Instant::now();
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
@@ -45,38 +48,55 @@ impl LibraryService {
         // through the dedicated reader pool. Stale-row risk is mitigated
         // by INSERT OR REPLACE on the write side and by FK CASCADE on
         // ROM deletion.
+        let visible_started = Instant::now();
         let sys = system.clone();
         let rom_filenames: Vec<String> = state
             .library_reader
             .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
+        let visible_ms = visible_started.elapsed().as_millis();
 
         if rom_filenames.is_empty() {
             let sys = system.clone();
             if let Some(cancellation) = cancellation {
                 cancellation.ensure_current()?;
             }
-            if let Err(e) = state
+            let cleanup_started = Instant::now();
+            let cleanup_result = state
                 .library_writer
                 .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                    let _ = LibraryDb::replace_detail_metadata_and_resources_for_system(
+                    LibraryDb::replace_detail_metadata_and_resources_for_system(
                         conn,
                         &sys,
                         &[],
                         &[],
-                    );
+                    )
                 })
-                .await
-            {
-                tracing::warn!("Empty enrichment cleanup write failed for {system}: {e}");
+                .await;
+            match cleanup_result {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    tracing::warn!("Empty enrichment cleanup SQL failed for {system}: {e}");
+                    return Err(e);
+                }
+                Err(e) => {
+                    tracing::warn!("Empty enrichment cleanup write failed for {system}: {e}");
+                    return Err(Error::Other(e.to_string()));
+                }
             }
+            tracing::info!(
+                "L2 enrichment profile: {system}: roms=0 visible_ms={visible_ms} cleanup_write_ms={} total_ms={}",
+                cleanup_started.elapsed().as_millis(),
+                enrichment_started.elapsed().as_millis()
+            );
             return Ok(());
         }
 
         // Independent setup steps that all consume `system` / `rom_filenames`.
         // Two pools (library, external_metadata) plus the arcade lookup;
         // `join!` lets the slowest overlap with the others.
+        let setup_started = Instant::now();
         let catalog_titles = catalog_resource_lookup_titles(&rom_filenames);
         let (
             index,
@@ -93,29 +113,37 @@ impl LibraryService {
             load_catalog_manual_resources(&system, catalog_titles),
             ArcadeInfoLookup::build(&system, &rom_filenames),
         );
+        let setup_ms = setup_started.elapsed().as_millis();
 
         let sys = system.clone();
         // Heavy enrichment pass (per-row matching, manifest cross-ref,
         // image index lookups). Routed through the reader pool so the
         // single writer slot stays free for downloads and other writes;
         // the write closure below batches the resulting per-row updates.
+        let match_started = Instant::now();
         let result = state
             .library_reader
             .read(move |conn| {
                 replay_control_core_server::enrichment::enrich_system(
-                    conn,
-                    &sys,
-                    &index,
-                    &arcade_lookup,
-                    &launchbox_rows,
-                    &alt_to_primary,
-                    &provider_resources,
-                    &catalog_resources,
+                    enrichment::EnrichSystemInput {
+                        conn,
+                        system: &sys,
+                        index: &index,
+                        arcade_lookup: &arcade_lookup,
+                        launchbox_rows: &launchbox_rows,
+                        alt_to_primary: &alt_to_primary,
+                        provider_resources: &provider_resources,
+                        catalog_resources: &catalog_resources,
+                    },
                 )
             })
             .await;
+        let match_ms = match_started.elapsed().as_millis();
 
         let Some(result) = result else {
+            tracing::warn!(
+                "L2 enrichment profile: {system}: enrichment read unavailable after {match_ms}ms"
+            );
             return Ok(());
         };
 
@@ -127,9 +155,11 @@ impl LibraryService {
         // the orchestrator's visible queue capacity so a large fan-out
         // (e.g. 4k+ thumbnails after a fresh rescan) backpressures
         // instead of dropping work.
+        let manifest_started = Instant::now();
         for (rom_filename, manifest_match) in &result.manifest_downloads {
             queue_on_demand_download(state, &system, rom_filename, manifest_match).await;
         }
+        let manifest_ms = manifest_started.elapsed().as_millis();
 
         // Keep the enrichment writes grouped by dependency, but release the
         // writer between groups. Partial enrichment is better than no
@@ -154,92 +184,145 @@ impl LibraryService {
         }
 
         let metadata_sys = sys.clone();
+        let metadata_started = Instant::now();
         let metadata_result = state
             .library_writer
-            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                if !developer_updates.is_empty()
-                    && let Err(e) =
-                        LibraryDb::update_developers(conn, &metadata_sys, &developer_updates)
-                {
-                    tracing::warn!("Developer enrichment failed for {metadata_sys}: {e}");
-                }
-                if !cooperative_updates.is_empty()
-                    && let Err(e) =
-                        LibraryDb::update_cooperative(conn, &metadata_sys, &cooperative_updates)
-                {
-                    tracing::warn!("Cooperative enrichment failed for {metadata_sys}: {e}");
-                }
-                // Upsert LaunchBox-sourced rows into game_release_date BEFORE
-                // the resolver runs. The resolver rebuilds game_library's
-                // mirror columns from game_release_date; any rows we miss
-                // here would be cleared to NULL on the same write.
-                if !release_date_rows.is_empty()
-                    && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
-                {
-                    tracing::warn!("Release-date upsert failed for {metadata_sys}: {e}");
-                }
-                // Release-date resolver: rewrites game_library mirror columns
-                // from `game_release_date` for this system's ROMs.
-                if let Err(e) = LibraryDb::resolve_release_date_for_system(
-                    conn,
-                    &metadata_sys,
-                    region_pref,
-                    region_secondary,
-                ) {
-                    tracing::warn!("Release-date resolve failed for {metadata_sys}: {e}");
-                }
-            })
+            .try_write_with_timeout(
+                LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
+                move |conn| -> Result<()> {
+                    let mut first_error = None;
+                    if !developer_updates.is_empty()
+                        && let Err(e) =
+                            LibraryDb::update_developers(conn, &metadata_sys, &developer_updates)
+                    {
+                        tracing::warn!("Developer enrichment failed for {metadata_sys}: {e}");
+                        first_error.get_or_insert(e);
+                    }
+                    if !cooperative_updates.is_empty()
+                        && let Err(e) =
+                            LibraryDb::update_cooperative(conn, &metadata_sys, &cooperative_updates)
+                    {
+                        tracing::warn!("Cooperative enrichment failed for {metadata_sys}: {e}");
+                        first_error.get_or_insert(e);
+                    }
+                    // Upsert LaunchBox-sourced rows into game_release_date BEFORE
+                    // the resolver runs. The resolver rebuilds game_library's
+                    // mirror columns from game_release_date; any rows we miss
+                    // here would be cleared to NULL on the same write.
+                    if !release_date_rows.is_empty()
+                        && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
+                    {
+                        tracing::warn!("Release-date upsert failed for {metadata_sys}: {e}");
+                        first_error.get_or_insert(e);
+                    }
+                    // Release-date resolver: rewrites game_library mirror columns
+                    // from `game_release_date` for this system's ROMs.
+                    if let Err(e) = LibraryDb::resolve_release_date_for_system(
+                        conn,
+                        &metadata_sys,
+                        region_pref,
+                        region_secondary,
+                    ) {
+                        tracing::warn!("Release-date resolve failed for {metadata_sys}: {e}");
+                        first_error.get_or_insert(e);
+                    }
+                    first_error.map_or(Ok(()), Err)
+                },
+            )
             .await;
-        if let Err(e) = metadata_result {
-            tracing::warn!("Metadata enrichment write failed for {sys}: {e}");
+        let metadata_write_ms = metadata_started.elapsed().as_millis();
+        let mut failed = false;
+        match metadata_result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!("Metadata enrichment SQL failed for {sys}: {e}");
+                failed = true;
+            }
+            Err(e) => {
+                tracing::warn!("Metadata enrichment write failed for {sys}: {e}");
+                failed = true;
+            }
         }
 
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
         let detail_sys = sys.clone();
+        let detail_started = Instant::now();
         let detail_result = state
             .library_writer
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 // Always rebuilt (truncate + repopulate) so removed ROMs lose
                 // their description/resources on the next pass.
-                if let Err(e) = LibraryDb::replace_detail_metadata_and_resources_for_system(
+                LibraryDb::replace_detail_metadata_and_resources_for_system(
                     conn,
                     &detail_sys,
                     &description_rows,
                     &resource_rows,
-                ) {
-                    tracing::warn!("game detail/resource rebuild failed for {detail_sys}: {e}");
-                }
+                )
             })
             .await;
-        if let Err(e) = detail_result {
-            tracing::warn!("Detail/resource enrichment write failed for {sys}: {e}");
+        let detail_write_ms = detail_started.elapsed().as_millis();
+        match detail_result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!("Detail/resource enrichment SQL failed for {sys}: {e}");
+                failed = true;
+            }
+            Err(e) => {
+                tracing::warn!("Detail/resource enrichment write failed for {sys}: {e}");
+                failed = true;
+            }
         }
 
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
         let box_art_sys = sys.clone();
+        let box_art_started = Instant::now();
         let box_art_result = state
             .library_writer
-            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                if !enrichments.is_empty()
-                    && let Err(e) =
-                        LibraryDb::update_box_art_genre_rating(conn, &box_art_sys, &enrichments)
-                {
-                    tracing::warn!("Enrichment failed for {box_art_sys}: {e}");
-                }
-            })
+            .try_write_with_timeout(
+                LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
+                move |conn| -> Result<()> {
+                    let mut first_error = None;
+                    if !enrichments.is_empty()
+                        && let Err(e) =
+                            LibraryDb::update_box_art_genre_rating(conn, &box_art_sys, &enrichments)
+                    {
+                        tracing::warn!("Enrichment failed for {box_art_sys}: {e}");
+                        first_error.get_or_insert(e);
+                    }
+                    first_error.map_or(Ok(()), Err)
+                },
+            )
             .await;
-        if let Err(e) = box_art_result {
-            tracing::warn!("Box art/genre/rating enrichment write failed for {sys}: {e}");
+        let box_art_write_ms = box_art_started.elapsed().as_millis();
+        match box_art_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::warn!("Box art/genre/rating enrichment SQL failed for {sys}: {e}");
+                failed = true;
+            }
+            Err(e) => {
+                tracing::warn!("Box art/genre/rating enrichment write failed for {sys}: {e}");
+                failed = true;
+            }
         }
 
         tracing::debug!(
             "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
         );
-        Ok(())
+        tracing::info!(
+            "L2 enrichment profile: {system}: roms={} visible_ms={visible_ms} setup_ms={setup_ms} match_ms={match_ms} manifest_ms={manifest_ms} metadata_write_ms={metadata_write_ms} detail_write_ms={detail_write_ms} box_art_write_ms={box_art_write_ms} total_ms={} dev={dev_count} coop={coop_count} dates={date_count} desc={desc_count} resources={resource_count} enrich={enrich_count}",
+            rom_filenames.len(),
+            enrichment_started.elapsed().as_millis()
+        );
+        if failed {
+            Err(Error::Other(format!("enrichment failed for {system}")))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -430,17 +513,15 @@ async fn queue_on_demand_download(
                     );
                     let sys = system_for_hook.clone();
                     let rom = rom_filename_for_hook.clone();
-                    if let Err(e) = library_pool
+                    match library_pool
                         .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                            if let Err(e) =
-                                LibraryDb::update_box_art_url(conn, &sys, &rom, Some(&url))
-                            {
-                                tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
-                            }
+                            LibraryDb::update_box_art_url(conn, &sys, &rom, Some(&url))
                         })
                         .await
                     {
-                        tracing::warn!("Box art URL write failed: {e}");
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => tracing::warn!("Box art URL SQL failed: {e}"),
+                        Err(e) => tracing::warn!("Box art URL write failed: {e}"),
                     }
                     state_for_invalidate.invalidate_user_caches().await;
                 }

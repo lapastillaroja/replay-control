@@ -60,6 +60,7 @@ pub fn ManualSection(
 
     // Search state (Phase 2)
     let search_results = RwSignal::new(Vec::<ManualRecommendation>::new());
+    let manual_suggestions = RwSignal::new(Vec::<ManualRecommendation>::new());
     let searching = RwSignal::new(false);
     let search_error = RwSignal::new(Option::<String>::None);
     let searched = RwSignal::new(false);
@@ -78,11 +79,8 @@ pub fn ManualSection(
     );
 
     let _sync_suggestions = Effect::new(move || {
-        if let Some(Ok(results)) = suggestions_resource.get()
-            && !results.is_empty()
-        {
-            search_results.set(results);
-            searched.set(true);
+        if let Some(Ok(results)) = suggestions_resource.get() {
+            manual_suggestions.set(results);
         }
     });
 
@@ -177,6 +175,14 @@ pub fn ManualSection(
     let has_docs = move || !game_docs.read().is_empty();
     let has_local = move || !local_manuals.read().is_empty();
     let has_content = move || has_docs() || has_local();
+    let has_suggestions = Signal::derive(move || !manual_suggestions.read().is_empty());
+    let displayed_results = Signal::derive(move || {
+        if searched.get() {
+            search_results.get()
+        } else {
+            manual_suggestions.get()
+        }
+    });
 
     use_focus_scroll(section_ref, move || focus_on_mount.get());
 
@@ -216,7 +222,7 @@ pub fn ManualSection(
             </Show>
 
             // No manual message
-            <Show when=move || !has_content() && !searched.get()>
+            <Show when=move || !has_content() && !searched.get() && !has_suggestions.get()>
                 <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoManual)}</p>
             </Show>
 
@@ -246,9 +252,9 @@ pub fn ManualSection(
             </Show>
 
             // Search results
-            <Show when=move || searched.get()>
+            <Show when=move || searched.get() || has_suggestions.get()>
                 <ManualSearchResults
-                    results=search_results
+                    results=displayed_results
                     is_searching=searching
                     downloading_url=downloading_url
                     on_download=on_download
@@ -407,7 +413,7 @@ where
 /// Panel showing manual search results.
 #[component]
 fn ManualSearchResults<F>(
-    results: RwSignal<Vec<ManualRecommendation>>,
+    #[prop(into)] results: Signal<Vec<ManualRecommendation>>,
     is_searching: RwSignal<bool>,
     downloading_url: RwSignal<Option<String>>,
     on_download: F,

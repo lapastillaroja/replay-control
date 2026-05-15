@@ -1330,10 +1330,12 @@ impl BackgroundManager {
 
         let mut total_roms = 0usize;
         for (i, sys) in systems.iter().enumerate() {
+            let system_started = Instant::now();
             state.ensure_storage_generation(generation)?;
             report_system(state, progress, i, sys.display_name, false);
             let scan_inputs =
                 Self::scan_inputs_for_system(state, sys.folder_name, options, generation).await?;
+            let scan_started = Instant::now();
             let scan_result = state
                 .cache
                 .scan_and_cache_system_with_inputs(
@@ -1345,6 +1347,7 @@ impl BackgroundManager {
                     &scan_inputs,
                 )
                 .await;
+            let scan_ms = scan_started.elapsed().as_millis();
             match scan_result {
                 Ok(roms) => {
                     if !roms.is_empty() {
@@ -1360,6 +1363,7 @@ impl BackgroundManager {
                     // when a previously-populated system goes empty).
                     state.ensure_storage_generation(generation)?;
                     report_system(state, progress, i, sys.display_name, true);
+                    let enrich_started = Instant::now();
                     state
                         .cache
                         .enrich_system_cache_with_cancellation(
@@ -1368,12 +1372,21 @@ impl BackgroundManager {
                             scan_inputs.cancellation(),
                         )
                         .await?;
+                    let enrich_ms = enrich_started.elapsed().as_millis();
+                    tracing::info!(
+                        "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms={enrich_ms} total_ms={}",
+                        sys.folder_name,
+                        roms.len(),
+                        system_started.elapsed().as_millis()
+                    );
                 }
                 Err(e) if Self::is_storage_changed(&e) => return Err(e),
-                Err(e) => tracing::warn!(
-                    "L2 populate: {} skipped (preserving cached state): {e}",
-                    sys.folder_name
-                ),
+                Err(e) => {
+                    tracing::warn!(
+                        "L2 populate: {} skipped after {scan_ms}ms (preserving cached state): {e}",
+                        sys.folder_name
+                    );
+                }
             }
         }
 

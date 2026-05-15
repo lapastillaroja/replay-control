@@ -11,7 +11,7 @@ pub mod ssr_snapshot;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::db_pool::DbError;
@@ -269,35 +269,66 @@ impl LibraryService {
         }
 
         tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
-        let mut roms = replay_control_core_server::roms::list_roms(
+        let total_started = Instant::now();
+        let list_started = Instant::now();
+        let mut roms = match replay_control_core_server::roms::list_roms(
             storage,
             system,
             region_pref,
             region_secondary,
         )
-        .await?;
+        .await
+        {
+            Ok(roms) => roms,
+            Err(e) => {
+                tracing::warn!(
+                    "L2 scan profile: {system}: list failed after {}ms: {e}",
+                    list_started.elapsed().as_millis()
+                );
+                return Err(e);
+            }
+        };
+        let list_ms = list_started.elapsed().as_millis();
         tracing::debug!("L3 reconcile scan for {system}: found {} ROMs", roms.len());
         scan_inputs.ensure_current()?;
 
+        let hash_started = Instant::now();
         let hash_results = self
             .hash_roms_for_system(storage, system, &mut roms, scan_inputs)
             .await;
+        let hash_ms = hash_started.elapsed().as_millis();
         scan_inputs.ensure_current()?;
 
         let arc = Arc::new(roms);
 
-        self.save_roms_to_db(
-            storage,
-            system,
-            &arc,
-            &system_dir,
-            &hash_results,
-            region_pref,
-            region_secondary,
-            db,
-            scan_inputs,
-        )
-        .await?;
+        let save_started = Instant::now();
+        let save_result = self
+            .save_roms_to_db(
+                storage,
+                system,
+                &arc,
+                &system_dir,
+                &hash_results,
+                region_pref,
+                region_secondary,
+                db,
+                scan_inputs,
+            )
+            .await;
+        let save_ms = save_started.elapsed().as_millis();
+        if let Err(e) = save_result {
+            tracing::warn!(
+                "L2 scan profile: {system}: save failed after {save_ms}ms (roms={}, list_ms={list_ms}, hash_ms={hash_ms}): {e}",
+                arc.len()
+            );
+            return Err(e);
+        }
+
+        tracing::info!(
+            "L2 scan profile: {system}: roms={} list_ms={list_ms} hash_ms={hash_ms} save_ms={save_ms} total_ms={}",
+            arc.len(),
+            total_started.elapsed().as_millis()
+        );
 
         Ok(arc)
     }

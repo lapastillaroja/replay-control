@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::RegionPreference;
@@ -99,7 +100,10 @@ impl LibraryService {
             return HashMap::new();
         }
 
+        let hash_profile_started = Instant::now();
+
         // Build input list: (rom_filename, rom_path, size_bytes).
+        let input_started = Instant::now();
         let rom_files: Vec<(String, String, u64)> = roms
             .iter()
             .filter(|r| !r.is_m3u) // Skip M3U playlists
@@ -111,7 +115,9 @@ impl LibraryService {
                 )
             })
             .collect();
+        let input_ms = input_started.elapsed().as_millis();
 
+        let hash_started = Instant::now();
         let hash_result = rom_hash::hash_and_identify_with_options(
             system,
             &rom_files,
@@ -122,10 +128,12 @@ impl LibraryService {
             },
         )
         .await;
+        let hash_ms = hash_started.elapsed().as_millis();
         let stats = hash_result.stats;
         log_hash_stats(system, stats);
 
         // Build a lookup map for applying results.
+        let display_started = Instant::now();
         let mut result_map: HashMap<String, HashResult> = HashMap::new();
         for result in hash_result.results {
             result_map.insert(result.rom_filename.clone(), result);
@@ -163,6 +171,7 @@ impl LibraryService {
                 }
             }
         }
+        let display_ms = display_started.elapsed().as_millis();
 
         if !result_map.is_empty() {
             let matched = result_map
@@ -175,6 +184,19 @@ impl LibraryService {
                 matched
             );
         }
+
+        tracing::info!(
+            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} input_ms={input_ms} hash_ms={hash_ms} display_ms={display_ms} total_ms={}",
+            rom_files.len(),
+            result_map.len(),
+            stats.reused_exact,
+            stats.reused_migrated,
+            stats.reused_size_only,
+            stats.computed,
+            stats.forced_computed,
+            stats.skipped,
+            hash_profile_started.elapsed().as_millis()
+        );
 
         result_map
     }
@@ -194,15 +216,20 @@ impl LibraryService {
         db: &LibraryWritePool,
         scan_inputs: &ScanInputs,
     ) -> Result<()> {
+        let save_profile_started = Instant::now();
+        let mtime_started = Instant::now();
         let mtime_secs = dir_mtime_secs(system_dir);
+        let mtime_ms = mtime_started.elapsed().as_millis();
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
+        let build_started = Instant::now();
         let cached_roms = replay_control_core_server::game_entry_builder::build_game_entries(
             system,
             roms,
             hash_results,
         )
         .await;
+        let build_ms = build_started.elapsed().as_millis();
 
         tracing::debug!(
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
@@ -212,6 +239,7 @@ impl LibraryService {
         let system_for_save = system_owned.clone();
         let cached_roms_for_db = cached_roms.clone();
         scan_inputs.ensure_current()?;
+        let save_write_started = Instant::now();
         let result = db
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 LibraryDb::save_system_entries(
@@ -222,17 +250,22 @@ impl LibraryService {
                 )
             })
             .await;
+        let save_write_ms = save_write_started.elapsed().as_millis();
         match result {
             Ok(Ok(())) => {
                 tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
 
                 // Populate TGDB aliases from embedded build-time data.
+                let aliases_started = Instant::now();
                 self.populate_tgdb_aliases(system, &cached_roms, db, scan_inputs)
                     .await?;
+                let aliases_ms = aliases_started.elapsed().as_millis();
 
                 // Populate game_series from embedded Wikidata data.
+                let series_started = Instant::now();
                 self.populate_wikidata_series(system, &cached_roms, db, scan_inputs)
                     .await?;
+                let series_ms = series_started.elapsed().as_millis();
                 scan_inputs.ensure_current()?;
 
                 // Seed `game_release_date` in three steps:
@@ -248,9 +281,12 @@ impl LibraryService {
                 // The later L2 enrichment pass upserts LaunchBox-sourced
                 // rows (`launchbox` source, world region, day-precision
                 // when the XML provides it) before re-running the resolver.
+                let static_release_started = Instant::now();
                 let static_data =
                     replay_control_core_server::library_db::fetch_static_release_data().await;
+                let static_release_ms = static_release_started.elapsed().as_millis();
                 scan_inputs.ensure_current()?;
+                let release_write_started = Instant::now();
                 let release_result = db
                     .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                         if let Err(e) = LibraryDb::seed_release_dates_from_static_for_system(
@@ -281,9 +317,15 @@ impl LibraryService {
                         }
                     })
                     .await;
+                let release_write_ms = release_write_started.elapsed().as_millis();
                 if let Err(e) = release_result {
                     tracing::warn!("Release-date write failed for {system}: {e}");
                 }
+                tracing::info!(
+                    "L2 save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} aliases_ms={aliases_ms} series_ms={series_ms} static_release_ms={static_release_ms} release_write_ms={release_write_ms} total_ms={}",
+                    cached_roms.len(),
+                    save_profile_started.elapsed().as_millis()
+                );
                 Ok(())
             }
             Ok(Err(e)) => {

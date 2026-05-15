@@ -31,15 +31,19 @@ pub mod keys {
 
 /// Read a value from `library_meta`. Returns `None` for missing keys.
 pub fn read_meta(conn: &Connection, key: &str) -> Option<String> {
+    read_meta_result(conn, key).ok().flatten()
+}
+
+/// Read a value from `library_meta`, preserving SQL errors.
+pub fn read_meta_result(conn: &Connection, key: &str) -> Result<Option<String>> {
     conn.query_row(
         "SELECT value FROM library_meta WHERE key = ?1",
         params![key],
         |row| row.get::<_, Option<String>>(0),
     )
     .optional()
-    .ok()
-    .flatten()
-    .flatten()
+    .map(|value| value.flatten())
+    .map_err(|e| Error::Other(format!("read library_meta {key}: {e}")))
 }
 
 /// Write (or clear) a key in `library_meta`. Pass `value = None` to set

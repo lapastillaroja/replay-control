@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use replay_control_core::error::Result;
+use replay_control_core::error::{Error, Result};
 use replay_control_core::title_utils::{TITLE_NORM_VERSION, normalize_title_for_metadata};
 use replay_control_core::{systems, title_utils};
 
@@ -42,20 +42,26 @@ pub struct ReconcileStats {
 /// is the LAST step so a partial failure leaves the stamp behind and the
 /// next boot retries.
 pub async fn reconcile_library_normalized_titles(pool: &DbPool) -> Result<ReconcileStats> {
-    let stored = pool
-        .read(|conn| library_meta::read_meta(conn, library_meta::keys::TITLE_NORM_VERSION))
+    let stored = match pool
+        .try_read(|conn| {
+            library_meta::read_meta_result(conn, library_meta::keys::TITLE_NORM_VERSION)
+        })
         .await
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok());
+    {
+        Ok(Ok(value)) => value.and_then(|s| s.parse::<u32>().ok()),
+        Ok(Err(e)) => return Err(e),
+        Err(e) => return Err(Error::Other(e.to_string())),
+    };
 
     if stored == Some(TITLE_NORM_VERSION) {
         return Ok(ReconcileStats::default());
     }
 
-    let systems = pool
-        .read(|conn| LibraryDb::active_systems(conn).unwrap_or_default())
-        .await
-        .unwrap_or_default();
+    let systems = match pool.try_read(LibraryDb::active_systems).await {
+        Ok(Ok(systems)) => systems,
+        Ok(Err(e)) => return Err(e),
+        Err(e) => return Err(Error::Other(e.to_string())),
+    };
 
     let mut stats = ReconcileStats::default();
     for system in &systems {
@@ -77,8 +83,14 @@ pub async fn reconcile_library_normalized_titles(pool: &DbPool) -> Result<Reconc
         .await
     {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => tracing::warn!("title_norm reconcile: stamp SQL failed: {e}"),
-        Err(e) => tracing::warn!("title_norm reconcile: stamp write failed: {e}"),
+        Ok(Err(e)) => {
+            tracing::warn!("title_norm reconcile: stamp SQL failed: {e}");
+            return Err(e);
+        }
+        Err(e) => {
+            tracing::warn!("title_norm reconcile: stamp write failed: {e}");
+            return Err(Error::Other(e.to_string()));
+        }
     }
 
     tracing::info!(
@@ -125,17 +137,19 @@ async fn rebuild_system(pool: &DbPool, system: &str) -> Result<usize> {
 
     let sys = system.to_string();
     let write_result = pool
-        .try_write(move |conn| {
-            LibraryDb::update_normalized_titles(conn, &sys, &updates).unwrap_or(0)
-        })
+        .try_write(move |conn| LibraryDb::update_normalized_titles(conn, &sys, &updates))
         .await;
     match write_result {
-        Ok(count) => Ok(count),
+        Ok(Ok(count)) => Ok(count),
+        Ok(Err(e)) => {
+            tracing::warn!("title_norm reconcile: normalized-title SQL failed for {system}: {e}");
+            Err(e)
+        }
         Err(e) => {
             tracing::warn!(
                 "title_norm reconcile: normalized-title update failed for {system}: {e}"
             );
-            Ok(0)
+            Err(Error::Other(e.to_string()))
         }
     }
 }
