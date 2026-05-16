@@ -21,6 +21,7 @@ import pytest
 from conftest import PI_URL, exec_cmd
 
 SEL_CORRUPTION_BANNER = ".corruption-banner"
+SEL_HYDRATED_CORRUPTION_BANNER = ".corruption-banner.is-hydrated"
 USER_DATA_DB = "/media/usb/.replay-control/user_data.db"
 # library.db moved to a per-host central location keyed by storage id in
 # v0.4.0-beta.5. Resolve at runtime via the marker file so the test doesn't
@@ -78,6 +79,11 @@ def _corrupt_db_and_restart(db_path: str) -> None:
     exec_cmd(f"rm -f {db_path}-wal {db_path}-shm {db_path}-journal")
     exec_cmd("systemctl start replay-control")
     _wait_for_server()
+
+
+def _wait_for_hydrated_banner(page):
+    """Wait until the SSR banner has hydrated and click handlers are attached."""
+    page.locator(SEL_HYDRATED_CORRUPTION_BANNER).wait_for(timeout=15000)
 
 
 def _preserve_db(db_path: str):
@@ -156,7 +162,7 @@ def test_restore_from_backup_clears_banner_via_sse_push(
     _corrupt_db_and_restart(USER_DATA_DB)
 
     page.goto(pi_url, wait_until="load", timeout=30000)
-    page.locator(SEL_CORRUPTION_BANNER).wait_for(timeout=10000)
+    _wait_for_hydrated_banner(page)
 
     page.locator("button").filter(has_text="Restore from backup").click()
 
@@ -172,7 +178,7 @@ def test_reset_clears_banner_via_sse_push(page, pi_url, preserve_user_data):
     _corrupt_db_and_restart(USER_DATA_DB)
 
     page.goto(pi_url, wait_until="load", timeout=30000)
-    page.locator(SEL_CORRUPTION_BANNER).wait_for(timeout=10000)
+    _wait_for_hydrated_banner(page)
 
     page.locator("button.corruption-banner-btn-danger").click()
 

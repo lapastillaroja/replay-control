@@ -17,6 +17,7 @@ from conftest import (
     goto_settings,
     set_channel,
     wait_for_banner,
+    wait_for_banner_text,
 )
 
 
@@ -68,8 +69,7 @@ class TestChannelSwitch:
         page.locator(SEL_CHANNEL_SELECT).last.select_option("stable")
 
         # Re-check should show stable version
-        banner = wait_for_banner(page)
-        assert MOCK_STABLE_VERSION in banner.text_content()
+        wait_for_banner_text(page, MOCK_STABLE_VERSION)
 
     def test_switch_to_beta_shows_higher_version(self, clean_pi, page):
         set_channel("stable")
@@ -82,8 +82,7 @@ class TestChannelSwitch:
         page.locator(SEL_CHANNEL_SELECT).last.select_option("beta")
 
         # Re-check should show higher beta version
-        banner = wait_for_banner(page)
-        assert MOCK_BETA_VERSION in banner.text_content()
+        wait_for_banner_text(page, MOCK_BETA_VERSION)
 
 
 class TestCheckButton:

@@ -15,6 +15,11 @@ use crate::server_fns::{self, CorruptionStatus};
 #[component]
 pub fn CorruptionBanner() -> impl IntoView {
     let status = expect_context::<RwSignal<CorruptionStatus>>();
+    let hydrated = RwSignal::new(false);
+
+    Effect::new(move || {
+        hydrated.set(true);
+    });
 
     let rebuild_action = Action::new(|_: &()| async {
         let _ = server_fns::rebuild_corrupt_library().await;
@@ -33,7 +38,13 @@ pub fn CorruptionBanner() -> impl IntoView {
 
     view! {
         <Show when=move || any_corrupt() fallback=|| ()>
-            <div class="corruption-banner">
+            <div class=move || {
+                if hydrated.get() {
+                    "corruption-banner is-hydrated"
+                } else {
+                    "corruption-banner"
+                }
+            }>
                 <Show when=move || library_corrupt() fallback=|| ()>
                     <div class="corruption-banner-row">
                         <span>"Library database is corrupt."</span>

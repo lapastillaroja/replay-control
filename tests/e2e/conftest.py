@@ -48,8 +48,10 @@ PI_PASS = "replayos"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "container"))
 from mock_github import MOCK_BETA_VERSION, MOCK_STABLE_VERSION  # noqa: E402
 
-# Mock server port
+# Mock server port/control URL. Container runs can set MOCK_CONTROL_URL when
+# the mock server is reachable somewhere other than localhost.
 MOCK_PORT = os.environ.get("MOCK_PORT", "9999")
+MOCK_CONTROL_URL = os.environ.get("MOCK_CONTROL_URL", f"http://127.0.0.1:{MOCK_PORT}")
 
 # CSS selectors
 SEL_BANNER = ".update-banner"
@@ -149,7 +151,7 @@ def set_mock_downloads(fail: bool):
     from urllib.request import urlopen
     mode = "fail" if fail else "ok"
     try:
-        urlopen(f"http://127.0.0.1:{MOCK_PORT}/mock/downloads/{mode}", timeout=5)
+        urlopen(f"{MOCK_CONTROL_URL}/mock/downloads/{mode}", timeout=5)
     except Exception:
         pass
 
@@ -177,6 +179,15 @@ def wait_for_banner(page, timeout=30000):
     """Wait for the update banner to appear and return the locator."""
     banner = page.locator(SEL_BANNER)
     banner.wait_for(timeout=timeout)
+    return banner
+
+
+def wait_for_banner_text(page, text: str, timeout=30000):
+    """Wait for the update banner to be visible and contain specific text."""
+    from playwright.sync_api import expect
+
+    banner = wait_for_banner(page, timeout=timeout)
+    expect(banner).to_contain_text(text, timeout=timeout)
     return banner
 
 
