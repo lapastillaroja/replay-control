@@ -2622,6 +2622,8 @@ fn preflight_check(sources_dir: &Path) -> Result<(), String> {
          \nmame0285-arcade.xml additionally needs `7z` (p7zip-full) and `python3` \
          installed on the build host; without them download-arcade-data.sh skips it \
          with a warning, producing a catalog that omits MAME 0.285 games.\n\
+         \nRelease builds use the committed data/wikidata/series.json snapshot and \
+         should not query live Wikidata SPARQL.\n\
          \nOr pass --stub to build from replay-control-core/fixtures/ instead.\n",
     );
     Err(msg)

@@ -34,14 +34,21 @@ else
     data_missing=false
     [[ ! -d "$SCRIPT_DIR/data/arcade" || -z "$(ls "$SCRIPT_DIR/data/arcade/"*.dat "$SCRIPT_DIR/data/arcade/"*.xml 2>/dev/null)" ]] && data_missing=true
     [[ ! -f "$SCRIPT_DIR/data/thegamesdb-latest.json" ]] && data_missing=true
-    [[ ! -f "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
+    [[ ! -s "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
 
     if [[ "$data_missing" == "true" ]]; then
         echo "==> Downloading data files..."
         bash "$SCRIPT_DIR/scripts/download-arcade-data.sh"
         bash "$SCRIPT_DIR/scripts/download-metadata.sh"
         mkdir -p "$SCRIPT_DIR/data/wikidata"
-        python3 "$SCRIPT_DIR/scripts/wikidata-series-extract.py" > "$SCRIPT_DIR/data/wikidata/series.json"
+        if [[ ! -s "$SCRIPT_DIR/data/wikidata/series.json" ]]; then
+            if [[ "${CI:-}" == "true" ]]; then
+                echo "ERROR: data/wikidata/series.json is missing or empty." >&2
+                echo "Release builds use the committed Wikidata snapshot and must not query live SPARQL." >&2
+                exit 1
+            fi
+            python3 "$SCRIPT_DIR/scripts/wikidata-series-extract.py" > "$SCRIPT_DIR/data/wikidata/series.json"
+        fi
         echo "    Data files ready."
     else
         echo "==> Data files present, skipping download."

@@ -28,7 +28,7 @@ Both console and arcade databases map to a shared set of ~18 normalized genres: 
 
 ### Series Data
 
-~5,345 game series entries across 194+ franchises from [Wikidata](https://www.wikidata.org/), with sequel/prequel chains and ordinals. See [Game Series](game-series.md) for details.
+~5,345 game series entries across 194+ franchises from [Wikidata](https://www.wikidata.org/) (CC0), with sequel/prequel chains and ordinals. The repository carries a generated `data/wikidata/series.json` snapshot so release builds do not depend on live Wikidata SPARQL availability. See [Game Series](game-series.md) for details.
 
 ## External Metadata (Optional)
 

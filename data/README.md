@@ -51,6 +51,21 @@ because the API has a 1000 requests/month limit. Only the maintainer needs the k
 TGDB_API_KEY=your_key ./scripts/download-tgdb-lookups.sh
 ```
 
+### Wikidata series snapshot
+
+| File | Source | Description |
+|------|--------|-------------|
+| `wikidata/series.json` | [Wikidata](https://www.wikidata.org/) (CC0) | Game series, sequel, and prequel relationships used to build `catalog.sqlite` |
+
+This snapshot is checked into git because live Wikidata SPARQL queries are public
+and rate-limited. Release builds must use the committed snapshot instead of
+querying Wikidata during CI. To refresh it manually:
+
+```sh
+mkdir -p data/wikidata
+python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+```
+
 ## When to refresh
 
 Re-download when upstream data changes (e.g., a genre fix gets merged):
@@ -61,6 +76,9 @@ Re-download when upstream data changes (e.g., a genre fix gets merged):
 
 # Re-download arcade data only
 ./scripts/download-arcade-data.sh
+
+# Refresh Wikidata series data manually
+python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 ```
 
 After refreshing, rebuild to bake in the updated data:

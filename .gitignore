@@ -129,6 +129,8 @@ PLAN.md
 # Populate with: ./scripts/download-arcade-data.sh
 data/*
 !data/README.md
+!data/wikidata/
+!data/wikidata/series.json
 # Hand-curated arcade sources (e.g. Flycast Naomi/Atomiswave CSV) live in data/arcade/
 # and ARE tracked in git.
 !data/arcade
