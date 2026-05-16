@@ -47,7 +47,9 @@ Where the built-in database already has a value (e.g., genre), it takes priority
 
 ### Bundled Manual Links
 
-Release builds also bundle manual links from MiSTer Manual Downloader and Retrokit into `catalog.sqlite`. During scan/enrichment, matching manual resources are copied into the per-storage library cache. Game detail pages can then show manual suggestions offline without fetching source indexes at request time; saving a manual downloads and validates the file so it remains available later if the appliance is offline.
+Release builds also bundle manual links from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals) into `catalog.sqlite`. Only URL indexes are bundled; the manual PDF/text file itself is downloaded and validated only when the user saves it from a game detail page.
+
+During scan/enrichment, matching manual resources are copied into the per-storage library cache. Game detail pages can then show manual suggestions offline without fetching source indexes at request time; saving a manual downloads and validates the file so it remains available later if the appliance is offline. The metadata page shows the total bundled manual-link count in the built-in data section.
 
 ### Box Art and Screenshots
 

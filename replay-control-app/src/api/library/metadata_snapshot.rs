@@ -180,19 +180,21 @@ fn build_data_source_summary(stats: Option<DataSourceStats>) -> DataSourceSummar
 }
 
 async fn build_builtin_stats() -> BuiltinDbStats {
-    use replay_control_core_server::{arcade_db, game_db, series_db};
+    use replay_control_core_server::{arcade_db, catalog_pool, game_db, series_db};
     let (
         arcade_entries,
         game_rom_entries,
         game_system_count,
         wikidata_series_entries,
         wikidata_series_count,
+        catalog_resources,
     ) = tokio::join!(
         arcade_db::entry_count(),
         game_db::total_rom_entries(),
         game_db::system_count(),
         series_db::entry_count(),
         async { series_db::all_series_names().await.len() },
+        catalog_pool::catalog_resource_stats(),
     );
     BuiltinDbStats {
         arcade_entries,
@@ -201,5 +203,8 @@ async fn build_builtin_stats() -> BuiltinDbStats {
         game_system_count,
         wikidata_series_entries,
         wikidata_series_count,
+        manual_resource_entries: catalog_resources.manual_resources,
+        mister_manual_resource_entries: catalog_resources.mister_manual_resources,
+        retrokit_manual_resource_entries: catalog_resources.retrokit_manual_resources,
     }
 }

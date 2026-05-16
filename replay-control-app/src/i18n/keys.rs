@@ -398,6 +398,7 @@ pub enum Key {
     MetadataBuiltinConsoleSummarySystems,
     MetadataBuiltinWikidataEntries,
     MetadataBuiltinWikidataSeries,
+    MetadataBuiltinManualLinks,
     MetadataBuiltinHint,
 
     // Library summary cards

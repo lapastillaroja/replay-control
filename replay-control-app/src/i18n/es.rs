@@ -429,8 +429,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinConsoleSummarySystems => "sistemas",
         Key::MetadataBuiltinWikidataEntries => "entradas de series de Wikidata en",
         Key::MetadataBuiltinWikidataSeries => "sagas",
+        Key::MetadataBuiltinManualLinks => {
+            "enlaces a manuales de MiSTer Manual Downloader y Retrokit"
+        }
         Key::MetadataBuiltinHint => {
-            "Nombres, géneros, desarrolladores, distribuidores, número de jugadores y otros metadatos incluidos en la app. No se necesita importar nada."
+            "Nombres, géneros, desarrolladores, distribuidores, número de jugadores, enlaces a manuales y otros metadatos incluidos en la app. No se necesita importar nada."
         }
 
         // Library summary cards
@@ -466,7 +469,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::MetadataAttribution => "Atribución",
         Key::MetadataAttributionText => {
-            "Metadatos de juegos de TheGamesDB, No-Intro y libretro-database. Descripciones y valoraciones de LaunchBox. Carátulas y capturas de libretro-thumbnails. Datos de series de Wikidata (CC0). Los datos se almacenan localmente para uso sin conexión."
+            "Metadatos de juegos de TheGamesDB, No-Intro y libretro-database. Descripciones y valoraciones de LaunchBox. Carátulas y capturas de libretro-thumbnails. Datos de series de Wikidata (CC0). Enlaces a manuales de MiSTer Manual Downloader y Retrokit; los PDF solo se descargan al guardarlos. Los datos se almacenan localmente para uso sin conexión."
         }
 
         // Logs

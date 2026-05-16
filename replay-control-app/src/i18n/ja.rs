@@ -425,8 +425,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinConsoleSummarySystems => "システム",
         Key::MetadataBuiltinWikidataEntries => "件のWikidataシリーズエントリ、",
         Key::MetadataBuiltinWikidataSeries => "シリーズ",
+        Key::MetadataBuiltinManualLinks => {
+            "件のMiSTer Manual Downloader / Retrokit由来のマニュアルリンク"
+        }
         Key::MetadataBuiltinHint => {
-            "名前、ジャンル、開発元、発売元、プレイヤー数などのメタデータはアプリに内蔵されています。インポート不要です。"
+            "名前、ジャンル、開発元、発売元、プレイヤー数、マニュアルリンクなどのメタデータはアプリに内蔵されています。インポート不要です。"
         }
 
         // Library summary cards
@@ -462,7 +465,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::MetadataAttribution => "出典",
         Key::MetadataAttributionText => {
-            "ゲームメタデータはTheGamesDB、No-Intro、libretro-databaseから。説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。シリーズデータはWikidata（CC0）から。データはオフライン利用のためローカルにキャッシュされています。"
+            "ゲームメタデータはTheGamesDB、No-Intro、libretro-databaseから。説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。シリーズデータはWikidata（CC0）から。マニュアルリンクはMiSTer Manual DownloaderとRetrokitから取得し、PDFは保存時のみダウンロードされます。データはオフライン利用のためローカルにキャッシュされています。"
         }
 
         // Logs

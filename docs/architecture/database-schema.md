@@ -167,7 +167,7 @@ Per-region console release dates, sourced from TGDB during catalog build.
 
 ### catalog_game_resource
 
-Catalog-bundled resources linked to normalized game titles. Currently used for manuals from MiSTer Manual Downloader and Retrokit. These rows are copied into `library.db.library_game_resource` during scan/enrichment so game-detail reads stay on the library DB.
+Catalog-bundled resources linked to normalized game titles. Currently used for manual URL indexes from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals). Only URLs are bundled in `catalog.sqlite`; PDFs are downloaded later only when a user saves a manual. These rows are copied into `library.db.library_game_resource` during scan/enrichment so game-detail reads stay on the library DB.
 
 | Column | Type | Purpose |
 |--------|------|---------|

@@ -188,6 +188,8 @@ replay-control/
 - **TheGamesDB** — game metadata (year, genre, developer, publisher, players, coop, rating), via [TheGamesDB](https://thegamesdb.net/) (GPLv3 codebase). Name lookups fetched via API at build time.
 - **MAME / FBNeo** — arcade databases, via [libretro-database](https://github.com/libretro/libretro-database) (MIT/MAME License)
 - **Wikidata** — game series relationships (CC0)
+- **MiSTer Manual Downloader** — bundled manual link indexes ([GitHub](https://github.com/antiKk/MiSTer_ManualDownloader)); only URLs are redistributed, PDFs download on demand when a user saves a manual
+- **Retrokit manuals** — bundled manual link indexes from the [retrokit-manuals Archive.org collection](https://archive.org/download/retrokit-manuals); only URLs are redistributed, PDFs download on demand when a user saves a manual
 
 ### Runtime Data (user-initiated downloads)
 - **LaunchBox XML** — game descriptions, ratings, publishers ([launchbox-app.com](https://gamesdb.launchbox-app.com/)) — not redistributed, downloaded by user

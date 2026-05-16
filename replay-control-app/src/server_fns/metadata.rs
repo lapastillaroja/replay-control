@@ -256,12 +256,16 @@ pub struct BuiltinDbStats {
     pub game_system_count: usize,
     pub wikidata_series_entries: usize,
     pub wikidata_series_count: usize,
+    pub manual_resource_entries: usize,
+    pub mister_manual_resource_entries: usize,
+    pub retrokit_manual_resource_entries: usize,
 }
 
 /// Get stats for the bundled catalog (arcade, game, and series reference data).
 #[server(prefix = "/sfn")]
 pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
-    use replay_control_core_server::{arcade_db, game_db, series_db};
+    use replay_control_core_server::{arcade_db, catalog_pool, game_db, series_db};
+    let catalog_resources = catalog_pool::catalog_resource_stats().await;
 
     Ok(BuiltinDbStats {
         arcade_entries: arcade_db::entry_count().await,
@@ -270,6 +274,9 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
         game_system_count: game_db::system_count().await,
         wikidata_series_entries: series_db::entry_count().await,
         wikidata_series_count: series_db::all_series_names().await.len(),
+        manual_resource_entries: catalog_resources.manual_resources,
+        mister_manual_resource_entries: catalog_resources.mister_manual_resources,
+        retrokit_manual_resource_entries: catalog_resources.retrokit_manual_resources,
     })
 }
 

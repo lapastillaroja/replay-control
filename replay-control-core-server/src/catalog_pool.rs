@@ -198,6 +198,41 @@ pub struct CatalogGameResourceRow {
     pub mime_type: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CatalogResourceStats {
+    pub manual_resources: usize,
+    pub mister_manual_resources: usize,
+    pub retrokit_manual_resources: usize,
+}
+
+pub async fn catalog_resource_stats() -> CatalogResourceStats {
+    with_catalog(|conn| {
+        let mut stmt = conn.prepare_cached(
+            "SELECT source, COUNT(*)
+             FROM catalog_game_resource
+             WHERE resource_type = 'manual'
+             GROUP BY source",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut stats = CatalogResourceStats::default();
+        for row in rows {
+            let (source, count) = row?;
+            let count = count.max(0) as usize;
+            stats.manual_resources += count;
+            match source.as_str() {
+                "mister_manuals" => stats.mister_manual_resources = count,
+                "retrokit" => stats.retrokit_manual_resources = count,
+                _ => {}
+            }
+        }
+        Ok(stats)
+    })
+    .await
+    .unwrap_or_default()
+}
+
 pub async fn catalog_resource_version() -> Option<String> {
     with_catalog(|conn| {
         conn.query_row(

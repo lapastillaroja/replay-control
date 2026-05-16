@@ -421,8 +421,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinConsoleSummarySystems => "systems",
         Key::MetadataBuiltinWikidataEntries => "Wikidata series entries across",
         Key::MetadataBuiltinWikidataSeries => "series",
+        Key::MetadataBuiltinManualLinks => {
+            "manual links from MiSTer Manual Downloader and Retrokit"
+        }
         Key::MetadataBuiltinHint => {
-            "Names, genres, developers, publishers, player counts, and other metadata compiled into the app. No import needed."
+            "Names, genres, developers, publishers, player counts, manual links, and other metadata compiled into the app. No import needed."
         }
 
         // Library summary cards
@@ -458,7 +461,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::MetadataAttribution => "Attribution",
         Key::MetadataAttributionText => {
-            "Game metadata from TheGamesDB, No-Intro, and libretro-database. Descriptions and ratings from LaunchBox. Box art and screenshots from libretro-thumbnails. Series data from Wikidata (CC0). Data is cached locally for offline use."
+            "Game metadata from TheGamesDB, No-Intro, and libretro-database. Descriptions and ratings from LaunchBox. Box art and screenshots from libretro-thumbnails. Series data from Wikidata (CC0). Manual links from MiSTer Manual Downloader and Retrokit; PDFs are downloaded only when saved. Data is cached locally for offline use."
         }
 
         // Logs
