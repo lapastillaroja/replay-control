@@ -248,6 +248,76 @@ pub struct SystemMeta {
     pub total_size_bytes: u64,
 }
 
+/// Shared SQL `ORDER BY` prefix that ranks rows by release date (oldest first,
+/// undated last, day-precision before month before year). Used by series,
+/// recommendation, and cross-system queries; each call site appends its own
+/// trailing tie-breaker columns (e.g. `display_name`).
+pub(crate) const ORDER_BY_RELEASE_DATE: &str = "release_date IS NULL,
+    substr(release_date, 1, 4),
+    release_date,
+    CASE release_precision
+        WHEN 'day' THEN 0
+        WHEN 'month' THEN 1
+        WHEN 'year' THEN 2
+        ELSE 3
+    END";
+
+/// Combine `game_library_meta`, LaunchBox per-system entries, thumbnail
+/// counts, coverage stats, and arcade driver-status counts into the
+/// per-system rows shown on `/settings/metadata`. Pure transform; both
+/// the cached snapshot and the live server fn use it so the two paths
+/// can't drift.
+pub fn build_system_coverage(
+    system_meta: Vec<SystemMeta>,
+    entries_per_system: Vec<(String, usize)>,
+    thumbnails_per_system: Vec<(String, usize)>,
+    coverage_stats: Vec<SystemCoverageStats>,
+    driver_status: std::collections::HashMap<String, DriverStatusCounts>,
+) -> Vec<SystemCoverage> {
+    let mut meta_map: std::collections::HashMap<String, usize> =
+        entries_per_system.into_iter().collect();
+    let mut thumb_map: std::collections::HashMap<String, usize> =
+        thumbnails_per_system.into_iter().collect();
+    let mut stats_map: std::collections::HashMap<String, SystemCoverageStats> = coverage_stats
+        .into_iter()
+        .map(|s| (s.system.clone(), s))
+        .collect();
+    let mut driver_map = driver_status;
+
+    let mut coverage: Vec<SystemCoverage> = system_meta
+        .into_iter()
+        .filter(|s| s.rom_count > 0)
+        .map(|s| {
+            let with_metadata = meta_map.remove(&s.system).unwrap_or(0);
+            let with_thumbnail = thumb_map.remove(&s.system).unwrap_or(0);
+            let stats = stats_map.remove(&s.system).unwrap_or_default();
+            let driver_status = driver_map.remove(&s.system);
+            SystemCoverage {
+                display_name: replay_control_core::systems::system_display_name(&s.system),
+                total_games: s.rom_count,
+                with_thumbnail: with_thumbnail.min(s.rom_count),
+                with_genre: stats.with_genre,
+                with_developer: stats.with_developer,
+                with_rating: stats.with_rating,
+                size_bytes: stats.size_bytes,
+                with_description: with_metadata.min(s.rom_count),
+                clone_count: stats.clone_count,
+                hack_count: stats.hack_count,
+                translation_count: stats.translation_count,
+                special_count: stats.special_count,
+                coop_count: stats.coop_count,
+                verified_count: stats.verified_count,
+                min_year: stats.min_year,
+                max_year: stats.max_year,
+                driver_status,
+                system: s.system,
+            }
+        })
+        .collect();
+    coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+    coverage
+}
+
 /// SQL to create the `game_release_date` table (multi-region, full-precision).
 const CREATE_GAME_RELEASE_DATE_SQL: &str = "
     CREATE TABLE IF NOT EXISTS game_release_date (

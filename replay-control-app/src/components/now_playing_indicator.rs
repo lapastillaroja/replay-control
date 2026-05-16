@@ -23,9 +23,6 @@ pub fn NowPlayingIndicator() -> impl IntoView {
                     ..
                 } => {
                     let elapsed = use_live_elapsed_secs(started_at_unix_secs);
-                    // Memo so the 1 Hz clock signal can't propagate to the text
-                    // node every second — only fires the subscriber when the
-                    // minute-granularity output actually changes.
                     let elapsed_text = Memo::new(move |_| {
                         format_elapsed_short(elapsed.get()).unwrap_or_default()
                     });

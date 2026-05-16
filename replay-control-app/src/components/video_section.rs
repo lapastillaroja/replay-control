@@ -279,48 +279,17 @@ pub fn GameVideoSection(
             // Search buttons
             <h3 class="video-subsection-title">{move || t(i18n.locale.get(), Key::GameDetailFindOnlineVideos)}</h3>
             <div class="video-search-buttons">
-                <button
-                    class="game-action-btn"
-                    class:active=move || active_search.get() == Some(VideoSearchKind::Trailer)
-                    prop:disabled=move || active_searching.get()
-                    on:click=move |_| start_search(VideoSearchKind::Trailer)
-                >
-                    {move || {
-                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::Trailer) {
-                            t(i18n.locale.get(), Key::CommonSearching)
-                        } else {
-                            t(i18n.locale.get(), VideoSearchKind::Trailer.label_key())
-                        }
-                    }}
-                </button>
-                <button
-                    class="game-action-btn"
-                    class:active=move || active_search.get() == Some(VideoSearchKind::Gameplay)
-                    prop:disabled=move || active_searching.get()
-                    on:click=move |_| start_search(VideoSearchKind::Gameplay)
-                >
-                    {move || {
-                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::Gameplay) {
-                            t(i18n.locale.get(), Key::CommonSearching)
-                        } else {
-                            t(i18n.locale.get(), VideoSearchKind::Gameplay.label_key())
-                        }
-                    }}
-                </button>
-                <button
-                    class="game-action-btn"
-                    class:active=move || active_search.get() == Some(VideoSearchKind::OneCc)
-                    prop:disabled=move || active_searching.get()
-                    on:click=move |_| start_search(VideoSearchKind::OneCc)
-                >
-                    {move || {
-                        if active_searching.get() && active_search.get() == Some(VideoSearchKind::OneCc) {
-                            t(i18n.locale.get(), Key::CommonSearching)
-                        } else {
-                            t(i18n.locale.get(), VideoSearchKind::OneCc.label_key())
-                        }
-                    }}
-                </button>
+                {[VideoSearchKind::Trailer, VideoSearchKind::Gameplay, VideoSearchKind::OneCc]
+                    .into_iter()
+                    .map(|kind| view! {
+                        <SearchKindButton
+                            kind
+                            active_search=active_search
+                            active_searching=active_searching
+                            on_click=start_search
+                        />
+                    })
+                    .collect_view()}
             </div>
 
             // Active online search results
@@ -337,6 +306,35 @@ pub fn GameVideoSection(
                 />
             </Show>
         </section>
+    }
+}
+
+#[component]
+fn SearchKindButton<F>(
+    kind: VideoSearchKind,
+    active_search: RwSignal<Option<VideoSearchKind>>,
+    active_searching: RwSignal<bool>,
+    on_click: F,
+) -> impl IntoView
+where
+    F: Fn(VideoSearchKind) + Copy + Send + 'static,
+{
+    let i18n = use_i18n();
+    view! {
+        <button
+            class="game-action-btn"
+            class:active=move || active_search.get() == Some(kind)
+            prop:disabled=move || active_searching.get()
+            on:click=move |_| on_click(kind)
+        >
+            {move || {
+                if active_searching.get() && active_search.get() == Some(kind) {
+                    t(i18n.locale.get(), Key::CommonSearching)
+                } else {
+                    t(i18n.locale.get(), kind.label_key())
+                }
+            }}
+        </button>
     }
 }
 

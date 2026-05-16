@@ -211,8 +211,6 @@ fn NowPlayingHeroCard(
     let fav_filename = format!("{system}@{filename}.fav");
 
     let system_display_for_meta = system_display.clone();
-    // Memo so the 1 Hz clock signal can't propagate to the text node every
-    // second — only fires the subscriber when the formatted output changes.
     let meta = Memo::new(
         move |_| match crate::util::format_elapsed_short(elapsed.get()) {
             Some(text) => format!("{system_display_for_meta} \u{00B7} {text}"),

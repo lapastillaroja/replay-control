@@ -228,9 +228,6 @@ fn GameDetailContent(
         _ => None,
     };
     let is_now_playing = move || active_started_at().is_some();
-    // Memo (not a plain closure) so the clock's 1 Hz signal can't propagate to
-    // the text node every second — `PartialEq` on the `Option<String>` output
-    // gates the subscriber to per-minute updates only.
     let active_elapsed = Memo::new(move |_| {
         let started_at = active_started_at()?;
         let elapsed = clock

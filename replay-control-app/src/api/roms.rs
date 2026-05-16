@@ -28,7 +28,6 @@ async fn list_system_roms(
     if let Some(roms) = state
         .cache
         .load_roms_from_db(
-            &storage,
             &system,
             &storage.roms_dir().join(&system),
             &state.library_reader,

@@ -286,44 +286,36 @@ impl LibraryDb {
             return Ok(Vec::new());
         }
 
-        let mut stmt = conn
-            .prepare(
-                "WITH deduped AS (
-                    SELECT gl.*, ROW_NUMBER() OVER (
-                        PARTITION BY gl.system
-                        ORDER BY CASE
-                            WHEN gl.region = ?3 THEN 0
-                            WHEN gl.region = 'world' THEN 1
-                            ELSE 2
-                        END
-                    ) AS rn
-                    FROM game_library gl
-                    WHERE gl.base_title = ?2
-                      AND gl.system != ?1
-                      AND gl.is_clone = 0
-                      AND gl.is_translation = 0
-                      AND gl.is_hack = 0
-                      AND gl.is_special = 0
-                )
-                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                        region, developer, genre, genre_group, rating, rating_count, players,
-                        is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
-                        release_date, release_precision, release_region_used, cooperative
-                FROM deduped WHERE rn = 1
-                ORDER BY
-                    release_date IS NULL,
-                    substr(release_date, 1, 4),
-                    release_date,
-                    CASE release_precision
-                        WHEN 'day' THEN 0
-                        WHEN 'month' THEN 1
-                        WHEN 'year' THEN 2
-                        ELSE 3
-                    END,
-                    display_name
-                LIMIT ?4",
+        let sql = format!(
+            "WITH deduped AS (
+                SELECT gl.*, ROW_NUMBER() OVER (
+                    PARTITION BY gl.system
+                    ORDER BY CASE
+                        WHEN gl.region = ?3 THEN 0
+                        WHEN gl.region = 'world' THEN 1
+                        ELSE 2
+                    END
+                ) AS rn
+                FROM game_library gl
+                WHERE gl.base_title = ?2
+                  AND gl.system != ?1
+                  AND gl.is_clone = 0
+                  AND gl.is_translation = 0
+                  AND gl.is_hack = 0
+                  AND gl.is_special = 0
             )
+            SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                    region, developer, genre, genre_group, rating, rating_count, players,
+                    is_clone, is_m3u, is_translation, is_hack, is_special,
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
+                    release_date, release_precision, release_region_used, cooperative
+            FROM deduped WHERE rn = 1
+            ORDER BY {order_prefix}, display_name
+            LIMIT ?4",
+            order_prefix = super::ORDER_BY_RELEASE_DATE,
+        );
+        let mut stmt = conn
+            .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare cross_system_availability: {e}")))?;
 
         let rows = stmt

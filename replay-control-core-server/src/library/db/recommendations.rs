@@ -359,18 +359,9 @@ impl LibraryDb {
             )
             SELECT {GAME_ENTRY_COLS}
             FROM deduped WHERE rn = 1
-            ORDER BY
-                release_date IS NULL,
-                substr(release_date, 1, 4),
-                release_date,
-                CASE release_precision
-                    WHEN 'day' THEN 0
-                    WHEN 'month' THEN 1
-                    WHEN 'year' THEN 2
-                    ELSE 3
-                END,
-                display_name
-            LIMIT ?4"
+            ORDER BY {order_prefix}, display_name
+            LIMIT ?4",
+            order_prefix = super::ORDER_BY_RELEASE_DATE,
         );
         let mut stmt = conn
             .prepare(&sql)

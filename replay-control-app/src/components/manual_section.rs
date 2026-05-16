@@ -21,8 +21,9 @@ pub fn ManualSection(
     let i18n = use_i18n();
     let section_ref = NodeRef::<html::Section>::new();
 
-    // In-folder documents (Phase 1).
-    // Resource fires once when the component is created (key is constant).
+    // In-folder documents are read-only — no user action mutates them
+    // post-load, so the resource is consumed directly without a mirror
+    // RwSignal. The Resource fires once at mount (key is constant).
     let docs_resource = Resource::new(
         || (),
         move |_| {
@@ -31,16 +32,11 @@ pub fn ManualSection(
             server_fns::get_game_documents(sys, fname)
         },
     );
+    let game_docs = move || docs_resource.get().and_then(Result::ok).unwrap_or_default();
 
-    let game_docs = RwSignal::new(Vec::<GameDocument>::new());
-
-    let _sync_docs = Effect::new(move || {
-        if let Some(Ok(docs)) = docs_resource.get() {
-            game_docs.set(docs);
-        }
-    });
-
-    // Local manuals (Phase 2 -- previously downloaded)
+    // Local manuals and suggestions need RwSignals because user actions
+    // (download / upload / delete) update them optimistically between
+    // Resource fires.
     let local_resource = Resource::new(
         || (),
         move |_| {
@@ -61,9 +57,6 @@ pub fn ManualSection(
     let manual_suggestions = RwSignal::new(Vec::<ManualRecommendation>::new());
     let suggestions_loading = RwSignal::new(false);
 
-    // Bundled/library manual suggestions should appear without forcing the
-    // user to run an online search. This server fn only reads library.db and
-    // never falls back to Archive.org.
     let suggestions_resource = Resource::new(
         || (),
         move |_| {
@@ -118,12 +111,7 @@ pub fn ManualSection(
             {
                 Ok(_serve_url) => {
                     manual_suggestions.update(|results| results.retain(|result| result.url != url));
-                    // Refresh local manuals list
-                    if let Ok(manuals) =
-                        server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
-                    {
-                        local_manuals.set(manuals);
-                    }
+                    refresh_local_manuals(sys_for_refresh, bt_for_refresh, local_manuals).await;
                 }
                 Err(e) => {
                     download_error.set(Some(e.to_string()));
@@ -133,8 +121,7 @@ pub fn ManualSection(
         });
     };
 
-    let on_add_url = move |ev: leptos::ev::MouseEvent| {
-        ev.prevent_default();
+    let submit_add_url = move || {
         let url = add_url.read().trim().to_string();
         if url.is_empty() {
             return;
@@ -166,16 +153,17 @@ pub fn ManualSection(
                     add_url.set(String::new());
                     add_success.set(true);
                     manual_suggestions.update(|results| results.retain(|result| result.url != url));
-                    if let Ok(manuals) =
-                        server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
-                    {
-                        local_manuals.set(manuals);
-                    }
+                    refresh_local_manuals(sys_for_refresh, bt_for_refresh, local_manuals).await;
                 }
                 Err(e) => download_error.set(Some(e.to_string())),
             }
             adding_url.set(false);
         });
+    };
+
+    let on_add_url = move |ev: leptos::ev::MouseEvent| {
+        ev.prevent_default();
+        submit_add_url();
     };
 
     let on_upload = move |ev: leptos::ev::MouseEvent| {
@@ -225,11 +213,7 @@ pub fn ManualSection(
                     Ok(()) => {
                         input.set_value("");
                         add_success.set(true);
-                        if let Ok(manuals) =
-                            server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
-                        {
-                            local_manuals.set(manuals);
-                        }
+                        refresh_local_manuals(sys_for_refresh, bt_for_refresh, local_manuals).await;
                     }
                     Err(e) => download_error.set(Some(e)),
                 }
@@ -261,12 +245,7 @@ pub fn ManualSection(
         leptos::task::spawn_local(async move {
             match server_fns::delete_manual(sys, filename).await {
                 Ok(()) => {
-                    // Refresh local manuals list
-                    if let Ok(manuals) =
-                        server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
-                    {
-                        local_manuals.set(manuals);
-                    }
+                    refresh_local_manuals(sys_for_refresh, bt_for_refresh, local_manuals).await;
                 }
                 Err(e) => {
                     download_error.set(Some(e.to_string()));
@@ -276,16 +255,13 @@ pub fn ManualSection(
         });
     };
 
-    let has_docs = move || !game_docs.read().is_empty();
+    let has_docs = move || !game_docs().is_empty();
     let has_local = move || !local_manuals.read().is_empty();
     let has_content = move || has_docs() || has_local();
-    let has_suggestions = Signal::derive(move || {
-        !visible_manual_recommendations(&manual_suggestions.read(), &local_manuals.read())
-            .is_empty()
-    });
-    let displayed_results = Signal::derive(move || {
+    let displayed_results = Memo::new(move |_| {
         visible_manual_recommendations(&manual_suggestions.read(), &local_manuals.read())
     });
+    let has_suggestions = Signal::derive(move || !displayed_results.read().is_empty());
 
     use_focus_scroll(section_ref, move || focus_on_mount.get());
 
@@ -297,7 +273,7 @@ pub fn ManualSection(
             <Show when=has_docs>
                 <div class="manual-list">
                     <For
-                        each=move || game_docs.get()
+                        each=game_docs
                         key=|doc| doc.relative_path.clone()
                         let:doc
                     >
@@ -367,34 +343,7 @@ pub fn ManualSection(
                     on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                         if ev.key() == "Enter" {
                             ev.prevent_default();
-                            let url = add_url.read().trim().to_string();
-                            if !url.is_empty() {
-                                adding_url.set(true);
-                                download_error.set(None);
-                                add_success.set(false);
-                                let sys = system.get_value();
-                                let fname = rom_filename.get_value();
-                                let bt = base_title.get_value();
-                                let title = Some(display_name.get_value());
-                                let sys_for_refresh = sys.clone();
-                                let bt_for_refresh = bt.clone();
-                                leptos::task::spawn_local(async move {
-                                    match server_fns::download_manual(sys, fname, bt, url.clone(), None, title, Some("user_url".to_string())).await {
-                                        Ok(_) => {
-                                            add_url.set(String::new());
-                                            add_success.set(true);
-                                            manual_suggestions.update(|results| results.retain(|result| result.url != url));
-                                            if let Ok(manuals) =
-                                                server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
-                                            {
-                                                local_manuals.set(manuals);
-                                            }
-                                        }
-                                        Err(e) => download_error.set(Some(e.to_string())),
-                                    }
-                                    adding_url.set(false);
-                                });
-                            }
+                            submit_add_url();
                         }
                     }
                 />
@@ -706,6 +655,19 @@ where
     }
 }
 
+/// Refetch the local-manuals list and overwrite the signal. No-op on
+/// server error — the existing snapshot stays. Used by every codepath
+/// that mutates a manual on disk (download / upload / delete).
+async fn refresh_local_manuals(
+    system: String,
+    base_title: String,
+    target: RwSignal<Vec<LocalManual>>,
+) {
+    if let Ok(manuals) = server_fns::get_local_manuals(system, base_title).await {
+        target.set(manuals);
+    }
+}
+
 fn visible_manual_recommendations(
     results: &[ManualRecommendation],
     local_manuals: &[LocalManual],
@@ -838,7 +800,7 @@ fn title_mentions_language(title: &str, language: &str) -> bool {
         })
 }
 
-fn language_aliases<'a>(language: &'a str) -> Vec<&'a str> {
+fn language_aliases(language: &str) -> Vec<&str> {
     match language {
         "en" | "eng" | "english" => vec!["en", "eng", "english"],
         "es" | "spa" | "spanish" => vec!["es", "spa", "spanish", "espanol", "español"],

@@ -160,11 +160,12 @@ async fn upload_manual(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let storage_path = format!("{system}/{filename}");
-    let display_title = title
-        .trim()
-        .is_empty()
-        .then(|| manual_title_from_filename(&original_filename))
-        .unwrap_or_else(|| title.trim().to_string());
+    let title = title.trim();
+    let display_title = if title.is_empty() {
+        manual_title_from_filename(&original_filename)
+    } else {
+        title.to_string()
+    };
     let entry = ManualEntry {
         manual_id: manual_id.clone(),
         resource_key: format!("upload:{manual_id}"),

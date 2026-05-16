@@ -199,52 +199,15 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .await
         .unwrap_or_default();
 
-    let mut meta_map: std::collections::HashMap<String, usize> =
-        entries_per_system.into_iter().collect();
-    let mut thumb_map: std::collections::HashMap<String, usize> =
-        thumbnails_per_system.into_iter().collect();
-    let mut stats_map: std::collections::HashMap<
-        String,
-        replay_control_core_server::library_db::SystemCoverageStats,
-    > = coverage_stats
-        .into_iter()
-        .map(|s| (s.system.clone(), s))
-        .collect();
-    let mut driver_map = driver_status;
-
-    let mut coverage: Vec<SystemCoverage> = system_meta
-        .into_iter()
-        .filter(|s| s.rom_count > 0)
-        .map(|s| {
-            let with_metadata = meta_map.remove(&s.system).unwrap_or(0);
-            let with_thumbnail = thumb_map.remove(&s.system).unwrap_or(0);
-            let stats = stats_map.remove(&s.system).unwrap_or_default();
-            let driver_status = driver_map.remove(&s.system);
-            SystemCoverage {
-                display_name: replay_control_core::systems::system_display_name(&s.system),
-                total_games: s.rom_count,
-                with_thumbnail: with_thumbnail.min(s.rom_count),
-                with_genre: stats.with_genre,
-                with_developer: stats.with_developer,
-                with_rating: stats.with_rating,
-                size_bytes: stats.size_bytes,
-                with_description: with_metadata.min(s.rom_count),
-                clone_count: stats.clone_count,
-                hack_count: stats.hack_count,
-                translation_count: stats.translation_count,
-                special_count: stats.special_count,
-                coop_count: stats.coop_count,
-                verified_count: stats.verified_count,
-                min_year: stats.min_year,
-                max_year: stats.max_year,
-                driver_status,
-                system: s.system,
-            }
-        })
-        .collect();
-
-    coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-    Ok(coverage)
+    Ok(
+        replay_control_core_server::library_db::build_system_coverage(
+            system_meta,
+            entries_per_system,
+            thumbnails_per_system,
+            coverage_stats,
+            driver_status,
+        ),
+    )
 }
 
 /// Stats for the bundled catalog (arcade, game, and series reference data).
@@ -265,15 +228,28 @@ pub struct BuiltinDbStats {
 #[server(prefix = "/sfn")]
 pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
     use replay_control_core_server::{arcade_db, catalog_pool, game_db, series_db};
-    let catalog_resources = catalog_pool::catalog_resource_stats().await;
-
+    let (
+        arcade_entries,
+        game_rom_entries,
+        game_system_count,
+        wikidata_series_entries,
+        wikidata_series_count,
+        catalog_resources,
+    ) = tokio::join!(
+        arcade_db::entry_count(),
+        game_db::total_rom_entries(),
+        game_db::system_count(),
+        series_db::entry_count(),
+        async { series_db::all_series_names().await.len() },
+        catalog_pool::catalog_resource_stats(),
+    );
     Ok(BuiltinDbStats {
-        arcade_entries: arcade_db::entry_count().await,
+        arcade_entries,
         arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
-        game_rom_entries: game_db::total_rom_entries().await,
-        game_system_count: game_db::system_count().await,
-        wikidata_series_entries: series_db::entry_count().await,
-        wikidata_series_count: series_db::all_series_names().await.len(),
+        game_rom_entries,
+        game_system_count,
+        wikidata_series_entries,
+        wikidata_series_count,
         manual_resource_entries: catalog_resources.manual_resources,
         mister_manual_resource_entries: catalog_resources.mister_manual_resources,
         retrokit_manual_resource_entries: catalog_resources.retrokit_manual_resources,

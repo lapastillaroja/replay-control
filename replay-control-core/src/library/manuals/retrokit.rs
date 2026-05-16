@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A manual suggestion discovered via retrokit's manifests.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManualRecommendation {
     pub source: String,
     pub title: String,

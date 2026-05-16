@@ -257,7 +257,6 @@ impl LibraryService {
     /// Try to load ROMs from SQLite game_library, validating via mtime.
     pub(crate) async fn load_roms_from_db(
         &self,
-        _storage: &StorageLocation,
         system: &str,
         system_dir: &Path,
         db: &LibraryReadPool,
