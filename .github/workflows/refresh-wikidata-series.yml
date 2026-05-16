@@ -1,0 +1,109 @@
+name: Refresh Wikidata Series Snapshot
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly refresh. The snapshot is reviewed via PR before release builds use it.
+    - cron: '0 6 1 * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
+      - name: Cache catalog source data
+        uses: actions/cache@v5
+        with:
+          path: |
+            data/catver.ini
+            data/catver-mame-current.ini
+            data/fbneo-arcade.dat
+            data/mame2003plus.xml
+            data/mame0285-arcade.xml
+            data/nplayers.ini
+            data/no-intro
+            data/libretro-meta
+            data/mister-manuals
+            data/retrokit-manuals
+            data/thegamesdb-latest.json
+          key: wikidata-refresh-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py') }}
+          restore-keys: wikidata-refresh-data-
+
+      - name: Download catalog source data
+        run: |
+          ./scripts/download-arcade-data.sh
+          ./scripts/download-metadata.sh
+
+      - name: Refresh Wikidata series snapshot
+        run: |
+          mkdir -p data/wikidata
+          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+
+      - name: Validate snapshot
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/wikidata/series.json")
+          rows = json.loads(path.read_text(encoding="utf-8"))
+          required = {"game_title", "series_name", "system", "series_order", "follows", "followed_by"}
+          if not rows:
+              raise SystemExit("series snapshot is empty")
+          missing = [idx for idx, row in enumerate(rows) if set(row) != required]
+          if missing:
+              raise SystemExit(f"rows with unexpected shape: {missing[:10]}")
+          print(f"validated {len(rows)} Wikidata series rows")
+          PY
+
+      - name: Build catalog with refreshed snapshot
+        run: cargo run --release -p build-catalog -- --output /tmp/catalog-wikidata-refresh.sqlite
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-wikidata-series
+        run: |
+          if git diff --quiet -- data/wikidata/series.json; then
+            echo "No Wikidata series changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/wikidata/series.json
+          git commit -m "chore: refresh wikidata series snapshot"
+          git push --force-with-lease origin "$BRANCH"
+
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')"
+          body="Refreshes the committed Wikidata series snapshot.
+
+          Validation performed by this workflow:
+          - JSON shape check
+          - full catalog build using the refreshed snapshot"
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "chore: refresh Wikidata series snapshot" \
+              --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: refresh Wikidata series snapshot" \
+              --body "$body"
+          fi

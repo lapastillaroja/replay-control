@@ -12,6 +12,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Game browsing feels more predictable.** Random Game now picks from actual library rows, related/series games sort by release date when known, and stale browser state after random navigation is fixed.
 - **Large libraries stay accurate after storage changes.** System summaries are derived from `library.db` metadata instead of stale in-memory cache, and background maintenance uses actual active systems from the library.
 - **Manual links are cleaner.** Broken legacy manual URL families are filtered or rewritten so game pages do not show suggestions that fail immediately.
+- **Release packaging is more reliable.** Built-in series data now comes from a committed Wikidata snapshot instead of live public queries during release builds.
 - **Upgrades are less likely to hit stale browser files.** Non-fingerprinted WebAssembly helper snippets now revalidate after deploys, preventing startup failures caused by old cached helper scripts.
 
 ### Added
@@ -20,11 +21,13 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Saved manuals are tracked in `user_data.db` and stored under `.replay-control/manuals`. Downloads are validated as PDF or text before they are added, and duplicate suggestions are hidden after a manual is saved.
 - User-provided manuals can be added from game detail pages by pasting a PDF/text URL or uploading a PDF/text file up to 64 MiB. Uploaded manuals use the same local storage and delete flow as downloaded manuals.
 - LaunchBox video URLs are imported as provider resources and shown as metadata video suggestions that can be pinned like search results.
+- A monthly GitHub Actions workflow refreshes the committed Wikidata series snapshot and opens a review PR when the data changes.
 
 ### Changed
 
 - External metadata storage now uses generic provider tables instead of LaunchBox-only table names, leaving the metadata pipeline ready for additional sources without changing the game-detail read path.
 - Game-detail description/publisher and manual/video suggestions are now copied into per-storage library tables during enrichment. Request-time game pages stay on `library.db`; provider and catalog databases are not queried on page load.
+- Wikidata series data is now built from committed `data/wikidata/series.json` during release builds. Local maintainers can still refresh it with the extractor script, but CI no longer falls back to live SPARQL queries when the snapshot is missing.
 - System summaries are now a derived read view over the static `SYSTEMS` catalog plus `game_library_meta` counts, not an in-memory library cache. System-list endpoints still return every visible system, while info and metadata coverage paths read `game_library_meta` directly when they only need counts.
 - Background maintenance paths now use a distinct `active_systems` helper backed by actual `game_library` rows. Rebuild/rescan discovery still walks every `visible_systems()` entry so systems that were previously empty are not missed.
 - The game detail video section now presents saved videos, suggested metadata videos, URL entry, and online search as separate compact groups so the source labels do not dominate the card layout.

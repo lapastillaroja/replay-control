@@ -59,7 +59,8 @@ TGDB_API_KEY=your_key ./scripts/download-tgdb-lookups.sh
 
 This snapshot is checked into git because live Wikidata SPARQL queries are public
 and rate-limited. Release builds must use the committed snapshot instead of
-querying Wikidata during CI. To refresh it manually:
+querying Wikidata during CI. A monthly GitHub Actions workflow refreshes this
+file and opens a review PR when the snapshot changes. To refresh it manually:
 
 ```sh
 mkdir -p data/wikidata
