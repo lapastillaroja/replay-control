@@ -28,10 +28,10 @@
     "glob": "^13.0.6"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.6.0",
-    "@changesets/cli": "^2.29.8",
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
     "prettier": "^3.8.3",
-    "vite": "^7.3.2"
+    "vite": "^7.3.3"
   },
   "engines": {
     "node": ">=24.13.0"
