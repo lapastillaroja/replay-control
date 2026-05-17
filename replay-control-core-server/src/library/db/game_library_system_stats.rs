@@ -35,38 +35,58 @@ impl StatsRefreshState {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct GameLibrarySystemStats {
-    pub system: String,
-    pub rom_count: usize,
-    pub total_size_bytes: u64,
-    pub clone_count: usize,
-    pub hack_count: usize,
-    pub translation_count: usize,
-    pub homebrew_count: usize,
-    pub unlicensed_count: usize,
-    pub special_count: usize,
-    pub region_counts_json: Option<String>,
-    pub release_year_min: Option<u16>,
-    pub release_year_max: Option<u16>,
-    pub release_date_known_count: usize,
-    pub genre_counts_json: Option<String>,
-    pub genre_group_counts_json: Option<String>,
-    pub developer_known_count: usize,
-    pub publisher_known_count: usize,
-    pub player_count_distribution_json: Option<String>,
-    pub rating_known_count: usize,
-    pub description_count: usize,
-    pub boxart_count: usize,
-    pub snap_count: usize,
-    pub title_screen_count: usize,
-    pub manual_count: usize,
-    pub video_count: usize,
-    pub resource_count: usize,
-    pub coop_count: usize,
-    pub verified_count: usize,
-    pub driver_status_json: Option<String>,
-    pub refresh_state: StatsRefreshState,
-    pub updated_at: Option<i64>,
+struct GameLibrarySystemStats {
+    system: String,
+    rom_count: usize,
+    total_size_bytes: u64,
+    clone_count: usize,
+    hack_count: usize,
+    translation_count: usize,
+    homebrew_count: usize,
+    unlicensed_count: usize,
+    special_count: usize,
+    region_counts_json: Option<String>,
+    release_year_min: Option<u16>,
+    release_year_max: Option<u16>,
+    release_date_known_count: usize,
+    genre_counts_json: Option<String>,
+    genre_group_counts_json: Option<String>,
+    developer_known_count: usize,
+    publisher_known_count: usize,
+    player_count_distribution_json: Option<String>,
+    rating_known_count: usize,
+    description_count: usize,
+    boxart_count: usize,
+    snap_count: usize,
+    title_screen_count: usize,
+    manual_count: usize,
+    video_count: usize,
+    resource_count: usize,
+    coop_count: usize,
+    verified_count: usize,
+    driver_status_json: Option<String>,
+    refresh_state: StatsRefreshState,
+    updated_at: Option<i64>,
+}
+
+struct OverviewStatsRow {
+    system: String,
+    rom_count: usize,
+    total_size_bytes: u64,
+    clone_count: usize,
+    hack_count: usize,
+    translation_count: usize,
+    special_count: usize,
+    release_year_min: Option<u16>,
+    release_year_max: Option<u16>,
+    genre_counts_json: Option<String>,
+    developer_known_count: usize,
+    rating_known_count: usize,
+    description_count: usize,
+    boxart_count: usize,
+    coop_count: usize,
+    verified_count: usize,
+    driver_status_json: Option<String>,
 }
 
 impl LibraryDb {
@@ -158,9 +178,8 @@ impl LibraryDb {
         .map_err(|e| Error::Other(format!("clear game_library_system_stats boxart: {e}")))
     }
 
-    pub fn load_game_library_system_stats(
-        conn: &Connection,
-    ) -> Result<Vec<GameLibrarySystemStats>> {
+    #[cfg(test)]
+    fn load_game_library_system_stats(conn: &Connection) -> Result<Vec<GameLibrarySystemStats>> {
         let mut stmt = conn
             .prepare(
                 "SELECT system, rom_count, total_size_bytes, clone_count, hack_count,
@@ -221,57 +240,88 @@ impl LibraryDb {
         Ok(stats)
     }
 
-    pub fn system_coverage_from_stats(conn: &Connection) -> Result<Vec<SystemCoverage>> {
-        let mut coverage: Vec<SystemCoverage> = Self::load_game_library_system_stats(conn)?
-            .into_iter()
-            .filter(|s| s.rom_count > 0)
-            .map(|s| {
-                let driver_status = s
-                    .driver_status_json
-                    .as_deref()
-                    .and_then(|json| serde_json::from_str(json).ok());
-                SystemCoverage {
-                    display_name: replay_control_core::systems::system_display_name(&s.system),
-                    total_games: s.rom_count,
-                    with_thumbnail: s.boxart_count.min(s.rom_count),
-                    with_genre: count_json_total(s.genre_counts_json.as_deref()),
-                    with_developer: s.developer_known_count,
-                    with_rating: s.rating_known_count,
-                    size_bytes: s.total_size_bytes,
-                    with_description: s.description_count.min(s.rom_count),
-                    clone_count: s.clone_count,
-                    hack_count: s.hack_count,
-                    translation_count: s.translation_count,
-                    special_count: s.special_count,
-                    coop_count: s.coop_count,
-                    verified_count: s.verified_count,
-                    min_year: s.release_year_min,
-                    max_year: s.release_year_max,
-                    driver_status,
-                    system: s.system,
-                }
+    pub fn library_overview_from_system_stats(
+        conn: &Connection,
+    ) -> Result<(super::LibrarySummary, Vec<SystemCoverage>)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_count, total_size_bytes, clone_count, hack_count,
+                        translation_count, special_count, release_year_min, release_year_max,
+                        genre_counts_json, developer_known_count, rating_known_count,
+                        description_count, boxart_count, coop_count, verified_count,
+                        driver_status_json
+                 FROM game_library_system_stats
+                 WHERE rom_count > 0",
+            )
+            .map_err(|e| Error::Other(format!("prepare library overview stats: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(OverviewStatsRow {
+                    system: row.get(0)?,
+                    rom_count: row.get::<_, i64>(1).unwrap_or(0) as usize,
+                    total_size_bytes: row.get::<_, i64>(2).unwrap_or(0) as u64,
+                    clone_count: row.get::<_, i64>(3).unwrap_or(0) as usize,
+                    hack_count: row.get::<_, i64>(4).unwrap_or(0) as usize,
+                    translation_count: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                    special_count: row.get::<_, i64>(6).unwrap_or(0) as usize,
+                    release_year_min: row.get::<_, Option<i64>>(7)?.map(|v| v as u16),
+                    release_year_max: row.get::<_, Option<i64>>(8)?.map(|v| v as u16),
+                    genre_counts_json: row.get(9)?,
+                    developer_known_count: row.get::<_, i64>(10).unwrap_or(0) as usize,
+                    rating_known_count: row.get::<_, i64>(11).unwrap_or(0) as usize,
+                    description_count: row.get::<_, i64>(12).unwrap_or(0) as usize,
+                    boxart_count: row.get::<_, i64>(13).unwrap_or(0) as usize,
+                    coop_count: row.get::<_, i64>(14).unwrap_or(0) as usize,
+                    verified_count: row.get::<_, i64>(15).unwrap_or(0) as usize,
+                    driver_status_json: row.get(16)?,
+                })
             })
-            .collect();
-        coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-        Ok(coverage)
-    }
+            .map_err(|e| Error::Other(format!("query library overview stats: {e}")))?;
 
-    pub fn library_summary_from_system_stats(conn: &Connection) -> Result<super::LibrarySummary> {
-        let stats = Self::load_game_library_system_stats(conn)?;
         let mut summary = super::LibrarySummary::default();
-        for stats in stats.into_iter().filter(|s| s.rom_count > 0) {
-            summary.total_games += stats.rom_count;
+        let mut coverage = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| Error::Other(format!("read library overview stats: {e}")))?;
+            let with_genre = count_json_total(row.genre_counts_json.as_deref());
+            let driver_status = row
+                .driver_status_json
+                .as_deref()
+                .and_then(|json| serde_json::from_str(json).ok());
+
+            summary.total_games += row.rom_count;
             summary.system_count += 1;
-            summary.with_genre += count_json_total(stats.genre_counts_json.as_deref());
-            summary.with_developer += stats.developer_known_count;
-            summary.with_rating += stats.rating_known_count;
-            summary.with_box_art += stats.boxart_count.min(stats.rom_count);
-            summary.coop_games += stats.coop_count;
-            summary.total_size_bytes += stats.total_size_bytes;
-            summary.min_year = min_optional(summary.min_year, stats.release_year_min);
-            summary.max_year = max_optional(summary.max_year, stats.release_year_max);
+            summary.with_genre += with_genre;
+            summary.with_developer += row.developer_known_count;
+            summary.with_rating += row.rating_known_count;
+            summary.with_box_art += row.boxart_count.min(row.rom_count);
+            summary.coop_games += row.coop_count;
+            summary.total_size_bytes += row.total_size_bytes;
+            summary.min_year = min_optional(summary.min_year, row.release_year_min);
+            summary.max_year = max_optional(summary.max_year, row.release_year_max);
+
+            coverage.push(SystemCoverage {
+                display_name: replay_control_core::systems::system_display_name(&row.system),
+                total_games: row.rom_count,
+                with_thumbnail: row.boxart_count.min(row.rom_count),
+                with_genre,
+                with_developer: row.developer_known_count,
+                with_rating: row.rating_known_count,
+                size_bytes: row.total_size_bytes,
+                with_description: row.description_count.min(row.rom_count),
+                clone_count: row.clone_count,
+                hack_count: row.hack_count,
+                translation_count: row.translation_count,
+                special_count: row.special_count,
+                coop_count: row.coop_count,
+                verified_count: row.verified_count,
+                min_year: row.release_year_min,
+                max_year: row.release_year_max,
+                driver_status,
+                system: row.system,
+            });
         }
-        Ok(summary)
+        coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        Ok((summary, coverage))
     }
 
     pub fn image_stats_from_system_stats(conn: &Connection) -> Result<(usize, usize)> {
@@ -693,7 +743,7 @@ mod tests {
         .unwrap();
         LibraryDb::refresh_game_library_system_stats(&conn, "snes").unwrap();
 
-        let coverage = LibraryDb::system_coverage_from_stats(&conn).unwrap();
+        let (summary, coverage) = LibraryDb::library_overview_from_system_stats(&conn).unwrap();
         assert_eq!(coverage.len(), 1);
         let coverage = &coverage[0];
         assert_eq!(coverage.total_games, 2);
@@ -711,7 +761,6 @@ mod tests {
         assert_eq!(stats[0].manual_count, 1);
         assert_eq!(stats[0].resource_count, 1);
 
-        let summary = LibraryDb::library_summary_from_system_stats(&conn).unwrap();
         assert_eq!(summary.total_games, 2);
         assert_eq!(summary.system_count, 1);
         assert_eq!(summary.with_genre, 1);
@@ -739,7 +788,7 @@ mod tests {
         drop(conn);
 
         let conn = LibraryDb::open(dir.path()).unwrap();
-        let coverage = LibraryDb::system_coverage_from_stats(&conn).unwrap();
+        let (_summary, coverage) = LibraryDb::library_overview_from_system_stats(&conn).unwrap();
 
         assert_eq!(coverage.len(), 1);
         assert_eq!(coverage[0].system, "snes");

@@ -7,9 +7,9 @@ use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
 use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 
-/// Build the metadata page payload from durable DB state. System-level
-/// coverage comes from `game_library_system_stats`; this path does not keep an
-/// additional app-local snapshot cache.
+/// Build the slower data-source payload for `/settings/metadata`. The top
+/// library overview is loaded separately from `game_library_system_stats` so
+/// it does not wait for filesystem media sizing or bundled catalog stats.
 pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
     let storage = state.storage();
     let em_db_path = state.external_metadata_reader.db_path();
@@ -20,17 +20,13 @@ pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
     // if a pool is briefly unavailable.
     let lib_pool = &state.library_reader;
     let em_pool = &state.external_metadata_reader;
-    let (stats, library_summary, coverage, data_source_stats, image_count_pair) = tokio::join!(
+    let (stats, data_source_stats, image_count_pair) = tokio::join!(
         em_pool
             .read(move |c| external_metadata::launchbox_stats(c, &em_db_path).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::library_summary_from_system_stats(c).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::system_coverage_from_stats(c).unwrap_or_default()),
         em_pool.read(|c| external_metadata::get_data_source_stats(c, "libretro-thumbnails").ok()),
         lib_pool.read(|c| LibraryDb::image_stats_from_system_stats(c).unwrap_or((0, 0))),
     );
     let stats = stats.unwrap_or_default();
-    let library_summary = library_summary.unwrap_or_default();
-    let coverage = coverage.unwrap_or_default();
     let data_source_stats = data_source_stats.unwrap_or_default();
     let image_count_pair: (usize, usize) = image_count_pair.unwrap_or((0, 0));
 
@@ -48,13 +44,9 @@ pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
 
     MetadataPageSnapshot {
         stats,
-        library_summary,
-        coverage,
         data_source,
         image_stats,
         builtin_stats,
-        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
-        storage_root: storage.root.display().to_string(),
     }
 }
 

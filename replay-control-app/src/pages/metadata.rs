@@ -5,12 +5,13 @@ use server_fn::ServerFnError;
 use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
-    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataPageSnapshot,
-    RebuildProgress, SystemCoverage, ThumbnailPhase,
+    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataLibraryOverview,
+    MetadataPageSnapshot, RebuildProgress, SystemCoverage, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
+type OverviewRes = Resource<Result<MetadataLibraryOverview, ServerFnError>>;
 
 fn format_rebuild_progress(locale: crate::i18n::Locale, p: &RebuildProgress) -> Option<String> {
     crate::components::metadata_banner::format_rebuild_progress_label(locale, p)
@@ -19,8 +20,11 @@ fn format_rebuild_progress(locale: crate::i18n::Locale, p: &RebuildProgress) -> 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
-    // One page payload replaces six per-stat server fns. System coverage comes
-    // from DB-backed materialized stats, not an app-local metadata cache.
+    // Keep the library overview separate from slower media/data-source stats.
+    // Both read durable DB state, but the overview only touches
+    // game_library_system_stats so it can render during rescan.
+    let overview: OverviewRes =
+        Resource::new(|| (), |_| server_fns::get_metadata_library_overview());
     let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
 
     // App-level activity signal (populated by SseActivityListener at the App
@@ -84,6 +88,7 @@ pub fn MetadataPage() -> impl IntoView {
                 thumb_result,
                 rebuild_result,
                 thumb_cancelling,
+                overview,
                 snapshot,
             );
         } else {
@@ -137,9 +142,9 @@ pub fn MetadataPage() -> impl IntoView {
                 <Transition fallback=move || view! { <SummaryCardsSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let snap = snapshot.await?;
-                        let s = snap.library_summary;
-                        let storage_kind = snap.storage_kind;
+                        let overview = overview.await?;
+                        let s = overview.library_summary;
+                        let storage_kind = overview.storage_kind;
                         Ok::<_, ServerFnError>(if s.total_games == 0 {
                             // Empty library: still show the storage-type card —
                             // it's infrastructure info, not derived from games.
@@ -151,7 +156,7 @@ pub fn MetadataPage() -> impl IntoView {
                 </Transition>
             </section>
 
-            <SystemOverviewSection snapshot />
+            <SystemOverviewSection overview />
 
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
@@ -342,7 +347,7 @@ pub fn MetadataPage() -> impl IntoView {
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection snapshot activity result_message=rebuild_result is_busy />
+            <DataManagementSection overview snapshot activity result_message=rebuild_result is_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -364,6 +369,7 @@ fn dispatch_terminal(
     thumb_result: RwSignal<Option<String>>,
     rebuild_result: RwSignal<Option<String>>,
     thumb_cancelling: RwSignal<bool>,
+    overview: OverviewRes,
     snapshot: SnapshotRes,
 ) {
     let target = match &prev {
@@ -385,6 +391,7 @@ fn dispatch_terminal(
         }
     }
 
+    overview.refetch();
     snapshot.refetch();
 }
 
@@ -573,6 +580,7 @@ fn ThumbnailProgressDisplay(
 /// Data Management section with main and advanced actions.
 #[component]
 fn DataManagementSection(
+    overview: OverviewRes,
     snapshot: SnapshotRes,
     activity: RwSignal<Activity>,
     result_message: RwSignal<Option<String>>,
@@ -662,6 +670,8 @@ fn DataManagementSection(
                 Ok(()) => {
                     let locale = i18n.locale.get_untracked();
                     images_result.set(Some(t(locale, Key::MetadataClearedImages).to_string()));
+                    overview.refetch();
+                    snapshot.refetch();
                 }
                 Err(e) => {
                     images_result.set(Some(format!("Error: {e}")));
@@ -685,6 +695,8 @@ fn DataManagementSection(
                     orphans_result.set(Some(format!(
                         "Cleaned up {files_deleted} images ({size}), {metadata_deleted} metadata rows"
                     )));
+                    overview.refetch();
+                    snapshot.refetch();
                 }
                 Err(e) => {
                     orphans_result.set(Some(format!("Error: {e}")));
@@ -1006,7 +1018,7 @@ fn SummaryCards(
 // ── System overview accordion ────────────────────────────────────────────
 
 #[component]
-fn SystemOverviewSection(snapshot: SnapshotRes) -> impl IntoView {
+fn SystemOverviewSection(overview: OverviewRes) -> impl IntoView {
     let i18n = use_i18n();
     let expand_all = RwSignal::new(false);
     let toggle_all = move |_: leptos::ev::MouseEvent| expand_all.update(|v| *v = !*v);
@@ -1027,8 +1039,8 @@ fn SystemOverviewSection(snapshot: SnapshotRes) -> impl IntoView {
             </div>
             <Transition fallback=move || view! { <AccordionSkeleton /> }>
                 {move || Suspend::new(async move {
-                    let snap = snapshot.await?;
-                    let data = snap.coverage;
+                    let overview = overview.await?;
+                    let data = overview.coverage;
                     let rows = data
                         .into_iter()
                         .filter(|c| c.total_games > 0)

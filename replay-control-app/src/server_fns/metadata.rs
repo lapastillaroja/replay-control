@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,20 +107,58 @@ pub use replay_control_core::library_db::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataPageSnapshot {
     pub stats: MetadataStats,
-    pub library_summary: LibrarySummary,
-    pub coverage: Vec<SystemCoverage>,
     pub data_source: super::DataSourceSummary,
     /// (boxart_count, snap_count, media_size_bytes)
     pub image_stats: (usize, usize, u64),
     pub builtin_stats: BuiltinDbStats,
-    /// Storage type tag (e.g. `"sd"`, `"usb"`, `"nvme"`, `"nfs"`).
-    pub storage_kind: String,
-    /// Mount point for ROM storage (e.g. `"/media/usb"`).
-    pub storage_root: String,
 }
 
-/// Metadata page payload. System-level coverage is read from
-/// `game_library_system_stats`; there is no app-local metadata page cache.
+/// Fast library-only payload for the top of `/settings/metadata`.
+/// Reads only `game_library_system_stats`, so it can render while slower
+/// media/data-source stats continue loading.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MetadataLibraryOverview {
+    pub library_summary: LibrarySummary,
+    pub coverage: Vec<SystemCoverage>,
+    /// Storage type tag (e.g. `"sd"`, `"usb"`, `"nvme"`, `"nfs"`).
+    pub storage_kind: String,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_metadata_library_overview() -> Result<MetadataLibraryOverview, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage_kind = format!("{:?}", state.storage().kind).to_lowercase();
+    let overview = match state
+        .library_reader
+        .try_read(LibraryDb::library_overview_from_system_stats)
+        .await
+    {
+        Ok(Ok((library_summary, coverage))) => MetadataLibraryOverview {
+            library_summary,
+            coverage,
+            storage_kind,
+        },
+        Ok(Err(e)) => {
+            tracing::warn!("metadata library overview query failed: {e}");
+            MetadataLibraryOverview {
+                storage_kind,
+                ..Default::default()
+            }
+        }
+        Err(e) => {
+            tracing::warn!("metadata library overview read failed: {e}");
+            MetadataLibraryOverview {
+                storage_kind,
+                ..Default::default()
+            }
+        }
+    };
+    Ok(overview)
+}
+
+/// Full metadata page data-source payload. Library summary/coverage use
+/// `get_metadata_library_overview` so they do not wait for this slower
+/// snapshot.
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();

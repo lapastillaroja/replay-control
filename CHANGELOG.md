@@ -23,7 +23,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Enrichment writes are now chunked where safe, and game-detail resources are staged before live replacement so interrupted scans do not leave descriptions or resource links empty.
 - First-run metadata and thumbnail-source downloads no longer block the first library scan. The library appears from local discovery first, then optional metadata and artwork fill in as background work completes.
 - Thumbnail downloads now use a durable per-storage queue with box art first, then title screens, then screenshots. Temporary GitHub throttling and service errors are retried with bounded backoff instead of creating request bursts.
-- Metadata-page library summary, image counts, and system coverage now read from a rebuildable `game_library_system_stats` table in `library.db`; upgraded libraries backfill missing stats on open, and the old app-local metadata page snapshot cache is removed.
+- Metadata-page library summary, matched artwork counts, and system coverage now read from a rebuildable `game_library_system_stats` table in `library.db`; upgraded libraries backfill missing stats on open, and the old app-local metadata page snapshot cache is removed.
 
 ### Fixed
 
