@@ -2,25 +2,6 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 
-/// Get image stats: (boxart_count, snap_count, media_size_bytes).
-/// Returns zeros when the DB is unavailable (e.g., during import).
-///
-/// `boxart_count` is read from `game_library.box_art_url`. Screenshot/title
-/// counts aren't tracked centrally any more (filesystem fallback at request
-/// time), so `snap_count` is always 0.
-#[server(prefix = "/sfn")]
-pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let (with_boxart, with_snap) = state
-        .library_reader
-        .read(|conn| LibraryDb::image_stats(conn).unwrap_or((0, 0)))
-        .await
-        .unwrap_or((0, 0));
-    let storage = state.storage();
-    let media_size = replay_control_core_server::thumbnails::media_dir_size(&storage.root);
-    Ok((with_boxart, with_snap, media_size))
-}
-
 /// Clear all images.
 #[server(prefix = "/sfn")]
 pub async fn clear_images() -> Result<(), ServerFnError> {
@@ -49,7 +30,6 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     }
 
     state.invalidate_user_caches().await;
-    state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle
     Ok(())
@@ -92,6 +72,5 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let (files_deleted, bytes_freed) =
         replay_control_core_server::thumbnails::delete_thumbnail_files(&orphans);
 
-    state.cache.invalidate_metadata_page().await;
     Ok((0, files_deleted, bytes_freed))
 }

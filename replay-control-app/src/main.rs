@@ -505,12 +505,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ChangeRootPassword>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CleanupOrphanedImages>(
         );
@@ -548,8 +545,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
         );
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
-        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGithubApiKey>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveGithubApiKey>();
@@ -559,7 +554,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RescanGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptLibrary>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RepairCorruptUserData>(
@@ -592,7 +586,6 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSetupStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DismissSetup>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLibrarySummary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataPageSnapshot>(
         );
         let site_root_abs = std::fs::canonicalize(&cli.site_root).unwrap_or_else(|e| {

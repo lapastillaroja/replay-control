@@ -2,19 +2,25 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
+use replay_control_core::rom_tags::RegionPreference;
+use replay_control_core_server::db_pool::rusqlite::Connection;
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
 use replay_control_core_server::external_metadata::{
     self, LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow, ThumbnailManifestEntry,
 };
 use replay_control_core_server::library_db::{
-    LibraryDb, PhaseState, ThumbnailDownloadJob, ThumbnailPhaseState,
+    BoxArtGenreRating, LibraryDb, LibraryGameResource, PhaseState, ReleaseDateRow,
+    ThumbnailDownloadJob, ThumbnailPhaseState,
 };
 use replay_control_core_server::thumbnail_manifest;
 use replay_control_core_server::thumbnails::{ALL_THUMBNAIL_KINDS, ThumbnailKind};
 use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::{LibraryService, ScanCancellation, ScanInputs};
+use crate::api::AppState;
 use crate::api::db_pools::LIBRARY_MAINTENANCE_WRITE_TIMEOUT;
+
+const ENRICHMENT_WRITE_CHUNK_ROWS: usize = 1_000;
 
 impl LibraryService {
     pub(crate) async fn resume_pending_thumbnail_downloads(&self, state: &crate::api::AppState) {
@@ -275,131 +281,66 @@ impl LibraryService {
             cancellation.ensure_current()?;
         }
 
-        let metadata_sys = sys.clone();
         let metadata_started = Instant::now();
-        let metadata_result = state
-            .library_writer
-            .try_write_with_timeout(
-                LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
-                move |conn| -> Result<()> {
-                    let mut first_error = None;
-                    if !developer_updates.is_empty()
-                        && let Err(e) =
-                            LibraryDb::update_developers(conn, &metadata_sys, &developer_updates)
-                    {
-                        tracing::warn!("Developer enrichment failed for {metadata_sys}: {e}");
-                        first_error.get_or_insert(e);
-                    }
-                    if !cooperative_updates.is_empty()
-                        && let Err(e) =
-                            LibraryDb::update_cooperative(conn, &metadata_sys, &cooperative_updates)
-                    {
-                        tracing::warn!("Cooperative enrichment failed for {metadata_sys}: {e}");
-                        first_error.get_or_insert(e);
-                    }
-                    // Upsert LaunchBox-sourced rows into game_release_date BEFORE
-                    // the resolver runs. The resolver rebuilds game_library's
-                    // mirror columns from game_release_date; any rows we miss
-                    // here would be cleared to NULL on the same write.
-                    if !release_date_rows.is_empty()
-                        && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
-                    {
-                        tracing::warn!("Release-date upsert failed for {metadata_sys}: {e}");
-                        first_error.get_or_insert(e);
-                    }
-                    // Release-date resolver: rewrites game_library mirror columns
-                    // from `game_release_date` for this system's ROMs.
-                    if let Err(e) = LibraryDb::resolve_release_date_for_system(
-                        conn,
-                        &metadata_sys,
-                        region_pref,
-                        region_secondary,
-                    ) {
-                        tracing::warn!("Release-date resolve failed for {metadata_sys}: {e}");
-                        first_error.get_or_insert(e);
-                    }
-                    first_error.map_or(Ok(()), Err)
-                },
-            )
-            .await;
+        let mut metadata_failed = false;
+        if let Err(e) = write_developer_updates(state, &sys, developer_updates, cancellation).await
+        {
+            tracing::warn!("Developer enrichment failed for {sys}: {e}");
+            metadata_failed = true;
+        }
+        if let Err(e) =
+            write_cooperative_updates(state, &sys, cooperative_updates, cancellation).await
+        {
+            tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
+            metadata_failed = true;
+        }
+        if let Err(e) = write_release_date_updates(
+            state,
+            &sys,
+            release_date_rows,
+            region_pref,
+            region_secondary,
+            cancellation,
+        )
+        .await
+        {
+            tracing::warn!("Release-date enrichment failed for {sys}: {e}");
+            metadata_failed = true;
+        }
         let metadata_write_ms = metadata_started.elapsed().as_millis();
         let mut failed = false;
-        match metadata_result {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!("Metadata enrichment SQL failed for {sys}: {e}");
-                failed = true;
-            }
-            Err(e) => {
-                tracing::warn!("Metadata enrichment write failed for {sys}: {e}");
-                failed = true;
-            }
+        if metadata_failed {
+            failed = true;
         }
 
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
-        let detail_sys = sys.clone();
-        let detail_description_rows = description_rows.clone();
-        let detail_resource_rows = resource_rows.clone();
         let detail_started = Instant::now();
-        let detail_result = state
-            .library_writer
-            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                LibraryDb::replace_detail_metadata_and_resources_for_system(
-                    conn,
-                    &detail_sys,
-                    &detail_description_rows,
-                    &detail_resource_rows,
-                )
-            })
-            .await;
+        let detail_result = write_detail_metadata_and_resources(
+            state,
+            &sys,
+            description_rows,
+            resource_rows,
+            cancellation,
+        )
+        .await;
         let detail_write_ms = detail_started.elapsed().as_millis();
-        match detail_result {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!("Detail/resource enrichment SQL failed for {sys}: {e}");
-                failed = true;
-            }
-            Err(e) => {
-                tracing::warn!("Detail/resource enrichment write failed for {sys}: {e}");
-                failed = true;
-            }
+        if let Err(e) = detail_result {
+            tracing::warn!("Detail/resource enrichment failed for {sys}: {e}");
+            failed = true;
         }
 
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
-        let box_art_sys = sys.clone();
         let box_art_started = Instant::now();
-        let box_art_result = state
-            .library_writer
-            .try_write_with_timeout(
-                LIBRARY_MAINTENANCE_WRITE_TIMEOUT,
-                move |conn| -> Result<()> {
-                    let mut first_error = None;
-                    if !enrichments.is_empty()
-                        && let Err(e) =
-                            LibraryDb::update_box_art_genre_rating(conn, &box_art_sys, &enrichments)
-                    {
-                        tracing::warn!("Enrichment failed for {box_art_sys}: {e}");
-                        first_error.get_or_insert(e);
-                    }
-                    first_error.map_or(Ok(()), Err)
-                },
-            )
-            .await;
+        let box_art_result =
+            write_box_art_genre_rating_updates(state, &sys, enrichments, cancellation).await;
         let box_art_write_ms = box_art_started.elapsed().as_millis();
-        match box_art_result {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                tracing::warn!("Box art/genre/rating enrichment SQL failed for {sys}: {e}");
-                failed = true;
-            }
-            Err(e) => {
-                tracing::warn!("Box art/genre/rating enrichment write failed for {sys}: {e}");
-                failed = true;
-            }
+        if let Err(e) = box_art_result {
+            tracing::warn!("Box art/genre/rating enrichment failed for {sys}: {e}");
+            failed = true;
         }
 
         tracing::debug!(
@@ -421,11 +362,278 @@ impl LibraryService {
     }
 }
 
-async fn set_enrichment_state(
-    state: &crate::api::AppState,
+async fn write_developer_updates(
+    state: &AppState,
     system: &str,
-    phase: PhaseState,
+    updates: Vec<(String, String)>,
+    cancellation: Option<&ScanCancellation>,
 ) -> Result<()> {
+    write_enrichment_chunks(
+        state,
+        system,
+        "developer",
+        updates,
+        cancellation,
+        LibraryDb::update_developers,
+    )
+    .await
+}
+
+async fn write_cooperative_updates(
+    state: &AppState,
+    system: &str,
+    updates: Vec<String>,
+    cancellation: Option<&ScanCancellation>,
+) -> Result<()> {
+    write_enrichment_chunks(
+        state,
+        system,
+        "cooperative",
+        updates,
+        cancellation,
+        LibraryDb::update_cooperative,
+    )
+    .await
+}
+
+async fn write_box_art_genre_rating_updates(
+    state: &AppState,
+    system: &str,
+    updates: Vec<BoxArtGenreRating>,
+    cancellation: Option<&ScanCancellation>,
+) -> Result<()> {
+    write_enrichment_chunks(
+        state,
+        system,
+        "box_art_genre_rating",
+        updates,
+        cancellation,
+        LibraryDb::update_box_art_genre_rating,
+    )
+    .await
+}
+
+async fn write_release_date_updates(
+    state: &AppState,
+    system: &str,
+    rows: Vec<ReleaseDateRow>,
+    primary: RegionPreference,
+    secondary: Option<RegionPreference>,
+    cancellation: Option<&ScanCancellation>,
+) -> Result<()> {
+    write_enrichment_chunks(
+        state,
+        system,
+        "release_date",
+        rows,
+        cancellation,
+        |conn, _, rows| LibraryDb::upsert_release_dates(conn, rows).map(|_| ()),
+    )
+    .await?;
+
+    if let Some(cancellation) = cancellation {
+        cancellation.ensure_current()?;
+    }
+    let mirror_system = system.to_owned();
+    let mirror_updates = match state
+        .library_reader
+        .try_read(move |conn| {
+            LibraryDb::resolved_release_date_mirrors_for_system(
+                conn,
+                &mirror_system,
+                primary,
+                secondary,
+            )
+        })
+        .await
+    {
+        Ok(Ok(updates)) => updates,
+        Ok(Err(e)) => return Err(e),
+        Err(e) => return Err(Error::Other(e.to_string())),
+    };
+
+    write_enrichment_chunks(
+        state,
+        system,
+        "release_date_mirror",
+        mirror_updates,
+        cancellation,
+        |conn, system, rows| LibraryDb::update_release_date_mirrors(conn, system, rows).map(|_| ()),
+    )
+    .await
+}
+
+async fn write_detail_metadata_and_resources(
+    state: &AppState,
+    system: &str,
+    description_rows: Vec<(String, Option<String>, Option<String>)>,
+    resource_rows: Vec<LibraryGameResource>,
+    cancellation: Option<&ScanCancellation>,
+) -> Result<()> {
+    if let Some(cancellation) = cancellation {
+        cancellation.ensure_current()?;
+    }
+    let stage_system = system.to_owned();
+    let stage_token = match state
+        .library_writer
+        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+            LibraryDb::begin_detail_resource_stage(conn, &stage_system)
+        })
+        .await
+    {
+        Ok(Ok(token)) => token,
+        Ok(Err(e)) => return Err(e),
+        Err(e) => return Err(Error::Other(e.to_string())),
+    };
+
+    for (index, chunk) in description_rows
+        .chunks(ENRICHMENT_WRITE_CHUNK_ROWS)
+        .enumerate()
+    {
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+        let stage_system = system.to_owned();
+        let rows = chunk.to_vec();
+        let rows_len = rows.len();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::insert_detail_metadata_stage_chunk(
+                    conn,
+                    &stage_system,
+                    stage_token,
+                    &rows,
+                )
+            })
+            .await;
+        match result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                return Err(Error::Other(format!(
+                    "detail stage chunk {} ({} rows) SQL failed: {e}",
+                    index + 1,
+                    rows_len
+                )));
+            }
+            Err(e) => {
+                return Err(Error::Other(format!(
+                    "detail stage chunk {} ({} rows) write failed: {e}",
+                    index + 1,
+                    rows_len
+                )));
+            }
+        }
+    }
+
+    for (index, chunk) in resource_rows
+        .chunks(ENRICHMENT_WRITE_CHUNK_ROWS)
+        .enumerate()
+    {
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+        let stage_system = system.to_owned();
+        let rows = chunk.to_vec();
+        let rows_len = rows.len();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::insert_library_game_resource_stage_chunk(
+                    conn,
+                    &stage_system,
+                    stage_token,
+                    &rows,
+                )
+            })
+            .await;
+        match result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                return Err(Error::Other(format!(
+                    "resource stage chunk {} ({} rows) SQL failed: {e}",
+                    index + 1,
+                    rows_len
+                )));
+            }
+            Err(e) => {
+                return Err(Error::Other(format!(
+                    "resource stage chunk {} ({} rows) write failed: {e}",
+                    index + 1,
+                    rows_len
+                )));
+            }
+        }
+    }
+
+    if let Some(cancellation) = cancellation {
+        cancellation.ensure_current()?;
+    }
+    let stage_system = system.to_owned();
+    match state
+        .library_writer
+        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+            LibraryDb::finalize_detail_resource_stage(conn, &stage_system, stage_token)
+        })
+        .await
+    {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(Error::Other(e.to_string())),
+    }
+}
+
+async fn write_enrichment_chunks<T, F>(
+    state: &AppState,
+    system: &str,
+    label: &'static str,
+    rows: Vec<T>,
+    cancellation: Option<&ScanCancellation>,
+    write_chunk: F,
+) -> Result<()>
+where
+    T: Clone + Send + 'static,
+    F: Fn(&mut Connection, &str, &[T]) -> Result<()> + Copy + Send + 'static,
+{
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    for (index, chunk) in rows.chunks(ENRICHMENT_WRITE_CHUNK_ROWS).enumerate() {
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
+        }
+        let system = system.to_owned();
+        let chunk = chunk.to_vec();
+        let chunk_len = chunk.len();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                write_chunk(conn, &system, &chunk)
+            })
+            .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(Error::Other(format!(
+                    "{label} chunk {} ({} rows) SQL failed: {e}",
+                    index + 1,
+                    chunk_len
+                )));
+            }
+            Err(e) => {
+                return Err(Error::Other(format!(
+                    "{label} chunk {} ({} rows) write failed: {e}",
+                    index + 1,
+                    chunk_len
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn set_enrichment_state(state: &AppState, system: &str, phase: PhaseState) -> Result<()> {
     let sys = system.to_string();
     let write = state
         .library_writer
@@ -441,7 +649,7 @@ async fn set_enrichment_state(
 }
 
 async fn set_thumbnail_state(
-    state: &crate::api::AppState,
+    state: &AppState,
     system: &str,
     phase: ThumbnailPhaseState,
 ) -> Result<()> {
@@ -674,8 +882,15 @@ async fn queue_scan_thumbnail_downloads(
 
     tracing::info!("Thumbnail queue: queued {job_count} missing image(s) for {system}");
     let state = state.clone();
+    let mut ordered_jobs = jobs;
+    ordered_jobs.sort_by(|a, b| {
+        a.priority()
+            .cmp(&b.priority())
+            .then_with(|| a.system.cmp(&b.system))
+            .then_with(|| a.rom_filename.cmp(&b.rom_filename))
+    });
     tokio::spawn(async move {
-        for job in jobs {
+        for job in ordered_jobs {
             submit_thumbnail_job(&state, job).await;
         }
     });

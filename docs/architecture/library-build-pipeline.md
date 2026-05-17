@@ -98,6 +98,19 @@ handled independently:
 The foreground pass includes enrichment because enrichment is what makes the
 freshly-discovered rows useful: display metadata, release dates, descriptions,
 resources, and thumbnail matches are written before the next system starts.
+Enrichment calculation runs outside the library writer. Repeatable per-ROM
+updates such as developers, cooperative flags, release-date rows, and
+box-art/genre/rating fields are flushed in bounded app-level chunks, with a
+fresh writer acquisition per chunk. Splitting only inside a `LibraryDb` helper is
+not enough because the single writer connection would still be held for the
+whole system. Release-date mirror fields are resolved from `game_release_date`
+through the reader pool, then written back to `game_library` in chunks.
+Replace-style detail/resource data is staged in temporary tables first; live
+game-detail rows are swapped only after all staged chunks have succeeded, so a
+cancelled or failed pass does not clear old game-detail data. The final live
+swap can still be a long writer on very large systems; generation-based
+activation would remove that final hold, but that larger reader/schema change is
+deferred.
 
 ## Scan-Token Reconcile
 
@@ -162,3 +175,18 @@ foreground populate finished in 280.1 s, then background identity processed
 like-for-like speed win over beta.9's forced rebuild baseline. The design goal it
 validated was responsiveness: the library was already populated and browsable
 while the long hash tail continued.
+
+Follow-up validation on a 102,662-ROM NFS library showed the next bottleneck:
+large enrichment writers still held the library writer for several seconds on
+the biggest system, which delayed thumbnail completion writes. The mitigation is
+to chunk repeatable enrichment writes at the app boundary so the writer pool is
+released between batches, and to stage replace-style detail/resource data before
+the live swap.
+
+After those changes, a manual rescan on the same 102,662-ROM NFS library
+completed in 313.3 s with cached identity fully reused. The run had no hard DB
+failures and the UI banner cleared when the foreground pass completed. The
+largest remaining writer hold was the staged detail/resource final swap for
+`sinclair_zx` at about 13.8 s. That validates correctness and responsiveness for
+beta.11, but leaves generation-based detail/resource activation as the next
+focused improvement if this writer hold becomes user-visible.

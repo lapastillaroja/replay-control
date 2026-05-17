@@ -286,6 +286,46 @@ Per-system scan metadata. Used by `system_summaries` to derive UI counts and by 
 
 **PRIMARY KEY**: `system`
 
+### game_library_system_stats
+
+Rebuildable per-system romset facts for metadata/coverage pages. The table is a materialized view over `game_library`, `game_detail_metadata`, and `library_game_resource`; it is refreshed after discovery finalization, enrichment completion, and box-art writes. Missing rows are backfilled when `library.db` opens so upgraded installs do not need a manual rescan before coverage appears. Request-time metadata pages read library summary, image counts, and per-system coverage from this table and do not keep an additional app-local snapshot cache.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK) |
+| rom_count | INTEGER | Total discovered ROM rows |
+| total_size_bytes | INTEGER | Total discovered ROM bytes |
+| clone_count | INTEGER | ROMs classified as clones |
+| hack_count | INTEGER | ROMs classified as hacks |
+| translation_count | INTEGER | ROMs classified as translations |
+| homebrew_count | INTEGER | Reserved for homebrew/aftermarket classification when stored separately |
+| unlicensed_count | INTEGER | Reserved for unlicensed classification when stored separately |
+| special_count | INTEGER | ROMs excluded from recommendation-style surfaces |
+| region_counts_json | TEXT | Display-only region distribution |
+| release_year_min | INTEGER | Earliest known release year |
+| release_year_max | INTEGER | Latest known release year |
+| release_date_known_count | INTEGER | ROMs with known release date/year |
+| genre_counts_json | TEXT | Display-only genre distribution |
+| genre_group_counts_json | TEXT | Display-only normalized genre distribution |
+| developer_known_count | INTEGER | ROMs with developer data |
+| publisher_known_count | INTEGER | ROMs with publisher data from detail metadata |
+| player_count_distribution_json | TEXT | Display-only player-count distribution |
+| rating_known_count | INTEGER | ROMs with rating data |
+| description_count | INTEGER | ROMs with long-form description data |
+| boxart_count | INTEGER | ROMs with box art URL coverage |
+| snap_count | INTEGER | Reserved for screenshot coverage |
+| title_screen_count | INTEGER | Reserved for title-screen coverage |
+| manual_count | INTEGER | ROMs with manual resource suggestions |
+| video_count | INTEGER | ROMs with video resource suggestions |
+| resource_count | INTEGER | Total rebuildable resource rows |
+| coop_count | INTEGER | ROMs marked as cooperative |
+| verified_count | INTEGER | ROMs matched by CRC identity |
+| driver_status_json | TEXT | Arcade driver-status distribution |
+| refresh_state | INTEGER | Stats state (`unknown`, `fresh`, `stale`, `refreshing`, failed) |
+| updated_at | INTEGER | Unix timestamp of last refresh |
+
+**PRIMARY KEY**: `system`
+
 ### game_detail_metadata
 
 Long-form description + publisher per ROM, denormalized so the game-detail server fn stays on the library pool (no cross-pool acquire to `external_metadata.db`). One row per matched ROM; rebuilt at every enrichment pass.
@@ -323,6 +363,40 @@ Per-ROM resource suggestions copied from provider and catalog sources during enr
 **Foreign key**: `(system, rom_filename) REFERENCES game_library(system, rom_filename) ON DELETE CASCADE`
 
 **Index**: `library_game_resource_idx_rom_type ON library_game_resource(system, rom_filename, resource_type)` — supports game-detail manual/video suggestions.
+
+### game_detail_metadata_stage
+
+Temporary staging table for chunked enrichment. Detail rows are written here before the live `game_detail_metadata` rows are replaced, so cancelled or failed enrichment keeps the previous live detail data.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1) |
+| stage_token | INTEGER | Per-run staging token (PK part 2) |
+| rom_filename | TEXT | ROM filename (PK part 3) |
+| description | TEXT | Long-form description (nullable) |
+| publisher | TEXT | Publisher name (nullable) |
+
+**PRIMARY KEY**: `(system, stage_token, rom_filename)`
+
+### library_game_resource_stage
+
+Temporary staging table for chunked enrichment. Resource rows are written here before the live `library_game_resource` rows are replaced, matching the detail staging lifecycle.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1) |
+| stage_token | INTEGER | Per-run staging token (PK part 2) |
+| rom_filename | TEXT | ROM filename (PK part 3) |
+| source | TEXT | Source tag, e.g. `"launchbox"`, `"mister_manuals"`, `"retrokit"` (PK part 4) |
+| resource_type | TEXT | Resource kind, e.g. `"manual"` or `"video"` (PK part 5) |
+| resource_id | TEXT | Source-stable resource ID (PK part 6) |
+| url | TEXT | External URL |
+| title | TEXT | Display title |
+| languages | TEXT | Comma-separated language tags |
+| platform | TEXT | Platform hint for video resources, e.g. `"youtube"` |
+| mime_type | TEXT | Expected content type for downloadable resources |
+
+**PRIMARY KEY**: `(system, stage_token, rom_filename, source, resource_type, resource_id)`
 
 ### library_thumbnail_job
 
@@ -649,7 +723,7 @@ History:
 - **v6**: renames `game_description` to `game_detail_metadata` and adds `library_game_resource` for manual/video suggestions copied from provider/catalog sources during enrichment.
 - **v7**: adds `game_library.identity_state` for resumable hash matching.
 - **v8**: adds per-system discovery, enrichment, and thumbnail state to `game_library_meta`.
-- **v9**: adds durable thumbnail download jobs. Newer rebuildable columns such as `scan_token` and thumbnail priority are validated at open and may trigger a library cache rebuild instead of a formal migration.
+- **v9**: adds durable thumbnail download jobs. Newer rebuildable columns/tables such as `scan_token`, thumbnail priority, detail/resource staging, and `game_library_system_stats` are validated at open and may trigger a library cache rebuild instead of a formal migration.
 
 `run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL. For rebuildable library-cache tables, column drift is also treated as cache drift: the app recreates the table rather than carrying long migration code for data that can be rebuilt from ROM storage and metadata sources.
 

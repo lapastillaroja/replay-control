@@ -84,6 +84,14 @@ pub struct ReleaseDateRow {
     pub source: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseDateMirrorUpdate {
+    pub rom_filename: String,
+    pub release_date: Option<String>,
+    pub precision: Option<DatePrecision>,
+    pub region: Option<String>,
+}
+
 /// Map the user's `RegionPreference` to the corresponding `game_release_date.region` string.
 pub fn region_pref_to_db_region(pref: RegionPreference) -> &'static str {
     match pref {
@@ -123,52 +131,67 @@ pub async fn fetch_static_release_data() -> StaticReleaseData {
 }
 
 impl LibraryDb {
+    const RELEASE_DATE_BATCH_ROWS: usize = 5_000;
+
     /// Bulk insert release-date rows. Overwrites existing `(system, base_title, region)` entries
     /// with `source = <new>` iff the new precision is strictly higher than the existing one
     /// (year < month < day). Lower or equal precision is rejected.
     ///
     /// This is the "precision-upgrade" write path used by both build-time embedded data
     /// (year-precision from arcade DAT/TOSEC) and runtime LaunchBox enrichment (day-precision).
+    /// Rows are committed in bounded chunks because the upsert is idempotent and
+    /// repeatable by the next enrichment/import pass if interrupted.
     pub fn upsert_release_dates(conn: &mut Connection, rows: &[ReleaseDateRow]) -> Result<usize> {
         if rows.is_empty() {
             return Ok(0);
         }
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Other(format!("Transaction start: {e}")))?;
 
-        let mut count = 0usize;
-        {
-            // Precision rank: day=3, month=2, year=1.
-            // SQLite COALESCE + CASE lets us compare existing vs new.
-            let sql = "INSERT INTO game_release_date (system, base_title, region, release_date, precision, source) \
-                       VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-                       ON CONFLICT(system, base_title, region) DO UPDATE SET \
-                           release_date = excluded.release_date, \
-                           precision    = excluded.precision, \
-                           source       = excluded.source \
-                       WHERE \
-                           CASE excluded.precision WHEN 'day' THEN 3 WHEN 'month' THEN 2 ELSE 1 END \
-                         > CASE game_release_date.precision WHEN 'day' THEN 3 WHEN 'month' THEN 2 ELSE 1 END";
-            let mut stmt = tx
-                .prepare(sql)
-                .map_err(|e| Error::Other(format!("Prepare upsert_release_dates: {e}")))?;
-            for r in rows {
-                stmt.execute(params![
-                    r.system,
-                    r.base_title,
-                    r.region,
-                    r.release_date,
-                    DpSql(r.precision),
-                    r.source,
-                ])
-                .map_err(|e| Error::Other(format!("Upsert release_date: {e}")))?;
-                count += 1;
-            }
+        Self::upsert_release_dates_with_batch(conn, rows, Self::RELEASE_DATE_BATCH_ROWS)
+    }
+
+    fn upsert_release_dates_with_batch(
+        conn: &mut Connection,
+        rows: &[ReleaseDateRow],
+        batch_rows: usize,
+    ) -> Result<usize> {
+        if rows.is_empty() {
+            return Ok(0);
         }
-
-        tx.commit()
-            .map_err(|e| Error::Other(format!("Transaction commit: {e}")))?;
+        let batch_rows = batch_rows.max(1);
+        let mut count = 0usize;
+        for chunk in rows.chunks(batch_rows) {
+            let tx = conn
+                .transaction()
+                .map_err(|e| Error::Other(format!("Transaction start: {e}")))?;
+            {
+                let sql = "INSERT INTO game_release_date (system, base_title, region, release_date, precision, source) \
+                           VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                           ON CONFLICT(system, base_title, region) DO UPDATE SET \
+                               release_date = excluded.release_date, \
+                               precision    = excluded.precision, \
+                               source       = excluded.source \
+                           WHERE \
+                               CASE excluded.precision WHEN 'day' THEN 3 WHEN 'month' THEN 2 ELSE 1 END \
+                             > CASE game_release_date.precision WHEN 'day' THEN 3 WHEN 'month' THEN 2 ELSE 1 END";
+                let mut stmt = tx
+                    .prepare(sql)
+                    .map_err(|e| Error::Other(format!("Prepare upsert_release_dates: {e}")))?;
+                for r in chunk {
+                    stmt.execute(params![
+                        r.system,
+                        r.base_title,
+                        r.region,
+                        r.release_date,
+                        DpSql(r.precision),
+                        r.source,
+                    ])
+                    .map_err(|e| Error::Other(format!("Upsert release_date: {e}")))?;
+                    count += 1;
+                }
+            }
+            tx.commit()
+                .map_err(|e| Error::Other(format!("Transaction commit: {e}")))?;
+        }
         Ok(count)
     }
 
@@ -203,9 +226,18 @@ impl LibraryDb {
         system: &str,
         data: StaticReleaseData,
     ) -> Result<usize> {
-        let library_titles = load_library_titles(conn, Some(system))?;
-        let rows = static_release_rows(data, &library_titles);
+        let rows = Self::static_release_date_rows_for_system(conn, system, data)?;
         Self::upsert_release_dates(conn, &rows)
+    }
+
+    /// Build static release-date rows that apply to one system's current library rows.
+    pub fn static_release_date_rows_for_system(
+        conn: &Connection,
+        system: &str,
+        data: StaticReleaseData,
+    ) -> Result<Vec<ReleaseDateRow>> {
+        let library_titles = load_library_titles(conn, Some(system))?;
+        Ok(static_release_rows(data, &library_titles))
     }
 
     /// Populate `game_release_date` from `game_library` rows' current mirror columns.
@@ -237,6 +269,24 @@ impl LibraryDb {
         system: Option<&str>,
         source: &str,
     ) -> Result<usize> {
+        let rows = Self::library_release_date_rows_scope(conn, system, source)?;
+        Self::upsert_release_dates(conn, &rows)
+    }
+
+    /// Build release-date rows from one system's current `game_library` mirror columns.
+    pub fn library_release_date_rows_for_system(
+        conn: &Connection,
+        system: &str,
+        source: &str,
+    ) -> Result<Vec<ReleaseDateRow>> {
+        Self::library_release_date_rows_scope(conn, Some(system), source)
+    }
+
+    fn library_release_date_rows_scope(
+        conn: &Connection,
+        system: Option<&str>,
+        source: &str,
+    ) -> Result<Vec<ReleaseDateRow>> {
         let mut rows = Vec::new();
         if let Some(system) = system {
             let mut stmt = conn
@@ -283,7 +333,7 @@ impl LibraryDb {
             }
         }
 
-        Self::upsert_release_dates(conn, &rows)
+        Ok(rows)
     }
 
     /// Resolve each `game_library` row's best `release_date` from `game_release_date`
@@ -313,6 +363,150 @@ impl LibraryDb {
         secondary: Option<RegionPreference>,
     ) -> Result<usize> {
         Self::resolve_release_date(conn, Some(system), primary, secondary)
+    }
+
+    pub fn resolved_release_date_mirrors_for_system(
+        conn: &Connection,
+        system: &str,
+        primary: RegionPreference,
+        secondary: Option<RegionPreference>,
+    ) -> Result<Vec<ReleaseDateMirrorUpdate>> {
+        #[derive(Clone)]
+        struct BestReleaseDate {
+            release_date: String,
+            precision: DatePrecision,
+            region: String,
+            rank: (u8, u8),
+        }
+
+        fn region_rank(region: &str, primary: &str, secondary: Option<&str>) -> u8 {
+            if region == primary {
+                1
+            } else if secondary.is_some_and(|secondary| region == secondary) {
+                2
+            } else if region == "world" {
+                3
+            } else if region == "unknown" {
+                5
+            } else {
+                4
+            }
+        }
+
+        let primary_region = region_pref_to_db_region(primary);
+        let secondary_region = secondary.map(region_pref_to_db_region);
+        let mut best_by_title: HashMap<String, BestReleaseDate> = HashMap::new();
+        let mut stmt = conn
+            .prepare(
+                "SELECT base_title, region, release_date, precision
+                 FROM game_release_date
+                 WHERE system = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare release-date mirror source: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, DpSql>(3)?.0,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query release-date mirror source: {e}")))?;
+        for row in rows {
+            let (base_title, region, release_date, precision) =
+                row.map_err(|e| Error::Other(format!("Read release-date mirror source: {e}")))?;
+            let rank = (
+                region_rank(&region, primary_region, secondary_region),
+                4 - precision.rank(),
+            );
+            let candidate = BestReleaseDate {
+                release_date,
+                precision,
+                region,
+                rank,
+            };
+            match best_by_title.get(&base_title) {
+                Some(current) if current.rank <= rank => {}
+                _ => {
+                    best_by_title.insert(base_title, candidate);
+                }
+            }
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, base_title
+                 FROM game_library
+                 WHERE system = ?1 AND base_title != ''
+                 ORDER BY rom_filename",
+            )
+            .map_err(|e| Error::Other(format!("Prepare release-date mirror targets: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query release-date mirror targets: {e}")))?;
+        let mut updates = Vec::new();
+        for row in rows {
+            let (rom_filename, base_title) =
+                row.map_err(|e| Error::Other(format!("Read release-date mirror target: {e}")))?;
+            if let Some(best) = best_by_title.get(&base_title) {
+                updates.push(ReleaseDateMirrorUpdate {
+                    rom_filename,
+                    release_date: Some(best.release_date.clone()),
+                    precision: Some(best.precision),
+                    region: Some(best.region.clone()),
+                });
+            } else {
+                updates.push(ReleaseDateMirrorUpdate {
+                    rom_filename,
+                    release_date: None,
+                    precision: None,
+                    region: None,
+                });
+            }
+        }
+        Ok(updates)
+    }
+
+    pub fn update_release_date_mirrors(
+        conn: &mut Connection,
+        system: &str,
+        updates: &[ReleaseDateMirrorUpdate],
+    ) -> Result<usize> {
+        if updates.is_empty() {
+            return Ok(0);
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start: {e}")))?;
+        let mut count = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library
+                     SET release_date = ?2,
+                         release_precision = ?3,
+                         release_region_used = ?4
+                     WHERE system = ?5 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare release-date mirror update: {e}")))?;
+            for update in updates {
+                count += stmt
+                    .execute(params![
+                        update.rom_filename,
+                        update.release_date,
+                        update.precision.map(DpSql),
+                        update.region,
+                        system,
+                    ])
+                    .map_err(|e| Error::Other(format!("Update release-date mirror: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit: {e}")))?;
+        Ok(count)
     }
 
     fn resolve_release_date(
@@ -596,6 +790,34 @@ mod tests {
         assert_eq!(prec, "day");
     }
 
+    #[test]
+    fn upsert_release_dates_spans_multiple_batches() {
+        let (mut conn, _d) = open_temp_db();
+        let row_count = LibraryDb::RELEASE_DATE_BATCH_ROWS + 3;
+        let rows: Vec<_> = (0..row_count)
+            .map(|i| {
+                row(
+                    "snes",
+                    &format!("game {i}"),
+                    "usa",
+                    "1991",
+                    DatePrecision::Year,
+                    "test",
+                )
+            })
+            .collect();
+
+        let inserted = LibraryDb::upsert_release_dates(&mut conn, &rows).unwrap();
+        assert_eq!(inserted, row_count);
+
+        let count: usize = conn
+            .query_row("SELECT COUNT(*) FROM game_release_date", [], |r| {
+                r.get::<_, i64>(0).map(|v| v as usize)
+            })
+            .unwrap();
+        assert_eq!(count, row_count);
+    }
+
     fn make_entry(system: &str, filename: &str, base_title: &str) -> super::super::GameEntry {
         let mut e = super::super::tests::make_game_entry(system, filename, false);
         e.base_title = base_title.into();
@@ -659,6 +881,78 @@ mod tests {
             .unwrap();
         assert_eq!(date.as_deref(), Some("1991-08-23"));
         assert_eq!(region_used.as_deref(), Some("usa"));
+    }
+
+    #[test]
+    fn mirror_updates_match_scoped_resolver() {
+        let (mut conn, _d) = open_temp_db();
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_entry("snes", "Mario (USA).sfc", "mario"),
+                make_entry("snes", "Unmatched.sfc", "unmatched"),
+            ],
+            None,
+        )
+        .unwrap();
+        LibraryDb::upsert_release_dates(
+            &mut conn,
+            &[
+                row(
+                    "snes",
+                    "mario",
+                    "world",
+                    "1990",
+                    DatePrecision::Year,
+                    "tgdb",
+                ),
+                row(
+                    "snes",
+                    "mario",
+                    "usa",
+                    "1991-08-23",
+                    DatePrecision::Day,
+                    "launchbox",
+                ),
+            ],
+        )
+        .unwrap();
+
+        let updates = LibraryDb::resolved_release_date_mirrors_for_system(
+            &conn,
+            "snes",
+            RegionPreference::Usa,
+            None,
+        )
+        .unwrap();
+        assert_eq!(updates.len(), 2);
+        LibraryDb::update_release_date_mirrors(&mut conn, "snes", &updates).unwrap();
+
+        let rows: Vec<(String, Option<String>, Option<String>)> = conn
+            .prepare(
+                "SELECT rom_filename, release_date, release_region_used
+                 FROM game_library
+                 WHERE system = 'snes'
+                 ORDER BY rom_filename",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    "Mario (USA).sfc".to_string(),
+                    Some("1991-08-23".to_string()),
+                    Some("usa".to_string())
+                ),
+                ("Unmatched.sfc".to_string(), None, None)
+            ]
+        );
     }
 
     #[test]

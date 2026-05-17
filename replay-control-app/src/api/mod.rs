@@ -874,8 +874,7 @@ impl AppState {
 
     /// Invalidate user-facing caches that depend on library state:
     /// the `ResponseCache` TTL slots and the `recommendations` snapshot.
-    /// `metadata_page` is invalidated separately by the few sites that
-    /// affect system-stats display.
+    /// The metadata page reads DB-backed system stats directly.
     pub async fn invalidate_user_caches(&self) {
         self.response_cache.invalidate_all();
         self.cache.invalidate_recommendations().await;

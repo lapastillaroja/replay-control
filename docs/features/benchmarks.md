@@ -1,7 +1,7 @@
 # Performance Benchmarks
 
-Last updated: 2026-05-07
-Primary benchmark build: v0.4.0-beta.9 (release profile, commit `92d211e`)
+Last updated: 2026-05-17
+Primary benchmark build: v0.4.0-beta.9 baseline, with beta.11 library-build follow-up measurements noted below.
 
 This page records what Replay Control actually costs to run — CPU, memory, page-load time, and download size — in normal use, plus what it does under artificial stress so we can spot regressions between releases.
 
@@ -101,6 +101,14 @@ Additional beta.11 validation on a larger NFS library (99,964 ROMs across 41 sys
 | End-to-end build | 718.0 s | Library remained browsable while identity continued |
 
 This run was not a like-for-like speed win over the beta.9 forced rebuild baseline. The useful result was responsiveness: the foreground library became available before the hash tail finished, and the app stayed usable during the remaining NFS reads.
+
+Follow-up beta.11 validation on a 102,662-ROM NFS library measured a normal manual rescan after identity had already completed:
+
+| Operation | Duration | Hash behavior |
+|---|---:|---|
+| Manual rescan | 313.3 s | Cached identity reused; 12 hash-eligible systems skipped because no rows needed matching |
+
+The rescan finished without DB acquire failures, SQL failures, panics, or cancellation. The main remaining cost was the largest non-hash system: `sinclair_zx` took 114.8 s of the run, mostly discovery writes and enrichment. The app remained responsive during the operation.
 
 ## Stress Tests
 

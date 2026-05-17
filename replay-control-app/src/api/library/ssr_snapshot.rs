@@ -1,7 +1,6 @@
 //! Generic single-flight cached snapshot.
 //!
-//! Tier 2 of the pool-design plan. Generalises the pattern used by
-//! `metadata_snapshot.rs` so any future SSR page that wants
+//! Tier 2 of the pool-design plan. Used by SSR pages that want
 //! "compute-once-per-write-cycle, share across concurrent requests, fall
 //! back to stale on transient unavailability" can opt in with a few lines.
 //!
@@ -38,7 +37,7 @@
 //! ```
 //!
 //! Hook `invalidate()` calls into the same write-completion sites that
-//! invalidate other caches (see `metadata_snapshot.rs` for an example).
+//! invalidate related caches.
 
 use std::time::Instant;
 

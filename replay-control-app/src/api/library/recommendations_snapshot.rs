@@ -1,15 +1,12 @@
 //! Single-flight cached snapshot of the home-page recommendation payload.
 //!
-//! Mirrors `metadata_snapshot.rs` shape: this module just delegates to
-//! `compute_recommendations` in the server-fns module (where the queries
-//! and helpers already live) and is plumbed into the generic
+//! Delegates to `compute_recommendations` in the server-fns module (where
+//! the queries and helpers already live) and is plumbed into the generic
 //! `SsrSnapshot<T>` helper on `LibraryService`.
 //!
 //! Replaces the previous `response_cache.recommendations: TtlSlot<...>`
-//! with strictly better caching: event-driven invalidation via the same
-//! write-completion sites that already invalidate the metadata snapshot,
-//! single-flight rebuild on miss, and stale-on-`None` so the home page
-//! keeps rendering during long writes.
+//! with event-driven invalidation, single-flight rebuild on miss, and
+//! stale-on-`None` so the home page keeps rendering during long writes.
 
 use crate::api::AppState;
 use crate::server_fns::RecommendationData;

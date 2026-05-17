@@ -286,13 +286,6 @@ impl BackgroundManager {
             Self::phase_auto_rebuild_thumbnail_index(state).await;
             state.cache.resume_pending_thumbnail_downloads(state).await;
 
-            // Pre-warm the metadata-page snapshot so the very first user
-            // request after boot gets a hot cache instead of paying the
-            // ~250 ms compute on demand. Invalidations later in the run
-            // (post-import / post-thumbnail-update) drop it again so the
-            // next reload picks up fresh state.
-            let _ = state.cache.metadata_page_snapshot(state).await;
-
             // _guard drops → Idle
         }
     }
@@ -1405,8 +1398,6 @@ impl BackgroundManager {
         for system in active {
             state.cache.enrich_system_cache(state, system).await;
         }
-        // Drop the metadata-page snapshot — coverage just changed.
-        state.cache.invalidate_metadata_page().await;
         state.invalidate_user_caches().await;
     }
 
@@ -1816,7 +1807,6 @@ impl BackgroundManager {
             start.elapsed().as_secs_f64()
         );
 
-        state.cache.invalidate_metadata_page().await;
         Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);
         Ok(())
     }
@@ -2444,9 +2434,6 @@ impl AppState {
                     );
                 }
             }
-
-            // Coverage / image_stats / library_summary all changed.
-            state.cache.invalidate_metadata_page().await;
         });
     }
 

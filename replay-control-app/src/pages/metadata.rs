@@ -19,9 +19,8 @@ fn format_rebuild_progress(locale: crate::i18n::Locale, p: &RebuildProgress) -> 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
-    // Single snapshot resource replaces six per-stat server fns. SSR fan-out
-    // collapses to one DB pool acquisition and one closure regardless of how
-    // many sections render. See `api/library/metadata_snapshot.rs`.
+    // One page payload replaces six per-stat server fns. System coverage comes
+    // from DB-backed materialized stats, not an app-local metadata cache.
     let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
 
     // App-level activity signal (populated by SseActivityListener at the App

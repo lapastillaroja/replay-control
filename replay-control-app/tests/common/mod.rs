@@ -140,9 +140,6 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetSystemFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRomDetail>();
     server_fn::axum::register_explicit::<server_fns::RefreshStorage>();
-    server_fn::axum::register_explicit::<server_fns::GetMetadataStats>();
-    server_fn::axum::register_explicit::<server_fns::GetSystemCoverage>();
-    server_fn::axum::register_explicit::<server_fns::GetImageStats>();
     server_fn::axum::register_explicit::<server_fns::GetSystemLogs>();
     server_fn::axum::register_explicit::<server_fns::GetLogLevelConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveLogLevelConfig>();

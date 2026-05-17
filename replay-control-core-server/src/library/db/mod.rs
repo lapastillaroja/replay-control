@@ -9,6 +9,7 @@
 mod aliases_series;
 pub mod game_description;
 mod game_library;
+mod game_library_system_stats;
 pub mod game_resource;
 pub mod library_meta;
 mod recommendations;
@@ -18,8 +19,10 @@ pub mod release_dates;
 pub use aliases_series::SequelChainInfo;
 pub use game_description::GameDescription;
 pub use game_library::{DISCOVERY_SAVE_CHUNK_ROWS, SearchFilter};
+pub use game_library_system_stats::{GameLibrarySystemStats, StatsRefreshState};
 pub use release_dates::{
-    ReleaseDateRow, StaticReleaseData, fetch_static_release_data, region_pref_to_db_region,
+    ReleaseDateMirrorUpdate, ReleaseDateRow, StaticReleaseData, fetch_static_release_data,
+    region_pref_to_db_region,
 };
 
 use std::path::Path;
@@ -60,24 +63,6 @@ pub use replay_control_core::library_db::{
     DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
     SystemCoverage,
 };
-
-/// Per-system coverage stats from a single `GROUP BY system` pass over `game_library`.
-#[derive(Debug, Clone, Default)]
-pub struct SystemCoverageStats {
-    pub system: String,
-    pub with_genre: usize,
-    pub with_developer: usize,
-    pub with_rating: usize,
-    pub size_bytes: u64,
-    pub clone_count: usize,
-    pub hack_count: usize,
-    pub translation_count: usize,
-    pub special_count: usize,
-    pub coop_count: usize,
-    pub verified_count: usize,
-    pub min_year: Option<u16>,
-    pub max_year: Option<u16>,
-}
 
 pub use replay_control_core::DatePrecision;
 
@@ -396,62 +381,6 @@ pub(crate) const ORDER_BY_RELEASE_DATE: &str = "release_date IS NULL,
         ELSE 3
     END";
 
-/// Combine `game_library_meta`, LaunchBox per-system entries, thumbnail
-/// counts, coverage stats, and arcade driver-status counts into the
-/// per-system rows shown on `/settings/metadata`. Pure transform; both
-/// the cached snapshot and the live server fn use it so the two paths
-/// can't drift.
-pub fn build_system_coverage(
-    system_meta: Vec<SystemMeta>,
-    entries_per_system: Vec<(String, usize)>,
-    thumbnails_per_system: Vec<(String, usize)>,
-    coverage_stats: Vec<SystemCoverageStats>,
-    driver_status: std::collections::HashMap<String, DriverStatusCounts>,
-) -> Vec<SystemCoverage> {
-    let mut meta_map: std::collections::HashMap<String, usize> =
-        entries_per_system.into_iter().collect();
-    let mut thumb_map: std::collections::HashMap<String, usize> =
-        thumbnails_per_system.into_iter().collect();
-    let mut stats_map: std::collections::HashMap<String, SystemCoverageStats> = coverage_stats
-        .into_iter()
-        .map(|s| (s.system.clone(), s))
-        .collect();
-    let mut driver_map = driver_status;
-
-    let mut coverage: Vec<SystemCoverage> = system_meta
-        .into_iter()
-        .filter(|s| s.rom_count > 0)
-        .map(|s| {
-            let with_metadata = meta_map.remove(&s.system).unwrap_or(0);
-            let with_thumbnail = thumb_map.remove(&s.system).unwrap_or(0);
-            let stats = stats_map.remove(&s.system).unwrap_or_default();
-            let driver_status = driver_map.remove(&s.system);
-            SystemCoverage {
-                display_name: replay_control_core::systems::system_display_name(&s.system),
-                total_games: s.rom_count,
-                with_thumbnail: with_thumbnail.min(s.rom_count),
-                with_genre: stats.with_genre,
-                with_developer: stats.with_developer,
-                with_rating: stats.with_rating,
-                size_bytes: stats.size_bytes,
-                with_description: with_metadata.min(s.rom_count),
-                clone_count: stats.clone_count,
-                hack_count: stats.hack_count,
-                translation_count: stats.translation_count,
-                special_count: stats.special_count,
-                coop_count: stats.coop_count,
-                verified_count: stats.verified_count,
-                min_year: stats.min_year,
-                max_year: stats.max_year,
-                driver_status,
-                system: s.system,
-            }
-        })
-        .collect();
-    coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-    coverage
-}
-
 /// SQL to create the `game_release_date` table (multi-region, full-precision).
 const CREATE_GAME_RELEASE_DATE_SQL: &str = "
     CREATE TABLE IF NOT EXISTS game_release_date (
@@ -565,6 +494,34 @@ const CREATE_LIBRARY_GAME_RESOURCE_SQL: &str = "
         ON library_game_resource(system, rom_filename, resource_type);
 ";
 
+const CREATE_GAME_DETAIL_METADATA_STAGE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_detail_metadata_stage (
+        system TEXT NOT NULL,
+        stage_token INTEGER NOT NULL,
+        rom_filename TEXT NOT NULL,
+        description TEXT,
+        publisher TEXT,
+        PRIMARY KEY (system, stage_token, rom_filename)
+    );
+";
+
+const CREATE_LIBRARY_GAME_RESOURCE_STAGE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS library_game_resource_stage (
+        system TEXT NOT NULL,
+        stage_token INTEGER NOT NULL,
+        rom_filename TEXT NOT NULL,
+        source TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT,
+        languages TEXT,
+        platform TEXT,
+        mime_type TEXT,
+        PRIMARY KEY (system, stage_token, rom_filename, source, resource_type, resource_id)
+    );
+";
+
 const CREATE_LIBRARY_THUMBNAIL_JOB_SQL: &str = "
     CREATE TABLE IF NOT EXISTS library_thumbnail_job (
         system TEXT NOT NULL,
@@ -598,6 +555,42 @@ const CREATE_LIBRARY_BUILD_SEQUENCE_SQL: &str = "
     );
     INSERT OR IGNORE INTO library_build_sequence (name, next_value)
     VALUES ('scan_token', 1);
+";
+
+const CREATE_GAME_LIBRARY_SYSTEM_STATS_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_library_system_stats (
+        system TEXT PRIMARY KEY,
+        rom_count INTEGER NOT NULL DEFAULT 0,
+        total_size_bytes INTEGER NOT NULL DEFAULT 0,
+        clone_count INTEGER NOT NULL DEFAULT 0,
+        hack_count INTEGER NOT NULL DEFAULT 0,
+        translation_count INTEGER NOT NULL DEFAULT 0,
+        homebrew_count INTEGER NOT NULL DEFAULT 0,
+        unlicensed_count INTEGER NOT NULL DEFAULT 0,
+        special_count INTEGER NOT NULL DEFAULT 0,
+        region_counts_json TEXT,
+        release_year_min INTEGER,
+        release_year_max INTEGER,
+        release_date_known_count INTEGER NOT NULL DEFAULT 0,
+        genre_counts_json TEXT,
+        genre_group_counts_json TEXT,
+        developer_known_count INTEGER NOT NULL DEFAULT 0,
+        publisher_known_count INTEGER NOT NULL DEFAULT 0,
+        player_count_distribution_json TEXT,
+        rating_known_count INTEGER NOT NULL DEFAULT 0,
+        description_count INTEGER NOT NULL DEFAULT 0,
+        boxart_count INTEGER NOT NULL DEFAULT 0,
+        snap_count INTEGER NOT NULL DEFAULT 0,
+        title_screen_count INTEGER NOT NULL DEFAULT 0,
+        manual_count INTEGER NOT NULL DEFAULT 0,
+        video_count INTEGER NOT NULL DEFAULT 0,
+        resource_count INTEGER NOT NULL DEFAULT 0,
+        coop_count INTEGER NOT NULL DEFAULT 0,
+        verified_count INTEGER NOT NULL DEFAULT 0,
+        driver_status_json TEXT,
+        refresh_state INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER
+    );
 ";
 
 const LIBRARY_GAME_RESOURCE_COLUMNS: &[&str] = &[
@@ -681,6 +674,62 @@ const LIBRARY_THUMBNAIL_JOB_COLUMNS: &[&str] = &[
 
 const LIBRARY_BUILD_SEQUENCE_COLUMNS: &[&str] = &["name", "next_value"];
 
+const GAME_LIBRARY_SYSTEM_STATS_COLUMNS: &[&str] = &[
+    "system",
+    "rom_count",
+    "total_size_bytes",
+    "clone_count",
+    "hack_count",
+    "translation_count",
+    "homebrew_count",
+    "unlicensed_count",
+    "special_count",
+    "region_counts_json",
+    "release_year_min",
+    "release_year_max",
+    "release_date_known_count",
+    "genre_counts_json",
+    "genre_group_counts_json",
+    "developer_known_count",
+    "publisher_known_count",
+    "player_count_distribution_json",
+    "rating_known_count",
+    "description_count",
+    "boxart_count",
+    "snap_count",
+    "title_screen_count",
+    "manual_count",
+    "video_count",
+    "resource_count",
+    "coop_count",
+    "verified_count",
+    "driver_status_json",
+    "refresh_state",
+    "updated_at",
+];
+
+const GAME_DETAIL_METADATA_STAGE_COLUMNS: &[&str] = &[
+    "system",
+    "stage_token",
+    "rom_filename",
+    "description",
+    "publisher",
+];
+
+const LIBRARY_GAME_RESOURCE_STAGE_COLUMNS: &[&str] = &[
+    "system",
+    "stage_token",
+    "rom_filename",
+    "source",
+    "resource_type",
+    "resource_id",
+    "url",
+    "title",
+    "languages",
+    "platform",
+    "mime_type",
+];
+
 /// Expected columns in the `game_release_date` table.
 const GAME_RELEASE_DATE_COLUMNS: &[&str] = &[
     "system",
@@ -703,7 +752,10 @@ impl LibraryDb {
         "game_library",
         "game_library_meta",
         "game_detail_metadata",
+        "game_detail_metadata_stage",
         "library_game_resource",
+        "library_game_resource_stage",
+        "game_library_system_stats",
         "library_thumbnail_job",
         "library_build_sequence",
         "game_release_date",
@@ -744,10 +796,12 @@ impl LibraryDb {
             Self::run_migrations(&conn)?;
             Self::init_tables(&conn)?;
             Self::recover_running_states(&conn)?;
+            Self::backfill_missing_game_library_system_stats(&conn)?;
             return Ok(conn);
         }
 
         Self::recover_running_states(&conn)?;
+        Self::backfill_missing_game_library_system_stats(&conn)?;
         Ok(conn)
     }
 
@@ -879,6 +933,7 @@ impl LibraryDb {
         if Self::table_needs_rebuild(conn, "game_library", GAME_LIBRARY_COLUMNS) {
             let _ = conn.execute_batch(
                 "DROP TABLE IF EXISTS library_thumbnail_job;
+                 DROP TABLE IF EXISTS game_library_system_stats;
                  DROP TABLE IF EXISTS library_game_resource;
                  DROP TABLE IF EXISTS game_detail_metadata;
                  DROP TABLE IF EXISTS game_library;
@@ -894,6 +949,20 @@ impl LibraryDb {
         if Self::table_needs_rebuild(conn, "library_game_resource", LIBRARY_GAME_RESOURCE_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS library_game_resource;");
         }
+        if Self::table_needs_rebuild(
+            conn,
+            "game_detail_metadata_stage",
+            GAME_DETAIL_METADATA_STAGE_COLUMNS,
+        ) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_detail_metadata_stage;");
+        }
+        if Self::table_needs_rebuild(
+            conn,
+            "library_game_resource_stage",
+            LIBRARY_GAME_RESOURCE_STAGE_COLUMNS,
+        ) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS library_game_resource_stage;");
+        }
         if Self::table_needs_rebuild(conn, "library_thumbnail_job", LIBRARY_THUMBNAIL_JOB_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS library_thumbnail_job;");
         }
@@ -903,6 +972,13 @@ impl LibraryDb {
             LIBRARY_BUILD_SEQUENCE_COLUMNS,
         ) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS library_build_sequence;");
+        }
+        if Self::table_needs_rebuild(
+            conn,
+            "game_library_system_stats",
+            GAME_LIBRARY_SYSTEM_STATS_COLUMNS,
+        ) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_library_system_stats;");
         }
 
         conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
@@ -918,10 +994,22 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("Failed to create library_meta: {e}")))?;
         conn.execute_batch(CREATE_LIBRARY_GAME_RESOURCE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_game_resource: {e}")))?;
+        conn.execute_batch(CREATE_GAME_DETAIL_METADATA_STAGE_SQL)
+            .map_err(|e| {
+                Error::Other(format!("Failed to create game_detail_metadata_stage: {e}"))
+            })?;
+        conn.execute_batch(CREATE_LIBRARY_GAME_RESOURCE_STAGE_SQL)
+            .map_err(|e| {
+                Error::Other(format!("Failed to create library_game_resource_stage: {e}"))
+            })?;
         conn.execute_batch(CREATE_LIBRARY_THUMBNAIL_JOB_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_thumbnail_job: {e}")))?;
         conn.execute_batch(CREATE_LIBRARY_BUILD_SEQUENCE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_build_sequence: {e}")))?;
+        conn.execute_batch(CREATE_GAME_LIBRARY_SYSTEM_STATS_SQL)
+            .map_err(|e| {
+                Error::Other(format!("Failed to create game_library_system_stats: {e}"))
+            })?;
 
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,

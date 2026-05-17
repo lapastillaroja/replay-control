@@ -1,63 +1,38 @@
-//! Single-flight cached snapshot of the `/settings/metadata` page payload.
-//!
-//! Each query runs in its own short `pool.read()` closure (fanned out
-//! with `tokio::join!`) so SSR readers can slot in between them and no
-//! single closure exceeds the pool's `INTERACT_TIMEOUT` cap. See
-//! `investigations/2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`
-//! for the design rationale.
+//! DB-backed `/settings/metadata` page payload builder.
 
 use replay_control_core_server::external_metadata::{self, DataSourceStats};
-use replay_control_core_server::library_db::{self, LibraryDb};
+use replay_control_core_server::library_db::LibraryDb;
 
 use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
 use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 
-/// Build the snapshot. Returns `None` only when the DB pool was unavailable
-/// for the duration of the call — caller should keep the previous (stale)
-/// snapshot rather than caching `None`.
-pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
+/// Build the metadata page payload from durable DB state. System-level
+/// coverage comes from `game_library_system_stats`; this path does not keep an
+/// additional app-local snapshot cache.
+pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
     let storage = state.storage();
     let em_db_path = state.external_metadata_reader.db_path();
 
-    // 9 independent reads across two pools. The pools serialize them on their
+    // Independent reads across two pools. The pools serialize them on their
     // slot counts; fanning them out lets the slowest queries overlap with the
-    // others instead of running back-to-back. `unwrap_or_default()` keeps the
-    // snapshot best-effort: a single transient pool failure degrades that one
-    // section instead of failing the whole rebuild.
+    // others instead of running back-to-back. Defaults keep the page best-effort
+    // if a pool is briefly unavailable.
     let lib_pool = &state.library_reader;
     let em_pool = &state.external_metadata_reader;
-    let (
-        stats,
-        library_summary,
-        system_meta,
-        entries_per_system,
-        thumbnails_per_system,
-        coverage_stats,
-        driver_status,
-        data_source_stats,
-        image_count_pair,
-    ) = tokio::join!(
+    let (stats, library_summary, coverage, data_source_stats, image_count_pair) = tokio::join!(
         em_pool
             .read(move |c| external_metadata::launchbox_stats(c, &em_db_path).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::library_summary(c).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::load_all_system_meta(c).unwrap_or_default()),
-        em_pool.read(|c| external_metadata::launchbox_entries_per_system(c).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default()),
-        lib_pool.read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::library_summary_from_system_stats(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::system_coverage_from_stats(c).unwrap_or_default()),
         em_pool.read(|c| external_metadata::get_data_source_stats(c, "libretro-thumbnails").ok()),
-        lib_pool.read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0))),
+        lib_pool.read(|c| LibraryDb::image_stats_from_system_stats(c).unwrap_or((0, 0))),
     );
-    let stats = stats?;
-    let library_summary = library_summary?;
-    let system_meta = system_meta?;
-    let entries_per_system = entries_per_system?;
-    let thumbnails_per_system = thumbnails_per_system?;
-    let coverage_stats = coverage_stats?;
-    let driver_status = driver_status?;
-    let data_source_stats = data_source_stats?;
-    let image_count_pair: (usize, usize) = image_count_pair?;
+    let stats = stats.unwrap_or_default();
+    let library_summary = library_summary.unwrap_or_default();
+    let coverage = coverage.unwrap_or_default();
+    let data_source_stats = data_source_stats.unwrap_or_default();
+    let image_count_pair: (usize, usize) = image_count_pair.unwrap_or((0, 0));
 
     // Off-pool work: on-disk media size and bundled-catalog read-only stats.
     let storage_root = storage.root.clone();
@@ -68,18 +43,10 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     .unwrap_or(0);
     let image_stats = (image_count_pair.0, image_count_pair.1, media_size);
 
-    let coverage = library_db::build_system_coverage(
-        system_meta,
-        entries_per_system,
-        thumbnails_per_system,
-        coverage_stats,
-        driver_status,
-    );
-
     let data_source = build_data_source_summary(data_source_stats);
     let builtin_stats = build_builtin_stats().await;
 
-    Some(MetadataPageSnapshot {
+    MetadataPageSnapshot {
         stats,
         library_summary,
         coverage,
@@ -88,7 +55,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         builtin_stats,
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
-    })
+    }
 }
 
 fn build_data_source_summary(stats: Option<DataSourceStats>) -> DataSourceSummary {

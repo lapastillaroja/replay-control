@@ -1,0 +1,750 @@
+//! Materialized per-system library stats.
+
+use std::collections::BTreeMap;
+
+use rusqlite::{Connection, OptionalExtension, params};
+
+use replay_control_core::error::{Error, Result};
+
+use super::{DriverStatusCounts, LibraryDb, SystemCoverage};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StatsRefreshState {
+    #[default]
+    Unknown = 0,
+    Fresh = 1,
+    Stale = 2,
+    Refreshing = 3,
+    Failed = 4,
+}
+
+impl StatsRefreshState {
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
+
+    pub fn from_i64(value: i64) -> Self {
+        match value {
+            1 => Self::Fresh,
+            2 => Self::Stale,
+            3 => Self::Refreshing,
+            4 => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GameLibrarySystemStats {
+    pub system: String,
+    pub rom_count: usize,
+    pub total_size_bytes: u64,
+    pub clone_count: usize,
+    pub hack_count: usize,
+    pub translation_count: usize,
+    pub homebrew_count: usize,
+    pub unlicensed_count: usize,
+    pub special_count: usize,
+    pub region_counts_json: Option<String>,
+    pub release_year_min: Option<u16>,
+    pub release_year_max: Option<u16>,
+    pub release_date_known_count: usize,
+    pub genre_counts_json: Option<String>,
+    pub genre_group_counts_json: Option<String>,
+    pub developer_known_count: usize,
+    pub publisher_known_count: usize,
+    pub player_count_distribution_json: Option<String>,
+    pub rating_known_count: usize,
+    pub description_count: usize,
+    pub boxart_count: usize,
+    pub snap_count: usize,
+    pub title_screen_count: usize,
+    pub manual_count: usize,
+    pub video_count: usize,
+    pub resource_count: usize,
+    pub coop_count: usize,
+    pub verified_count: usize,
+    pub driver_status_json: Option<String>,
+    pub refresh_state: StatsRefreshState,
+    pub updated_at: Option<i64>,
+}
+
+impl LibraryDb {
+    pub fn backfill_missing_game_library_system_stats(conn: &Connection) -> Result<usize> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.system
+                 FROM game_library_meta m
+                 LEFT JOIN game_library_system_stats s ON s.system = m.system
+                 WHERE m.rom_count > 0 AND s.system IS NULL
+                 ORDER BY m.system",
+            )
+            .map_err(|e| {
+                Error::Other(format!("prepare backfill game_library_system_stats: {e}"))
+            })?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("query backfill game_library_system_stats: {e}")))?;
+
+        let mut systems = Vec::new();
+        for row in rows {
+            systems.push(row.map_err(|e| {
+                Error::Other(format!(
+                    "read backfill game_library_system_stats system: {e}"
+                ))
+            })?);
+        }
+
+        for system in &systems {
+            Self::refresh_game_library_system_stats(conn, system)?;
+        }
+        Ok(systems.len())
+    }
+
+    pub fn refresh_game_library_system_stats(conn: &Connection, system: &str) -> Result<()> {
+        let stats = Self::compute_game_library_system_stats(conn, system)?;
+        Self::upsert_game_library_system_stats(conn, &stats)
+    }
+
+    pub fn refresh_game_library_system_stats_state(
+        conn: &Connection,
+        system: &str,
+        state: StatsRefreshState,
+    ) -> Result<()> {
+        let mut stats = Self::compute_game_library_system_stats(conn, system)?;
+        stats.refresh_state = state;
+        Self::upsert_game_library_system_stats(conn, &stats)
+    }
+
+    pub fn set_game_library_system_stats_state(
+        conn: &Connection,
+        system: &str,
+        state: StatsRefreshState,
+    ) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library_system_stats
+             SET refresh_state = ?2
+             WHERE system = ?1",
+            params![system, state.as_i64()],
+        )
+        .map_err(|e| Error::Other(format!("set game_library_system_stats state: {e}")))
+    }
+
+    pub fn refresh_game_library_system_boxart_count(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library_system_stats
+             SET boxart_count = (
+                    SELECT COUNT(*)
+                    FROM game_library
+                    WHERE system = ?1 AND box_art_url IS NOT NULL
+                 ),
+                 updated_at = CAST(strftime('%s', 'now') AS INTEGER)
+             WHERE system = ?1",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("refresh game_library_system_stats boxart: {e}")))
+    }
+
+    pub fn clear_game_library_system_boxart_counts(conn: &Connection) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library_system_stats
+             SET boxart_count = 0,
+                 updated_at = CAST(strftime('%s', 'now') AS INTEGER)",
+            [],
+        )
+        .map_err(|e| Error::Other(format!("clear game_library_system_stats boxart: {e}")))
+    }
+
+    pub fn load_game_library_system_stats(
+        conn: &Connection,
+    ) -> Result<Vec<GameLibrarySystemStats>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_count, total_size_bytes, clone_count, hack_count,
+                        translation_count, homebrew_count, unlicensed_count, special_count,
+                        region_counts_json, release_year_min, release_year_max,
+                        release_date_known_count, genre_counts_json, genre_group_counts_json,
+                        developer_known_count, publisher_known_count,
+                        player_count_distribution_json, rating_known_count, description_count,
+                        boxart_count, snap_count, title_screen_count, manual_count, video_count,
+                        resource_count, coop_count, verified_count, driver_status_json,
+                        refresh_state, updated_at
+                 FROM game_library_system_stats
+                 ORDER BY system",
+            )
+            .map_err(|e| Error::Other(format!("prepare load_game_library_system_stats: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(GameLibrarySystemStats {
+                    system: row.get(0)?,
+                    rom_count: row.get::<_, i64>(1).unwrap_or(0) as usize,
+                    total_size_bytes: row.get::<_, i64>(2).unwrap_or(0) as u64,
+                    clone_count: row.get::<_, i64>(3).unwrap_or(0) as usize,
+                    hack_count: row.get::<_, i64>(4).unwrap_or(0) as usize,
+                    translation_count: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                    homebrew_count: row.get::<_, i64>(6).unwrap_or(0) as usize,
+                    unlicensed_count: row.get::<_, i64>(7).unwrap_or(0) as usize,
+                    special_count: row.get::<_, i64>(8).unwrap_or(0) as usize,
+                    region_counts_json: row.get(9)?,
+                    release_year_min: row.get::<_, Option<i64>>(10)?.map(|v| v as u16),
+                    release_year_max: row.get::<_, Option<i64>>(11)?.map(|v| v as u16),
+                    release_date_known_count: row.get::<_, i64>(12).unwrap_or(0) as usize,
+                    genre_counts_json: row.get(13)?,
+                    genre_group_counts_json: row.get(14)?,
+                    developer_known_count: row.get::<_, i64>(15).unwrap_or(0) as usize,
+                    publisher_known_count: row.get::<_, i64>(16).unwrap_or(0) as usize,
+                    player_count_distribution_json: row.get(17)?,
+                    rating_known_count: row.get::<_, i64>(18).unwrap_or(0) as usize,
+                    description_count: row.get::<_, i64>(19).unwrap_or(0) as usize,
+                    boxart_count: row.get::<_, i64>(20).unwrap_or(0) as usize,
+                    snap_count: row.get::<_, i64>(21).unwrap_or(0) as usize,
+                    title_screen_count: row.get::<_, i64>(22).unwrap_or(0) as usize,
+                    manual_count: row.get::<_, i64>(23).unwrap_or(0) as usize,
+                    video_count: row.get::<_, i64>(24).unwrap_or(0) as usize,
+                    resource_count: row.get::<_, i64>(25).unwrap_or(0) as usize,
+                    coop_count: row.get::<_, i64>(26).unwrap_or(0) as usize,
+                    verified_count: row.get::<_, i64>(27).unwrap_or(0) as usize,
+                    driver_status_json: row.get(28)?,
+                    refresh_state: StatsRefreshState::from_i64(row.get::<_, i64>(29)?),
+                    updated_at: row.get(30)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("query load_game_library_system_stats: {e}")))?;
+
+        let mut stats = Vec::new();
+        for row in rows {
+            stats.push(row.map_err(|e| Error::Other(format!("read library system stats: {e}")))?);
+        }
+        Ok(stats)
+    }
+
+    pub fn system_coverage_from_stats(conn: &Connection) -> Result<Vec<SystemCoverage>> {
+        let mut coverage: Vec<SystemCoverage> = Self::load_game_library_system_stats(conn)?
+            .into_iter()
+            .filter(|s| s.rom_count > 0)
+            .map(|s| {
+                let driver_status = s
+                    .driver_status_json
+                    .as_deref()
+                    .and_then(|json| serde_json::from_str(json).ok());
+                SystemCoverage {
+                    display_name: replay_control_core::systems::system_display_name(&s.system),
+                    total_games: s.rom_count,
+                    with_thumbnail: s.boxart_count.min(s.rom_count),
+                    with_genre: count_json_total(s.genre_counts_json.as_deref()),
+                    with_developer: s.developer_known_count,
+                    with_rating: s.rating_known_count,
+                    size_bytes: s.total_size_bytes,
+                    with_description: s.description_count.min(s.rom_count),
+                    clone_count: s.clone_count,
+                    hack_count: s.hack_count,
+                    translation_count: s.translation_count,
+                    special_count: s.special_count,
+                    coop_count: s.coop_count,
+                    verified_count: s.verified_count,
+                    min_year: s.release_year_min,
+                    max_year: s.release_year_max,
+                    driver_status,
+                    system: s.system,
+                }
+            })
+            .collect();
+        coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        Ok(coverage)
+    }
+
+    pub fn library_summary_from_system_stats(conn: &Connection) -> Result<super::LibrarySummary> {
+        let stats = Self::load_game_library_system_stats(conn)?;
+        let mut summary = super::LibrarySummary::default();
+        for stats in stats.into_iter().filter(|s| s.rom_count > 0) {
+            summary.total_games += stats.rom_count;
+            summary.system_count += 1;
+            summary.with_genre += count_json_total(stats.genre_counts_json.as_deref());
+            summary.with_developer += stats.developer_known_count;
+            summary.with_rating += stats.rating_known_count;
+            summary.with_box_art += stats.boxart_count.min(stats.rom_count);
+            summary.coop_games += stats.coop_count;
+            summary.total_size_bytes += stats.total_size_bytes;
+            summary.min_year = min_optional(summary.min_year, stats.release_year_min);
+            summary.max_year = max_optional(summary.max_year, stats.release_year_max);
+        }
+        Ok(summary)
+    }
+
+    pub fn image_stats_from_system_stats(conn: &Connection) -> Result<(usize, usize)> {
+        conn.query_row(
+            "SELECT
+                COALESCE(SUM(boxart_count), 0),
+                COALESCE(SUM(snap_count), 0)
+             FROM game_library_system_stats
+             WHERE rom_count > 0",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0).unwrap_or(0) as usize,
+                    row.get::<_, i64>(1).unwrap_or(0) as usize,
+                ))
+            },
+        )
+        .map_err(|e| Error::Other(format!("image_stats_from_system_stats: {e}")))
+    }
+
+    fn compute_game_library_system_stats(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<GameLibrarySystemStats> {
+        let Some((rom_count, total_size_bytes)) = conn
+            .query_row(
+                "SELECT rom_count, total_size_bytes
+                 FROM game_library_meta
+                 WHERE system = ?1",
+                params![system],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("query game_library_system_stats meta: {e}")))?
+        else {
+            conn.execute(
+                "DELETE FROM game_library_system_stats WHERE system = ?1",
+                params![system],
+            )
+            .map_err(|e| Error::Other(format!("delete stale game_library_system_stats: {e}")))?;
+            return Ok(GameLibrarySystemStats::default());
+        };
+
+        let clone_count = count_where(conn, system, "is_clone = 1")?;
+        let hack_count = count_where(conn, system, "is_hack = 1")?;
+        let translation_count = count_where(conn, system, "is_translation = 1")?;
+        let special_count = count_where(conn, system, "is_special = 1")?;
+        let release_date_known_count = count_where(
+            conn,
+            system,
+            "release_date IS NOT NULL AND release_date != ''",
+        )?;
+        let developer_known_count = count_where(conn, system, "developer != ''")?;
+        let rating_known_count = count_where(conn, system, "rating IS NOT NULL")?;
+        let boxart_count = count_where(conn, system, "box_art_url IS NOT NULL")?;
+        let coop_count = count_where(conn, system, "cooperative = 1")?;
+        let verified_count = count_where(conn, system, "hash_matched_name IS NOT NULL")?;
+        let (release_year_min, release_year_max) = conn
+            .query_row(
+                "SELECT MIN(CAST(substr(release_date, 1, 4) AS INTEGER)),
+                        MAX(CAST(substr(release_date, 1, 4) AS INTEGER))
+                 FROM game_library
+                 WHERE system = ?1
+                   AND release_date IS NOT NULL
+                   AND release_date GLOB '[0-9][0-9][0-9][0-9]*'",
+                params![system],
+                |row| Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .map_err(|e| Error::Other(format!("query release-year stats: {e}")))?;
+
+        let description_count = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM game_detail_metadata
+                 WHERE system = ?1
+                   AND description IS NOT NULL
+                   AND description != ''",
+                params![system],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| Error::Other(format!("query description stats: {e}")))?
+            as usize;
+        let publisher_known_count =
+            conn.query_row(
+                "SELECT COUNT(*)
+                 FROM game_detail_metadata
+                 WHERE system = ?1
+                   AND publisher IS NOT NULL
+                   AND publisher != ''",
+                params![system],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| Error::Other(format!("query publisher stats: {e}")))? as usize;
+
+        let manual_count = resource_rom_count(conn, system, "manual")?;
+        let video_count = resource_rom_count(conn, system, "video")?;
+        let resource_count =
+            conn.query_row(
+                "SELECT COUNT(*)
+                 FROM library_game_resource
+                 WHERE system = ?1",
+                params![system],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| Error::Other(format!("query resource stats: {e}")))? as usize;
+
+        Ok(GameLibrarySystemStats {
+            system: system.to_string(),
+            rom_count: rom_count.max(0) as usize,
+            total_size_bytes: total_size_bytes.max(0) as u64,
+            clone_count,
+            hack_count,
+            translation_count,
+            homebrew_count: 0,
+            unlicensed_count: 0,
+            special_count,
+            region_counts_json: counts_json(conn, system, "region")?,
+            release_year_min: release_year_min.map(|v| v as u16),
+            release_year_max: release_year_max.map(|v| v as u16),
+            release_date_known_count,
+            genre_counts_json: counts_json(conn, system, "genre")?,
+            genre_group_counts_json: counts_json(conn, system, "genre_group")?,
+            developer_known_count,
+            publisher_known_count,
+            player_count_distribution_json: counts_json(conn, system, "players")?,
+            rating_known_count,
+            description_count,
+            boxart_count,
+            snap_count: 0,
+            title_screen_count: 0,
+            manual_count,
+            video_count,
+            resource_count,
+            coop_count,
+            verified_count,
+            driver_status_json: driver_status_json(conn, system)?,
+            refresh_state: StatsRefreshState::Fresh,
+            updated_at: Some(unix_now()),
+        })
+    }
+
+    fn upsert_game_library_system_stats(
+        conn: &Connection,
+        stats: &GameLibrarySystemStats,
+    ) -> Result<()> {
+        if stats.system.is_empty() {
+            return Ok(());
+        }
+        conn.execute(
+            "INSERT INTO game_library_system_stats (
+                system, rom_count, total_size_bytes, clone_count, hack_count,
+                translation_count, homebrew_count, unlicensed_count, special_count,
+                region_counts_json, release_year_min, release_year_max,
+                release_date_known_count, genre_counts_json, genre_group_counts_json,
+                developer_known_count, publisher_known_count,
+                player_count_distribution_json, rating_known_count, description_count,
+                boxart_count, snap_count, title_screen_count, manual_count, video_count,
+                resource_count, coop_count, verified_count, driver_status_json,
+                refresh_state, updated_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                     ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)
+             ON CONFLICT(system) DO UPDATE SET
+                rom_count = excluded.rom_count,
+                total_size_bytes = excluded.total_size_bytes,
+                clone_count = excluded.clone_count,
+                hack_count = excluded.hack_count,
+                translation_count = excluded.translation_count,
+                homebrew_count = excluded.homebrew_count,
+                unlicensed_count = excluded.unlicensed_count,
+                special_count = excluded.special_count,
+                region_counts_json = excluded.region_counts_json,
+                release_year_min = excluded.release_year_min,
+                release_year_max = excluded.release_year_max,
+                release_date_known_count = excluded.release_date_known_count,
+                genre_counts_json = excluded.genre_counts_json,
+                genre_group_counts_json = excluded.genre_group_counts_json,
+                developer_known_count = excluded.developer_known_count,
+                publisher_known_count = excluded.publisher_known_count,
+                player_count_distribution_json = excluded.player_count_distribution_json,
+                rating_known_count = excluded.rating_known_count,
+                description_count = excluded.description_count,
+                boxart_count = excluded.boxart_count,
+                snap_count = excluded.snap_count,
+                title_screen_count = excluded.title_screen_count,
+                manual_count = excluded.manual_count,
+                video_count = excluded.video_count,
+                resource_count = excluded.resource_count,
+                coop_count = excluded.coop_count,
+                verified_count = excluded.verified_count,
+                driver_status_json = excluded.driver_status_json,
+                refresh_state = excluded.refresh_state,
+                updated_at = excluded.updated_at",
+            params![
+                stats.system,
+                stats.rom_count as i64,
+                stats.total_size_bytes as i64,
+                stats.clone_count as i64,
+                stats.hack_count as i64,
+                stats.translation_count as i64,
+                stats.homebrew_count as i64,
+                stats.unlicensed_count as i64,
+                stats.special_count as i64,
+                stats.region_counts_json,
+                stats.release_year_min.map(i64::from),
+                stats.release_year_max.map(i64::from),
+                stats.release_date_known_count as i64,
+                stats.genre_counts_json,
+                stats.genre_group_counts_json,
+                stats.developer_known_count as i64,
+                stats.publisher_known_count as i64,
+                stats.player_count_distribution_json,
+                stats.rating_known_count as i64,
+                stats.description_count as i64,
+                stats.boxart_count as i64,
+                stats.snap_count as i64,
+                stats.title_screen_count as i64,
+                stats.manual_count as i64,
+                stats.video_count as i64,
+                stats.resource_count as i64,
+                stats.coop_count as i64,
+                stats.verified_count as i64,
+                stats.driver_status_json,
+                stats.refresh_state.as_i64(),
+                stats.updated_at,
+            ],
+        )
+        .map_err(|e| Error::Other(format!("upsert game_library_system_stats: {e}")))?;
+        Ok(())
+    }
+}
+
+fn count_where(conn: &Connection, system: &str, predicate: &str) -> Result<usize> {
+    let sql = format!("SELECT COUNT(*) FROM game_library WHERE system = ?1 AND {predicate}");
+    conn.query_row(&sql, params![system], |row| row.get::<_, i64>(0))
+        .map(|count| count as usize)
+        .map_err(|e| Error::Other(format!("query system stats count: {e}")))
+}
+
+fn resource_rom_count(conn: &Connection, system: &str, resource_type: &str) -> Result<usize> {
+    conn.query_row(
+        "SELECT COUNT(DISTINCT rom_filename)
+         FROM library_game_resource
+         WHERE system = ?1 AND resource_type = ?2",
+        params![system, resource_type],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count as usize)
+    .map_err(|e| Error::Other(format!("query resource coverage stats: {e}")))
+}
+
+fn counts_json(conn: &Connection, system: &str, column: &str) -> Result<Option<String>> {
+    let sql = format!(
+        "SELECT CAST({column} AS TEXT), COUNT(*)
+         FROM game_library
+         WHERE system = ?1 AND {column} IS NOT NULL AND CAST({column} AS TEXT) != ''
+         GROUP BY {column}
+         ORDER BY COUNT(*) DESC, CAST({column} AS TEXT)"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| Error::Other(format!("prepare distribution stats: {e}")))?;
+    let rows = stmt
+        .query_map(params![system], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+        })
+        .map_err(|e| Error::Other(format!("query distribution stats: {e}")))?;
+    let mut map = BTreeMap::new();
+    for row in rows {
+        let (key, count) =
+            row.map_err(|e| Error::Other(format!("read distribution stats: {e}")))?;
+        map.insert(key, count);
+    }
+    if map.is_empty() {
+        Ok(None)
+    } else {
+        serde_json::to_string(&map)
+            .map(Some)
+            .map_err(|e| Error::Other(format!("encode distribution stats: {e}")))
+    }
+}
+
+fn driver_status_json(conn: &Connection, system: &str) -> Result<Option<String>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT driver_status, COUNT(*)
+             FROM game_library
+             WHERE system = ?1
+               AND driver_status IS NOT NULL
+               AND driver_status != ''
+             GROUP BY driver_status",
+        )
+        .map_err(|e| Error::Other(format!("prepare driver stats: {e}")))?;
+    let rows = stmt
+        .query_map(params![system], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+        })
+        .map_err(|e| Error::Other(format!("query driver stats: {e}")))?;
+    let mut counts = DriverStatusCounts::default();
+    let mut seen = false;
+    for row in rows {
+        let (status, count) = row.map_err(|e| Error::Other(format!("read driver stats: {e}")))?;
+        seen = true;
+        match status.as_str() {
+            "working" => counts.working = count,
+            "imperfect" => counts.imperfect = count,
+            "preliminary" => counts.preliminary = count,
+            _ => counts.unknown += count,
+        }
+    }
+    if seen {
+        serde_json::to_string(&counts)
+            .map(Some)
+            .map_err(|e| Error::Other(format!("encode driver stats: {e}")))
+    } else {
+        Ok(None)
+    }
+}
+
+fn count_json_total(json: Option<&str>) -> usize {
+    json.and_then(|json| serde_json::from_str::<BTreeMap<String, usize>>(json).ok())
+        .map(|counts| counts.values().sum())
+        .unwrap_or(0)
+}
+
+fn min_optional(current: Option<u16>, next: Option<u16>) -> Option<u16> {
+    match (current, next) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (None, value) | (value, None) => value,
+    }
+}
+
+fn max_optional(current: Option<u16>, next: Option<u16>) -> Option<u16> {
+    match (current, next) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (None, value) | (value, None) => value,
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use replay_control_core::DatePrecision;
+
+    use super::*;
+    use crate::library_db::{IdentityState, LibraryGameResource};
+
+    #[test]
+    fn save_system_entries_refreshes_base_stats() {
+        let (mut conn, _tmp) = super::super::tests::open_temp_db();
+        let mut clone = super::super::tests::make_game_entry("snes", "Clone.sfc", false);
+        clone.is_clone = true;
+        clone.size_bytes = 10;
+        clone.region = "usa".into();
+        let mut hack = super::super::tests::make_game_entry("snes", "Hack.sfc", false);
+        hack.is_hack = true;
+        hack.is_translation = true;
+        hack.size_bytes = 20;
+        hack.region = "japan".into();
+
+        LibraryDb::save_system_entries(&mut conn, "snes", &[clone, hack], None).unwrap();
+
+        let stats = LibraryDb::load_game_library_system_stats(&conn).unwrap();
+        assert_eq!(stats.len(), 1);
+        let stats = &stats[0];
+        assert_eq!(stats.system, "snes");
+        assert_eq!(stats.rom_count, 2);
+        assert_eq!(stats.total_size_bytes, 30);
+        assert_eq!(stats.clone_count, 1);
+        assert_eq!(stats.hack_count, 1);
+        assert_eq!(stats.translation_count, 1);
+        assert!(stats.region_counts_json.as_deref().unwrap().contains("usa"));
+    }
+
+    #[test]
+    fn coverage_reads_materialized_stats() {
+        let (mut conn, _tmp) = super::super::tests::open_temp_db();
+        let mut mario = super::super::tests::make_game_entry("snes", "Mario.sfc", false);
+        mario.genre = Some("Platform".into());
+        mario.genre_group = "Platform".into();
+        mario.developer = "Nintendo".into();
+        mario.rating = Some(4.5);
+        mario.box_art_url = Some("/media/flyers/Mario.png".into());
+        mario.release_date = Some("1991-08-23".into());
+        mario.release_precision = Some(DatePrecision::Day);
+        mario.cooperative = true;
+        mario.identity_state = IdentityState::CompleteMatched;
+        mario.hash_matched_name = Some("Super Mario World".into());
+        let zelda = super::super::tests::make_game_entry("snes", "Zelda.sfc", false);
+
+        LibraryDb::save_system_entries(&mut conn, "snes", &[mario, zelda], None).unwrap();
+        LibraryDb::replace_detail_metadata_and_resources_for_system(
+            &mut conn,
+            "snes",
+            &[(
+                "Mario.sfc".to_string(),
+                Some("A platform game".to_string()),
+                Some("Nintendo".to_string()),
+            )],
+            &[LibraryGameResource {
+                rom_filename: "Mario.sfc".to_string(),
+                source: "catalog".to_string(),
+                resource_type: "manual".to_string(),
+                resource_id: "mario-manual".to_string(),
+                url: "https://example.invalid/manual.pdf".to_string(),
+                title: Some("Manual".to_string()),
+                languages: Some("en".to_string()),
+                platform: None,
+                mime_type: Some("application/pdf".to_string()),
+            }],
+        )
+        .unwrap();
+        LibraryDb::refresh_game_library_system_stats(&conn, "snes").unwrap();
+
+        let coverage = LibraryDb::system_coverage_from_stats(&conn).unwrap();
+        assert_eq!(coverage.len(), 1);
+        let coverage = &coverage[0];
+        assert_eq!(coverage.total_games, 2);
+        assert_eq!(coverage.with_genre, 1);
+        assert_eq!(coverage.with_developer, 1);
+        assert_eq!(coverage.with_rating, 1);
+        assert_eq!(coverage.with_thumbnail, 1);
+        assert_eq!(coverage.with_description, 1);
+        assert_eq!(coverage.coop_count, 1);
+        assert_eq!(coverage.verified_count, 1);
+        assert_eq!(coverage.min_year, Some(1991));
+        assert_eq!(coverage.max_year, Some(1991));
+
+        let stats = LibraryDb::load_game_library_system_stats(&conn).unwrap();
+        assert_eq!(stats[0].manual_count, 1);
+        assert_eq!(stats[0].resource_count, 1);
+
+        let summary = LibraryDb::library_summary_from_system_stats(&conn).unwrap();
+        assert_eq!(summary.total_games, 2);
+        assert_eq!(summary.system_count, 1);
+        assert_eq!(summary.with_genre, 1);
+        assert_eq!(summary.with_developer, 1);
+        assert_eq!(summary.with_rating, 1);
+        assert_eq!(summary.with_box_art, 1);
+        assert_eq!(summary.coop_games, 1);
+        assert_eq!(summary.min_year, Some(1991));
+        assert_eq!(summary.max_year, Some(1991));
+
+        let image_stats = LibraryDb::image_stats_from_system_stats(&conn).unwrap();
+        assert_eq!(image_stats, (1, 0));
+    }
+
+    #[test]
+    fn open_backfills_missing_system_stats_for_existing_library() {
+        let (mut conn, dir) = super::super::tests::open_temp_db();
+        let mut mario = super::super::tests::make_game_entry("snes", "Mario.sfc", false);
+        mario.genre = Some("Platform".into());
+        mario.genre_group = "Platform".into();
+        mario.box_art_url = Some("/media/flyers/Mario.png".into());
+        LibraryDb::save_system_entries(&mut conn, "snes", &[mario], None).unwrap();
+        conn.execute("DELETE FROM game_library_system_stats", [])
+            .unwrap();
+        drop(conn);
+
+        let conn = LibraryDb::open(dir.path()).unwrap();
+        let coverage = LibraryDb::system_coverage_from_stats(&conn).unwrap();
+
+        assert_eq!(coverage.len(), 1);
+        assert_eq!(coverage[0].system, "snes");
+        assert_eq!(coverage[0].total_games, 1);
+        assert_eq!(coverage[0].with_thumbnail, 1);
+        assert_eq!(coverage[0].with_genre, 1);
+    }
+}

@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,9 +99,8 @@ pub use replay_control_core::library_db::{
     SystemCoverage,
 };
 
-/// Aggregated `/settings/metadata` payload. Server-side this is built by
-/// `LibraryService::metadata_page_snapshot` from a single `pool.read()`
-/// closure plus off-pool helpers; clients render six panels from one
+/// Aggregated `/settings/metadata` payload. Server-side this is built from
+/// DB-backed stats plus off-pool helpers; clients render six panels from one
 /// resource. See `api/library/metadata_snapshot.rs`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataPageSnapshot {
@@ -120,94 +117,12 @@ pub struct MetadataPageSnapshot {
     pub storage_root: String,
 }
 
-/// Single-flight cache-backed snapshot of the metadata page.
-///
-/// Six per-stat server fns previously fanned out from this page; under SSR
-/// fan-out they all queued through the size-1 read pool and a force-refresh
-/// cancellation could orphan multiple in-flight closures. This server fn
-/// returns the whole page in one call from an in-memory snapshot, with one
-/// pool acquisition on cache miss. Invalidated at the same write-completion
-/// sites that invalidate the other user-facing caches.
+/// Metadata page payload. System-level coverage is read from
+/// `game_library_system_stats`; there is no app-local metadata page cache.
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.metadata_page_snapshot(&state).await)
-}
-
-/// Get metadata coverage stats.
-/// Returns empty stats when the DB is unavailable (e.g., during import).
-#[server(prefix = "/sfn")]
-pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let db_path = state.external_metadata_reader.db_path();
-    let Some(result) = state
-        .external_metadata_reader
-        .read(move |conn| {
-            replay_control_core_server::external_metadata::launchbox_stats(conn, &db_path)
-        })
-        .await
-    else {
-        return Ok(MetadataStats::default());
-    };
-    result.map_err(|e| {
-        tracing::warn!("get_metadata_stats failed: {e:?}");
-        ServerFnError::new("Could not load metadata stats. Please try again.")
-    })
-}
-
-/// Get aggregate library summary stats for the metadata page summary cards.
-#[server(prefix = "/sfn")]
-pub async fn get_library_summary() -> Result<LibrarySummary, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let result = state.library_reader.read(LibraryDb::library_summary).await;
-    match result {
-        Some(Ok(summary)) => Ok(summary),
-        Some(Err(e)) => {
-            tracing::warn!("get_library_summary failed: {e:?}");
-            Ok(LibrarySummary::default())
-        }
-        None => Ok(LibrarySummary::default()),
-    }
-}
-
-/// Get per-system metadata coverage stats.
-#[server(prefix = "/sfn")]
-pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-
-    // Get metadata entries (from external_metadata pool), thumbnail counts,
-    // coverage stats, and driver status per system. Return empty data when a
-    // pool is unavailable (e.g., during import).
-    let entries_per_system = state
-        .external_metadata_reader
-        .read(|conn| {
-            replay_control_core_server::external_metadata::launchbox_entries_per_system(conn)
-                .unwrap_or_default()
-        })
-        .await
-        .unwrap_or_default();
-
-    let (system_meta, thumbnails_per_system, coverage_stats, driver_status) = state
-        .library_reader
-        .read(|conn| {
-            let system_meta = LibraryDb::load_all_system_meta(conn).unwrap_or_default();
-            let thumbnails = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
-            let stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
-            let drivers = LibraryDb::driver_status_per_system(conn).unwrap_or_default();
-            (system_meta, thumbnails, stats, drivers)
-        })
-        .await
-        .unwrap_or_default();
-
-    Ok(
-        replay_control_core_server::library_db::build_system_coverage(
-            system_meta,
-            entries_per_system,
-            thumbnails_per_system,
-            coverage_stats,
-            driver_status,
-        ),
-    )
+    Ok(crate::api::library::metadata_snapshot::compute(&state).await)
 }
 
 /// Stats for the bundled catalog (arcade, game, and series reference data).
@@ -222,38 +137,6 @@ pub struct BuiltinDbStats {
     pub manual_resource_entries: usize,
     pub mister_manual_resource_entries: usize,
     pub retrokit_manual_resource_entries: usize,
-}
-
-/// Get stats for the bundled catalog (arcade, game, and series reference data).
-#[server(prefix = "/sfn")]
-pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
-    use replay_control_core_server::{arcade_db, catalog_pool, game_db, series_db};
-    let (
-        arcade_entries,
-        game_rom_entries,
-        game_system_count,
-        wikidata_series_entries,
-        wikidata_series_count,
-        catalog_resources,
-    ) = tokio::join!(
-        arcade_db::entry_count(),
-        game_db::total_rom_entries(),
-        game_db::system_count(),
-        series_db::entry_count(),
-        async { series_db::all_series_names().await.len() },
-        catalog_pool::catalog_resource_stats(),
-    );
-    Ok(BuiltinDbStats {
-        arcade_entries,
-        arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
-        game_rom_entries,
-        game_system_count,
-        wikidata_series_entries,
-        wikidata_series_count,
-        manual_resource_entries: catalog_resources.manual_resources,
-        mister_manual_resource_entries: catalog_resources.mister_manual_resources,
-        retrokit_manual_resource_entries: catalog_resources.retrokit_manual_resources,
-    })
 }
 
 /// Clear cached provider metadata and reset the XML hash stamp so the next
@@ -276,7 +159,6 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    state.cache.invalidate_metadata_page().await;
     Ok(())
 }
 

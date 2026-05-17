@@ -114,43 +114,49 @@ impl LibraryDb {
 
     // ── Game Series (Wikidata-sourced franchise data) ────────────────────
 
-    /// Bulk insert game series entries within a single transaction.
+    const SERIES_BATCH_ROWS: usize = 5_000;
+
+    /// Bulk insert game series entries in bounded transactions.
+    ///
+    /// Series rows are derived and written with `INSERT OR REPLACE`, so the
+    /// next metadata pass can safely repeat the write if interrupted between
+    /// chunks.
     pub fn bulk_insert_series(conn: &mut Connection, entries: &[SeriesInsert]) -> Result<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
 
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
-
         let mut count = 0usize;
-        {
-            let mut stmt = tx
-                .prepare(
-                    "INSERT OR REPLACE INTO game_series
-                     (system, base_title, series_name, series_order, source, follows_base_title, followed_by_base_title)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                )
-                .map_err(|e| Error::Other(format!("Prepare bulk_insert_series: {e}")))?;
+        for chunk in entries.chunks(Self::SERIES_BATCH_ROWS) {
+            let tx = conn
+                .transaction()
+                .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+            {
+                let mut stmt = tx
+                    .prepare(
+                        "INSERT OR REPLACE INTO game_series
+                         (system, base_title, series_name, series_order, source, follows_base_title, followed_by_base_title)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    )
+                    .map_err(|e| Error::Other(format!("Prepare bulk_insert_series: {e}")))?;
 
-            for s in entries {
-                stmt.execute(params![
-                    s.system,
-                    s.base_title,
-                    s.series_name,
-                    s.series_order,
-                    s.source,
-                    s.follows_base_title,
-                    s.followed_by_base_title
-                ])
-                .map_err(|e| Error::Other(format!("Insert series failed: {e}")))?;
-                count += 1;
+                for s in chunk {
+                    stmt.execute(params![
+                        s.system,
+                        s.base_title,
+                        s.series_name,
+                        s.series_order,
+                        s.source,
+                        s.follows_base_title,
+                        s.followed_by_base_title
+                    ])
+                    .map_err(|e| Error::Other(format!("Insert series failed: {e}")))?;
+                    count += 1;
+                }
             }
+            tx.commit()
+                .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         }
-
-        tx.commit()
-            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         Ok(count)
     }
 
@@ -697,5 +703,32 @@ mod tests {
             "Current game (arcade final fight) must not appear in its own series. Got: {:?}",
             sibling_titles
         );
+    }
+
+    #[test]
+    fn bulk_insert_series_spans_multiple_batches() {
+        let (mut conn, _dir) = open_temp_db();
+        let row_count = super::super::LibraryDb::SERIES_BATCH_ROWS + 3;
+        let entries: Vec<_> = (0..row_count)
+            .map(|i| SeriesInsert {
+                system: "nintendo_snes".into(),
+                base_title: format!("game {i}"),
+                series_name: "Batch Test".into(),
+                series_order: Some(i as i32),
+                source: "test".into(),
+                follows_base_title: None,
+                followed_by_base_title: None,
+            })
+            .collect();
+
+        let inserted = super::super::LibraryDb::bulk_insert_series(&mut conn, &entries).unwrap();
+        assert_eq!(inserted, row_count);
+
+        let count: usize = conn
+            .query_row("SELECT COUNT(*) FROM game_series", [], |r| {
+                r.get::<_, i64>(0).map(|v| v as usize)
+            })
+            .unwrap();
+        assert_eq!(count, row_count);
     }
 }

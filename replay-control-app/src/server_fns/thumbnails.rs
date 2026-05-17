@@ -35,62 +35,6 @@ pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Get data source info for the "Thumbnails (libretro)" section.
-#[server(prefix = "/sfn")]
-pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    // Gracefully return defaults when the DB is temporarily unavailable
-    // (e.g., during a metadata import or thumbnail update operation).
-    let Some(stats) = state
-        .external_metadata_reader
-        .read(|conn| {
-            replay_control_core_server::external_metadata::get_data_source_stats(
-                conn,
-                "libretro-thumbnails",
-            )
-        })
-        .await
-    else {
-        return Ok(DataSourceSummary {
-            entry_count: 0,
-            repo_count: 0,
-            oldest_imported_at: None,
-            last_updated_text: String::new(),
-        });
-    };
-    let stats = stats.map_err(|e| {
-        tracing::warn!("get_thumbnail_data_source failed: {e:?}");
-        ServerFnError::new("Could not load thumbnail stats. Please try again.")
-    })?;
-
-    let last_updated_text = stats
-        .oldest_imported_at
-        .map(|ts| {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            let diff = now - ts;
-            if diff < 60 {
-                "just now".to_string()
-            } else if diff < 3600 {
-                format!("{}m ago", diff / 60)
-            } else if diff < 86400 {
-                format!("{}h ago", diff / 3600)
-            } else {
-                format!("{}d ago", diff / 86400)
-            }
-        })
-        .unwrap_or_default();
-
-    Ok(DataSourceSummary {
-        entry_count: stats.total_entries,
-        repo_count: stats.repo_count,
-        oldest_imported_at: stats.oldest_imported_at,
-        last_updated_text,
-    })
-}
-
 /// Clear the thumbnail index (all thumbnail_index rows + libretro data_sources).
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
@@ -111,8 +55,6 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle
     Ok(())

@@ -58,18 +58,12 @@ pub(crate) fn dir_mtime_secs(path: &Path) -> Option<i64> {
 
 use crate::server_fns::RecommendationData;
 use favorites::FavoritesCache;
-use metadata_snapshot::MetadataPageSnapshot;
 use ssr_snapshot::SsrSnapshot;
 
 pub struct LibraryService {
     pub(crate) query_cache: query::QueryCache,
     pub(super) favorites: RwLock<Option<FavoritesCache>>,
     pub(super) recents: RwLock<Option<Vec<RecentEntry>>>,
-    /// In-memory snapshot of the `/settings/metadata` page payload. Backed
-    /// by the generic `SsrSnapshot<T>` helper so future SSR pages can opt
-    /// into the same single-flight + stale-on-`None` semantics with one
-    /// new field + one accessor (see `ssr_snapshot.rs`).
-    pub(super) metadata_page: SsrSnapshot<MetadataPageSnapshot>,
     /// In-memory snapshot of the home-page recommendation payload.
     /// Replaces the previous TtlSlot — strictly better caching (event-
     /// driven invalidation, single-flight rebuild, stale-on-`None`).
@@ -82,28 +76,9 @@ impl LibraryService {
         Self {
             favorites: RwLock::new(None),
             recents: RwLock::new(None),
-            metadata_page: SsrSnapshot::new(),
             recommendations: SsrSnapshot::new(),
             query_cache,
         }
-    }
-
-    /// Get the metadata-page snapshot, rebuilding on miss via the generic
-    /// `SsrSnapshot<T>` helper (single-flight RwLock + double-check, with
-    /// stale-on-`None` so the page keeps rendering when the DB is briefly
-    /// unavailable — e.g. write gate on non-WAL FS).
-    pub async fn metadata_page_snapshot(&self, state: &super::AppState) -> MetadataPageSnapshot {
-        self.metadata_page
-            .get_or_compute("metadata_page_snapshot", || async {
-                metadata_snapshot::compute(state).await
-            })
-            .await
-    }
-
-    /// Invalidate just the metadata-page snapshot. Hooked into the same
-    /// write-completion sites that already invalidate the other caches.
-    pub async fn invalidate_metadata_page(&self) {
-        self.metadata_page.invalidate().await;
     }
 
     /// Get the home-page recommendations snapshot, rebuilding on miss.
@@ -352,7 +327,6 @@ impl LibraryService {
     pub async fn invalidate_l1(&self) {
         *self.favorites.write().await = None;
         *self.recents.write().await = None;
-        self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
     }
 
@@ -376,7 +350,6 @@ impl LibraryService {
         system: String,
         db: &LibraryWritePool,
     ) -> Result<(), DbError> {
-        self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
         let sys = system.clone();
         db.try_write(move |conn| LibraryDb::clear_system_game_library(conn, &sys))

@@ -629,33 +629,6 @@ pub fn launchbox_stats(
     })
 }
 
-/// Per-system count of LaunchBox provider rows with a non-empty description —
-/// the "metadata coverage" number on the per-system list. Coverage is by
-/// `(system, normalized_title)`, which is necessarily ≤ the on-disk ROM count
-/// since multiple ROM filenames can share one normalized title.
-pub fn launchbox_entries_per_system(conn: &rusqlite::Connection) -> Result<Vec<(String, usize)>> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT system, COUNT(*) FROM provider_game
-             WHERE provider = ?1 AND description IS NOT NULL AND description != ''
-             GROUP BY system ORDER BY 2 DESC",
-        )
-        .map_err(|e| Error::Other(format!("launchbox_entries_per_system prepare: {e}")))?;
-    let rows = stmt
-        .query_map([LAUNCHBOX_PROVIDER], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1).map(|v| v as usize)?,
-            ))
-        })
-        .map_err(|e| Error::Other(format!("launchbox_entries_per_system query: {e}")))?;
-    let mut out = Vec::new();
-    for r in rows.flatten() {
-        out.push(r);
-    }
-    Ok(out)
-}
-
 /// Drop every LaunchBox provider row. Used by the
 /// "Clear metadata" UI button.
 pub fn clear_launchbox(conn: &rusqlite::Connection) -> Result<()> {
