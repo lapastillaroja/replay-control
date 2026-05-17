@@ -208,6 +208,11 @@ fn GameDetailContent(
     let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
+    let gamefaqs_url = StoredValue::new(
+        replay_control_core::systems::find_system(&system)
+            .and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
+    );
+
     // Images — box_art_url is an RwSignal so the picker can update it reactively.
     let box_art_url = RwSignal::new(game.box_art_url.clone());
     let screenshot_url = StoredValue::new(game.screenshot_url.clone());
@@ -528,6 +533,14 @@ fn GameDetailContent(
                     </div>
                 })}
             </div>
+            {gamefaqs_url.get_value().map(|url| view! {
+                <p class="game-meta-external-link">
+                    <a href=url target="_blank" rel="noopener noreferrer">
+                        {move || t(i18n.locale.get(), Key::GameDetailGameFaqsLink)}
+                        " ↗"
+                    </a>
+                </p>
+            })}
         </section>
 
         // Description (hidden when no description available)

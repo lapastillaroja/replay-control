@@ -126,6 +126,22 @@
     gap: 6px;
 }
 
+.game-meta-external-link {
+    margin: 12px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.game-meta-external-link a {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+
+.game-meta-external-link a:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
 .game-section {
     border-top: 1px solid var(--border);
     padding-top: 16px;

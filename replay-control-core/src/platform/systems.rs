@@ -546,6 +546,22 @@ impl System {
     pub fn uses_megabit(&self) -> bool {
         MEGABIT_SYSTEMS.contains(&self.folder_name)
     }
+
+    /// GameFAQs title-search URL for `title`, or `None` for utility systems
+    /// (e.g. Alpha Player) whose "ROMs" aren't games.
+    ///
+    /// GameFAQs has no system-scoped search URL that accepts string slugs
+    /// (the `platform=` param requires numeric IDs), so this is a global
+    /// title-only search.
+    pub fn gamefaqs_search_url(&self, title: &str) -> Option<String> {
+        if self.category == SystemCategory::Utility {
+            return None;
+        }
+        let encoded: String = url::form_urlencoded::byte_serialize(title.as_bytes()).collect();
+        Some(format!(
+            "https://gamefaqs.gamespot.com/search?game={encoded}"
+        ))
+    }
 }
 
 /// Check whether a system (by folder name) should display ROM sizes in Megabit.
@@ -808,6 +824,31 @@ mod tests {
                 sys.folder_name
             );
         }
+    }
+
+    #[test]
+    fn gamefaqs_search_url_encodes_title_and_skips_utility() {
+        let snes = find_system("nintendo_snes").unwrap();
+        let url = snes.gamefaqs_search_url("Super Mario World").unwrap();
+        assert_eq!(
+            url,
+            "https://gamefaqs.gamespot.com/search?game=Super+Mario+World"
+        );
+        // ScummVM (Computer) → link shown; global title search finds the
+        // game on its original platform (DOS/Amiga/...).
+        assert!(
+            find_system("scummvm")
+                .unwrap()
+                .gamefaqs_search_url("Day of the Tentacle")
+                .is_some()
+        );
+        // Alpha Player (Utility) → no link; "ROMs" are video files.
+        assert!(
+            find_system("alpha_player")
+                .unwrap()
+                .gamefaqs_search_url("anything")
+                .is_none()
+        );
     }
 
     #[test]

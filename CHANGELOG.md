@@ -11,11 +11,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Large NFS rebuilds become usable much sooner.** The library build now writes the file listing and metadata first, then runs CRC identity matching in the background. On the 95,495-ROM NFS test library, the foreground scan/enrichment pass completed in ~145-148 s in earlier validation, compared with beta.9's 194 s rescan and 636 s forced rebuild path. The follow-up batching work keeps very large systems responsive by chunking discovery saves and identity updates.
 - **Now Playing stays on the actually-running game.** Opening the ReplayOS overlay menu and browsing other sections (notably Dreamcast and PlayStation) no longer flips Now Playing to whichever game is highlighted there. The detector now filters heap candidates by the systems the loaded core can run, keeps the previously-tracked game locked when it is still in the heap, prefers the path with the highest occurrence count, and drops prefix-truncation artefacts so games like gunlock consistently show their name, box art, and a working detail link.
 
+### Added
+
+- Game detail pages now show a "Look up on GameFAQs" link that opens a GameFAQs title search for the current game. Hidden for utility entries (video/audio playback).
+
 ### Changed
 
 - Rebuild/rescan is split into foreground discovery/enrichment and a deferred identity phase. Normal rescans still reuse valid cached CRC identity; forced rebuilds mark hash-eligible rows for background re-identification instead of blocking the visible library on every ROM byte read.
 - The identity phase is resumable and bounded. Rows move through explicit identity states, interrupted work is picked up later, hash matching defaults to two workers for every storage class, and progress advances after each 200-ROM mini-batch.
 - Per-system library writes now reconcile with durable scan tokens. Current rows are upserted in bounded chunks, stale rows are deleted only after finalization, and unchanged ROM resources survive rescans.
+- Enrichment writes are now chunked where safe, and game-detail resources are staged before live replacement so interrupted scans do not leave descriptions or resource links empty.
 - First-run metadata and thumbnail-source downloads no longer block the first library scan. The library appears from local discovery first, then optional metadata and artwork fill in as background work completes.
 - Thumbnail downloads now use a durable per-storage queue with box art first, then title screens, then screenshots. Temporary GitHub throttling and service errors are retried with bounded backoff instead of creating request bursts.
 - Large enrichment writes now run in bounded batches where safe, and game-detail descriptions/resources are staged before replacing live rows so interrupted enrichment does not empty existing detail pages.

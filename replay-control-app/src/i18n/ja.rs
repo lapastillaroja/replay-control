@@ -337,6 +337,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailExternalMetadata => "追加情報",
         Key::GameDetailPublisher => "発売元",
         Key::GameDetailRating => "評価",
+        Key::GameDetailGameFaqsLink => "GameFAQs で検索",
 
         // Metadata management
         Key::MoreMetadata => "ゲームメタデータ",
