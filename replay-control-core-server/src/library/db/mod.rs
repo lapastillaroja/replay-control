@@ -17,7 +17,7 @@ pub mod release_dates;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_description::GameDescription;
-pub use game_library::SearchFilter;
+pub use game_library::{DISCOVERY_SAVE_CHUNK_ROWS, SearchFilter};
 pub use release_dates::{
     ReleaseDateRow, StaticReleaseData, fetch_static_release_data, region_pref_to_db_region,
 };
@@ -265,6 +265,20 @@ pub struct ThumbnailDownloadJob {
     pub manifest: crate::thumbnail_manifest::ManifestMatch,
 }
 
+impl ThumbnailDownloadJob {
+    pub fn priority(&self) -> i64 {
+        thumbnail_priority(self.kind)
+    }
+}
+
+fn thumbnail_priority(kind: crate::thumbnails::ThumbnailKind) -> i64 {
+    match kind {
+        crate::thumbnails::ThumbnailKind::Boxart => 0,
+        crate::thumbnails::ThumbnailKind::Title => 1,
+        crate::thumbnails::ThumbnailKind::Snap => 2,
+    }
+}
+
 /// A game alias entry for bulk insertion into the `game_alias` table.
 #[derive(Debug, Clone)]
 pub struct AliasInsert {
@@ -483,6 +497,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         hash_mtime INTEGER,
         hash_size_bytes INTEGER,
         hash_matched_name TEXT,
+        scan_token INTEGER,
         identity_state INTEGER NOT NULL DEFAULT 0,
         release_date TEXT,
         release_precision TEXT,
@@ -519,7 +534,10 @@ const CREATE_GAME_DETAIL_METADATA_SQL: &str = "
         rom_filename TEXT NOT NULL,
         description TEXT,
         publisher TEXT,
-        PRIMARY KEY (system, rom_filename)
+        PRIMARY KEY (system, rom_filename),
+        FOREIGN KEY (system, rom_filename)
+            REFERENCES game_library(system, rom_filename)
+            ON DELETE CASCADE
     );
 ";
 
@@ -558,6 +576,7 @@ const CREATE_LIBRARY_THUMBNAIL_JOB_SQL: &str = "
         is_symlink INTEGER NOT NULL DEFAULT 0,
         state INTEGER NOT NULL DEFAULT 1,
         attempts INTEGER NOT NULL DEFAULT 0,
+        priority INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (system, rom_filename, kind, filename),
         FOREIGN KEY (system, rom_filename)
@@ -568,6 +587,17 @@ const CREATE_LIBRARY_THUMBNAIL_JOB_SQL: &str = "
         ON library_thumbnail_job(state, system);
     CREATE INDEX IF NOT EXISTS idx_library_thumbnail_job_key
         ON library_thumbnail_job(system, kind, filename);
+    CREATE INDEX IF NOT EXISTS idx_library_thumbnail_job_system_priority_status
+        ON library_thumbnail_job(system, priority, state);
+";
+
+const CREATE_LIBRARY_BUILD_SEQUENCE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS library_build_sequence (
+        name TEXT PRIMARY KEY,
+        next_value INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO library_build_sequence (name, next_value)
+    VALUES ('scan_token', 1);
 ";
 
 const LIBRARY_GAME_RESOURCE_COLUMNS: &[&str] = &[
@@ -625,6 +655,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "hash_mtime",
     "hash_size_bytes",
     "hash_matched_name",
+    "scan_token",
     "identity_state",
     "release_date",
     "release_precision",
@@ -633,6 +664,22 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "normalized_title",
     "normalized_title_alt",
 ];
+
+const LIBRARY_THUMBNAIL_JOB_COLUMNS: &[&str] = &[
+    "system",
+    "rom_filename",
+    "kind",
+    "filename",
+    "repo_url_name",
+    "branch",
+    "is_symlink",
+    "state",
+    "attempts",
+    "priority",
+    "updated_at",
+];
+
+const LIBRARY_BUILD_SEQUENCE_COLUMNS: &[&str] = &["name", "next_value"];
 
 /// Expected columns in the `game_release_date` table.
 const GAME_RELEASE_DATE_COLUMNS: &[&str] = &[
@@ -658,6 +705,7 @@ impl LibraryDb {
         "game_detail_metadata",
         "library_game_resource",
         "library_thumbnail_job",
+        "library_build_sequence",
         "game_release_date",
         "game_alias",
         "game_series",
@@ -830,7 +878,11 @@ impl LibraryDb {
     pub fn init_tables(conn: &Connection) -> Result<()> {
         if Self::table_needs_rebuild(conn, "game_library", GAME_LIBRARY_COLUMNS) {
             let _ = conn.execute_batch(
-                "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
+                "DROP TABLE IF EXISTS library_thumbnail_job;
+                 DROP TABLE IF EXISTS library_game_resource;
+                 DROP TABLE IF EXISTS game_detail_metadata;
+                 DROP TABLE IF EXISTS game_library;
+                 DROP TABLE IF EXISTS game_library_meta;",
             );
         }
         if Self::table_needs_rebuild(conn, "game_release_date", GAME_RELEASE_DATE_COLUMNS) {
@@ -841,6 +893,16 @@ impl LibraryDb {
         }
         if Self::table_needs_rebuild(conn, "library_game_resource", LIBRARY_GAME_RESOURCE_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS library_game_resource;");
+        }
+        if Self::table_needs_rebuild(conn, "library_thumbnail_job", LIBRARY_THUMBNAIL_JOB_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS library_thumbnail_job;");
+        }
+        if Self::table_needs_rebuild(
+            conn,
+            "library_build_sequence",
+            LIBRARY_BUILD_SEQUENCE_COLUMNS,
+        ) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS library_build_sequence;");
         }
 
         conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
@@ -858,6 +920,8 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("Failed to create library_game_resource: {e}")))?;
         conn.execute_batch(CREATE_LIBRARY_THUMBNAIL_JOB_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_thumbnail_job: {e}")))?;
+        conn.execute_batch(CREATE_LIBRARY_BUILD_SEQUENCE_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create library_build_sequence: {e}")))?;
 
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
@@ -1350,6 +1414,31 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM game_library", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn open_recovers_interrupted_running_identity_rows() {
+        let (mut conn, dir) = open_temp_db();
+        let mut running = make_game_entry("nintendo_snes", "Running.sfc", false);
+        running.identity_state = IdentityState::Running;
+        let mut complete = make_game_entry("nintendo_snes", "Complete.sfc", false);
+        complete.identity_state = IdentityState::CompleteMatched;
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[running, complete], None)
+            .unwrap();
+        drop(conn);
+
+        let conn = LibraryDb::open(dir.path()).unwrap();
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        let running = roms
+            .iter()
+            .find(|rom| rom.rom_filename == "Running.sfc")
+            .unwrap();
+        let complete = roms
+            .iter()
+            .find(|rom| rom.rom_filename == "Complete.sfc")
+            .unwrap();
+        assert_eq!(running.identity_state, IdentityState::Pending);
+        assert_eq!(complete.identity_state, IdentityState::CompleteMatched);
     }
 
     #[test]

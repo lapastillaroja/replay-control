@@ -14,6 +14,21 @@ BackgroundManager::start(state)
 
 If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `refresh_storage()`), the full pipeline starts.
 
+## Phase 0.5: First-Run Source Fetch
+
+**Method**: `phase_first_run_seed()`
+
+On a fresh install, Replay Control downloads optional source data before the
+first library scan: LaunchBox XML and libretro thumbnail manifests. This is a
+one-time startup cost, and waiting keeps the first build from indexing a partial
+library that immediately needs catch-up enrichment. The UI shows the startup
+metadata-fetch banner while this runs.
+
+Network failures are logged and startup continues. Built-in catalog data still
+provides offline names, genres, dates, and player counts; downloaded sources add
+descriptions, ratings, provider media links, and thumbnail matching data when
+available.
+
 ## Phase 1: Auto-Import (LaunchBox refresh)
 
 **Method**: `phase_auto_import_inner(state, existing_guard: Option<ActivityGuard>)`
@@ -48,8 +63,8 @@ using the same discovery semantics as a normal manual rescan:
 
 1. Iterate every visible system.
 2. Strict-walk that system's ROM tree, including nested folders.
-3. Save the successful scan atomically for that system and preserve cached rows
-   when the filesystem read fails ambiguously.
+3. Save the successful scan with a scan-token reconcile: current rows are
+   upserted in chunks, and stale rows are deleted only during finalization.
 4. Run inline enrichment for that same system.
 5. Queue hash identity work for new, stale, failed, or unresolved rows.
 
@@ -67,7 +82,7 @@ remains the deep verification path.
 
 For hash-eligible cartridge systems, scan inputs include cached CRC rows for that system unless the caller explicitly forces a rebuild. CRC cache validation uses the ROM filename plus the file size recorded with the hash. Exact `mtime + size` matches reuse the cached CRC; migrated rows with no stored hash size reuse only when mtime still matches; same-size mtime drift is reused as a conservative fast path for normal rescans. This avoids streaming unchanged large ROMs, especially N64/GBA/SNES sets on NFS, while manual rebuild remains the full verification path.
 
-CRC identity work runs after the per-system scan/enrichment write, not inside the filesystem discovery writer closure. While it runs, the activity banner shows "Matching ROMs" progress based on the number of rows being matched. Rebuild and rescan requests are blocked until identity finishes, so normal user actions do not cancel long NFS reads. Storage changes still cancel the identity phase through `storage_generation`, and unresolved rows remain retryable. The worker count defaults to 2 for every storage class, with an advanced override via `REPLAY_CONTROL_IDENTITY_WORKERS` (valid range: 1-4). Keep this bounded: the goal is to overlap storage latency without creating excessive CPU or I/O contention.
+CRC identity work runs after the per-system scan/enrichment write, not inside the filesystem discovery writer closure. While it runs, the activity banner shows "Matching ROMs" progress based on 200-row mini-batches. Rebuild and rescan requests are blocked until identity finishes, so normal user actions do not cancel long NFS reads. Storage changes still cancel the identity phase through `storage_generation`, and unresolved rows remain retryable. The worker count defaults to 2 for every storage class, with an advanced override via `REPLAY_CONTROL_IDENTITY_WORKERS` (valid range: 1-4). Keep this bounded: the goal is to overlap storage latency without creating excessive CPU or I/O contention.
 
 `populate_all_systems` no longer pre-walks the filesystem to count systems; it iterates `visible_systems()` directly and lets each per-system call decide what to write (strict reconcile rule). Empty walks on local storage reconcile to empty meta; on NFS they return `Err` and preserve cached state. See `replay-control-app/src/api/library/mod.rs` and the per-system reconcile tests there.
 

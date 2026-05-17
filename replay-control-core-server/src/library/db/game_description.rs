@@ -85,6 +85,7 @@ impl LibraryDb {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::make_game_entry;
     use super::*;
     use crate::library_db::LibraryDb;
 
@@ -92,6 +93,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let conn = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
+    }
+
+    fn seed_roms(conn: &mut Connection, system: &str, filenames: &[&str]) {
+        let entries = filenames
+            .iter()
+            .map(|filename| make_game_entry(system, filename, false))
+            .collect::<Vec<_>>();
+        LibraryDb::save_system_entries(conn, system, &entries, None).unwrap();
     }
 
     #[test]
@@ -107,6 +116,7 @@ mod tests {
     #[test]
     fn replace_then_lookup_roundtrips() {
         let (mut conn, _dir) = open_temp();
+        seed_roms(&mut conn, "snes", &["Mario.sfc", "Zelda.sfc"]);
         LibraryDb::replace_descriptions_for_system(
             &mut conn,
             "snes",
@@ -145,6 +155,7 @@ mod tests {
     #[test]
     fn replace_wipes_prior_rows_for_same_system() {
         let (mut conn, _dir) = open_temp();
+        seed_roms(&mut conn, "snes", &["Mario.sfc", "Zelda.sfc"]);
         LibraryDb::replace_descriptions_for_system(
             &mut conn,
             "snes",
@@ -177,6 +188,8 @@ mod tests {
     #[test]
     fn replace_does_not_touch_other_systems() {
         let (mut conn, _dir) = open_temp();
+        seed_roms(&mut conn, "snes", &["Mario.sfc"]);
+        seed_roms(&mut conn, "nintendo_nes", &["Mario.nes"]);
         LibraryDb::replace_descriptions_for_system(
             &mut conn,
             "snes",

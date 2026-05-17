@@ -4,7 +4,8 @@ Browser-based tests using Playwright. Two flavours of test live here:
 
 1. **Auto-update UI tests** (`test_update_check.py`, `test_update_install.py`).
 2. **Page health + responsiveness tests** (`test_page_health.py`,
-   `test_response_cache.py`, `test_corruption_banner.py`). These guard
+   `test_response_cache.py`, `test_corruption_banner.py`,
+   `test_library_build_pipeline.py`). These guard
    the user-facing behaviours the pool-design / cancellation-orphan work
    was supposed to fix; they catch regressions in route definitions,
    navigation latency, force-refresh resilience, and response-cache
@@ -95,6 +96,14 @@ longer than the *old* 10 s TTL), reloads, and asserts the post-pause
 hit is in the same ballpark as the warm hit. If the TTL is reverted
 to 10 s this test fails immediately. Includes a baseline
 absolute-warm-time check (`/favorites` warm < 200 ms on Pi 4).
+
+### `test_library_build_pipeline.py` — Container only, mutates storage
+
+Clicks the metadata page's `Rescan Library` action, listens to
+`/sse/activity`, verifies the rescan transitions into background ROM matching,
+and asserts a second rescan is blocked while identity owns the activity slot.
+This test wipes and recreates `/media/usb`, so it is skipped outside the
+container runner.
 
 ### `test_corruption_banner.py` — Triggers service restart + DB corruption
 Covers the live client wire that the Rust integration suite can't reach:

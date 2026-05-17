@@ -40,6 +40,10 @@ Download the [LaunchBox](https://gamesdb.launchbox-app.com/) XML file (~460 MB) 
 - The XML is parsed once into the host-global `external_metadata.db` (`/var/lib/replay-control/external_metadata.db`); per-storage caches no longer hold a copy
 - Boot-time freshness is content-derived (CRC32 of the XML vs. the last-parsed stamp) — newly added ROMs after a refresh pick up metadata automatically on the next enrichment
 - Per-system coverage stats refresh after enrichment completes
+- On a fresh install, optional source downloads run before the first library
+  scan. This one-time wait lets the initial build use provider metadata and
+  thumbnail indexes on its first pass instead of showing a partial library and
+  catching up immediately afterward.
 
 Data imported: description, rating, rating count, publisher, developer, genre, max players, release date, cooperative flag, and LaunchBox video links.
 

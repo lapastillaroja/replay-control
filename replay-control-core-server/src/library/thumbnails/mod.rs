@@ -23,8 +23,8 @@ pub enum ThumbnailKind {
 /// All thumbnail kinds, for iteration.
 pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] = &[
     ThumbnailKind::Boxart,
-    ThumbnailKind::Snap,
     ThumbnailKind::Title,
+    ThumbnailKind::Snap,
 ];
 
 impl ThumbnailKind {

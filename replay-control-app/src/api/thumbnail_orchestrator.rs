@@ -30,16 +30,22 @@
 //! senders drop — i.e. when the orchestrator's `Arc` is the last one).
 
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use replay_control_core_server::thumbnail_manifest::{
     ManifestMatch, download_thumbnail, save_thumbnail,
 };
 use replay_control_core_server::thumbnails::ThumbnailKind;
 use tokio::sync::{Semaphore, mpsc};
+
+const MAX_DOWNLOAD_ATTEMPTS: usize = 3;
+const BASE_BACKOFF_MS: u64 = 500;
+const MAX_BACKOFF_MS: u64 = 8_000;
 
 /// Identity of a single thumbnail file. Used for dedup across the bulk
 /// and on-demand pipelines so the same file isn't downloaded twice
@@ -375,23 +381,47 @@ async fn run_worker(
 
 async fn run_job(state: Arc<OrchestratorState>, job: Job) {
     let key = job.key.clone();
-    let outcome = match download_thumbnail(&job.payload, key.kind.repo_dir()).await {
-        Ok(bytes) => {
-            match save_thumbnail(
-                &job.storage_root,
-                &key.system,
-                key.kind,
-                &key.filename,
-                bytes,
-            )
-            .await
-            {
-                Ok(_) => Outcome::Saved,
-                Err(e) => Outcome::SaveFailed(format!("{e}")),
+    let mut outcome = Outcome::DownloadFailed("download not attempted".to_string());
+    for attempt in 1..=MAX_DOWNLOAD_ATTEMPTS {
+        let started = std::time::Instant::now();
+        outcome = match download_thumbnail(&job.payload, key.kind.repo_dir()).await {
+            Ok(bytes) => {
+                match save_thumbnail(
+                    &job.storage_root,
+                    &key.system,
+                    key.kind,
+                    &key.filename,
+                    bytes,
+                )
+                .await
+                {
+                    Ok(_) => Outcome::Saved,
+                    Err(e) => Outcome::SaveFailed(format!("{e}")),
+                }
             }
+            Err(e) => Outcome::DownloadFailed(format!("{e}")),
+        };
+
+        log_thumbnail_attempt(&key, &outcome, attempt, started.elapsed());
+
+        let Outcome::DownloadFailed(message) = &outcome else {
+            break;
+        };
+        if attempt == MAX_DOWNLOAD_ATTEMPTS {
+            break;
         }
-        Err(e) => Outcome::DownloadFailed(format!("{e}")),
-    };
+        let Some(delay) = retry_delay(message, attempt, &key) else {
+            break;
+        };
+        tracing::warn!(
+            "thumbnail.download retry kind={} system={} attempt={} delay_ms={}",
+            key.kind.media_dir(),
+            key.system,
+            attempt + 1,
+            delay.as_millis()
+        );
+        tokio::time::sleep(delay).await;
+    }
 
     if outcome.is_success() {
         state.completed_ok.fetch_add(1, Ordering::Relaxed);
@@ -414,6 +444,82 @@ async fn run_job(state: Arc<OrchestratorState>, job: Job) {
     }
 
     state.pending.lock().expect("pending lock").remove(&key);
+}
+
+fn thumbnail_status(outcome: &Outcome) -> &'static str {
+    match outcome {
+        Outcome::Saved => "saved",
+        Outcome::Skipped => "skipped",
+        Outcome::DownloadFailed(_) => "download_failed",
+        Outcome::SaveFailed(_) => "save_failed",
+    }
+}
+
+fn log_thumbnail_attempt(
+    key: &ThumbnailKey,
+    outcome: &Outcome,
+    attempt: usize,
+    duration: Duration,
+) {
+    let status = thumbnail_status(outcome);
+    match outcome {
+        Outcome::DownloadFailed(message) | Outcome::SaveFailed(message) => {
+            tracing::warn!(
+                "thumbnail.download kind={} system={} status={} attempt={} duration_ms={} error={}",
+                key.kind.media_dir(),
+                key.system,
+                status,
+                attempt,
+                duration.as_millis(),
+                message
+            );
+        }
+        Outcome::Saved | Outcome::Skipped => {
+            tracing::debug!(
+                "thumbnail.download kind={} system={} status={} attempt={} duration_ms={}",
+                key.kind.media_dir(),
+                key.system,
+                status,
+                attempt,
+                duration.as_millis()
+            );
+        }
+    }
+}
+
+fn retry_delay(message: &str, attempt: usize, key: &ThumbnailKey) -> Option<std::time::Duration> {
+    if !(message.contains("429")
+        || message.contains("503")
+        || message.contains("timed out")
+        || message.contains("connection"))
+    {
+        return None;
+    }
+
+    if let Some(seconds) = parse_retry_after(message) {
+        return Some(std::time::Duration::from_secs(seconds.min(30)));
+    }
+
+    let exp = 1u64 << attempt.saturating_sub(1).min(4);
+    let base = BASE_BACKOFF_MS.saturating_mul(exp).min(MAX_BACKOFF_MS);
+    let jitter = retry_jitter_ms(key, attempt);
+    Some(std::time::Duration::from_millis(base + jitter))
+}
+
+fn parse_retry_after(message: &str) -> Option<u64> {
+    message
+        .split("retry_after=")
+        .nth(1)
+        .and_then(|tail| tail.split(|c: char| !c.is_ascii_digit()).next())
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse().ok())
+}
+
+fn retry_jitter_ms(key: &ThumbnailKey, attempt: usize) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    attempt.hash(&mut hasher);
+    hasher.finish() % 250
 }
 
 #[cfg(test)]
@@ -568,6 +674,29 @@ mod tests {
                 .expect("pending lock")
                 .contains(&k),
             "disarmed guard must not roll back; worker owns cleanup"
+        );
+    }
+
+    #[test]
+    fn retry_after_seconds_overrides_exponential_backoff() {
+        let delay = retry_delay(
+            "HTTP error for https://example.test: 429 Too Many Requests; retry_after=7",
+            1,
+            &key("nintendo_nes", "Test"),
+        )
+        .unwrap();
+        assert_eq!(delay, Duration::from_secs(7));
+    }
+
+    #[test]
+    fn retry_delay_ignores_non_transient_errors() {
+        assert!(
+            retry_delay(
+                "HTTP error for https://example.test: 404 Not Found",
+                1,
+                &key("s", "f")
+            )
+            .is_none()
         );
     }
 

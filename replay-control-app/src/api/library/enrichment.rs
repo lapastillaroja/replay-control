@@ -91,14 +91,16 @@ impl LibraryService {
                 cancellation.ensure_current()?;
             }
             let cleanup_started = Instant::now();
+            let description_rows = Vec::new();
+            let resource_rows = Vec::new();
             let cleanup_result = state
                 .library_writer
                 .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                     LibraryDb::replace_detail_metadata_and_resources_for_system(
                         conn,
                         &sys,
-                        &[],
-                        &[],
+                        &description_rows,
+                        &resource_rows,
                     )
                 })
                 .await;
@@ -223,6 +225,25 @@ impl LibraryService {
                     .await,
             );
         }
+        let valid_rom_filenames = rom_filenames
+            .iter()
+            .map(String::as_str)
+            .collect::<std::collections::HashSet<_>>();
+        let before_valid_filter = thumbnail_jobs.len();
+        let invalid_thumbnail_jobs = thumbnail_jobs
+            .iter()
+            .filter(|job| !valid_rom_filenames.contains(job.rom_filename.as_str()))
+            .take(5)
+            .map(|job| format!("{}:{}", job.kind.media_dir(), job.rom_filename))
+            .collect::<Vec<_>>();
+        thumbnail_jobs.retain(|job| valid_rom_filenames.contains(job.rom_filename.as_str()));
+        let invalid_jobs = before_valid_filter.saturating_sub(thumbnail_jobs.len());
+        if invalid_jobs > 0 {
+            tracing::warn!(
+                "Thumbnail queue: skipped {invalid_jobs} non-library image job(s) for {system}; sample={}",
+                invalid_thumbnail_jobs.join(", ")
+            );
+        }
         let queued_thumbnail_jobs =
             queue_scan_thumbnail_downloads(state, &system, thumbnail_jobs).await;
         let thumbnail_state = if queued_thumbnail_jobs == 0 {
@@ -319,17 +340,17 @@ impl LibraryService {
             cancellation.ensure_current()?;
         }
         let detail_sys = sys.clone();
+        let detail_description_rows = description_rows.clone();
+        let detail_resource_rows = resource_rows.clone();
         let detail_started = Instant::now();
         let detail_result = state
             .library_writer
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                // Always rebuilt (truncate + repopulate) so removed ROMs lose
-                // their description/resources on the next pass.
                 LibraryDb::replace_detail_metadata_and_resources_for_system(
                     conn,
                     &detail_sys,
-                    &description_rows,
-                    &resource_rows,
+                    &detail_description_rows,
+                    &detail_resource_rows,
                 )
             })
             .await;

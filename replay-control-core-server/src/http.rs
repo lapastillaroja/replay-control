@@ -28,9 +28,22 @@ pub async fn get_bytes_with_timeout(url: &str, timeout: std::time::Duration) -> 
         .timeout(timeout)
         .send()
         .await
-        .map_err(|e| Error::Other(format!("HTTP request failed for {url}: {e}")))?
-        .error_for_status()
-        .map_err(|e| Error::Other(format!("HTTP error for {url}: {e}")))?;
+        .map_err(|e| Error::Other(format!("HTTP request failed for {url}: {e}")))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
+        let retry_hint = retry_after
+            .map(|seconds| format!("; retry_after={seconds}"))
+            .unwrap_or_default();
+        return Err(Error::Other(format!(
+            "HTTP error for {url}: {status}{retry_hint}"
+        )));
+    }
 
     resp.bytes()
         .await

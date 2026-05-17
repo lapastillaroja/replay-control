@@ -26,6 +26,18 @@ From the metadata page (**Settings > Game Data**):
 - **Cancellable** -- imports can be cancelled with real-time progress updates
 - Auto-deletes cloned repos after matching to save disk space
 
+During library scans and rebuilds, missing artwork is queued after each system is
+enriched. The library becomes browsable before downloads finish. Artwork is
+downloaded in this order:
+
+1. Box art
+2. Title screens
+3. In-game screenshots
+
+The downloader keeps request concurrency bounded. If GitHub responds with
+temporary throttling or service-unavailable errors, Replay Control retries a few
+times with backoff instead of opening many requests at once.
+
 ## Image Matching
 
 The app uses smart multi-tier matching to connect ROM files with their images:

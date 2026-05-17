@@ -246,6 +246,8 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 | hash_mtime | INTEGER | File mtime when CRC32 was computed (cache key) |
 | hash_size_bytes | INTEGER | ROM file size when CRC32 was computed (cache key) |
 | hash_matched_name | TEXT | No-Intro canonical name if CRC32 matched |
+| scan_token | INTEGER | Discovery reconcile token for the latest successful per-system scan attempt |
+| identity_state | INTEGER | Row-level hash identity state (`pending`, `running`, matched/unmatched complete, failed, or not applicable) |
 | release_date | TEXT | ISO 8601 partial/full date, mirror from `game_release_date` resolver |
 | release_precision | TEXT | `"day"` / `"month"` / `"year"` |
 | release_region_used | TEXT | Region the resolver picked for this row |
@@ -264,6 +266,7 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 | `idx_game_library_series_key` | `(series_key) WHERE series_key != ''` | series_siblings |
 | `idx_game_library_developer_title` | `(developer, base_title) WHERE developer != ''` | find_developer_matches, games_by_developer, top_developers |
 | `idx_game_library_base_title` | `(system, base_title) WHERE base_title != ''` | regional_variants, translations, hacks, specials, find_best_rom |
+| `idx_game_library_identity_pending` | `(system, identity_state) WHERE identity_state IN (2, 3, 6)` | pending/running/failed identity recovery |
 | `idx_game_library_cooperative` | `(system, cooperative) WHERE cooperative = 1` | coop_only filter, random_coop_games |
 
 ### game_library_meta
@@ -277,6 +280,9 @@ Per-system scan metadata. Used by `system_summaries` to derive UI counts and by 
 | scanned_at | INTEGER | Unix timestamp of last scan |
 | rom_count | INTEGER | Number of ROMs found |
 | total_size_bytes | INTEGER | Total size of all ROMs |
+| discovery_state | INTEGER | Per-system discovery state (`pending`, `running`, complete, failed) |
+| enrichment_state | INTEGER | Per-system enrichment state (`pending`, `running`, complete, failed) |
+| thumbnail_state | INTEGER | Per-system thumbnail planning/download state |
 
 **PRIMARY KEY**: `system`
 
@@ -292,6 +298,8 @@ Long-form description + publisher per ROM, denormalized so the game-detail serve
 | publisher | TEXT | Publisher name (nullable) |
 
 **PRIMARY KEY**: `(system, rom_filename)`
+
+**Foreign key**: `(system, rom_filename) REFERENCES game_library(system, rom_filename) ON DELETE CASCADE`
 
 ### library_game_resource
 
@@ -315,6 +323,41 @@ Per-ROM resource suggestions copied from provider and catalog sources during enr
 **Foreign key**: `(system, rom_filename) REFERENCES game_library(system, rom_filename) ON DELETE CASCADE`
 
 **Index**: `library_game_resource_idx_rom_type ON library_game_resource(system, rom_filename, resource_type)` — supports game-detail manual/video suggestions.
+
+### library_thumbnail_job
+
+Durable per-storage artwork download queue. Rebuild/rescan queues missing artwork here; downloads run after the library is usable.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1, FK to `game_library`) |
+| rom_filename | TEXT | ROM filename (PK part 2, FK to `game_library`) |
+| kind | TEXT | Libretro image kind (`Named_Boxarts`, `Named_Titles`, `Named_Snaps`) |
+| filename | TEXT | Manifest filename stem |
+| repo_url_name | TEXT | URL-safe libretro-thumbnails repository name |
+| branch | TEXT | Repository branch |
+| is_symlink | INTEGER | Whether the manifest entry is a symlink |
+| state | INTEGER | Queue state (`queued`, `running`, `failed`) |
+| attempts | INTEGER | Number of failed runtime attempts recorded for the job |
+| priority | INTEGER | Download priority: box art first, then titles, then screenshots |
+| updated_at | INTEGER | Unix timestamp of last queue update |
+
+**PRIMARY KEY**: `(system, rom_filename, kind, filename)`
+
+**Foreign key**: `(system, rom_filename) REFERENCES game_library(system, rom_filename) ON DELETE CASCADE`
+
+**Index**: `idx_library_thumbnail_job_system_priority_status ON library_thumbnail_job(system, priority, state)` — supports priority queue fetches.
+
+### library_build_sequence
+
+Small rebuildable counter table used by library build phases.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| name | TEXT | Counter name; currently `scan_token` |
+| next_value | INTEGER | Next monotonic value to allocate |
+
+**PRIMARY KEY**: `name`
 
 ### game_release_date
 
@@ -595,7 +638,7 @@ User-saved manual resources for a game. Downloaded manuals are stored under `<st
 
 ## Schema Migrations
 
-`library.db` has a versioned migration handler in `LibraryDb::run_migrations`. The current `SCHEMA_VERSION` is **6**.
+`library.db` has a versioned migration handler in `LibraryDb::run_migrations`. The current `SCHEMA_VERSION` is **9**. Recent library-build pipeline shape changes also use open-time schema validation: if rebuildable `library.db` tables are missing required columns or indexes, the table is recreated and startup discovery repopulates it.
 
 History:
 - **v1**: original shape (`game_library`, `game_metadata`, `thumbnail_index`, `data_sources`, `game_release_date`, `game_alias`, `game_series`).
@@ -604,8 +647,11 @@ History:
 - **v4**: adds `game_library.normalized_title` and `normalized_title_alt`, populated at scan time for faster enrichment matching and reconciled via `library_meta.title_norm_version`.
 - **v5**: adds `game_library.hash_size_bytes`, allowing CRC32 cache validation by mtime + size without a full post-upgrade rehash storm.
 - **v6**: renames `game_description` to `game_detail_metadata` and adds `library_game_resource` for manual/video suggestions copied from provider/catalog sources during enrichment.
+- **v7**: adds `game_library.identity_state` for resumable hash matching.
+- **v8**: adds per-system discovery, enrichment, and thumbnail state to `game_library_meta`.
+- **v9**: adds durable thumbnail download jobs. Newer rebuildable columns such as `scan_token` and thumbnail priority are validated at open and may trigger a library cache rebuild instead of a formal migration.
 
-`run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL.
+`run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL. For rebuildable library-cache tables, column drift is also treated as cache drift: the app recreates the table rather than carrying long migration code for data that can be rebuilt from ROM storage and metadata sources.
 
 A **downgrade guard** at the top of `run_migrations` refuses to open a DB stamped with a version newer than the binary — silently treating new-shape rows as old-shape would corrupt them on subsequent writes.
 

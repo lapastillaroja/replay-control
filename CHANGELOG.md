@@ -8,13 +8,15 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Highlights
 
-- **Large NFS rebuilds become usable much sooner.** The library build now writes the file listing and metadata first, then runs CRC identity matching in the background. On the 95,495-ROM NFS test library, the foreground scan/enrichment pass completed in ~145-148 s, compared with beta.9's 194 s rescan and 636 s forced rebuild path.
+- **Large NFS rebuilds become usable much sooner.** The library build now writes the file listing and metadata first, then runs CRC identity matching in the background. On the 95,495-ROM NFS test library, the foreground scan/enrichment pass completed in ~145-148 s in earlier validation, compared with beta.9's 194 s rescan and 636 s forced rebuild path. The follow-up batching work keeps very large systems responsive by chunking discovery saves and identity updates.
 
 ### Changed
 
 - Rebuild/rescan is split into foreground discovery/enrichment and a deferred identity phase. Normal rescans still reuse valid cached CRC identity; forced rebuilds mark hash-eligible rows for background re-identification instead of blocking the visible library on every ROM byte read.
-- The identity phase is resumable and bounded. Rows move through explicit identity states, interrupted work is picked up later, and hash matching defaults to two workers for every storage class.
-- Per-system library writes now reconcile via a transaction-local `current_scan_roms` temporary table. The scan upserts the current rows, deletes stale detail/library rows that are not in the temp table, then updates system metadata in the same transaction.
+- The identity phase is resumable and bounded. Rows move through explicit identity states, interrupted work is picked up later, hash matching defaults to two workers for every storage class, and progress advances after each 200-ROM mini-batch.
+- Per-system library writes now reconcile with durable scan tokens. Current rows are upserted in bounded chunks, stale rows are deleted only after finalization, and unchanged ROM resources survive rescans.
+- First-run metadata and thumbnail-source downloads no longer block the first library scan. The library appears from local discovery first, then optional metadata and artwork fill in as background work completes.
+- Thumbnail downloads now use a durable per-storage queue with box art first, then title screens, then screenshots. Temporary GitHub throttling and service errors are retried with bounded backoff instead of creating request bursts.
 
 ### Fixed
 

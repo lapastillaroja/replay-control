@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -9,7 +9,7 @@ use replay_control_core_server::rom_hash::{CachedHash, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{DISCOVERY_SAVE_CHUNK_ROWS, LibraryDb};
 
 use super::{LibraryService, dir_mtime_secs};
 use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
@@ -282,40 +282,101 @@ impl LibraryService {
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
             cached_roms.len()
         );
-        let system_for_save = system.to_string();
-        let cached_roms_for_db = cached_roms.clone();
+        let mut seen = HashSet::new();
+        let unique_roms: Vec<_> = cached_roms
+            .iter()
+            .filter(|rom| seen.insert(rom.rom_filename.as_str()))
+            .cloned()
+            .collect();
+        let total_size: u64 = unique_roms.iter().map(|rom| rom.size_bytes).sum();
+
         scan_inputs.ensure_current()?;
         let save_write_started = Instant::now();
-        let result = db
+        let begin_system = system.to_string();
+        let begin_result = db
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                LibraryDb::save_system_entries(
+                LibraryDb::begin_system_discovery(conn, &begin_system)
+            })
+            .await;
+        let (scan_token, scanned_at) = match begin_result {
+            Ok(Ok(token)) => token,
+            Ok(Err(e)) => {
+                tracing::warn!("L2 write-through: begin {system} FAILED: {e}");
+                return Err(e);
+            }
+            Err(e) => {
+                tracing::warn!("L2 write-through: begin {system} write failed: {e}");
+                return Err(Error::Other(format!(
+                    "L2 write-through begin failed for {system}: {e}"
+                )));
+            }
+        };
+
+        for chunk in unique_roms.chunks(DISCOVERY_SAVE_CHUNK_ROWS) {
+            scan_inputs.ensure_current()?;
+            let chunk_system = system.to_string();
+            let chunk_rows = chunk.to_vec();
+            let chunk_result = db
+                .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                    LibraryDb::save_system_entries_chunk(
+                        conn,
+                        &chunk_system,
+                        scan_token,
+                        &chunk_rows,
+                    )
+                })
+                .await;
+            match chunk_result {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    tracing::warn!("L2 write-through: chunk {system} FAILED: {e}");
+                    return Err(e);
+                }
+                Err(e) => {
+                    tracing::warn!("L2 write-through: chunk {system} write failed: {e}");
+                    return Err(Error::Other(format!(
+                        "L2 write-through chunk failed for {system}: {e}"
+                    )));
+                }
+            }
+        }
+
+        scan_inputs.ensure_current()?;
+        let finalize_system = system.to_string();
+        let rom_count = unique_roms.len();
+        let finalize_result = db
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::finalize_system_discovery(
                     conn,
-                    &system_for_save,
-                    &cached_roms_for_db,
+                    &finalize_system,
+                    scan_token,
                     mtime_secs,
+                    rom_count,
+                    total_size,
+                    scanned_at,
                 )
             })
             .await;
         let save_write_ms = save_write_started.elapsed().as_millis();
-        match result {
+        match finalize_result {
             Ok(Ok(())) => {
-                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
+                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", unique_roms.len());
 
                 tracing::info!(
                     "L2 discovery save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} total_ms={}",
-                    cached_roms.len(),
+                    unique_roms.len(),
                     save_profile_started.elapsed().as_millis()
                 );
                 Ok(())
             }
             Ok(Err(e)) => {
-                tracing::warn!("L2 write-through: {system} FAILED: {e}");
+                tracing::warn!("L2 write-through: finalize {system} FAILED: {e}");
                 Err(e)
             }
             Err(e) => {
-                tracing::warn!("L2 write-through: {system} write failed: {e}");
+                tracing::warn!("L2 write-through: finalize {system} write failed: {e}");
                 Err(Error::Other(format!(
-                    "L2 write-through failed for {system}: {e}"
+                    "L2 write-through finalize failed for {system}: {e}"
                 )))
             }
         }

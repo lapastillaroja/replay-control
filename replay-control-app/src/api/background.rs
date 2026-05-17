@@ -20,6 +20,7 @@ use crate::types::RomWatcherStatus;
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PIPELINE_ACTIVITY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const PIPELINE_ACTIVITY_RETRY_ATTEMPTS: usize = 240;
+const IDENTITY_BATCH_SIZE: usize = 200;
 
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateProgress {
@@ -248,10 +249,14 @@ impl BackgroundManager {
         }
         drop(storage);
 
-        // Phase 0.5: On first boot, silently pre-fetch LaunchBox XML and the
-        // libretro thumbnail manifest so Phase 2 enrichment has data without
-        // requiring a manual "Refresh metadata" before the first scan.
-        Self::phase_first_run_seed(state).await;
+        // Phase 0.5: On first boot, fetch optional source metadata before the
+        // library scan. This is a one-time cost, and waiting avoids building a
+        // partial first library that needs immediate re-enrichment.
+        if let Some(_guard) =
+            Self::claim_startup_activity(state, StartupPhase::FetchingMetadata).await
+        {
+            Self::phase_first_run_seed(state).await;
+        }
 
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
         // Import claims/releases its own Activity::Import via try_start_activity.
@@ -270,7 +275,8 @@ impl BackgroundManager {
         // being scheduled; retry briefly so the rebuild guard can drop instead
         // of losing the new storage verification pass.
         {
-            let Some(_guard) = Self::claim_startup_activity(state).await else {
+            let Some(_guard) = Self::claim_startup_activity(state, StartupPhase::Scanning).await
+            else {
                 return;
             };
 
@@ -291,10 +297,13 @@ impl BackgroundManager {
         }
     }
 
-    async fn claim_startup_activity(state: &AppState) -> Option<crate::api::ActivityGuard> {
+    async fn claim_startup_activity(
+        state: &AppState,
+        phase: StartupPhase,
+    ) -> Option<crate::api::ActivityGuard> {
         for attempt in 0..PIPELINE_ACTIVITY_RETRY_ATTEMPTS {
             match state.try_start_activity(Activity::Startup {
-                phase: StartupPhase::Scanning,
+                phase,
                 system: String::new(),
                 enriching: false,
             }) {
@@ -487,7 +496,7 @@ impl BackgroundManager {
                     }
                 }
                 update_identity_progress(&state, |progress| {
-                    progress.rows_done = rows_done.min(progress.rows_total);
+                    progress.rows_done = progress.rows_done.max(rows_done).min(progress.rows_total);
                     progress.systems_done = work_systems_done.min(progress.systems_total);
                     progress.elapsed_secs = identity_started.elapsed().as_secs();
                 });
@@ -557,170 +566,231 @@ impl BackgroundManager {
             };
         }
 
-        let system_for_mark = job.system.clone();
-        let force_rehash = job.scan_inputs.force_rehash();
-        let mark_result = state
-            .library_writer
-            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                LibraryDb::mark_identity_running_for_system(conn, &system_for_mark, force_rehash)
-            })
-            .await;
-        match mark_result {
-            Ok(Ok(0)) => {
-                tracing::debug!("Identity phase: {} has no rows to claim", job.system);
-                return IdentityJobOutcome::Skipped {
-                    rows_done: 0,
-                    work_system_done: false,
-                };
-            }
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!("Identity phase: could not mark {} running: {e}", job.system);
-                return IdentityJobOutcome::Failed {
-                    work_system_done: true,
-                };
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Identity phase: writer unavailable while marking {} running: {e}",
-                    job.system
-                );
-                return IdentityJobOutcome::Failed {
-                    work_system_done: true,
-                };
-            }
-        }
-
         let started = Instant::now();
-        let mut roms = (*job.roms).clone();
-        let hash_cancel = Arc::new(AtomicBool::new(false));
-        let hash_cancel_watcher = hash_cancel.clone();
-        let watcher_state = state.clone();
-        let watcher_system = job.system.clone();
-        let watcher = tokio::spawn(async move {
-            loop {
-                if watcher_state.ensure_storage_generation(generation).is_err() {
-                    hash_cancel_watcher.store(true, Ordering::Relaxed);
-                    break;
-                }
-                if !watcher_state.identity_can_run() {
-                    tracing::info!(
-                        "Identity phase: pausing hash for {watcher_system} because foreground activity started"
-                    );
-                    hash_cancel_watcher.store(true, Ordering::Relaxed);
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(500)).await;
+        let force_rehash = job.scan_inputs.force_rehash();
+        let force_candidates: Vec<String> = job
+            .roms
+            .iter()
+            .filter(|rom| {
+                !rom.is_m3u && rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
+            })
+            .map(|rom| rom.game.rom_filename.clone())
+            .collect();
+        let mut force_offset = 0usize;
+        let mut rows_done = 0usize;
+        let mut updated_rows = 0usize;
+        let mut claimed_any = false;
+
+        loop {
+            if !Self::wait_for_identity_window(state, generation, &job.system).await {
+                return IdentityJobOutcome::Cancelled {
+                    work_system_done: claimed_any,
+                };
             }
-        });
-        let (hash_results, _stats) = state
-            .cache
-            .hash_roms_for_system(
-                storage,
-                &job.system,
-                &mut roms,
-                &job.scan_inputs,
-                Some(hash_cancel.clone()),
-            )
-            .await;
-        watcher.abort();
-        if state.ensure_storage_generation(generation).is_err() {
+            if state.ensure_storage_generation(generation).is_err() {
+                return IdentityJobOutcome::Cancelled {
+                    work_system_done: claimed_any,
+                };
+            }
+
+            let claimed = if force_rehash {
+                if force_offset >= force_candidates.len() {
+                    Ok(Vec::new())
+                } else {
+                    let end = (force_offset + IDENTITY_BATCH_SIZE).min(force_candidates.len());
+                    let filenames = force_candidates[force_offset..end].to_vec();
+                    force_offset = end;
+                    Self::claim_identity_filenames(state, &job.system, filenames).await
+                }
+            } else {
+                Self::claim_identity_batch(state, &job.system).await
+            };
+
+            let claimed = match claimed {
+                Ok(claimed) => claimed,
+                Err(e) => {
+                    tracing::warn!("Identity phase: could not claim {} batch: {e}", job.system);
+                    return IdentityJobOutcome::Failed {
+                        work_system_done: claimed_any,
+                    };
+                }
+            };
+            if claimed.is_empty() {
+                if force_rehash && force_offset < force_candidates.len() {
+                    continue;
+                }
+                break;
+            }
+            claimed_any = true;
+
+            let claimed_set: std::collections::HashSet<&str> =
+                claimed.iter().map(String::as_str).collect();
+            let mut batch_roms: Vec<RomEntry> = job
+                .roms
+                .iter()
+                .filter(|rom| claimed_set.contains(rom.game.rom_filename.as_str()))
+                .cloned()
+                .collect();
+            if batch_roms.is_empty() {
+                let finished = Self::finish_identity_batch(
+                    state,
+                    &job.system,
+                    claimed,
+                    IdentityState::Pending,
+                )
+                .await;
+                rows_done += finished.unwrap_or(0);
+                continue;
+            }
+
+            let hash_cancel = Arc::new(AtomicBool::new(false));
+            let hash_cancel_watcher = hash_cancel.clone();
+            let watcher_state = state.clone();
+            let watcher_system = job.system.clone();
+            let watcher = tokio::spawn(async move {
+                loop {
+                    if watcher_state.ensure_storage_generation(generation).is_err() {
+                        hash_cancel_watcher.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                    if !watcher_state.identity_can_run() {
+                        tracing::info!(
+                            "Identity phase: pausing hash for {watcher_system} because foreground activity started"
+                        );
+                        hash_cancel_watcher.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+            let batch_started = Instant::now();
+            let (hash_results, _stats) = state
+                .cache
+                .hash_roms_for_system(
+                    storage,
+                    &job.system,
+                    &mut batch_roms,
+                    &job.scan_inputs,
+                    Some(hash_cancel.clone()),
+                )
+                .await;
+            watcher.abort();
+
+            if state.ensure_storage_generation(generation).is_err() {
+                tracing::info!(
+                    "Identity phase: storage changed after hashing {}",
+                    job.system
+                );
+                return IdentityJobOutcome::Cancelled {
+                    work_system_done: true,
+                };
+            }
+
+            let mut batch_updated = 0usize;
+            if !hash_results.is_empty() {
+                let identity_entries =
+                    game_entry_builder::build_game_entries(&job.system, &batch_roms, &hash_results)
+                        .await;
+                let identity_entries: Vec<_> = identity_entries
+                    .into_iter()
+                    .filter(|entry| hash_results.contains_key(&entry.rom_filename))
+                    .collect();
+                let system_for_update = job.system.clone();
+                let identity_update_result = state
+                    .library_writer
+                    .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                        LibraryDb::update_running_identity_entries(
+                            conn,
+                            &system_for_update,
+                            &identity_entries,
+                        )
+                    })
+                    .await;
+                batch_updated = match identity_update_result {
+                    Ok(Ok(updated)) => updated,
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            "Identity phase: identity batch update failed for {}: {e}",
+                            job.system
+                        );
+                        let _ = Self::finish_identity_batch(
+                            state,
+                            &job.system,
+                            claimed,
+                            IdentityState::Pending,
+                        )
+                        .await;
+                        return IdentityJobOutcome::Failed {
+                            work_system_done: true,
+                        };
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Identity phase: writer unavailable while updating {}: {e}",
+                            job.system
+                        );
+                        let _ = Self::finish_identity_batch(
+                            state,
+                            &job.system,
+                            claimed,
+                            IdentityState::Pending,
+                        )
+                        .await;
+                        return IdentityJobOutcome::Failed {
+                            work_system_done: true,
+                        };
+                    }
+                };
+            }
+
+            let unresolved_state = if hash_cancel.load(Ordering::Relaxed) {
+                IdentityState::Pending
+            } else {
+                IdentityState::Failed
+            };
+            let unresolved =
+                Self::finish_identity_batch(state, &job.system, claimed, unresolved_state)
+                    .await
+                    .unwrap_or(0);
+            rows_done = rows_done.saturating_add(batch_updated + unresolved);
+            updated_rows = updated_rows.saturating_add(batch_updated);
+            update_identity_progress(state, |progress| {
+                progress.rows_done = progress
+                    .rows_done
+                    .saturating_add(batch_updated + unresolved);
+                progress.rows_done = progress.rows_done.min(progress.rows_total);
+                progress.elapsed_secs = started.elapsed().as_secs();
+            });
             tracing::info!(
-                "Identity phase: storage changed after hashing {}",
-                job.system
+                "Identity phase: {} batch complete rows={} updated={} unresolved={} cancelled={} batch_ms={}",
+                job.system,
+                batch_roms.len(),
+                batch_updated,
+                unresolved,
+                hash_cancel.load(Ordering::Relaxed),
+                batch_started.elapsed().as_millis()
             );
-            return IdentityJobOutcome::Cancelled {
-                work_system_done: true,
-            };
-        }
-        if hash_cancel.load(Ordering::Relaxed) {
-            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending).await;
-            return IdentityJobOutcome::Cancelled {
-                work_system_done: true,
-            };
-        }
-        if !Self::wait_for_identity_window(state, generation, &job.system).await {
-            return IdentityJobOutcome::Cancelled {
-                work_system_done: true,
-            };
+
+            if hash_cancel.load(Ordering::Relaxed) {
+                if updated_rows > 0 {
+                    let _ = Self::post_identity_enrich(state, &job).await;
+                }
+                return IdentityJobOutcome::Cancelled {
+                    work_system_done: true,
+                };
+            }
         }
 
-        if hash_results.is_empty() {
-            tracing::debug!("Identity phase: {} has no hash results", job.system);
-            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Failed).await;
-            return IdentityJobOutcome::Failed {
-                work_system_done: true,
-            };
-        }
-        let identity_entries =
-            game_entry_builder::build_game_entries(&job.system, &roms, &hash_results).await;
-        let identity_entries: Vec<_> = identity_entries
-            .into_iter()
-            .filter(|entry| hash_results.contains_key(&entry.rom_filename))
-            .collect();
-        let system_for_update = job.system.clone();
-        let identity_update_result = state
-            .library_writer
-            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                LibraryDb::update_running_identity_entries(
-                    conn,
-                    &system_for_update,
-                    &identity_entries,
-                )
-            })
-            .await;
-        let updated = match identity_update_result {
-            Ok(Ok(updated)) => updated,
-            Ok(Err(e)) => {
-                tracing::warn!(
-                    "Identity phase: identity update failed for {}: {e}",
-                    job.system
-                );
-                Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending)
-                    .await;
-                return IdentityJobOutcome::Failed {
-                    work_system_done: true,
-                };
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Identity phase: writer unavailable while updating {}: {e}",
-                    job.system
-                );
-                Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending)
-                    .await;
-                return IdentityJobOutcome::Failed {
-                    work_system_done: true,
-                };
-            }
-        };
-        if updated == 0 {
-            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending).await;
-            tracing::debug!(
-                "Identity phase: {} produced no DB updates after hashing",
-                job.system
-            );
+        if !claimed_any {
+            tracing::debug!("Identity phase: {} has no rows to claim", job.system);
             return IdentityJobOutcome::Skipped {
                 rows_done: 0,
-                work_system_done: true,
-            };
-        }
-        Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Failed).await;
-
-        if !Self::wait_for_identity_window(state, generation, &job.system).await {
-            return IdentityJobOutcome::Cancelled {
-                work_system_done: true,
+                work_system_done: false,
             };
         }
 
-        if let Err(e) = state
-            .cache
-            .enrich_system_cache_with_cancellation(
-                state,
-                job.system.clone(),
-                job.scan_inputs.cancellation(),
-            )
-            .await
+        if updated_rows > 0
+            && let Err(e) = Self::post_identity_enrich(state, &job).await
         {
             tracing::warn!(
                 "Identity phase: post-hash enrichment failed for {}: {e}",
@@ -731,42 +801,91 @@ impl BackgroundManager {
             };
         }
 
-        state.cache.invalidate_l1().await;
-        state.invalidate_user_caches().await;
         tracing::info!(
-            "Identity phase: {} complete in {}ms (updated={updated}, results={})",
+            "Identity phase: {} complete in {}ms (updated={updated_rows}, rows_done={rows_done})",
             job.system,
             started.elapsed().as_millis(),
-            hash_results.len()
         );
-        IdentityJobOutcome::Completed { rows_done: updated }
+        IdentityJobOutcome::Completed { rows_done }
     }
 
-    async fn finish_unresolved_identity_job(
+    async fn claim_identity_batch(
         state: &AppState,
         system: &str,
-        identity_state: IdentityState,
-    ) {
-        let system = system.to_string();
-        let log_system = system.clone();
+    ) -> replay_control_core::error::Result<Vec<String>> {
+        let system_for_claim = system.to_string();
         let result = state
             .library_writer
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                LibraryDb::finish_unresolved_identity_running(conn, &system, identity_state)
+                LibraryDb::claim_identity_batch(conn, &system_for_claim, false, IDENTITY_BATCH_SIZE)
             })
             .await;
         match result {
-            Ok(Ok(0)) => {}
-            Ok(Ok(count)) => tracing::debug!(
-                "Identity phase: marked {count} unresolved row(s) as {identity_state:?} for {log_system}"
-            ),
-            Ok(Err(e)) => tracing::warn!(
-                "Identity phase: unresolved identity cleanup failed for {log_system}: {e}"
-            ),
-            Err(e) => tracing::warn!(
-                "Identity phase: unresolved identity cleanup writer failed for {log_system}: {e}"
-            ),
+            Ok(Ok(claimed)) => Ok(claimed),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(replay_control_core::error::Error::Other(e.to_string())),
         }
+    }
+
+    async fn claim_identity_filenames(
+        state: &AppState,
+        system: &str,
+        filenames: Vec<String>,
+    ) -> replay_control_core::error::Result<Vec<String>> {
+        let system_for_claim = system.to_string();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::claim_identity_filenames(conn, &system_for_claim, &filenames)
+            })
+            .await;
+        match result {
+            Ok(Ok(claimed)) => Ok(claimed),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(replay_control_core::error::Error::Other(e.to_string())),
+        }
+    }
+
+    async fn finish_identity_batch(
+        state: &AppState,
+        system: &str,
+        filenames: Vec<String>,
+        identity_state: IdentityState,
+    ) -> replay_control_core::error::Result<usize> {
+        let system_for_finish = system.to_string();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::finish_identity_batch(
+                    conn,
+                    &system_for_finish,
+                    &filenames,
+                    identity_state,
+                )
+            })
+            .await;
+        match result {
+            Ok(Ok(count)) => Ok(count),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(replay_control_core::error::Error::Other(e.to_string())),
+        }
+    }
+
+    async fn post_identity_enrich(
+        state: &AppState,
+        job: &IdentityJob,
+    ) -> replay_control_core::error::Result<()> {
+        state
+            .cache
+            .enrich_system_cache_with_cancellation(
+                state,
+                job.system.clone(),
+                job.scan_inputs.cancellation(),
+            )
+            .await?;
+        state.cache.invalidate_l1().await;
+        state.invalidate_user_caches().await;
+        Ok(())
     }
 
     /// Spawn a background task that re-runs `phase_auto_import`. Used by the
@@ -959,8 +1078,9 @@ impl BackgroundManager {
         }
     }
 
-    /// Phase 0.5: On first boot, silently download the LaunchBox XML and the
-    /// libretro thumbnail manifest so Phase 2 enrichment runs with data.
+    /// Phase 0.5: On first boot, download the LaunchBox XML and the libretro
+    /// thumbnail manifest before scanning so first-pass enrichment has source
+    /// data available.
     ///
     /// First-run conditions (checked independently):
     ///   - LaunchBox: no `launchbox_xml_crc32` in `external_meta` AND no XML on disk.
@@ -994,7 +1114,7 @@ impl BackgroundManager {
         let (has_crc32, has_libretro_sources) = match seed_check {
             Some(v) => v,
             None => {
-                tracing::debug!("phase_first_run_seed: pool unavailable, skipping");
+                tracing::warn!("phase_first_run_seed: pool unavailable, skipping");
                 return;
             }
         };
@@ -1013,18 +1133,6 @@ impl BackgroundManager {
              (launchbox={needs_launchbox}, libretro={needs_libretro})"
         );
 
-        let _guard = match state.try_start_activity(Activity::Startup {
-            phase: StartupPhase::FetchingMetadata,
-            system: String::new(),
-            enriching: false,
-        }) {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::warn!("phase_first_run_seed: activity busy: {e}");
-                return;
-            }
-        };
-
         if needs_launchbox {
             let dest = cache_dir.clone();
             let result = tokio::task::spawn_blocking(move || {
@@ -1032,10 +1140,12 @@ impl BackgroundManager {
             })
             .await;
             match result {
-                Ok(Ok(p)) => tracing::info!(
-                    "phase_first_run_seed: LaunchBox XML downloaded to {}",
-                    p.display()
-                ),
+                Ok(Ok(p)) => {
+                    tracing::info!(
+                        "phase_first_run_seed: LaunchBox XML downloaded to {}",
+                        p.display()
+                    );
+                }
                 Ok(Err(e)) => {
                     tracing::warn!("phase_first_run_seed: LaunchBox download failed: {e}")
                 }
@@ -1069,8 +1179,6 @@ impl BackgroundManager {
                 Err(e) => tracing::warn!("phase_first_run_seed: libretro manifest failed: {e}"),
             }
         }
-
-        // _guard drops → Activity::Idle
     }
 
     /// Phase 1: Refresh `external_metadata.db` from the LaunchBox XML when its

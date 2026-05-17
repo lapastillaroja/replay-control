@@ -92,6 +92,16 @@ Measured separately on the beta.9 Pi/NFS development library (95,495 ROMs across
 
 The important split is rescan vs. rebuild. A normal rescan still walks the NFS tree, writes the refreshed library rows, and enriches systems, but it avoids streaming unchanged hash-eligible ROM content. Rebuild is the explicit verification/repair path and intentionally recomputes cartridge hashes, so large GBA/N64/SNES-era sets can add minutes on NFS.
 
+Additional beta.11 validation on a larger NFS library (99,964 ROMs across 41 systems, May 17 2026) measured the new deferred-identity pipeline:
+
+| Operation | Duration | Hash behavior |
+|---|---:|---|
+| Foreground populate | 280.1 s | Reconciled every visible system and enriched rows before identity finished |
+| Background identity | 437.9 s | Forced 19,019 hash-eligible rows through two 200-row workers |
+| End-to-end build | 718.0 s | Library remained browsable while identity continued |
+
+This run was not a like-for-like speed win over the beta.9 forced rebuild baseline. The useful result was responsiveness: the foreground library became available before the hash tail finished, and the app stayed usable during the remaining NFS reads.
+
 ## Stress Tests
 
 These numbers come from Apache Bench (`ab`) firing dozens to hundreds of concurrent requests at the Pi for minutes at a time. **That isn't how the app is used in practice** — a typical install gets clicked by one or two people. These tests exist to:

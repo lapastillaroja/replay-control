@@ -99,36 +99,27 @@ The foreground pass includes enrichment because enrichment is what makes the
 freshly-discovered rows useful: display metadata, release dates, descriptions,
 resources, and thumbnail matches are written before the next system starts.
 
-## Temporary Table Reconcile
+## Scan-Token Reconcile
 
-`LibraryDb::save_system_entries` reconciles a single system inside one SQLite
-transaction. It creates a connection-local temporary table:
+`LibraryDb::save_system_entries` reconciles one system using a durable
+`scan_token` on `game_library` rows. This keeps writer holds bounded on very
+large systems while avoiding a delete-first pass that would throw away derived
+resources for unchanged ROMs.
 
-```sql
-CREATE TEMP TABLE IF NOT EXISTS current_scan_roms (
-    system TEXT NOT NULL,
-    rom_filename TEXT NOT NULL,
-    PRIMARY KEY (system, rom_filename)
-) WITHOUT ROWID;
-```
+The save path is:
 
-The table is used only as the current scan's membership set:
+1. Deduplicate the walker output by ROM filename, keeping the first entry.
+2. Allocate a new monotonic token from `library_build_sequence`.
+3. Mark the system discovery state as running.
+4. Upsert current rows in bounded chunks, writing the new token on each row.
+5. Finalize in a short transaction: delete rows for that system whose token is
+   missing or old, cascade child rows for removed ROMs, update
+   `game_library_meta`, and mark discovery complete.
 
-1. Delete any leftover rows for the current system from `current_scan_roms`.
-2. Insert each scanned `(system, rom_filename)` into the temp table.
-3. Upsert the matching `game_library` row.
-4. Delete `game_detail_metadata` rows for the system that are not in the temp
-   table.
-5. Delete `game_library` rows for the system that are not in the temp table.
-6. Clear the temp table for the system.
-7. Update `game_library_meta` for the system.
-8. Commit.
-
-The temp table gives the delete step a precise set of "seen in this scan" rows
-without keeping a giant `NOT IN (...)` list in memory or issuing per-ROM delete
-checks. It also deduplicates duplicate walker output via the primary key. Because
-the table is temporary, it is scoped to the SQLite connection and never becomes
-part of the persisted schema.
+If the process stops before finalization, stale deletes have not run. The next
+startup/rescan allocates a new token and reconciles the system again. Readers may
+briefly see old and new rows for the same system during a chunked save; that is
+accepted so hot read paths do not need token joins.
 
 ## Deferred Identity Phase
 
@@ -137,20 +128,21 @@ large cartridge ROM files over the network. It now runs after discovery:
 
 1. The foreground scan writes rows with reusable cached identity where possible.
 2. Hash-eligible systems are queued as `IdentityJob`s.
-3. A bounded worker set claims rows by marking their `identity_state` as
+3. A bounded worker set claims 200-row mini-batches by marking those rows
    `Running`.
 4. Workers compute or reuse CRCs outside the SQLite writer closure.
 5. Results are applied only to rows still marked `Running` and still matching the
    expected size.
-6. Updated systems are re-enriched so hash-derived names and metadata can flow
+6. Completed mini-batches advance the activity progress immediately.
+7. Updated systems are re-enriched so hash-derived names and metadata can flow
    into the library.
 
-If storage changes or a foreground activity starts, workers stop at the next
-check and put unresolved rows back to `Pending`. Rescan/rebuild cannot normally
-start while identity is active because identity owns the activity slot; the
-foreground-activity check remains a defensive guard for races and other activity
-classes. Startup/rescan/rebuild can resume pending and failed identity work
-later via `systems_with_pending_identity`.
+If storage changes, workers drop the in-flight batch and the next DB open/startup
+demotes running rows back to retryable state. If a foreground activity starts,
+workers flush completed rows from the current mini-batch, return unresolved rows
+to `Pending`, and stop. Rescan/rebuild cannot normally start while identity is
+active because identity owns the activity slot; the foreground-activity check
+remains a defensive guard for races and other activity classes.
 
 Worker defaults are intentionally simple: all storage classes use two workers.
 `REPLAY_CONTROL_IDENTITY_WORKERS` can override the count in the range 1-4 for
@@ -164,5 +156,9 @@ showed the foreground scan/enrichment pass completing in roughly 145-148 s. In
 beta.9, the same NFS library measured 194.1 s for manual rescan and 636.0 s for
 manual rebuild because forced CRC work was on the blocking path.
 
-The background identity tail still consumes time on forced rebuilds, but the
-library is already populated and browsable while that work continues.
+The May 17 2026 beta.11 NFS validation used a larger 99,964-ROM library. Its
+foreground populate finished in 280.1 s, then background identity processed
+19,019 hash-eligible rows in 437.9 s, for 718.0 s end to end. That run was not a
+like-for-like speed win over beta.9's forced rebuild baseline. The design goal it
+validated was responsiveness: the library was already populated and browsable
+while the long hash tail continued.
