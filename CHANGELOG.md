@@ -9,6 +9,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Highlights
 
 - **Large NFS rebuilds become usable much sooner.** The library build now writes the file listing and metadata first, then runs CRC identity matching in the background. On the 95,495-ROM NFS test library, the foreground scan/enrichment pass completed in ~145-148 s in earlier validation, compared with beta.9's 194 s rescan and 636 s forced rebuild path. The follow-up batching work keeps very large systems responsive by chunking discovery saves and identity updates.
+- **Now Playing stays on the actually-running game.** Opening the ReplayOS overlay menu and browsing other sections (notably Dreamcast and PlayStation) no longer flips Now Playing to whichever game is highlighted there. The detector now filters heap candidates by the systems the loaded core can run, keeps the previously-tracked game locked when it is still in the heap, prefers the path with the highest occurrence count, and drops prefix-truncation artefacts so games like gunlock consistently show their name, box art, and a working detail link.
 
 ### Changed
 
