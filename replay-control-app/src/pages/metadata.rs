@@ -373,7 +373,7 @@ fn dispatch_terminal(
             thumb_cancelling.set(false);
             Some(thumb_result)
         }
-        Activity::Rebuild { .. } => Some(rebuild_result),
+        Activity::Rebuild { .. } | Activity::Identity { .. } => Some(rebuild_result),
         _ => None,
     };
 

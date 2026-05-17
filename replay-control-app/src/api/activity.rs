@@ -44,6 +44,9 @@ pub enum Activity {
     /// Game library rebuild (invalidate + rescan + enrich).
     Rebuild { progress: RebuildProgress },
 
+    /// Background ROM identity matching after scan/rebuild.
+    Identity { progress: IdentityProgress },
+
     /// A short DB/filesystem operation (clear, cleanup) that still requires
     /// exclusive access. No detailed progress -- just a kind discriminant.
     Maintenance { kind: MaintenanceKind },
@@ -72,6 +75,10 @@ impl Activity {
             Self::Rebuild { progress } => matches!(
                 progress.phase,
                 RebuildPhase::Complete | RebuildPhase::Failed | RebuildPhase::Cancelled
+            ),
+            Self::Identity { progress } => matches!(
+                progress.phase,
+                IdentityPhase::Complete | IdentityPhase::Failed | IdentityPhase::Cancelled
             ),
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
@@ -137,6 +144,19 @@ impl Activity {
                     _ => String::new(),
                 }
             }
+            Self::Identity { progress } => match progress.phase {
+                IdentityPhase::Complete => {
+                    format!("ROM matching complete ({}s)", progress.elapsed_secs)
+                }
+                IdentityPhase::Cancelled => {
+                    format!("ROM matching cancelled ({}s)", progress.elapsed_secs)
+                }
+                IdentityPhase::Failed => format!(
+                    "ROM matching failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
             Self::Update { progress } => match progress.phase {
                 UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
                 UpdatePhase::Failed => format!(
@@ -262,14 +282,12 @@ pub struct ThumbnailProgress {
 }
 
 /// Phase of the game library rebuild operation.
-///
-/// Per-system progress (scan vs enrich) is carried in the per-system label
-/// (e.g. `"Super Nintendo (enriching)"`); there is no fleet-wide
-/// "scanning done, now enriching" transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RebuildPhase {
-    /// Scanning + enriching ROM directories per system.
+    /// Scanning ROM directories and writing discovered rows.
     Scanning,
+    /// Applying metadata and local thumbnail matches for the current system.
+    Enriching,
     /// Rebuild completed successfully.
     Complete,
     /// Rebuild was cancelled because storage changed.
@@ -313,6 +331,41 @@ impl RebuildProgress {
             error: None,
             is_rescan,
             enriching: false,
+        }
+    }
+}
+
+/// Phase of the background ROM identity matching operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IdentityPhase {
+    Matching,
+    Complete,
+    Failed,
+    Cancelled,
+}
+
+/// Progress for background CRC/hash identity matching.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityProgress {
+    pub phase: IdentityPhase,
+    pub rows_done: usize,
+    pub rows_total: usize,
+    pub systems_done: usize,
+    pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+impl IdentityProgress {
+    pub fn initial(rows_total: usize, systems_total: usize) -> Self {
+        Self {
+            phase: IdentityPhase::Matching,
+            rows_done: 0,
+            rows_total,
+            systems_done: 0,
+            systems_total,
+            elapsed_secs: 0,
+            error: None,
         }
     }
 }
@@ -418,6 +471,15 @@ impl super::AppState {
         matches!(
             *self.activity.read().expect("activity lock"),
             Activity::Idle
+        )
+    }
+
+    /// Background identity workers own this activity while hashing. They may
+    /// continue under `Activity::Identity`, but not under foreground work.
+    pub fn identity_can_run(&self) -> bool {
+        matches!(
+            *self.activity.read().expect("activity lock"),
+            Activity::Idle | Activity::Identity { .. }
         )
     }
 

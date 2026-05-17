@@ -13,9 +13,12 @@ enum Activity {
     Idle,
     Startup { phase: StartupPhase, system: String },
     Import { progress: ImportProgress },
+    RefreshExternalMetadata { progress: RefreshMetadataProgress },
     ThumbnailUpdate { progress: ThumbnailProgress, cancel: Arc<AtomicBool> },
     Rebuild { progress: RebuildProgress },
+    Identity { progress: IdentityProgress },
     Maintenance { kind: MaintenanceKind },
+    Update { progress: UpdateProgress },
 }
 ```
 
@@ -25,7 +28,8 @@ enum Activity {
 - **Startup**: Background pipeline phases 2+3 (cache verification + thumbnail index rebuild). Phase 1 auto-import uses `Import` instead. Contains `StartupPhase::Scanning` or `StartupPhase::RebuildingIndex` and the current system name.
 - **Import**: LaunchBox metadata parse (local XML or download + parse). Carries `ImportProgress` with state machine (Downloading -> BuildingIndex -> Parsing -> Complete/Failed), processed/matched/inserted counts, and download bytes.
 - **ThumbnailUpdate**: Index refresh + image download from libretro-thumbnails. Two phases: `Indexing` (GitHub API) then `Downloading` (raw.githubusercontent.com). Only variant with a `cancel` token (`Arc<AtomicBool>`) for cooperative cancellation.
-- **Rebuild**: Game library rebuild or rescan (per-system strict reconcile + inline enrichment). Phases: `Scanning` -> `Complete`/`Failed`. Per-system label carries the in-progress phase ("Super Nintendo (enriching)") so there's no fleet-wide `Enriching` transition. The `RebuildProgress.is_rescan` flag distinguishes rescan ("Rescanning ...") from rebuild ("Rebuilding ...") in the banner copy.
+- **Rebuild**: Game library rebuild or rescan (per-system strict reconcile + inline enrichment). Phases: `Scanning` -> `Enriching` -> `Complete`/`Failed`. The `RebuildProgress.is_rescan` flag distinguishes rescan ("Rescanning ...") from rebuild ("Rebuilding ...") in the banner copy.
+- **Identity**: Background ROM identity matching after startup/rescan/rebuild. Shows row-based progress as "Matching ROMs" and owns the activity slot so a second rebuild/rescan cannot cancel long hash reads. Storage changes still cancel it through the storage-generation guard.
 - **Maintenance**: Short DB/filesystem operations (clear metadata, clear images, cleanup orphans). No detailed progress -- just a `MaintenanceKind` discriminant.
 
 ## ActivityGuard (RAII Pattern)
@@ -67,12 +71,15 @@ Activities like Import, ThumbnailUpdate, and Rebuild have terminal states (Compl
 
 ## Cancellation
 
-Only `ThumbnailUpdate` supports cooperative cancellation via `AppState::request_cancel()`, which sets the `cancel` `AtomicBool`. The download loop checks this flag between systems and stops early if set, transitioning to `ThumbnailPhase::Cancelled`.
+Only `ThumbnailUpdate` supports user-initiated cooperative cancellation via `AppState::request_cancel()`, which sets the `cancel` `AtomicBool`. The download loop checks this flag between systems and stops early if set, transitioning to `ThumbnailPhase::Cancelled`.
+
+Identity matching is not user-cancellable from the UI. It is cancelled only by storage-generation changes, such as a storage swap or configured storage becoming unavailable. Ordinary rebuild/rescan requests are blocked while identity is active.
 
 ## UI Integration
 
 The client-side JavaScript listens on the SSE stream and:
 - Shows a progress bar banner for Import, ThumbnailUpdate, and Rebuild
+- Shows a "Matching ROMs" progress banner for Identity
 - Disables action buttons when not Idle
 - Displays the current system name during Startup
 - Shows terminal messages (success/failure) briefly before returning to Idle

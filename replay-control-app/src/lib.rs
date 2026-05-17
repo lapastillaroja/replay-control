@@ -20,6 +20,8 @@ use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::path;
 
+#[cfg(feature = "ssr")]
+use api::AppState;
 use components::asset_health_banner::AssetHealthBanner;
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
@@ -27,6 +29,7 @@ use components::nav::BottomNav;
 use components::now_playing_indicator::NowPlayingIndicator;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
+use hooks::{Clock, use_now_playing};
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
@@ -45,14 +48,19 @@ use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
+#[cfg(feature = "hydrate")]
+use replay_control_core::update::AvailableUpdate;
+use replay_control_core::{asset_health::AssetHealthIssue, update::UpdateState};
 use server_fns::{Activity, CorruptionStatus};
-use types::{RomWatcherStatus, StorageStatus};
+use types::{NowPlayingState, RomWatcherStatus, StorageStatus};
+
+#[cfg(any(feature = "ssr", feature = "hydrate"))]
+const INITIAL_NOW_PLAYING_GLOBAL: &str = "__REPLAY_INITIAL_NOW_PLAYING";
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
 #[component]
 pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
-    use crate::api::AppState;
     use crate::i18n::InitialLocale;
     use replay_control_core::skins;
 
@@ -76,6 +84,8 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let initial_lang = use_context::<InitialLocale>()
         .map(|il| il.0.code())
         .unwrap_or("en");
+    let initial_now_playing_script =
+        initial_now_playing_bootstrap_script(&state.now_playing()).unwrap_or_default();
 
     view! {
         <!DOCTYPE html>
@@ -94,6 +104,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
                 <link rel="stylesheet" href="/static/style.css" />
                 <style id="skin-theme">{skin_css}</style>
+                <script inner_html=initial_now_playing_script></script>
                 <HydrationScripts options=options.clone() />
                 <script defer src="/static/ptr-init.js"></script>
             </head>
@@ -108,7 +119,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 pub fn App() -> impl IntoView {
     provide_i18n();
 
-    let update_state = RwSignal::new(replay_control_core::update::UpdateState::None);
+    let update_state = RwSignal::new(UpdateState::None);
     provide_context(update_state);
 
     // Push-based status signals fed by SSE listeners below.
@@ -117,24 +128,11 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(CorruptionStatus::default()));
     provide_context(RwSignal::new(StorageStatus::default()));
     provide_context(RwSignal::new(RomWatcherStatus::default()));
-    provide_context(RwSignal::new(Vec::<
-        replay_control_core::asset_health::AssetHealthIssue,
-    >::new()));
-    // `Resource::new_blocking` reads `AppState.now_playing()` during SSR and
-    // serializes it into the HTML so hydration adopts the same value with no
-    // mismatch. `SseNowPlayingListener` then calls `Resource::set` directly,
-    // making the resource the single source of truth for all consumers.
-    provide_context(Resource::new_blocking(
-        || (),
-        |_| async move {
-            crate::server_fns::get_initial_now_playing()
-                .await
-                .unwrap_or(crate::types::NowPlayingState::NotRunning)
-        },
-    ));
-    provide_context(crate::hooks::Clock::install());
+    provide_context(RwSignal::new(Vec::<AssetHealthIssue>::new()));
+    provide_context(RwSignal::new(initial_now_playing_state()));
+    provide_context(Clock::install());
 
-    let now_playing = crate::hooks::use_now_playing();
+    let now_playing = use_now_playing();
     // Fed by SseConfigListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
@@ -146,38 +144,28 @@ pub fn App() -> impl IntoView {
             <SseNowPlayingListener />
             <SearchShortcut />
             <div class="app">
-                // The wrap is load-bearing for SuspenseContext, not for the
-                // fallback (Resource::new_blocking + SseNowPlayingListener
-                // means now_playing is always resolved by render time, so the
-                // fallback never appears). Inside, both the `class:` closure
-                // below and `<NowPlayingIndicator />`'s view closures call
-                // now_playing.get(); leptos' hydrate-mode resource check
-                // requires those reads to live under a Suspense/Transition,
-                // and a bare RenderEffect doesn't qualify.
-                <Suspense fallback=|| ()>
-                    <header
-                        class="top-bar"
-                        class:top-bar-with-now-playing=move || matches!(
-                            now_playing.get(),
-                            crate::types::NowPlayingState::Playing { .. }
-                        )
-                    >
-                        <h1 class="app-title">
-                            <A href="/" attr:class="app-title-link">
-                                <img
-                                    class="top-bar-icon"
-                                    src="/static/branding/app-icon.png"
-                                    alt=""
-                                    aria-hidden="true"
-                                />
-                                <span class="app-logo" aria-label="Replay Control"></span>
-                            </A>
-                        </h1>
-                        <div class="top-bar-now-playing">
-                            <NowPlayingIndicator />
-                        </div>
-                    </header>
-                </Suspense>
+                <header
+                    class="top-bar"
+                    class:top-bar-with-now-playing=move || matches!(
+                        now_playing.get(),
+                        NowPlayingState::Playing { .. }
+                    )
+                >
+                    <h1 class="app-title">
+                        <A href="/" attr:class="app-title-link">
+                            <img
+                                class="top-bar-icon"
+                                src="/static/branding/app-icon.png"
+                                alt=""
+                                aria-hidden="true"
+                            />
+                            <span class="app-logo" aria-label="Replay Control"></span>
+                        </A>
+                    </h1>
+                    <div class="top-bar-now-playing">
+                        <NowPlayingIndicator />
+                    </div>
+                </header>
 
                 <CorruptionBanner />
                 <StorageStatusBanner />
@@ -187,16 +175,10 @@ pub fn App() -> impl IntoView {
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
-                        // Suspense wraps the page so the top-level `<Show when=move || now_playing.get() …>`
-                        // in HomePage runs inside a SuspenseContext (the page's
-                        // own per-section Suspenses don't cover that read).
-                        <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><Suspense fallback=|| ()><HomePage /></Suspense></ErrorBoundary> } />
+                        <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HomePage /></ErrorBoundary> } />
                         <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
-                        // Suspense wraps the page so the `class:` / `<Show when=>`
-                        // closures in GameDetailContent that read now_playing.get()
-                        // inherit a SuspenseContext.
-                        <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><Suspense fallback=|| ()><GameDetailPage /></Suspense></ErrorBoundary> } />
+                        <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
@@ -219,20 +201,64 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// SSE listener for now-playing state. Pushes each event into the
-/// `Resource<NowPlayingState>` so SSR, hydration, and live updates all flow
-/// through the same signal.
+fn initial_now_playing_state() -> NowPlayingState {
+    #[cfg(feature = "ssr")]
+    {
+        return use_context::<AppState>()
+            .map(|state| state.now_playing())
+            .unwrap_or(NowPlayingState::NotRunning);
+    }
+
+    #[cfg(all(not(feature = "ssr"), feature = "hydrate"))]
+    {
+        return initial_now_playing_from_window().unwrap_or(NowPlayingState::NotRunning);
+    }
+
+    #[allow(unreachable_code)]
+    NowPlayingState::NotRunning
+}
+
+#[cfg(feature = "ssr")]
+fn initial_now_playing_bootstrap_script(state: &NowPlayingState) -> Option<String> {
+    let json = serde_json::to_string(state).ok()?;
+    let json_literal = serde_json::to_string(&json).ok()?;
+    let safe_json_literal = json_literal
+        .replace('<', "\\u003C")
+        .replace('>', "\\u003E")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+    Some(format!(
+        "window.{INITIAL_NOW_PLAYING_GLOBAL}={safe_json_literal};"
+    ))
+}
+
+#[cfg(all(not(feature = "ssr"), feature = "hydrate"))]
+fn initial_now_playing_from_window() -> Option<NowPlayingState> {
+    use wasm_bindgen::JsValue;
+
+    let window = web_sys::window()?;
+    let value = js_sys::Reflect::get(
+        window.as_ref(),
+        &JsValue::from_str(INITIAL_NOW_PLAYING_GLOBAL),
+    )
+    .ok()?;
+    let json = value.as_string()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// SSE listener for now-playing state. The stream sends the current state as
+/// its first event, then subsequent changes.
 #[component]
 fn SseNowPlayingListener() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
-        let resource = use_context::<Resource<crate::types::NowPlayingState>>();
+        let now_playing = use_context::<RwSignal<NowPlayingState>>();
         Effect::new(move || {
-            if let Some(resource) = resource {
-                install_sse_listener::<crate::types::NowPlayingState>(
-                    "/sse/now-playing",
-                    move |np| resource.set(Some(np)),
-                );
+            if let Some(now_playing) = now_playing {
+                install_sse_listener::<NowPlayingState>("/sse/now-playing", move |np| {
+                    now_playing.set(np)
+                });
             }
         });
     }
@@ -278,9 +304,7 @@ fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStat
 }
 
 #[cfg(feature = "hydrate")]
-fn asset_health_from_payload(
-    payload: &serde_json::Value,
-) -> Vec<replay_control_core::asset_health::AssetHealthIssue> {
+fn asset_health_from_payload(payload: &serde_json::Value) -> Vec<AssetHealthIssue> {
     // Init carries the snapshot under `asset_health`; the
     // `AssetHealthChanged` event carries it under `issues`. Try both.
     let value = payload
@@ -337,13 +361,11 @@ fn SseConfigListener() -> impl IntoView {
         let last_storage_kind = RwSignal::new(String::new());
 
         // Capture signals before closures.
-        let update_state_signal =
-            use_context::<RwSignal<replay_control_core::update::UpdateState>>();
+        let update_state_signal = use_context::<RwSignal<UpdateState>>();
         let corruption_signal = use_context::<RwSignal<CorruptionStatus>>();
         let storage_status_signal = use_context::<RwSignal<StorageStatus>>();
         let rom_watcher_status_signal = use_context::<RwSignal<RomWatcherStatus>>();
-        let asset_health_signal =
-            use_context::<RwSignal<Vec<replay_control_core::asset_health::AssetHealthIssue>>>();
+        let asset_health_signal = use_context::<RwSignal<Vec<AssetHealthIssue>>>();
 
         Effect::new(move || {
             let es = match web_sys::EventSource::new("/sse/config") {
@@ -381,20 +403,11 @@ fn SseConfigListener() -> impl IntoView {
                             if let Some(signal) = update_state_signal
                                 && let Some(update_val) = payload.get("available_update")
                                 && let Ok(available) =
-                                    serde_json::from_value::<
-                                        replay_control_core::update::AvailableUpdate,
-                                    >(update_val.clone())
+                                    serde_json::from_value::<AvailableUpdate>(update_val.clone())
                             {
                                 let current = signal.get_untracked();
-                                if !matches!(
-                                    current,
-                                    replay_control_core::update::UpdateState::Restarting { .. }
-                                ) {
-                                    signal.set(
-                                        replay_control_core::update::UpdateState::Available(
-                                            available,
-                                        ),
-                                    );
+                                if !matches!(current, UpdateState::Restarting { .. }) {
+                                    signal.set(UpdateState::Available(available));
                                 }
                             }
                             if let Some(sig) = corruption_signal {
@@ -474,20 +487,11 @@ fn SseConfigListener() -> impl IntoView {
                             if let Some(signal) = update_state_signal
                                 && let Some(update_val) = payload.get("update")
                                 && let Ok(available) =
-                                    serde_json::from_value::<
-                                        replay_control_core::update::AvailableUpdate,
-                                    >(update_val.clone())
+                                    serde_json::from_value::<AvailableUpdate>(update_val.clone())
                             {
                                 let current = signal.get_untracked();
-                                if !matches!(
-                                    current,
-                                    replay_control_core::update::UpdateState::Restarting { .. }
-                                ) {
-                                    signal.set(
-                                        replay_control_core::update::UpdateState::Available(
-                                            available,
-                                        ),
-                                    );
+                                if !matches!(current, UpdateState::Restarting { .. }) {
+                                    signal.set(UpdateState::Available(available));
                                 }
                             }
                         }

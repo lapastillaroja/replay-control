@@ -22,34 +22,41 @@ impl Clock {
         #[cfg(feature = "hydrate")]
         {
             use wasm_bindgen::prelude::*;
-            now_unix.set(current_unix_secs());
             let Some(window) = web_sys::window() else {
                 return Self { now_unix };
             };
 
-            // Align the first tick to the next wall-clock minute boundary so
-            // the displayed elapsed value advances on the "00" second of each
-            // minute, then run setInterval(60 s) from there.
-            let now_ms = js_sys::Date::now() as u64;
-            let delay_to_next_min_ms = (60_000 - (now_ms % 60_000)) as i32;
-
-            // One-shot FnOnce needs `once_into_js` — wasm-bindgen drops the
-            // closure when JS releases it, no need to `.forget()`.
-            let window_for_interval = window.clone();
-            let first_tick = Closure::once_into_js(move || {
+            let window_for_start = window.clone();
+            let start_clock = Closure::once_into_js(move || {
                 now_unix.set(current_unix_secs());
-                let recurring = Closure::<dyn FnMut()>::new(move || {
+
+                // Align the next tick to the wall-clock minute boundary so the
+                // displayed elapsed value advances on the "00" second.
+                let now_ms = js_sys::Date::now() as u64;
+                let delay_to_next_min_ms = (60_000 - (now_ms % 60_000)) as i32;
+                let window_for_interval = window_for_start.clone();
+
+                let first_tick = Closure::once_into_js(move || {
                     now_unix.set(current_unix_secs());
+                    let recurring = Closure::<dyn FnMut()>::new(move || {
+                        now_unix.set(current_unix_secs());
+                    });
+                    let _ = window_for_interval
+                        .set_interval_with_callback_and_timeout_and_arguments_0(
+                            recurring.as_ref().unchecked_ref(),
+                            60_000,
+                        );
+                    recurring.forget();
                 });
-                let _ = window_for_interval.set_interval_with_callback_and_timeout_and_arguments_0(
-                    recurring.as_ref().unchecked_ref(),
-                    60_000,
+
+                let _ = window_for_start.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    first_tick.unchecked_ref(),
+                    delay_to_next_min_ms,
                 );
-                recurring.forget();
             });
             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                first_tick.unchecked_ref(),
-                delay_to_next_min_ms,
+                start_clock.unchecked_ref(),
+                0,
             );
         }
 

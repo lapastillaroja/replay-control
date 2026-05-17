@@ -105,6 +105,7 @@ The service starts automatically on boot and listens on port 8080. Customise beh
 | `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static-assets path. |
 | `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path. |
 | `REPLAY_CONFIG_PATH` | (auto-detected) | Override the RePlayOS config path. |
+| `REPLAY_CONTROL_IDENTITY_WORKERS` | `2` | Advanced: hash-identification workers for library rebuilds and rescans. Valid range: 1-4. |
 | `RUST_LOG` | `replay_control_app=info,replay_control_core=info` | Log level. |
 
 ## Troubleshooting

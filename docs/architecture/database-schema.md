@@ -268,7 +268,7 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 
 ### game_library_meta
 
-Per-system scan metadata. Used by the startup pipeline for mtime-based cache verification, by `system_summaries` to derive UI counts, and by aggregate info/coverage endpoints that only need per-system counts.
+Per-system scan metadata. Used by `system_summaries` to derive UI counts and by aggregate info/coverage endpoints that only need per-system counts. Startup does not use `dir_mtime_secs` as its correctness boundary; it performs a full visible-system reconciliation so nested-folder changes made while the device was off are not missed.
 
 | Column | Type | Purpose |
 |--------|------|---------|

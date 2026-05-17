@@ -28,9 +28,8 @@ Thin orchestration wrapper that handles AppState, pool access, and side effects:
 Enrichment runs per-system in these contexts:
 
 1. **Startup** (Phase 2) and **post-rebuild/rescan**: `populate_all_systems()` runs `scan_and_cache_system()` followed immediately by `enrich_system_cache()` for the same system before moving to the next — inline, not a fleet-wide second pass.
-2. **Per-system stale/incomplete recovery**: `phase_cache_verification()` re-scans + re-enriches just the affected system.
-3. **Post-import**: `reenrich_all_systems()` iterates every cached system in the library so newly-imported provider data flows into `game_library`, `game_detail_metadata`, and `library_game_resource`. (Enrichment-only — populate is not re-run.)
-4. **ROM watcher**: when inotify detects new files in a system directory (debounced, then strict scan + enrich).
+2. **Post-import**: `reenrich_all_systems()` iterates every cached system in the library so newly-imported provider data flows into `game_library`, `game_detail_metadata`, and `library_game_resource`. (Enrichment-only — populate is not re-run.)
+3. **ROM watcher**: when inotify detects new files in a system directory (debounced, then strict scan + enrich).
 
 ## Flow: `enrich_system_cache()` (app side)
 

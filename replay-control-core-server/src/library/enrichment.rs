@@ -728,6 +728,7 @@ mod tests {
             hash_mtime: None,
             hash_size_bytes: None,
             hash_matched_name: None,
+            identity_state: crate::library_db::IdentityState::Unknown,
             series_key: String::new(),
             developer: String::new(),
             release_date: None,

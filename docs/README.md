@@ -34,6 +34,7 @@ Replay Control documentation, organized into two sections:
 | [Connection Pooling](architecture/connection-pooling.md) | Pool setup, WriteGate, journal modes |
 | [Server Functions](architecture/server-functions.md) | SSR, streaming, caching |
 | [Startup Pipeline](architecture/startup-pipeline.md) | Background initialization phases |
+| [Library Build Pipeline](architecture/library-build-pipeline.md) | Scan/rescan/rebuild design, deferred identity, temporary-table reconcile |
 | [Enrichment](architecture/enrichment.md) | Box art, genre, rating population |
 | [ROM Classification](architecture/rom-classification.md) | Filename parsing, tier assignment |
 | [Activity System](architecture/activity-system.md) | Mutual exclusion, progress broadcasting |

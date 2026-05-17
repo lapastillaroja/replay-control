@@ -9,6 +9,8 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::game_db;
 
@@ -234,6 +236,30 @@ pub struct CachedHash {
     pub matched_name: Option<String>,
 }
 
+/// Reuse a cached hash when the current file identity still matches.
+///
+/// This is the shared discovery-time cache rule: exact size+mtime is best,
+/// legacy rows without `hash_size_bytes` can reuse by mtime, and the existing
+/// conservative same-size path avoids rehashing when only mtime drifted.
+pub fn reusable_cached_hash(
+    rom_filename: &str,
+    cached: &CachedHash,
+    current_mtime: i64,
+    current_size: u64,
+) -> Option<HashResult> {
+    let reusable = match cached.hash_size_bytes {
+        Some(cached_size) => cached_size == current_size,
+        None => cached.hash_mtime == current_mtime,
+    };
+    reusable.then(|| HashResult {
+        rom_filename: rom_filename.to_string(),
+        crc32: cached.crc32,
+        mtime_secs: current_mtime,
+        size_bytes: current_size,
+        matched_name: cached.matched_name.clone(),
+    })
+}
+
 /// Hash and identify a batch of ROM files for a single system.
 ///
 /// For each ROM file:
@@ -274,6 +300,25 @@ pub async fn hash_and_identify_with_options(
     storage_root: &Path,
     options: HashOptions,
 ) -> HashIdentifyResult {
+    hash_and_identify_with_options_and_cancel(
+        system,
+        rom_files,
+        cached_hashes,
+        storage_root,
+        options,
+        None,
+    )
+    .await
+}
+
+pub async fn hash_and_identify_with_options_and_cancel(
+    system: &str,
+    rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
+    cached_hashes: &std::collections::HashMap<String, CachedHash>,
+    storage_root: &Path,
+    options: HashOptions,
+    cancel: Option<Arc<AtomicBool>>,
+) -> HashIdentifyResult {
     if !is_hash_eligible(system) {
         return HashIdentifyResult::default();
     }
@@ -300,12 +345,19 @@ pub async fn hash_and_identify_with_options(
     let cached_hashes_owned = cached_hashes.clone();
     let storage_root_owned = storage_root.to_path_buf();
     let system_owned = system.to_string();
+    let cancel_owned = cancel.clone();
     let (pending, stats): (Vec<Pending>, HashStats) = {
         {
             tokio::task::spawn_blocking(move || {
                 let mut pending = Vec::with_capacity(rom_files_owned.len());
                 let mut stats = HashStats::default();
                 for (rom_filename, rom_path, size_bytes) in &rom_files_owned {
+                    if cancel_owned
+                        .as_ref()
+                        .is_some_and(|cancel| cancel.load(Ordering::Relaxed))
+                    {
+                        break;
+                    }
                     if !is_file_hash_eligible(&system_owned, rom_filename) {
                         stats.skipped += 1;
                         continue;
@@ -335,19 +387,20 @@ pub async fn hash_and_identify_with_options(
                             _ => None,
                         };
 
-                        if let Some(kind) = reuse_kind {
+                        if let Some(kind) = reuse_kind
+                            && let Some(result) = reusable_cached_hash(
+                                rom_filename,
+                                cached,
+                                current_mtime,
+                                *size_bytes,
+                            )
+                        {
                             match kind {
                                 Reuse::Exact => stats.reused_exact += 1,
                                 Reuse::Migrated => stats.reused_migrated += 1,
                                 Reuse::SizeOnly => stats.reused_size_only += 1,
                             }
-                            pending.push(Pending::Cached(HashResult {
-                                rom_filename: rom_filename.clone(),
-                                crc32: cached.crc32,
-                                mtime_secs: current_mtime,
-                                size_bytes: *size_bytes,
-                                matched_name: cached.matched_name.clone(),
-                            }));
+                            pending.push(Pending::Cached(result));
                             continue;
                         }
                     }
@@ -430,7 +483,8 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -716,6 +770,33 @@ mod tests {
 
         assert_ne!(results.results[0].crc32, 0xDEADBEEF);
         assert_eq!(results.stats.forced_computed, 1);
+    }
+
+    #[tokio::test]
+    async fn hash_and_identify_cancelled_before_work_returns_no_results() {
+        let tmp = tempdir();
+        let roms_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&roms_dir).unwrap();
+        let abs_path = tmp.join("roms/nintendo_nes/game.nes");
+        fs::write(&abs_path, b"some rom data").unwrap();
+        let cancel = Arc::new(AtomicBool::new(true));
+
+        let results = hash_and_identify_with_options_and_cancel(
+            "nintendo_nes",
+            &[(
+                "game.nes".to_string(),
+                "/roms/nintendo_nes/game.nes".to_string(),
+                13,
+            )],
+            &std::collections::HashMap::new(),
+            &tmp,
+            HashOptions::default(),
+            Some(cancel),
+        )
+        .await;
+
+        assert!(results.results.is_empty());
+        assert_eq!(results.stats, HashStats::default());
     }
 
     #[tokio::test]

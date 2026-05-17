@@ -192,7 +192,7 @@ impl LibraryService {
         tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
         let total_started = Instant::now();
         let list_started = Instant::now();
-        let mut roms = match replay_control_core_server::roms::list_roms(
+        let roms = match replay_control_core_server::roms::list_roms(
             storage,
             system,
             region_pref,
@@ -213,40 +213,28 @@ impl LibraryService {
         tracing::debug!("L3 reconcile scan for {system}: found {} ROMs", roms.len());
         scan_inputs.ensure_current()?;
 
-        let hash_started = Instant::now();
-        let hash_results = self
-            .hash_roms_for_system(storage, system, &mut roms, scan_inputs)
-            .await;
-        let hash_ms = hash_started.elapsed().as_millis();
+        let identity_started = Instant::now();
+        let hash_results = self.cached_identity_for_discovery(storage, system, &roms, scan_inputs);
+        let identity_ms = identity_started.elapsed().as_millis();
         scan_inputs.ensure_current()?;
 
         let arc = Arc::new(roms);
 
         let save_started = Instant::now();
         let save_result = self
-            .save_roms_to_db(
-                storage,
-                system,
-                &arc,
-                &system_dir,
-                &hash_results,
-                region_pref,
-                region_secondary,
-                db,
-                scan_inputs,
-            )
+            .save_roms_to_db(system, &arc, &system_dir, &hash_results, db, scan_inputs)
             .await;
         let save_ms = save_started.elapsed().as_millis();
         if let Err(e) = save_result {
             tracing::warn!(
-                "L2 scan profile: {system}: save failed after {save_ms}ms (roms={}, list_ms={list_ms}, hash_ms={hash_ms}): {e}",
+                "L2 scan profile: {system}: save failed after {save_ms}ms (roms={}, list_ms={list_ms}, cached_identity_ms={identity_ms}): {e}",
                 arc.len()
             );
             return Err(e);
         }
 
         tracing::info!(
-            "L2 scan profile: {system}: roms={} list_ms={list_ms} hash_ms={hash_ms} save_ms={save_ms} total_ms={}",
+            "L2 scan profile: {system}: roms={} list_ms={list_ms} cached_identity_ms={identity_ms} save_ms={save_ms} total_ms={}",
             arc.len(),
             total_started.elapsed().as_millis()
         );
@@ -835,13 +823,10 @@ mod tests {
 
         let err = svc
             .save_roms_to_db(
-                &storage,
                 "nintendo_snes",
                 &roms,
                 &roms_dir,
                 &hash_results,
-                RegionPreference::default(),
-                None,
                 &writer,
                 &stale_inputs,
             )

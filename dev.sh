@@ -378,6 +378,10 @@ REPLAY_PORT=8080
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
 
+# Advanced: hash-identification workers for library rebuilds/rescans.
+# Default is 2 workers for every storage class. Valid range: 1-4.
+#REPLAY_CONTROL_IDENTITY_WORKERS=2
+
 # Log level (trace, debug, info, warn, error)
 # dev.sh seeds debug for the project crates so dev-deploy logs show
 # enrichment / scan / orchestrator traces — production install.sh keeps

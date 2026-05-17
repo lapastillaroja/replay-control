@@ -1,17 +1,20 @@
 use replay_control_core_server::db_pool::rusqlite;
-use replay_control_core_server::library_db::LibraryDb;
-use replay_control_core_server::roms::StorageProbe;
+use replay_control_core_server::library_db::{IdentityState, LibraryDb};
+use replay_control_core_server::roms::{RomEntry, StorageProbe};
+use replay_control_core_server::storage::StorageLocation;
 use replay_control_core_server::update as update_io;
-use std::sync::atomic::Ordering;
+use replay_control_core_server::{game_entry_builder, rom_hash};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use super::AppState;
 use super::activity::{
-    Activity, RebuildPhase, RebuildProgress, RefreshMetadataPhase, RefreshMetadataProgress,
-    StartupPhase,
+    Activity, IdentityPhase, IdentityProgress, RebuildPhase, RebuildProgress, RefreshMetadataPhase,
+    RefreshMetadataProgress, StartupPhase,
 };
 use super::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryReadPool};
-use super::library::{ScanCancellation, ScanInputs, ScanOptions, dir_mtime_secs};
+use super::library::{ScanCancellation, ScanInputs, ScanOptions};
 use crate::types::RomWatcherStatus;
 
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -28,6 +31,30 @@ pub(crate) enum PopulateProgress {
     /// spawning. `populate_all_systems` doesn't see that flag and doesn't
     /// need to — strict reconcile is the same operation either way.
     Rebuild { start: std::time::Instant },
+}
+
+#[derive(Clone)]
+struct IdentityJob {
+    system: String,
+    roms: Arc<Vec<RomEntry>>,
+    scan_inputs: ScanInputs,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IdentityJobOutcome {
+    Completed {
+        rows_done: usize,
+    },
+    Cancelled {
+        work_system_done: bool,
+    },
+    Failed {
+        work_system_done: bool,
+    },
+    Skipped {
+        rows_done: usize,
+        work_system_done: bool,
+    },
 }
 
 impl PopulateProgress {
@@ -89,10 +116,23 @@ fn report_system(
                 p.current_system = display_name.to_string();
                 p.systems_done = i;
                 p.elapsed_secs = start.elapsed().as_secs();
+                p.phase = if enriching {
+                    RebuildPhase::Enriching
+                } else {
+                    RebuildPhase::Scanning
+                };
                 p.enriching = enriching;
             });
         }
     }
+}
+
+fn update_identity_progress(state: &AppState, f: impl FnOnce(&mut IdentityProgress)) {
+    state.update_activity(|act| {
+        if let Activity::Identity { progress } = act {
+            f(progress);
+        }
+    });
 }
 
 /// Read a value from the pool or skip the calling phase. Pool unavailability
@@ -238,6 +278,7 @@ impl BackgroundManager {
             Self::phase_catalog_resource_reconcile(state).await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
+            state.cache.resume_pending_thumbnail_downloads(state).await;
 
             // Pre-warm the metadata-page snapshot so the very first user
             // request after boot gets a hot cache instead of paying the
@@ -278,9 +319,7 @@ impl BackgroundManager {
     ) -> Result<ScanInputs, replay_control_core::error::Error> {
         state.ensure_storage_generation(generation)?;
 
-        let cached_hashes = if !options.force_rehash
-            && replay_control_core_server::rom_hash::is_hash_eligible(system)
-        {
+        let cached_hashes = if rom_hash::is_hash_eligible(system) {
             let system_owned = system.to_string();
             match state
                 .library_reader
@@ -317,6 +356,417 @@ impl BackgroundManager {
 
     fn is_storage_changed(e: &replay_control_core::error::Error) -> bool {
         matches!(e, replay_control_core::error::Error::StorageChanged)
+    }
+
+    fn identity_worker_count() -> usize {
+        std::env::var("REPLAY_CONTROL_IDENTITY_WORKERS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|v| (1..=4).contains(v))
+            .unwrap_or(2)
+    }
+
+    fn spawn_identity_jobs(
+        state: AppState,
+        storage: StorageLocation,
+        jobs: Vec<IdentityJob>,
+        generation: u64,
+    ) {
+        if jobs.is_empty() {
+            return;
+        }
+        let worker_count = Self::identity_worker_count();
+        tokio::spawn(async move {
+            let _phase_guard = state.identity_phase.lock().await;
+            let eligible_systems = jobs.len();
+            let jobs_for_count = jobs
+                .iter()
+                .map(|job| (job.system.clone(), job.scan_inputs.force_rehash()))
+                .collect::<Vec<_>>();
+            let force_rehash_systems = jobs_for_count
+                .iter()
+                .filter(|(_, force_rehash)| *force_rehash)
+                .count();
+            let (work_systems, work_rows) = state
+                .library_reader
+                .read(move |conn| LibraryDb::identity_work_counts(conn, &jobs_for_count))
+                .await
+                .and_then(Result::ok)
+                .unwrap_or_default();
+            tracing::info!(
+                "Identity phase: queued eligible_systems={eligible_systems} force_rehash_systems={force_rehash_systems} work_systems={work_systems} work_rows={work_rows} workers={} storage={}",
+                worker_count,
+                storage.kind.as_str()
+            );
+            if work_rows == 0 {
+                tracing::info!(
+                    "Identity phase: queued work finished completed=0 cancelled=0 failed=0 skipped={eligible_systems}"
+                );
+                return;
+            }
+
+            let identity_started = Instant::now();
+            let guard = loop {
+                if state.ensure_storage_generation(generation).is_err() {
+                    tracing::info!("Identity phase: storage changed before activity claim");
+                    return;
+                }
+                if state.is_idle() {
+                    match state.try_start_activity(Activity::Identity {
+                        progress: IdentityProgress::initial(work_rows, work_systems),
+                    }) {
+                        Ok(guard) => break guard,
+                        Err(_) => {
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                    }
+                } else {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            };
+
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(worker_count));
+            let mut handles = tokio::task::JoinSet::new();
+            for job in jobs {
+                let state = state.clone();
+                let storage = storage.clone();
+                let semaphore = semaphore.clone();
+                handles.spawn(async move {
+                    let permit = match semaphore.acquire_owned().await {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            return IdentityJobOutcome::Cancelled {
+                                work_system_done: false,
+                            };
+                        }
+                    };
+                    let _permit = permit;
+                    Self::run_identity_job(&state, &storage, job, generation).await
+                });
+            }
+            let mut completed = 0usize;
+            let mut cancelled = 0usize;
+            let mut failed = 0usize;
+            let mut skipped = 0usize;
+            let mut rows_done = 0usize;
+            let mut work_systems_done = 0usize;
+            while let Some(handle_result) = handles.join_next().await {
+                match handle_result {
+                    Ok(IdentityJobOutcome::Completed {
+                        rows_done: job_rows,
+                    }) => {
+                        completed += 1;
+                        rows_done = rows_done.saturating_add(job_rows);
+                        work_systems_done += 1;
+                    }
+                    Ok(IdentityJobOutcome::Cancelled { work_system_done }) => {
+                        cancelled += 1;
+                        if work_system_done {
+                            work_systems_done += 1;
+                        }
+                    }
+                    Ok(IdentityJobOutcome::Failed { work_system_done }) => {
+                        failed += 1;
+                        if work_system_done {
+                            work_systems_done += 1;
+                        }
+                    }
+                    Ok(IdentityJobOutcome::Skipped {
+                        rows_done: job_rows,
+                        work_system_done,
+                    }) => {
+                        skipped += 1;
+                        rows_done = rows_done.saturating_add(job_rows);
+                        if work_system_done {
+                            work_systems_done += 1;
+                        }
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        tracing::warn!("Identity worker task failed to join: {e}");
+                    }
+                }
+                update_identity_progress(&state, |progress| {
+                    progress.rows_done = rows_done.min(progress.rows_total);
+                    progress.systems_done = work_systems_done.min(progress.systems_total);
+                    progress.elapsed_secs = identity_started.elapsed().as_secs();
+                });
+            }
+            tracing::info!(
+                "Identity phase: queued work finished completed={completed} cancelled={cancelled} failed={failed} skipped={skipped}"
+            );
+            guard.update(|activity| {
+                if let Activity::Identity { progress } = activity {
+                    progress.elapsed_secs = identity_started.elapsed().as_secs();
+                    progress.rows_done = rows_done.min(progress.rows_total);
+                    progress.systems_done = work_systems_done.min(progress.systems_total);
+                    progress.phase = if cancelled > 0 {
+                        IdentityPhase::Cancelled
+                    } else if failed > 0 {
+                        IdentityPhase::Failed
+                    } else {
+                        progress.rows_done = progress.rows_total;
+                        progress.systems_done = progress.systems_total;
+                        IdentityPhase::Complete
+                    };
+                }
+            });
+            drop(guard);
+        });
+    }
+
+    async fn wait_for_identity_window(state: &AppState, generation: u64, system: &str) -> bool {
+        let mut logged = false;
+        loop {
+            if state.ensure_storage_generation(generation).is_err() {
+                tracing::info!("Identity phase: storage changed before {system}");
+                return false;
+            }
+            if state.identity_can_run() {
+                return true;
+            }
+            if !logged {
+                tracing::info!("Identity phase: waiting for foreground activity before {system}");
+                logged = true;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    async fn run_identity_job(
+        state: &AppState,
+        storage: &StorageLocation,
+        job: IdentityJob,
+        generation: u64,
+    ) -> IdentityJobOutcome {
+        if !Self::wait_for_identity_window(state, generation, &job.system).await {
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: false,
+            };
+        }
+        if state.ensure_storage_generation(generation).is_err() {
+            tracing::info!("Identity phase: storage changed before {}", job.system);
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: false,
+            };
+        }
+        if !rom_hash::is_hash_eligible(&job.system) {
+            return IdentityJobOutcome::Skipped {
+                rows_done: 0,
+                work_system_done: false,
+            };
+        }
+
+        let system_for_mark = job.system.clone();
+        let force_rehash = job.scan_inputs.force_rehash();
+        let mark_result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::mark_identity_running_for_system(conn, &system_for_mark, force_rehash)
+            })
+            .await;
+        match mark_result {
+            Ok(Ok(0)) => {
+                tracing::debug!("Identity phase: {} has no rows to claim", job.system);
+                return IdentityJobOutcome::Skipped {
+                    rows_done: 0,
+                    work_system_done: false,
+                };
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!("Identity phase: could not mark {} running: {e}", job.system);
+                return IdentityJobOutcome::Failed {
+                    work_system_done: true,
+                };
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Identity phase: writer unavailable while marking {} running: {e}",
+                    job.system
+                );
+                return IdentityJobOutcome::Failed {
+                    work_system_done: true,
+                };
+            }
+        }
+
+        let started = Instant::now();
+        let mut roms = (*job.roms).clone();
+        let hash_cancel = Arc::new(AtomicBool::new(false));
+        let hash_cancel_watcher = hash_cancel.clone();
+        let watcher_state = state.clone();
+        let watcher_system = job.system.clone();
+        let watcher = tokio::spawn(async move {
+            loop {
+                if watcher_state.ensure_storage_generation(generation).is_err() {
+                    hash_cancel_watcher.store(true, Ordering::Relaxed);
+                    break;
+                }
+                if !watcher_state.identity_can_run() {
+                    tracing::info!(
+                        "Identity phase: pausing hash for {watcher_system} because foreground activity started"
+                    );
+                    hash_cancel_watcher.store(true, Ordering::Relaxed);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        });
+        let (hash_results, _stats) = state
+            .cache
+            .hash_roms_for_system(
+                storage,
+                &job.system,
+                &mut roms,
+                &job.scan_inputs,
+                Some(hash_cancel.clone()),
+            )
+            .await;
+        watcher.abort();
+        if state.ensure_storage_generation(generation).is_err() {
+            tracing::info!(
+                "Identity phase: storage changed after hashing {}",
+                job.system
+            );
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: true,
+            };
+        }
+        if hash_cancel.load(Ordering::Relaxed) {
+            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending).await;
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: true,
+            };
+        }
+        if !Self::wait_for_identity_window(state, generation, &job.system).await {
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: true,
+            };
+        }
+
+        if hash_results.is_empty() {
+            tracing::debug!("Identity phase: {} has no hash results", job.system);
+            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Failed).await;
+            return IdentityJobOutcome::Failed {
+                work_system_done: true,
+            };
+        }
+        let identity_entries =
+            game_entry_builder::build_game_entries(&job.system, &roms, &hash_results).await;
+        let identity_entries: Vec<_> = identity_entries
+            .into_iter()
+            .filter(|entry| hash_results.contains_key(&entry.rom_filename))
+            .collect();
+        let system_for_update = job.system.clone();
+        let identity_update_result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::update_running_identity_entries(
+                    conn,
+                    &system_for_update,
+                    &identity_entries,
+                )
+            })
+            .await;
+        let updated = match identity_update_result {
+            Ok(Ok(updated)) => updated,
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    "Identity phase: identity update failed for {}: {e}",
+                    job.system
+                );
+                Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending)
+                    .await;
+                return IdentityJobOutcome::Failed {
+                    work_system_done: true,
+                };
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Identity phase: writer unavailable while updating {}: {e}",
+                    job.system
+                );
+                Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending)
+                    .await;
+                return IdentityJobOutcome::Failed {
+                    work_system_done: true,
+                };
+            }
+        };
+        if updated == 0 {
+            Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Pending).await;
+            tracing::debug!(
+                "Identity phase: {} produced no DB updates after hashing",
+                job.system
+            );
+            return IdentityJobOutcome::Skipped {
+                rows_done: 0,
+                work_system_done: true,
+            };
+        }
+        Self::finish_unresolved_identity_job(state, &job.system, IdentityState::Failed).await;
+
+        if !Self::wait_for_identity_window(state, generation, &job.system).await {
+            return IdentityJobOutcome::Cancelled {
+                work_system_done: true,
+            };
+        }
+
+        if let Err(e) = state
+            .cache
+            .enrich_system_cache_with_cancellation(
+                state,
+                job.system.clone(),
+                job.scan_inputs.cancellation(),
+            )
+            .await
+        {
+            tracing::warn!(
+                "Identity phase: post-hash enrichment failed for {}: {e}",
+                job.system
+            );
+            return IdentityJobOutcome::Failed {
+                work_system_done: true,
+            };
+        }
+
+        state.cache.invalidate_l1().await;
+        state.invalidate_user_caches().await;
+        tracing::info!(
+            "Identity phase: {} complete in {}ms (updated={updated}, results={})",
+            job.system,
+            started.elapsed().as_millis(),
+            hash_results.len()
+        );
+        IdentityJobOutcome::Completed { rows_done: updated }
+    }
+
+    async fn finish_unresolved_identity_job(
+        state: &AppState,
+        system: &str,
+        identity_state: IdentityState,
+    ) {
+        let system = system.to_string();
+        let log_system = system.clone();
+        let result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                LibraryDb::finish_unresolved_identity_running(conn, &system, identity_state)
+            })
+            .await;
+        match result {
+            Ok(Ok(0)) => {}
+            Ok(Ok(count)) => tracing::debug!(
+                "Identity phase: marked {count} unresolved row(s) as {identity_state:?} for {log_system}"
+            ),
+            Ok(Err(e)) => tracing::warn!(
+                "Identity phase: unresolved identity cleanup failed for {log_system}: {e}"
+            ),
+            Err(e) => tracing::warn!(
+                "Identity phase: unresolved identity cleanup writer failed for {log_system}: {e}"
+            ),
+        }
     }
 
     /// Spawn a background task that re-runs `phase_auto_import`. Used by the
@@ -852,177 +1302,34 @@ impl BackgroundManager {
         state.invalidate_user_caches().await;
     }
 
-    /// Phase 2: Verify L2 cache freshness on startup and re-scan stale/incomplete systems.
+    /// Phase 2: strict startup reconciliation across every visible system.
     ///
     /// Works directly with the DB and filesystem — does NOT use UI summary
     /// views or cached ROM readers to avoid circular dependencies.
-    ///
-    /// Detects three cases:
-    /// - **Fresh DB**: `game_library_meta` is empty → full populate
-    /// - **Stale mtime**: directory mtime changed since last scan → re-scan
-    /// - **Interrupted scan**: meta says rom_count > 0 but game_library has 0 rows → re-scan
     async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
         let generation = state.storage_generation();
-        let roms_dir = storage.roms_dir();
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
 
-        let Some(cached_meta) = try_read_or_skip(
-            &state.library_reader,
-            "cache_verification",
-            LibraryDb::load_all_system_meta,
+        match Self::populate_all_systems(
+            state,
+            &storage,
+            region_pref,
+            region_secondary,
+            PopulateProgress::Startup,
+            ScanOptions {
+                force_rehash: false,
+            },
+            generation,
         )
         .await
-        else {
-            return;
-        };
-
-        if cached_meta.is_empty() {
-            // Fresh DB — full populate.
-            match Self::populate_all_systems(
-                state,
-                &storage,
-                region_pref,
-                region_secondary,
-                PopulateProgress::Startup,
-                ScanOptions {
-                    force_rehash: false,
-                },
-                generation,
-            )
-            .await
-            {
-                Ok(()) => {}
-                Err(e) if Self::is_storage_changed(&e) => {
-                    tracing::info!("Startup populate cancelled because storage changed");
-                }
-                Err(e) => tracing::warn!("Startup populate failed: {e}"),
+        {
+            Ok(()) => {}
+            Err(e) if Self::is_storage_changed(&e) => {
+                tracing::info!("Startup library scan cancelled because storage changed");
             }
-            return;
-        }
-
-        // Query actual game_library row counts per system to detect interrupted scans.
-        let actual_counts: std::collections::HashMap<String, usize> = state
-            .library_reader
-            .read(|conn| LibraryDb::row_counts_per_system(conn).unwrap_or_default())
-            .await
-            .unwrap_or_default();
-
-        let mut rescan_count = 0usize;
-        for meta in &cached_meta {
-            let system_dir = roms_dir.join(&meta.system);
-            let current_mtime_secs = dir_mtime_secs(&system_dir);
-
-            let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
-                (Some(cached), Some(current)) => cached != current,
-                (Some(_), None) => false, // Can't read — trust cache
-                (None, _) => true,        // No mtime stored — re-scan
-            };
-
-            // Interrupted scan: meta says ROMs exist but game_library has none.
-            let is_incomplete =
-                meta.rom_count > 0 && actual_counts.get(&meta.system).copied().unwrap_or(0) == 0;
-
-            if is_stale || is_incomplete {
-                let reason = if is_incomplete {
-                    "incomplete"
-                } else {
-                    "mtime changed"
-                };
-                tracing::info!("Background re-scan: {} ({reason})", meta.system);
-                let display_name = replay_control_core::systems::system_display_name(&meta.system);
-                state.update_activity(|act| {
-                    if let Activity::Startup { system, .. } = act {
-                        *system = display_name;
-                    }
-                });
-                let scan_inputs = match Self::scan_inputs_for_system(
-                    state,
-                    &meta.system,
-                    ScanOptions {
-                        force_rehash: false,
-                    },
-                    generation,
-                )
-                .await
-                {
-                    Ok(inputs) => inputs,
-                    Err(e) if Self::is_storage_changed(&e) => {
-                        tracing::info!(
-                            "Background re-scan: storage changed, cancelling startup scan"
-                        );
-                        return;
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Background re-scan: {} skipped before scan: {e}",
-                            meta.system
-                        );
-                        continue;
-                    }
-                };
-                match state
-                    .cache
-                    .scan_and_cache_system_with_inputs(
-                        &storage,
-                        &meta.system,
-                        region_pref,
-                        region_secondary,
-                        &state.library_writer,
-                        &scan_inputs,
-                    )
-                    .await
-                {
-                    Ok(_) => {
-                        if state.ensure_storage_generation(generation).is_err() {
-                            tracing::info!("Background re-scan: storage changed before enrichment");
-                            return;
-                        }
-                        match state
-                            .cache
-                            .enrich_system_cache_with_cancellation(
-                                state,
-                                meta.system.clone(),
-                                scan_inputs.cancellation(),
-                            )
-                            .await
-                        {
-                            Ok(()) => {}
-                            Err(e) if Self::is_storage_changed(&e) => {
-                                tracing::info!(
-                                    "Background re-scan: storage changed during enrichment"
-                                );
-                                return;
-                            }
-                            Err(e) => tracing::warn!(
-                                "Background re-scan: {} enrichment failed: {e}",
-                                meta.system
-                            ),
-                        }
-                        rescan_count += 1;
-                    }
-                    Err(e) if Self::is_storage_changed(&e) => {
-                        tracing::info!(
-                            "Background re-scan: storage changed, cancelling startup scan"
-                        );
-                        return;
-                    }
-                    Err(e) => tracing::warn!(
-                        "Background re-scan: {} failed, preserving cached state: {e}",
-                        meta.system
-                    ),
-                }
-            }
-        }
-
-        if rescan_count > 0 {
-            tracing::info!("Background cache verification: re-scanned {rescan_count} system(s)");
-        } else {
-            tracing::debug!(
-                "Background cache verification: all {} system(s) fresh",
-                cached_meta.len()
-            );
+            Err(e) => tracing::warn!("Startup library scan failed: {e}"),
         }
     }
 
@@ -1325,6 +1632,7 @@ impl BackgroundManager {
         }
 
         let mut total_roms = 0usize;
+        let mut identity_jobs = Vec::new();
         for (i, sys) in systems.iter().enumerate() {
             let system_started = Instant::now();
             state.ensure_storage_generation(generation)?;
@@ -1369,6 +1677,13 @@ impl BackgroundManager {
                         )
                         .await?;
                     let enrich_ms = enrich_started.elapsed().as_millis();
+                    if !roms.is_empty() && rom_hash::is_hash_eligible(sys.folder_name) {
+                        identity_jobs.push(IdentityJob {
+                            system: sys.folder_name.to_string(),
+                            roms: roms.clone(),
+                            scan_inputs: scan_inputs.clone(),
+                        });
+                    }
                     tracing::info!(
                         "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms={enrich_ms} total_ms={}",
                         sys.folder_name,
@@ -1394,6 +1709,7 @@ impl BackgroundManager {
         );
 
         state.cache.invalidate_metadata_page().await;
+        Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);
         Ok(())
     }
     // ── Update system ─────────────────────────────────────────────────
@@ -2511,7 +2827,7 @@ impl AppState {
                         )
                         .await
                     {
-                        Ok(_) => {
+                        Ok(roms) => {
                             if state.ensure_storage_generation(storage_generation).is_err() {
                                 tracing::info!("ROM watcher: storage changed before enrichment");
                                 break;
@@ -2537,6 +2853,18 @@ impl AppState {
                                         "ROM watcher: enrichment failed for {system}: {e}"
                                     )
                                 }
+                            }
+                            if !roms.is_empty() && rom_hash::is_hash_eligible(system) {
+                                BackgroundManager::spawn_identity_jobs(
+                                    state.clone(),
+                                    storage.clone(),
+                                    vec![IdentityJob {
+                                        system: system.clone(),
+                                        roms,
+                                        scan_inputs: scan_inputs.clone(),
+                                    }],
+                                    storage_generation,
+                                );
                             }
                         }
                         Err(e) if BackgroundManager::is_storage_changed(&e) => {

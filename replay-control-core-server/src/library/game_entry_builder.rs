@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::arcade_db::ArcadeGameInfo;
 use crate::game_db::{CanonicalGame, GameEntry as CatalogGameEntry};
-use crate::library_db::GameEntry;
+use crate::library_db::{GameEntry, IdentityState};
 use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, game_db};
@@ -176,6 +176,15 @@ fn build_single_entry(
         hash_mtime: hash.map(|h| h.mtime_secs),
         hash_size_bytes: hash.map(|h| h.size_bytes),
         hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
+        identity_state: if r.is_m3u
+            || !crate::rom_hash::is_file_hash_eligible(&r.game.system, rom_filename)
+        {
+            IdentityState::NotApplicable
+        } else if let Some(hash) = hash {
+            IdentityState::from_hash_match(hash.matched_name.as_deref())
+        } else {
+            IdentityState::Pending
+        },
         series_key,
         developer: developer_name,
         release_date: release_year.map(|y| format!("{y:04}")),

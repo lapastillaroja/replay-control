@@ -94,18 +94,20 @@ A secondary region preference is also supported for a two-tier sort: Primary > S
 
 On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly. Removing an entire system folder also propagates: cached rows for that system are dropped to match disk.
 
-On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
+On NFS storage, automatic live detection is not possible (inotify does not work across network mounts). Startup and manual rescans reconcile every visible system, including ROMs stored in subfolders, so ROMs added while the device was off are picked up on the next boot. Use the "Rescan Game Library" button in the metadata page when you want to refresh immediately. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
 
 For cartridge systems with No-Intro CRC data, normal startup scans, manual rescans, and local watcher rescans reuse cached CRC identity when the file still has the same recorded size. This keeps common rescans fast on large ROM sets and NFS shares without dropping hash-based identification. Manual "Rebuild Game Library" is the full verification path: it ignores the CRC cache and recomputes hashes for hash-eligible ROM files. Hybrid folders such as Sega 32X only hash cartridge-shaped entries; CD/image/playlist entries are skipped.
 
+When ROM matching continues after a scan or rebuild, Replay Control shows a "Matching ROMs" progress banner. Library browsing stays available, but starting another rescan or rebuild is blocked until matching finishes. If you add, rename, or delete ROMs while a scan, rebuild, or matching pass is running, run Rescan again afterwards so the library reflects the final files on disk.
+
 ## Startup Behavior
 
-On first launch or after a rebuild, the app scans all system directories to index your ROMs. During this process:
+On first launch, normal startup, or after a rebuild, the app scans all visible system directories to index your ROMs and catch offline changes. During this process:
 
-- The server responds immediately with a "Scanning game library..." banner showing progress (current system and game count)
+- The server responds immediately with a banner showing the active phase, such as scanning the library, enriching metadata, rebuilding the thumbnail index, or matching ROMs
 - Pages are fully usable while scanning runs in the background
 - If no storage is connected, a waiting page is shown until storage becomes available
-- Interrupted scans are detected and resumed automatically
+- Interrupted scans are repaired automatically by the next startup scan
 - If the configured storage changes or becomes unavailable during a long scan, the in-flight scan is cancelled before the next system write so stale results are not saved to the wrong storage database
 
 For architecture details on the cache tiers, scan pipeline, and enrichment process, see the [Architecture](../architecture/index.md) section.

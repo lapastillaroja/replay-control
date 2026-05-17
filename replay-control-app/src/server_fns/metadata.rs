@@ -87,13 +87,13 @@ pub async fn dismiss_setup() -> Result<(), ServerFnError> {
 // Re-export progress types from the activity module (SSR) or types module (WASM).
 #[cfg(feature = "ssr")]
 pub use crate::api::activity::{
-    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, RefreshMetadataPhase,
-    RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
+    Activity, IdentityPhase, IdentityProgress, MaintenanceKind, RebuildPhase, RebuildProgress,
+    RefreshMetadataPhase, RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
 };
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{
-    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, RefreshMetadataPhase,
-    RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
+    Activity, IdentityPhase, IdentityProgress, MaintenanceKind, RebuildPhase, RebuildProgress,
+    RefreshMetadataPhase, RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
 };
 
 pub use replay_control_core::library_db::{

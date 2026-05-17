@@ -6,15 +6,37 @@ use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex}
 use replay_control_core_server::external_metadata::{
     self, LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow, ThumbnailManifestEntry,
 };
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{
+    LibraryDb, PhaseState, ThumbnailDownloadJob, ThumbnailPhaseState,
+};
 use replay_control_core_server::thumbnail_manifest;
-use replay_control_core_server::thumbnails::ThumbnailKind;
+use replay_control_core_server::thumbnails::{ALL_THUMBNAIL_KINDS, ThumbnailKind};
 use replay_control_core_server::user_data_db::UserDataDb;
 
-use super::{LibraryService, ScanCancellation};
+use super::{LibraryService, ScanCancellation, ScanInputs};
 use crate::api::db_pools::LIBRARY_MAINTENANCE_WRITE_TIMEOUT;
 
 impl LibraryService {
+    pub(crate) async fn resume_pending_thumbnail_downloads(&self, state: &crate::api::AppState) {
+        const THUMBNAIL_RESUME_LIMIT: usize = 100_000;
+
+        let jobs = state
+            .library_reader
+            .read(|conn| {
+                LibraryDb::load_pending_thumbnail_jobs(conn, THUMBNAIL_RESUME_LIMIT)
+                    .unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+        if jobs.is_empty() {
+            return;
+        }
+        tracing::info!("Thumbnail queue: resuming {} pending job(s)", jobs.len());
+        for job in jobs {
+            submit_thumbnail_job(state, job).await;
+        }
+    }
+
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
     /// Reads the host-global `external_metadata.db` for LaunchBox metadata and
     /// libretro thumbnail manifests, and the per-storage `library.db` for
@@ -39,10 +61,11 @@ impl LibraryService {
         if let Some(cancellation) = cancellation {
             cancellation.ensure_current()?;
         }
+        set_enrichment_state(state, &system, PhaseState::Running).await?;
 
-        // Fetch the visible-filename list once; image-index, launchbox load,
-        // and arcade lookup all consume it. Previously each path read it
-        // independently (an N+1 against the same query).
+        // Fetch the library entries once; scan-derived metadata needs the
+        // row metadata, while image-index, launchbox load, and arcade lookup
+        // consume just the filenames.
         // The network/CPU work below makes it impossible to hold the
         // writer connection open for the whole pass; this read goes
         // through the dedicated reader pool. Stale-row risk is mitigated
@@ -50,11 +73,16 @@ impl LibraryService {
         // ROM deletion.
         let visible_started = Instant::now();
         let sys = system.clone();
-        let rom_filenames: Vec<String> = state
+        let library_entries = state
             .library_reader
-            .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .read(move |conn| LibraryDb::load_system_entries(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
+        let rom_filenames: Vec<String> = library_entries
+            .iter()
+            .map(|entry| entry.rom_filename.clone())
+            .collect();
+        let storage_root = state.storage().root.clone();
         let visible_ms = visible_started.elapsed().as_millis();
 
         if rom_filenames.is_empty() {
@@ -85,12 +113,31 @@ impl LibraryService {
                     return Err(Error::Other(e.to_string()));
                 }
             }
+            set_enrichment_state(state, &system, PhaseState::Complete).await?;
+            set_thumbnail_state(state, &system, ThumbnailPhaseState::Complete).await?;
             tracing::info!(
                 "L2 enrichment profile: {system}: roms=0 visible_ms={visible_ms} cleanup_write_ms={} total_ms={}",
                 cleanup_started.elapsed().as_millis(),
                 enrichment_started.elapsed().as_millis()
             );
             return Ok(());
+        }
+
+        let scan_metadata_started = Instant::now();
+        self.populate_scan_derived_metadata(
+            state,
+            &system,
+            &library_entries,
+            &ScanInputs::new(
+                Default::default(),
+                Default::default(),
+                cancellation.cloned(),
+            ),
+        )
+        .await?;
+        let scan_metadata_ms = scan_metadata_started.elapsed().as_millis();
+        if let Some(cancellation) = cancellation {
+            cancellation.ensure_current()?;
         }
 
         // Independent setup steps that all consume `system` / `rom_filenames`.
@@ -116,6 +163,7 @@ impl LibraryService {
         let setup_ms = setup_started.elapsed().as_millis();
 
         let sys = system.clone();
+        let arcade_lookup_for_match = arcade_lookup.clone();
         // Heavy enrichment pass (per-row matching, manifest cross-ref,
         // image index lookups). Routed through the reader pool so the
         // single writer slot stays free for downloads and other writes;
@@ -129,7 +177,7 @@ impl LibraryService {
                         conn,
                         system: &sys,
                         index: &index,
-                        arcade_lookup: &arcade_lookup,
+                        arcade_lookup: &arcade_lookup_for_match,
                         launchbox_rows: &launchbox_rows,
                         alt_to_primary: &alt_to_primary,
                         provider_resources: &provider_resources,
@@ -151,14 +199,37 @@ impl LibraryService {
             cancellation.ensure_current()?;
         }
 
-        // Queue on-demand manifest downloads. Each await throttles to
-        // the orchestrator's visible queue capacity so a large fan-out
-        // (e.g. 4k+ thumbnails after a fresh rescan) backpressures
-        // instead of dropping work.
+        // Queue missing thumbnails for every libretro media kind. Box art
+        // also updates `game_library.box_art_url` on completion; snaps and
+        // titles are filesystem media only.
         let manifest_started = Instant::now();
-        for (rom_filename, manifest_match) in &result.manifest_downloads {
-            queue_on_demand_download(state, &system, rom_filename, manifest_match).await;
+        let mut thumbnail_jobs = result
+            .manifest_downloads
+            .iter()
+            .map(|(rom_filename, manifest_match)| ThumbnailDownloadJob {
+                system: system.clone(),
+                kind: ThumbnailKind::Boxart,
+                rom_filename: rom_filename.clone(),
+                manifest: manifest_match.clone(),
+            })
+            .collect::<Vec<_>>();
+        for kind in ALL_THUMBNAIL_KINDS
+            .iter()
+            .copied()
+            .filter(|kind| *kind != ThumbnailKind::Boxart)
+        {
+            thumbnail_jobs.extend(
+                plan_missing_thumbnail_jobs(state, &storage_root, &system, kind, &arcade_lookup)
+                    .await,
+            );
         }
+        let queued_thumbnail_jobs =
+            queue_scan_thumbnail_downloads(state, &system, thumbnail_jobs).await;
+        let thumbnail_state = if queued_thumbnail_jobs == 0 {
+            ThumbnailPhaseState::Complete
+        } else {
+            ThumbnailPhaseState::Queued
+        };
         let manifest_ms = manifest_started.elapsed().as_millis();
 
         // Keep the enrichment writes grouped by dependency, but release the
@@ -314,15 +385,56 @@ impl LibraryService {
             "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
         );
         tracing::info!(
-            "L2 enrichment profile: {system}: roms={} visible_ms={visible_ms} setup_ms={setup_ms} match_ms={match_ms} manifest_ms={manifest_ms} metadata_write_ms={metadata_write_ms} detail_write_ms={detail_write_ms} box_art_write_ms={box_art_write_ms} total_ms={} dev={dev_count} coop={coop_count} dates={date_count} desc={desc_count} resources={resource_count} enrich={enrich_count}",
+            "L2 enrichment profile: {system}: roms={} visible_ms={visible_ms} scan_metadata_ms={scan_metadata_ms} setup_ms={setup_ms} match_ms={match_ms} manifest_ms={manifest_ms} metadata_write_ms={metadata_write_ms} detail_write_ms={detail_write_ms} box_art_write_ms={box_art_write_ms} total_ms={} dev={dev_count} coop={coop_count} dates={date_count} desc={desc_count} resources={resource_count} enrich={enrich_count}",
             rom_filenames.len(),
             enrichment_started.elapsed().as_millis()
         );
         if failed {
+            let _ = set_enrichment_state(state, &system, PhaseState::Failed).await;
             Err(Error::Other(format!("enrichment failed for {system}")))
         } else {
+            set_enrichment_state(state, &system, PhaseState::Complete).await?;
+            set_thumbnail_state(state, &system, thumbnail_state).await?;
             Ok(())
         }
+    }
+}
+
+async fn set_enrichment_state(
+    state: &crate::api::AppState,
+    system: &str,
+    phase: PhaseState,
+) -> Result<()> {
+    let sys = system.to_string();
+    let write = state
+        .library_writer
+        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+            LibraryDb::set_enrichment_state(conn, &sys, phase)
+        })
+        .await;
+    match write {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(Error::Other(e.to_string())),
+    }
+}
+
+async fn set_thumbnail_state(
+    state: &crate::api::AppState,
+    system: &str,
+    phase: ThumbnailPhaseState,
+) -> Result<()> {
+    let sys = system.to_string();
+    let write = state
+        .library_writer
+        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+            LibraryDb::set_thumbnail_state(conn, &sys, phase)
+        })
+        .await;
+    match write {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(Error::Other(e.to_string())),
     }
 }
 
@@ -407,6 +519,7 @@ async fn load_catalog_manual_resources(
 async fn load_libretro_repo_data(
     em_reader: &crate::api::db_pools::ExternalMetadataReadPool,
     system: &str,
+    kind: ThumbnailKind,
 ) -> Vec<(String, String, Vec<ThumbnailManifestEntry>)> {
     let Some(repo_names) = replay_control_core_server::thumbnails::thumbnail_repo_names(system)
     else {
@@ -416,11 +529,7 @@ async fn load_libretro_repo_data(
     em_reader
         .read(move |conn| {
             let display_refs: Vec<&str> = display_names.iter().map(String::as_str).collect();
-            thumbnail_manifest::load_repo_manifest_data(
-                conn,
-                &display_refs,
-                ThumbnailKind::Boxart.repo_dir(),
-            )
+            thumbnail_manifest::load_repo_manifest_data(conn, &display_refs, kind.repo_dir())
         })
         .await
         .unwrap_or_default()
@@ -441,7 +550,11 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
     let user_overrides_fut = state
         .user_data_reader
         .read(move |conn| UserDataDb::get_system_overrides(conn, &system_owned).ok());
-    let libretro_fut = load_libretro_repo_data(&state.external_metadata_reader, system);
+    let libretro_fut = load_libretro_repo_data(
+        &state.external_metadata_reader,
+        system,
+        ThumbnailKind::Boxart,
+    );
     let (user_overrides, libretro_repo_data) = tokio::join!(user_overrides_fut, libretro_fut);
     let user_overrides = user_overrides.flatten().unwrap_or_default();
 
@@ -474,72 +587,162 @@ fn empty_image_index() -> ImageIndex {
     }
 }
 
-/// Queue an on-demand box-art download via the thumbnail orchestrator.
-/// The on-complete hook persists `box_art_url` and invalidates user caches.
-async fn queue_on_demand_download(
+async fn plan_missing_thumbnail_jobs(
+    state: &crate::api::AppState,
+    storage_root: &std::path::Path,
+    system: &str,
+    kind: ThumbnailKind,
+    arcade_lookup: &ArcadeInfoLookup,
+) -> Vec<ThumbnailDownloadJob> {
+    let repo_data = load_libretro_repo_data(&state.external_metadata_reader, system, kind).await;
+    if repo_data.is_empty() {
+        return Vec::new();
+    }
+    match thumbnail_manifest::plan_system_thumbnails_from_repo_data(
+        &repo_data,
+        storage_root,
+        system,
+        kind,
+        arcade_lookup,
+    ) {
+        Ok(plan) => plan
+            .work_items
+            .into_iter()
+            .map(|(rom_filename, manifest)| ThumbnailDownloadJob {
+                system: system.to_string(),
+                rom_filename,
+                kind,
+                manifest,
+            })
+            .collect(),
+        Err(e) => {
+            let kind_name = kind.media_dir();
+            tracing::warn!("{kind_name} thumbnail plan failed for {system}: {e}");
+            Vec::new()
+        }
+    }
+}
+
+async fn queue_scan_thumbnail_downloads(
     state: &crate::api::AppState,
     system: &str,
-    rom_filename: &str,
-    m: &replay_control_core_server::thumbnail_manifest::ManifestMatch,
-) {
-    use replay_control_core_server::thumbnails::ThumbnailKind;
+    jobs: Vec<ThumbnailDownloadJob>,
+) -> usize {
+    if jobs.is_empty() {
+        return 0;
+    }
+    let job_count = jobs.len();
+    let persist_jobs = jobs.clone();
+    let persist_result = state
+        .library_writer
+        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+            LibraryDb::upsert_thumbnail_jobs(conn, &persist_jobs)
+        })
+        .await;
+    match persist_result {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            tracing::warn!("Thumbnail queue SQL failed for {system}: {e}");
+            return 0;
+        }
+        Err(e) => {
+            tracing::warn!("Thumbnail queue write failed for {system}: {e}");
+            return 0;
+        }
+    }
 
-    use crate::api::thumbnail_orchestrator::{Outcome, ThumbnailKey};
+    tracing::info!("Thumbnail queue: queued {job_count} missing image(s) for {system}");
+    let state = state.clone();
+    tokio::spawn(async move {
+        for job in jobs {
+            submit_thumbnail_job(&state, job).await;
+        }
+    });
+    job_count
+}
+
+async fn submit_thumbnail_job(state: &crate::api::AppState, job: ThumbnailDownloadJob) {
+    use crate::api::thumbnail_orchestrator::ThumbnailKey;
 
     let key = ThumbnailKey {
-        system: system.to_string(),
-        kind: ThumbnailKind::Boxart,
-        filename: m.filename.clone(),
+        system: job.system.clone(),
+        kind: job.kind,
+        filename: job.manifest.filename.clone(),
     };
+    let on_complete = thumbnail_completion_hook(state, &key);
+    let storage_root = state.storage().root.clone();
+    state
+        .thumbnail_orchestrator
+        .submit_background(key, job.manifest, storage_root, Some(on_complete))
+        .await;
+}
 
-    // Capture the per-job state the on-complete hook needs. Cheap clones
-    // (Arc + small strings); the orchestrator's dedup ensures this hook
-    // only runs once per (system, filename).
+fn thumbnail_completion_hook(
+    state: &crate::api::AppState,
+    key: &crate::api::thumbnail_orchestrator::ThumbnailKey,
+) -> crate::api::thumbnail_orchestrator::OnCompleteHook {
+    use crate::api::thumbnail_orchestrator::Outcome;
+
     let library_pool = state.library_writer.clone();
     let state_for_invalidate = state.clone();
-    let system_for_hook = system.to_string();
-    let rom_filename_for_hook = rom_filename.to_string();
-    let filename_for_hook = m.filename.clone();
+    let system = key.system.clone();
+    let kind = key.kind;
+    let filename = key.filename.clone();
 
-    let on_complete: crate::api::thumbnail_orchestrator::OnCompleteHook = Box::new(move |result| {
+    Box::new(move |result| {
         Box::pin(async move {
             match result.outcome {
                 Outcome::Saved => {
-                    let boxart_dir = ThumbnailKind::Boxart.media_dir();
-                    let png_name = format!("{filename_for_hook}.png");
+                    let png_name = format!("{filename}.png");
                     let url = replay_control_core_server::enrichment::format_box_art_url(
-                        &system_for_hook,
-                        &format!("{boxart_dir}/{png_name}"),
+                        &system,
+                        &format!("{}/{png_name}", kind.media_dir()),
                     );
-                    let sys = system_for_hook.clone();
-                    let rom = rom_filename_for_hook.clone();
+                    let sys = system.clone();
+                    let filename_for_db = filename.clone();
                     match library_pool
                         .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                            LibraryDb::update_box_art_url(conn, &sys, &rom, Some(&url))
+                            LibraryDb::complete_thumbnail_jobs_for_key(
+                                conn,
+                                &sys,
+                                kind,
+                                &filename_for_db,
+                                &url,
+                            )
                         })
                         .await
                     {
-                        Ok(Ok(())) => {}
-                        Ok(Err(e)) => tracing::warn!("Box art URL SQL failed: {e}"),
-                        Err(e) => tracing::warn!("Box art URL write failed: {e}"),
+                        Ok(Ok(updated)) => {
+                            if updated > 0 {
+                                state_for_invalidate.invalidate_user_caches().await;
+                            }
+                        }
+                        Ok(Err(e)) => tracing::warn!("Thumbnail completion SQL failed: {e}"),
+                        Err(e) => tracing::warn!("Thumbnail completion write failed: {e}"),
                     }
-                    state_for_invalidate.invalidate_user_caches().await;
                 }
                 Outcome::DownloadFailed(e) | Outcome::SaveFailed(e) => {
-                    tracing::debug!("On-demand thumbnail failed for {filename_for_hook}: {e}");
+                    let sys = system.clone();
+                    let filename_for_db = filename.clone();
+                    match library_pool
+                        .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                            LibraryDb::fail_thumbnail_jobs_for_key(
+                                conn,
+                                &sys,
+                                kind,
+                                &filename_for_db,
+                            )
+                        })
+                        .await
+                    {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(err)) => tracing::warn!("Thumbnail failure SQL failed: {err}"),
+                        Err(err) => tracing::warn!("Thumbnail failure write failed: {err}"),
+                    }
+                    tracing::debug!("Thumbnail download failed for {system}/{filename}: {e}");
                 }
                 Outcome::Skipped => {}
             }
         })
-    });
-
-    state
-        .thumbnail_orchestrator
-        .submit_visible(
-            key,
-            m.clone(),
-            state.storage().root.clone(),
-            Some(on_complete),
-        )
-        .await;
+    })
 }

@@ -6,7 +6,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{DpSql, GameEntry, LibraryDb, SystemMeta, unix_now};
+use super::{
+    DpSql, GameEntry, LibraryDb, PhaseState, SystemMeta, ThumbnailDownloadJob, ThumbnailJobState,
+    ThumbnailPhaseState, unix_now,
+};
 
 /// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
 ///
@@ -16,7 +19,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
-    release_date, release_precision, release_region_used, cooperative, \
+    identity_state, release_date, release_precision, release_region_used, cooperative, \
     normalized_title, normalized_title_alt";
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
@@ -47,6 +50,19 @@ fn build_search_text(
         text.push_str(&year.to_string());
     }
     text
+}
+
+fn system_meta_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SystemMeta> {
+    Ok(SystemMeta {
+        system: row.get(0)?,
+        dir_mtime_secs: row.get(1)?,
+        scanned_at: row.get(2)?,
+        rom_count: row.get::<_, i64>(3)? as usize,
+        total_size_bytes: row.get::<_, i64>(4)? as u64,
+        discovery_state: PhaseState::from_i64(row.get::<_, i64>(5)?),
+        enrichment_state: PhaseState::from_i64(row.get::<_, i64>(6)?),
+        thumbnail_state: ThumbnailPhaseState::from_i64(row.get::<_, i64>(7)?),
+    })
 }
 
 /// Unified filter options for all game library queries (search, ROM list, developer page).
@@ -380,7 +396,8 @@ impl LibraryDb {
     // ── Game Library (L2 persistent cache) ─────────────────────────────
 
     /// Save a system's game list to the game_library table.
-    /// Replaces all existing entries for the system in a single transaction.
+    /// Reconciles the system in a single transaction so unchanged ROM rows
+    /// keep their derived child rows while stale ROMs are deleted.
     pub fn save_system_entries(
         conn: &mut Connection,
         system: &str,
@@ -391,28 +408,75 @@ impl LibraryDb {
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
-        // Delete existing entries for this system.
+        tx.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS current_scan_roms (
+                system TEXT NOT NULL,
+                rom_filename TEXT NOT NULL,
+                PRIMARY KEY (system, rom_filename)
+             ) WITHOUT ROWID",
+        )
+        .map_err(|e| Error::Other(format!("Create current_scan_roms failed: {e}")))?;
+
         tx.execute(
-            "DELETE FROM game_library WHERE system = ?1",
+            "DELETE FROM current_scan_roms WHERE system = ?1",
             params![system],
         )
-        .map_err(|e| Error::Other(format!("Delete game_library failed: {e}")))?;
+        .map_err(|e| Error::Other(format!("Clear current_scan_roms failed: {e}")))?;
 
         {
+            let mut mark_current_stmt = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO current_scan_roms (system, rom_filename)
+                     VALUES (?1, ?2)",
+                )
+                .map_err(|e| Error::Other(format!("Prepare current_scan_roms insert: {e}")))?;
             let mut stmt = tx
                 .prepare(
-                    "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
+                    "INSERT INTO game_library (system, rom_filename, rom_path, display_name,
                      base_title, series_key, region, developer, search_text,
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
                      box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
+                     identity_state,
                      release_date, release_precision, release_region_used, cooperative,
                      normalized_title, normalized_title_alt)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                              ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
-                             ?30, ?31, ?32)",
+                             ?30, ?31, ?32, ?33)
+                     ON CONFLICT(system, rom_filename) DO UPDATE SET
+                        rom_path = excluded.rom_path,
+                        display_name = excluded.display_name,
+                        base_title = excluded.base_title,
+                        series_key = excluded.series_key,
+                        region = excluded.region,
+                        developer = excluded.developer,
+                        search_text = excluded.search_text,
+                        genre = excluded.genre,
+                        genre_group = excluded.genre_group,
+                        rating = excluded.rating,
+                        rating_count = excluded.rating_count,
+                        players = excluded.players,
+                        is_clone = excluded.is_clone,
+                        is_m3u = excluded.is_m3u,
+                        is_translation = excluded.is_translation,
+                        is_hack = excluded.is_hack,
+                        is_special = excluded.is_special,
+                        box_art_url = excluded.box_art_url,
+                        driver_status = excluded.driver_status,
+                        size_bytes = excluded.size_bytes,
+                        crc32 = excluded.crc32,
+                        hash_mtime = excluded.hash_mtime,
+                        hash_size_bytes = excluded.hash_size_bytes,
+                        hash_matched_name = excluded.hash_matched_name,
+                        identity_state = excluded.identity_state,
+                        release_date = excluded.release_date,
+                        release_precision = excluded.release_precision,
+                        release_region_used = excluded.release_region_used,
+                        cooperative = excluded.cooperative,
+                        normalized_title = excluded.normalized_title,
+                        normalized_title_alt = excluded.normalized_title_alt",
                 )
-                .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
+                .map_err(|e| Error::Other(format!("Prepare game_library upsert: {e}")))?;
 
             for rom in roms {
                 let search_text = build_search_text(
@@ -422,8 +486,15 @@ impl LibraryDb {
                     &rom.developer,
                     rom.release_date.as_deref(),
                 );
+                let is_first_seen = mark_current_stmt
+                    .execute(params![system, &rom.rom_filename])
+                    .map_err(|e| Error::Other(format!("Mark current_scan_roms failed: {e}")))?
+                    > 0;
+                if !is_first_seen {
+                    continue;
+                }
                 stmt.execute(params![
-                    &rom.system,
+                    system,
                     &rom.rom_filename,
                     &rom.rom_path,
                     &rom.display_name,
@@ -449,6 +520,7 @@ impl LibraryDb {
                     rom.hash_mtime,
                     rom.hash_size_bytes.map(|s| s as i64),
                     &rom.hash_matched_name,
+                    rom.identity_state.as_i64(),
                     &rom.release_date,
                     rom.release_precision.map(DpSql),
                     &rom.release_region_used,
@@ -456,22 +528,72 @@ impl LibraryDb {
                     &rom.normalized_title,
                     &rom.normalized_title_alt,
                 ])
-                .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
+                .map_err(|e| Error::Other(format!("Upsert game_library failed: {e}")))?;
             }
         }
+
+        // game_detail_metadata has no FK to game_library, so it must be
+        // cleaned up explicitly. library_game_resource cascades on the
+        // game_library delete below.
+        tx.execute(
+            "DELETE FROM game_detail_metadata
+             WHERE system = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM current_scan_roms current
+                   WHERE current.system = game_detail_metadata.system
+                     AND current.rom_filename = game_detail_metadata.rom_filename
+               )",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Delete stale game_detail_metadata failed: {e}")))?;
+
+        tx.execute(
+            "DELETE FROM game_library
+             WHERE system = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM current_scan_roms current
+                   WHERE current.system = game_library.system
+                     AND current.rom_filename = game_library.rom_filename
+               )",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Delete stale game_library failed: {e}")))?;
+
+        tx.execute(
+            "DELETE FROM current_scan_roms WHERE system = ?1",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Final current_scan_roms cleanup failed: {e}")))?;
 
         // Update system metadata.
         let total_size: u64 = roms.iter().map(|r| r.size_bytes).sum();
         let now = unix_now();
         tx.execute(
-            "INSERT INTO game_library_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO game_library_meta (
+                system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes,
+                discovery_state, enrichment_state, thumbnail_state
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(system) DO UPDATE SET
                 dir_mtime_secs = excluded.dir_mtime_secs,
                 scanned_at = excluded.scanned_at,
                 rom_count = excluded.rom_count,
-                total_size_bytes = excluded.total_size_bytes",
-            params![system, dir_mtime_secs, now, roms.len() as i64, total_size as i64],
+                total_size_bytes = excluded.total_size_bytes,
+                discovery_state = excluded.discovery_state,
+                enrichment_state = excluded.enrichment_state,
+                thumbnail_state = excluded.thumbnail_state",
+            params![
+                system,
+                dir_mtime_secs,
+                now,
+                roms.len() as i64,
+                total_size as i64,
+                PhaseState::Complete.as_i64(),
+                PhaseState::Pending.as_i64(),
+                ThumbnailPhaseState::Pending.as_i64()
+            ],
         )
         .map_err(|e| Error::Other(format!("Upsert game_library_meta failed: {e}")))?;
 
@@ -604,8 +726,11 @@ impl LibraryDb {
         let now = unix_now();
         let final_count: i64 = conn
             .query_row(
-                "INSERT INTO game_library_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO game_library_meta (
+                    system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes,
+                    discovery_state, enrichment_state, thumbnail_state
+                 )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(system) DO UPDATE SET
                     dir_mtime_secs = excluded.dir_mtime_secs,
                     scanned_at = excluded.scanned_at,
@@ -618,9 +743,33 @@ impl LibraryDb {
                         WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
                             THEN game_library_meta.total_size_bytes
                         ELSE excluded.total_size_bytes
+                    END,
+                    discovery_state = CASE
+                        WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
+                            THEN game_library_meta.discovery_state
+                        ELSE excluded.discovery_state
+                    END,
+                    enrichment_state = CASE
+                        WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
+                            THEN game_library_meta.enrichment_state
+                        ELSE excluded.enrichment_state
+                    END,
+                    thumbnail_state = CASE
+                        WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
+                            THEN game_library_meta.thumbnail_state
+                        ELSE excluded.thumbnail_state
                     END
                  RETURNING rom_count",
-                rusqlite::params![system, dir_mtime_secs, now, rom_count as i64, total_size_bytes as i64],
+                rusqlite::params![
+                    system,
+                    dir_mtime_secs,
+                    now,
+                    rom_count as i64,
+                    total_size_bytes as i64,
+                    PhaseState::Complete.as_i64(),
+                    PhaseState::Pending.as_i64(),
+                    ThumbnailPhaseState::Pending.as_i64()
+                ],
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Upsert game_library_meta: {e}")))?;
@@ -630,18 +779,11 @@ impl LibraryDb {
     /// Load library metadata for a single system.
     pub fn load_system_meta(conn: &Connection, system: &str) -> Result<Option<SystemMeta>> {
         conn.query_row(
-            "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
+            "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes,
+                    discovery_state, enrichment_state, thumbnail_state
                  FROM game_library_meta WHERE system = ?1",
             params![system],
-            |row| {
-                Ok(SystemMeta {
-                    system: row.get(0)?,
-                    dir_mtime_secs: row.get(1)?,
-                    scanned_at: row.get(2)?,
-                    rom_count: row.get::<_, i64>(3)? as usize,
-                    total_size_bytes: row.get::<_, i64>(4)? as u64,
-                })
-            },
+            system_meta_from_row,
         )
         .optional()
         .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
@@ -651,21 +793,14 @@ impl LibraryDb {
     pub fn load_all_system_meta(conn: &Connection) -> Result<Vec<SystemMeta>> {
         let mut stmt = conn
             .prepare(
-                "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
+                "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes,
+                        discovery_state, enrichment_state, thumbnail_state
                  FROM game_library_meta",
             )
             .map_err(|e| Error::Other(format!("Prepare load_all_system_meta: {e}")))?;
 
         let rows = stmt
-            .query_map([], |row| {
-                Ok(SystemMeta {
-                    system: row.get(0)?,
-                    dir_mtime_secs: row.get(1)?,
-                    scanned_at: row.get(2)?,
-                    rom_count: row.get::<_, i64>(3)? as usize,
-                    total_size_bytes: row.get::<_, i64>(4)? as u64,
-                })
-            })
+            .query_map([], system_meta_from_row)
             .map_err(|e| Error::Other(format!("Query load_all_system_meta: {e}")))?;
 
         let mut result = Vec::new();
@@ -701,22 +836,31 @@ impl LibraryDb {
             .prepare(
                 "SELECT rom_filename, crc32, hash_mtime, hash_size_bytes, hash_matched_name
                  FROM game_library
-                 WHERE system = ?1 AND crc32 IS NOT NULL",
+                 WHERE system = ?1
+                   AND crc32 IS NOT NULL
+                   AND identity_state IN (?2, ?3)",
             )
             .map_err(|e| Error::Other(format!("Prepare load_cached_hashes: {e}")))?;
 
         let rows = stmt
-            .query_map(params![system], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    crate::rom_hash::CachedHash {
-                        crc32: row.get::<_, i64>(1)? as u32,
-                        hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                        hash_size_bytes: row.get::<_, Option<i64>>(3)?.map(|s| s as u64),
-                        matched_name: row.get(4)?,
-                    },
-                ))
-            })
+            .query_map(
+                params![
+                    system,
+                    super::IdentityState::CompleteMatched.as_i64(),
+                    super::IdentityState::CompleteUnmatched.as_i64()
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        crate::rom_hash::CachedHash {
+                            crc32: row.get::<_, i64>(1)? as u32,
+                            hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                            hash_size_bytes: row.get::<_, Option<i64>>(3)?.map(|s| s as u64),
+                            matched_name: row.get(4)?,
+                        },
+                    ))
+                },
+            )
             .map_err(|e| Error::Other(format!("Query load_cached_hashes: {e}")))?;
 
         let mut map = HashMap::new();
@@ -724,6 +868,483 @@ impl LibraryDb {
             map.insert(row.0, row.1);
         }
         Ok(map)
+    }
+
+    /// Systems with durable identity work that should resume in the background.
+    pub fn systems_with_pending_identity(conn: &Connection) -> Result<Vec<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT system
+                 FROM game_library
+                 WHERE identity_state IN (?1, ?2)
+                 ORDER BY system",
+            )
+            .map_err(|e| Error::Other(format!("Prepare systems_with_pending_identity: {e}")))?;
+        let rows = stmt
+            .query_map(
+                params![
+                    super::IdentityState::Pending.as_i64(),
+                    super::IdentityState::Failed.as_i64()
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| Error::Other(format!("Query systems_with_pending_identity: {e}")))?;
+        let mut systems = Vec::new();
+        for row in rows {
+            systems
+                .push(row.map_err(|e| Error::Other(format!("Read pending identity system: {e}")))?);
+        }
+        Ok(systems)
+    }
+
+    /// Count identity rows that candidate jobs would claim.
+    ///
+    /// The app already knows which systems are hash-eligible candidates from
+    /// the current scan. This helper keeps SQL ownership in core-server while
+    /// letting logs distinguish candidate systems from systems with claimable
+    /// durable work to do.
+    pub fn identity_work_counts(
+        conn: &Connection,
+        systems: &[(String, bool)],
+    ) -> Result<(usize, usize)> {
+        if systems.is_empty() {
+            return Ok((0, 0));
+        }
+
+        let mut pending_stmt = conn
+            .prepare(
+                "SELECT COUNT(*)
+                 FROM game_library
+                 WHERE system = ?1
+                   AND identity_state IN (?2, ?3)",
+            )
+            .map_err(|e| Error::Other(format!("Prepare identity_work_counts pending: {e}")))?;
+        let mut force_stmt = conn
+            .prepare(
+                "SELECT COUNT(*)
+                 FROM game_library
+                 WHERE system = ?1
+                   AND identity_state != ?2",
+            )
+            .map_err(|e| Error::Other(format!("Prepare identity_work_counts force: {e}")))?;
+        let mut work_systems = 0usize;
+        let mut work_rows = 0usize;
+        for (system, force_rehash) in systems {
+            let count = if *force_rehash {
+                force_stmt.query_row(
+                    params![system, super::IdentityState::NotApplicable.as_i64()],
+                    |row| row.get::<_, i64>(0),
+                )
+            } else {
+                pending_stmt.query_row(
+                    params![
+                        system,
+                        super::IdentityState::Pending.as_i64(),
+                        super::IdentityState::Failed.as_i64()
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )
+            }
+            .map_err(|e| Error::Other(format!("Read identity_work_counts: {e}")))?
+                as usize;
+            if count > 0 {
+                work_systems += 1;
+                work_rows += count;
+            }
+        }
+        Ok((work_systems, work_rows))
+    }
+
+    /// Mark rows that the background identity phase is about to hash.
+    pub fn mark_identity_running_for_system(
+        conn: &Connection,
+        system: &str,
+        force_rehash: bool,
+    ) -> Result<usize> {
+        let affected = if force_rehash {
+            conn.execute(
+                "UPDATE game_library
+                 SET identity_state = ?1
+                 WHERE system = ?2
+                   AND identity_state != ?3",
+                params![
+                    super::IdentityState::Running.as_i64(),
+                    system,
+                    super::IdentityState::NotApplicable.as_i64()
+                ],
+            )
+        } else {
+            conn.execute(
+                "UPDATE game_library
+                 SET identity_state = ?1
+                 WHERE system = ?2
+                   AND identity_state IN (?3, ?4)",
+                params![
+                    super::IdentityState::Running.as_i64(),
+                    system,
+                    super::IdentityState::Pending.as_i64(),
+                    super::IdentityState::Failed.as_i64()
+                ],
+            )
+        }
+        .map_err(|e| Error::Other(format!("mark identity running for {system}: {e}")))?;
+        Ok(affected)
+    }
+
+    /// Apply hash identity results to rows claimed by the identity worker.
+    ///
+    /// This intentionally updates rows in place instead of re-saving the full
+    /// system. Discovery owns row membership; identity work must not delete
+    /// rows if a later watcher/rescan already reconciled the system.
+    pub fn update_running_identity_entries(
+        conn: &mut Connection,
+        system: &str,
+        entries: &[GameEntry],
+    ) -> Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+        let mut updated = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library
+                     SET display_name = ?3,
+                         base_title = ?4,
+                         series_key = ?5,
+                         search_text = ?6,
+                         crc32 = ?7,
+                         hash_mtime = ?8,
+                         hash_size_bytes = ?9,
+                         hash_matched_name = ?10,
+                         identity_state = ?11,
+                         normalized_title = ?12,
+                         normalized_title_alt = ?13
+                     WHERE system = ?1
+                       AND rom_filename = ?2
+                       AND identity_state = ?14
+                       AND size_bytes = ?15",
+                )
+                .map_err(|e| Error::Other(format!("Prepare update identity entries: {e}")))?;
+            for entry in entries {
+                let search_text = build_search_text(
+                    entry.display_name.as_deref(),
+                    &entry.rom_filename,
+                    &entry.base_title,
+                    &entry.developer,
+                    entry.release_date.as_deref(),
+                );
+                updated += stmt
+                    .execute(params![
+                        system,
+                        &entry.rom_filename,
+                        &entry.display_name,
+                        &entry.base_title,
+                        &entry.series_key,
+                        &search_text,
+                        entry.crc32.map(|c| c as i64),
+                        entry.hash_mtime,
+                        entry.hash_size_bytes.map(|s| s as i64),
+                        &entry.hash_matched_name,
+                        entry.identity_state.as_i64(),
+                        &entry.normalized_title,
+                        &entry.normalized_title_alt,
+                        super::IdentityState::Running.as_i64(),
+                        entry.size_bytes as i64,
+                    ])
+                    .map_err(|e| Error::Other(format!("Update identity entry: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(updated)
+    }
+
+    /// Mark rows claimed by an identity worker but not successfully updated.
+    pub fn finish_unresolved_identity_running(
+        conn: &Connection,
+        system: &str,
+        state: super::IdentityState,
+    ) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library
+             SET identity_state = ?1
+             WHERE system = ?2
+               AND identity_state = ?3",
+            params![
+                state.as_i64(),
+                system,
+                super::IdentityState::Running.as_i64()
+            ],
+        )
+        .map_err(|e| Error::Other(format!("finish unresolved identity for {system}: {e}")))
+    }
+
+    pub fn set_enrichment_state(
+        conn: &Connection,
+        system: &str,
+        state: PhaseState,
+    ) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library_meta
+             SET enrichment_state = ?1
+             WHERE system = ?2",
+            params![state.as_i64(), system],
+        )
+        .map_err(|e| Error::Other(format!("set enrichment state for {system}: {e}")))
+    }
+
+    pub fn set_thumbnail_state(
+        conn: &Connection,
+        system: &str,
+        state: ThumbnailPhaseState,
+    ) -> Result<usize> {
+        conn.execute(
+            "UPDATE game_library_meta
+             SET thumbnail_state = ?1
+             WHERE system = ?2",
+            params![state.as_i64(), system],
+        )
+        .map_err(|e| Error::Other(format!("set thumbnail state for {system}: {e}")))
+    }
+
+    pub fn upsert_thumbnail_job(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        kind: crate::thumbnails::ThumbnailKind,
+        manifest: &crate::thumbnail_manifest::ManifestMatch,
+    ) -> Result<usize> {
+        conn.execute(
+            "INSERT INTO library_thumbnail_job (
+                system, rom_filename, kind, filename, repo_url_name, branch,
+                is_symlink, state, attempts, updated_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)
+             ON CONFLICT(system, rom_filename, kind, filename) DO UPDATE SET
+                repo_url_name = excluded.repo_url_name,
+                branch = excluded.branch,
+                is_symlink = excluded.is_symlink,
+                state = excluded.state,
+                updated_at = excluded.updated_at",
+            params![
+                system,
+                rom_filename,
+                kind.repo_dir(),
+                &manifest.filename,
+                &manifest.repo_url_name,
+                &manifest.branch,
+                manifest.is_symlink,
+                ThumbnailJobState::Queued.as_i64(),
+                unix_now(),
+            ],
+        )
+        .map_err(|e| Error::Other(format!("upsert thumbnail job for {system}: {e}")))
+    }
+
+    pub fn upsert_thumbnail_jobs(
+        conn: &mut Connection,
+        jobs: &[ThumbnailDownloadJob],
+    ) -> Result<usize> {
+        if jobs.is_empty() {
+            return Ok(0);
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO library_thumbnail_job (
+                    system, rom_filename, kind, filename, repo_url_name, branch,
+                    is_symlink, state, attempts, updated_at
+                 )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)
+                 ON CONFLICT(system, rom_filename, kind, filename) DO UPDATE SET
+                    repo_url_name = excluded.repo_url_name,
+                    branch = excluded.branch,
+                    is_symlink = excluded.is_symlink,
+                    state = excluded.state,
+                    updated_at = excluded.updated_at",
+            )
+            .map_err(|e| Error::Other(format!("Prepare upsert thumbnail jobs: {e}")))?;
+        let now = unix_now();
+        let mut updated = 0usize;
+        for job in jobs {
+            updated += stmt
+                .execute(params![
+                    &job.system,
+                    &job.rom_filename,
+                    job.kind.repo_dir(),
+                    &job.manifest.filename,
+                    &job.manifest.repo_url_name,
+                    &job.manifest.branch,
+                    job.manifest.is_symlink,
+                    ThumbnailJobState::Queued.as_i64(),
+                    now,
+                ])
+                .map_err(|e| {
+                    Error::Other(format!("upsert thumbnail job for {}: {e}", job.system))
+                })?;
+        }
+        drop(stmt);
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(updated)
+    }
+
+    pub fn load_pending_thumbnail_jobs(
+        conn: &Connection,
+        limit: usize,
+    ) -> Result<Vec<ThumbnailDownloadJob>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_filename, kind, filename, repo_url_name, branch, is_symlink
+                 FROM library_thumbnail_job
+                 WHERE state IN (?1, ?2)
+                 ORDER BY updated_at, system, rom_filename
+                 LIMIT ?3",
+            )
+            .map_err(|e| Error::Other(format!("Prepare load_pending_thumbnail_jobs: {e}")))?;
+        let rows = stmt
+            .query_map(
+                params![
+                    ThumbnailJobState::Queued.as_i64(),
+                    ThumbnailJobState::Failed.as_i64(),
+                    limit as i64
+                ],
+                |row| {
+                    let kind_str: String = row.get(2)?;
+                    let kind = crate::thumbnails::ThumbnailKind::from_repo_dir(&kind_str)
+                        .ok_or_else(|| {
+                            rusqlite::Error::InvalidColumnType(
+                                2,
+                                "kind".to_string(),
+                                rusqlite::types::Type::Text,
+                            )
+                        })?;
+                    Ok(ThumbnailDownloadJob {
+                        system: row.get(0)?,
+                        rom_filename: row.get(1)?,
+                        kind,
+                        manifest: crate::thumbnail_manifest::ManifestMatch {
+                            filename: row.get(3)?,
+                            repo_url_name: row.get(4)?,
+                            branch: row.get(5)?,
+                            is_symlink: row.get(6)?,
+                        },
+                    })
+                },
+            )
+            .map_err(|e| Error::Other(format!("Query load_pending_thumbnail_jobs: {e}")))?;
+        let mut jobs = Vec::new();
+        for row in rows {
+            jobs.push(row.map_err(|e| Error::Other(format!("Read thumbnail job: {e}")))?);
+        }
+        Ok(jobs)
+    }
+
+    pub fn complete_thumbnail_jobs_for_key(
+        conn: &mut Connection,
+        system: &str,
+        kind: crate::thumbnails::ThumbnailKind,
+        filename: &str,
+        box_art_url: &str,
+    ) -> Result<usize> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+        let updated = if kind == crate::thumbnails::ThumbnailKind::Boxart {
+            tx.execute(
+                "UPDATE game_library
+                     SET box_art_url = ?1
+                     WHERE system = ?2
+                       AND rom_filename IN (
+                         SELECT rom_filename
+                         FROM library_thumbnail_job
+                         WHERE system = ?2 AND kind = ?3 AND filename = ?4
+                       )",
+                params![box_art_url, system, kind.repo_dir(), filename],
+            )
+            .map_err(|e| Error::Other(format!("Update thumbnail job box_art_url: {e}")))?
+        } else {
+            0
+        };
+        tx.execute(
+            "DELETE FROM library_thumbnail_job
+             WHERE system = ?1 AND kind = ?2 AND filename = ?3",
+            params![system, kind.repo_dir(), filename],
+        )
+        .map_err(|e| Error::Other(format!("Delete completed thumbnail jobs: {e}")))?;
+        Self::refresh_thumbnail_phase_after_job_change(&tx, system)?;
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(updated)
+    }
+
+    pub fn fail_thumbnail_jobs_for_key(
+        conn: &mut Connection,
+        system: &str,
+        kind: crate::thumbnails::ThumbnailKind,
+        filename: &str,
+    ) -> Result<usize> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+        let updated = tx
+            .execute(
+                "UPDATE library_thumbnail_job
+                 SET state = ?1,
+                     attempts = attempts + 1,
+                     updated_at = ?2
+                 WHERE system = ?3 AND kind = ?4 AND filename = ?5",
+                params![
+                    ThumbnailJobState::Failed.as_i64(),
+                    unix_now(),
+                    system,
+                    kind.repo_dir(),
+                    filename
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Mark thumbnail jobs failed: {e}")))?;
+        tx.execute(
+            "UPDATE game_library_meta
+             SET thumbnail_state = ?1
+             WHERE system = ?2",
+            params![ThumbnailPhaseState::Failed.as_i64(), system],
+        )
+        .map_err(|e| Error::Other(format!("Mark thumbnail phase failed: {e}")))?;
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(updated)
+    }
+
+    fn refresh_thumbnail_phase_after_job_change(conn: &Connection, system: &str) -> Result<()> {
+        let remaining: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM library_thumbnail_job
+                 WHERE system = ?1",
+                params![system],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Count thumbnail jobs for {system}: {e}")))?;
+        let state = if remaining == 0 {
+            ThumbnailPhaseState::Complete
+        } else {
+            ThumbnailPhaseState::Queued
+        };
+        conn.execute(
+            "UPDATE game_library_meta
+             SET thumbnail_state = ?1
+             WHERE system = ?2",
+            params![state.as_i64(), system],
+        )
+        .map_err(|e| Error::Other(format!("Refresh thumbnail phase for {system}: {e}")))?;
+        Ok(())
     }
 
     /// Batch update enrichment fields (box_art_url, genre, players, rating, driver_status)
@@ -1697,8 +2318,8 @@ impl LibraryDb {
 
 #[cfg(test)]
 mod tests {
-    use super::super::LibraryDb;
     use super::super::tests::*;
+    use super::super::{LibraryDb, LibraryGameResource};
     use super::SearchFilter;
 
     // Removed: `genre_enrichment_fills_empty_genre_from_launchbox` — exercised
@@ -1841,6 +2462,355 @@ mod tests {
         assert_eq!(gba.1, 2);
     }
 
+    #[test]
+    fn thumbnail_jobs_complete_all_roms_for_same_manifest_key() {
+        let (mut conn, _dir) = open_temp_db();
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "nintendo_snes",
+            &[
+                make_game_entry("nintendo_snes", "Mario (USA).sfc", false),
+                make_game_entry("nintendo_snes", "Mario (Europe).sfc", false),
+            ],
+            None,
+        )
+        .unwrap();
+        let manifest = crate::thumbnail_manifest::ManifestMatch {
+            filename: "Super Mario World".into(),
+            repo_url_name: "Nintendo_-_Super_Nintendo_Entertainment_System".into(),
+            branch: "master".into(),
+            is_symlink: false,
+        };
+        for rom in ["Mario (USA).sfc", "Mario (Europe).sfc"] {
+            LibraryDb::upsert_thumbnail_job(
+                &conn,
+                "nintendo_snes",
+                rom,
+                crate::thumbnails::ThumbnailKind::Boxart,
+                &manifest,
+            )
+            .unwrap();
+        }
+
+        let jobs = LibraryDb::load_pending_thumbnail_jobs(&conn, 10).unwrap();
+        assert_eq!(jobs.len(), 2);
+
+        let updated = LibraryDb::complete_thumbnail_jobs_for_key(
+            &mut conn,
+            "nintendo_snes",
+            crate::thumbnails::ThumbnailKind::Boxart,
+            "Super Mario World",
+            "/media/nintendo_snes/boxart/Super Mario World.png",
+        )
+        .unwrap();
+        assert_eq!(updated, 2);
+
+        let jobs = LibraryDb::load_pending_thumbnail_jobs(&conn, 10).unwrap();
+        assert!(jobs.is_empty());
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        assert!(roms.iter().all(|rom| rom.box_art_url.as_deref()
+            == Some("/media/nintendo_snes/boxart/Super Mario World.png")));
+        let meta = LibraryDb::load_system_meta(&conn, "nintendo_snes")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            meta.thumbnail_state,
+            super::super::ThumbnailPhaseState::Complete
+        );
+    }
+
+    #[test]
+    fn save_system_entries_preserves_resources_for_unchanged_roms() {
+        let (mut conn, _dir) = open_temp_db();
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        LibraryDb::replace_detail_metadata_and_resources_for_system(
+            &mut conn,
+            "snes",
+            &[],
+            &[manual_resource("Mario.sfc")],
+        )
+        .unwrap();
+
+        let mut rescanned = make_game_entry("snes", "Mario.sfc", false);
+        rescanned.display_name = Some("Super Mario World".into());
+        LibraryDb::save_system_entries(&mut conn, "snes", &[rescanned], Some(123)).unwrap();
+
+        let resources = LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].url, "https://example.test/Mario.sfc.pdf");
+    }
+
+    #[test]
+    fn save_system_entries_cascades_resources_for_removed_roms() {
+        let (mut conn, _dir) = open_temp_db();
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_game_entry("snes", "Mario.sfc", false),
+                make_game_entry("snes", "Zelda.sfc", false),
+            ],
+            None,
+        )
+        .unwrap();
+        LibraryDb::replace_detail_metadata_and_resources_for_system(
+            &mut conn,
+            "snes",
+            &[],
+            &[manual_resource("Mario.sfc"), manual_resource("Zelda.sfc")],
+        )
+        .unwrap();
+
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "Mario.sfc", false)],
+            Some(456),
+        )
+        .unwrap();
+
+        let mario_resources =
+            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+        let zelda_resources =
+            LibraryDb::game_resources(&conn, "snes", "Zelda.sfc", "manual").unwrap();
+        assert_eq!(mario_resources.len(), 1);
+        assert!(zelda_resources.is_empty());
+    }
+
+    #[test]
+    fn save_system_entries_keeps_first_duplicate_rom_filename() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut first = make_game_entry("snes", "Mario.sfc", false);
+        first.display_name = Some("First".into());
+        let mut second = make_game_entry("snes", "Mario.sfc", false);
+        second.display_name = Some("Second".into());
+
+        LibraryDb::save_system_entries(&mut conn, "snes", &[first, second], None).unwrap();
+
+        let roms = LibraryDb::load_system_entries(&conn, "snes").unwrap();
+        assert_eq!(roms.len(), 1);
+        assert_eq!(roms[0].display_name.as_deref(), Some("First"));
+    }
+
+    #[test]
+    fn save_system_entries_persists_identity_state() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut entry = make_game_entry("nintendo_snes", "Mario.sfc", false);
+        entry.crc32 = Some(0x1234_ABCD);
+        entry.hash_mtime = Some(42);
+        entry.hash_size_bytes = Some(1000);
+        entry.hash_matched_name = Some("Super Mario World (USA)".into());
+        entry.identity_state = super::super::IdentityState::CompleteMatched;
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[entry], None).unwrap();
+
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        assert_eq!(
+            roms[0].identity_state,
+            super::super::IdentityState::CompleteMatched
+        );
+        let meta = LibraryDb::load_system_meta(&conn, "nintendo_snes")
+            .unwrap()
+            .unwrap();
+        assert_eq!(meta.discovery_state, super::super::PhaseState::Complete);
+        assert_eq!(meta.enrichment_state, super::super::PhaseState::Pending);
+        assert_eq!(
+            meta.thumbnail_state,
+            super::super::ThumbnailPhaseState::Pending
+        );
+    }
+
+    #[test]
+    fn mark_identity_running_targets_pending_rows() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut pending = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        pending.identity_state = super::super::IdentityState::Pending;
+        let mut complete = make_game_entry("nintendo_snes", "Complete.sfc", false);
+        complete.identity_state = super::super::IdentityState::CompleteMatched;
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[pending, complete], None)
+            .unwrap();
+
+        let changed =
+            LibraryDb::mark_identity_running_for_system(&conn, "nintendo_snes", false).unwrap();
+        assert_eq!(changed, 1);
+
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        let pending = roms
+            .iter()
+            .find(|rom| rom.rom_filename == "Pending.sfc")
+            .unwrap();
+        let complete = roms
+            .iter()
+            .find(|rom| rom.rom_filename == "Complete.sfc")
+            .unwrap();
+        assert_eq!(pending.identity_state, super::super::IdentityState::Running);
+        assert_eq!(
+            complete.identity_state,
+            super::super::IdentityState::CompleteMatched
+        );
+    }
+
+    #[test]
+    fn load_cached_hashes_excludes_in_flight_identity_rows() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut complete = make_game_entry("nintendo_snes", "Complete.sfc", false);
+        complete.crc32 = Some(0x1234_ABCD);
+        complete.hash_mtime = Some(42);
+        complete.hash_size_bytes = Some(1000);
+        complete.hash_matched_name = Some("Complete (USA)".into());
+        complete.identity_state = super::super::IdentityState::CompleteMatched;
+
+        let mut running = make_game_entry("nintendo_snes", "Running.sfc", false);
+        running.crc32 = Some(0xCAFE_BABE);
+        running.hash_mtime = Some(99);
+        running.hash_size_bytes = Some(2000);
+        running.hash_matched_name = Some("Running (USA)".into());
+        running.identity_state = super::super::IdentityState::Running;
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[complete, running], None)
+            .unwrap();
+
+        let hashes = LibraryDb::load_cached_hashes(&conn, "nintendo_snes").unwrap();
+        assert!(hashes.contains_key("Complete.sfc"));
+        assert!(!hashes.contains_key("Running.sfc"));
+    }
+
+    #[test]
+    fn systems_with_pending_identity_returns_pending_and_failed_systems() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut pending = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        pending.identity_state = super::super::IdentityState::Pending;
+        let mut failed = make_game_entry("nintendo_gba", "Failed.gba", false);
+        failed.identity_state = super::super::IdentityState::Failed;
+        let mut complete = make_game_entry("sega_smd", "Complete.md", false);
+        complete.identity_state = super::super::IdentityState::CompleteMatched;
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[pending], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "nintendo_gba", &[failed], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[complete], None).unwrap();
+
+        let systems = LibraryDb::systems_with_pending_identity(&conn).unwrap();
+        assert_eq!(
+            systems,
+            vec!["nintendo_gba".to_string(), "nintendo_snes".to_string()]
+        );
+    }
+
+    #[test]
+    fn identity_work_counts_counts_candidate_systems_with_work() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut pending = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        pending.identity_state = super::super::IdentityState::Pending;
+        let mut failed = make_game_entry("nintendo_snes", "Failed.sfc", false);
+        failed.identity_state = super::super::IdentityState::Failed;
+        let mut complete = make_game_entry("sega_smd", "Complete.md", false);
+        complete.identity_state = super::super::IdentityState::CompleteMatched;
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[pending, failed], None)
+            .unwrap();
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[complete], None).unwrap();
+
+        let normal_systems = vec![
+            ("nintendo_snes".to_string(), false),
+            ("sega_smd".to_string(), false),
+            ("nintendo_gba".to_string(), false),
+        ];
+        let counts = LibraryDb::identity_work_counts(&conn, &normal_systems).unwrap();
+        assert_eq!(counts, (1, 2));
+
+        let force_systems = vec![
+            ("nintendo_snes".to_string(), true),
+            ("sega_smd".to_string(), true),
+            ("nintendo_gba".to_string(), true),
+        ];
+        let counts = LibraryDb::identity_work_counts(&conn, &force_systems).unwrap();
+        assert_eq!(counts, (2, 3));
+    }
+
+    #[test]
+    fn update_running_identity_entries_does_not_replace_system_rows() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut target = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        target.identity_state = super::super::IdentityState::Pending;
+        let sibling = make_game_entry("nintendo_snes", "Sibling.sfc", false);
+
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[target, sibling], None)
+            .unwrap();
+        LibraryDb::replace_detail_metadata_and_resources_for_system(
+            &mut conn,
+            "nintendo_snes",
+            &[],
+            &[manual_resource("Sibling.sfc")],
+        )
+        .unwrap();
+        LibraryDb::mark_identity_running_for_system(&conn, "nintendo_snes", false).unwrap();
+
+        let mut identified = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        identified.display_name = Some("Canonical Pending".into());
+        identified.base_title = "canonical pending".into();
+        identified.series_key = "canonical".into();
+        identified.crc32 = Some(0xCAFE_BABE);
+        identified.hash_mtime = Some(123);
+        identified.hash_size_bytes = Some(identified.size_bytes);
+        identified.hash_matched_name = Some("Canonical Pending (USA)".into());
+        identified.identity_state = super::super::IdentityState::CompleteMatched;
+        identified.normalized_title = "canonical pending".into();
+
+        let updated =
+            LibraryDb::update_running_identity_entries(&mut conn, "nintendo_snes", &[identified])
+                .unwrap();
+        assert_eq!(updated, 1);
+
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        assert_eq!(roms.len(), 2);
+        let pending = roms
+            .iter()
+            .find(|rom| rom.rom_filename == "Pending.sfc")
+            .unwrap();
+        assert_eq!(
+            pending.identity_state,
+            super::super::IdentityState::CompleteMatched
+        );
+        assert_eq!(pending.display_name.as_deref(), Some("Canonical Pending"));
+
+        let sibling_resources =
+            LibraryDb::game_resources(&conn, "nintendo_snes", "Sibling.sfc", "manual").unwrap();
+        assert_eq!(sibling_resources.len(), 1);
+    }
+
+    #[test]
+    fn update_running_identity_entries_ignores_unclaimed_rows() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut target = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        target.identity_state = super::super::IdentityState::Pending;
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[target], None).unwrap();
+
+        let mut identified = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        identified.display_name = Some("Canonical Pending".into());
+        identified.crc32 = Some(0xCAFE_BABE);
+        identified.hash_mtime = Some(123);
+        identified.hash_size_bytes = Some(identified.size_bytes);
+        identified.identity_state = super::super::IdentityState::CompleteMatched;
+
+        let updated =
+            LibraryDb::update_running_identity_entries(&mut conn, "nintendo_snes", &[identified])
+                .unwrap();
+        assert_eq!(updated, 0);
+
+        let roms = LibraryDb::load_system_entries(&conn, "nintendo_snes").unwrap();
+        assert_eq!(roms[0].identity_state, super::super::IdentityState::Pending);
+        assert_eq!(roms[0].crc32, None);
+    }
+
     fn make_game_entry_with_developer(
         system: &str,
         filename: &str,
@@ -1851,6 +2821,20 @@ mod tests {
             developer: developer.into(),
             base_title: base_title.into(),
             ..make_game_entry(system, filename, false)
+        }
+    }
+
+    fn manual_resource(rom_filename: &str) -> LibraryGameResource {
+        LibraryGameResource {
+            rom_filename: rom_filename.into(),
+            source: "test".into(),
+            resource_type: "manual".into(),
+            resource_id: format!("manual:{rom_filename}"),
+            url: format!("https://example.test/{rom_filename}.pdf"),
+            title: Some(format!("{rom_filename} Manual")),
+            languages: Some("en".into()),
+            platform: Some("snes".into()),
+            mime_type: Some("application/pdf".into()),
         }
     }
 
@@ -2469,6 +3453,7 @@ mod tests {
         entry.hash_mtime = Some(42);
         entry.hash_size_bytes = Some(3_145_728);
         entry.hash_matched_name = Some("Super Mario World (USA)".to_string());
+        entry.identity_state = super::super::IdentityState::CompleteMatched;
 
         LibraryDb::save_system_entries(&mut conn, "snes", &[entry], None).unwrap();
 
@@ -2486,13 +3471,12 @@ mod tests {
     #[test]
     fn random_library_rom_returns_real_non_special_row() {
         let (mut conn, _dir) = open_temp_db();
+        let mut bios = make_game_entry("snes", "Bios.sfc", false);
+        bios.is_special = true;
         LibraryDb::save_system_entries(
             &mut conn,
             "snes",
-            &[
-                make_game_entry("snes", "Mario.sfc", false),
-                make_game_entry("snes", "Bios.sfc", true),
-            ],
+            &[make_game_entry("snes", "Mario.sfc", false), bios],
             None,
         )
         .unwrap();
@@ -2506,13 +3490,9 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         assert_eq!(LibraryDb::random_library_rom(&conn).unwrap(), None);
 
-        LibraryDb::save_system_entries(
-            &mut conn,
-            "snes",
-            &[make_game_entry("snes", "Bios.sfc", true)],
-            None,
-        )
-        .unwrap();
+        let mut bios = make_game_entry("snes", "Bios.sfc", false);
+        bios.is_special = true;
+        LibraryDb::save_system_entries(&mut conn, "snes", &[bios], None).unwrap();
 
         assert_eq!(LibraryDb::random_library_rom(&conn).unwrap(), None);
     }

@@ -98,6 +98,14 @@ The cache is invalidated:
 - After on-demand thumbnail downloads complete
 - Via `invalidate_all()` when storage changes
 
+## Now-Playing Hydration
+
+Now-playing must be visible on the first page load when a game is already running. The server render reads `AppState.now_playing()` in `Shell` and emits a small bootstrap script before `HydrationScripts`. `App` initializes a `RwSignal<NowPlayingState>` from the same server value during SSR, and from the bootstrap value during browser hydration.
+
+After hydration, `SseNowPlayingListener` subscribes to `/sse/now-playing`. The stream sends the current state first, then later changes. Consumers use `use_now_playing()`, which exposes a `Signal<NowPlayingState>` derived from the app-root signal.
+
+Do not wrap the route body in an empty `Suspense` only to satisfy now-playing reads. It can change SSR marker placement and cause hydration mismatches. If a now-playing branch needs async detail data on first paint, use a blocking resource scoped to that branch and keep the conditional shape stable with `<Show>`.
+
 ## SSE Endpoints
 
 Two SSE streams provide real-time updates without polling:

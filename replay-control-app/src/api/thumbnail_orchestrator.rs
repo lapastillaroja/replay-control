@@ -243,6 +243,29 @@ impl ThumbnailDownloadOrchestrator {
         self.enqueue(&self.bulk_tx, claim, job).await;
     }
 
+    /// Submit a background job with an on-complete hook, routed through the
+    /// bulk queue so resumed maintenance work does not preempt visible page
+    /// requests.
+    pub async fn submit_background(
+        &self,
+        key: ThumbnailKey,
+        payload: ManifestMatch,
+        storage_root: PathBuf,
+        on_complete: Option<OnCompleteHook>,
+    ) {
+        let Some(claim) = self.try_claim(key.clone()) else {
+            return;
+        };
+        let job = Job {
+            key,
+            payload,
+            storage_root,
+            completion_tx: None,
+            on_complete,
+        };
+        self.enqueue(&self.bulk_tx, claim, job).await;
+    }
+
     /// Live in-flight download count. Atomic load; safe to call hot.
     pub fn in_flight(&self) -> usize {
         self.state.in_flight.load(Ordering::Relaxed)

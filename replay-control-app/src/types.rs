@@ -122,6 +122,9 @@ pub enum Activity {
     Rebuild {
         progress: RebuildProgress,
     },
+    Identity {
+        progress: IdentityProgress,
+    },
     Maintenance {
         kind: MaintenanceKind,
     },
@@ -144,6 +147,10 @@ impl Activity {
             Self::Rebuild { progress } => matches!(
                 progress.phase,
                 RebuildPhase::Complete | RebuildPhase::Failed | RebuildPhase::Cancelled
+            ),
+            Self::Identity { progress } => matches!(
+                progress.phase,
+                IdentityPhase::Complete | IdentityPhase::Failed | IdentityPhase::Cancelled
             ),
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
@@ -207,6 +214,19 @@ impl Activity {
                     _ => String::new(),
                 }
             }
+            Self::Identity { progress } => match progress.phase {
+                IdentityPhase::Complete => {
+                    format!("ROM matching complete ({}s)", progress.elapsed_secs)
+                }
+                IdentityPhase::Cancelled => {
+                    format!("ROM matching cancelled ({}s)", progress.elapsed_secs)
+                }
+                IdentityPhase::Failed => format!(
+                    "ROM matching failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
             Self::Update { progress } => match progress.phase {
                 UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
                 UpdatePhase::Failed => format!(
@@ -298,6 +318,7 @@ pub struct ThumbnailProgress {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RebuildPhase {
     Scanning,
+    Enriching,
     Complete,
     Cancelled,
     Failed,
@@ -315,6 +336,25 @@ pub struct RebuildProgress {
     pub is_rescan: bool,
     #[serde(default)]
     pub enriching: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IdentityPhase {
+    Matching,
+    Complete,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityProgress {
+    pub phase: IdentityPhase,
+    pub rows_done: usize,
+    pub rows_total: usize,
+    pub systems_done: usize,
+    pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

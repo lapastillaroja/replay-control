@@ -1304,6 +1304,7 @@ pub struct DownloadStats {
 /// Result of planning which thumbnails need downloading.
 pub struct DownloadPlan {
     pub work: Vec<ManifestMatch>,
+    pub work_items: Vec<(String, ManifestMatch)>,
     pub total: usize,
     pub skipped: usize,
 }
@@ -1366,9 +1367,10 @@ pub fn plan_system_thumbnails_from_repo_data(
         work.retain(|(_, m)| seen.insert(m.filename.clone()));
     }
 
-    let matches: Vec<ManifestMatch> = work.into_iter().map(|(_, m)| m).collect();
+    let matches: Vec<ManifestMatch> = work.iter().map(|(_, m)| m.clone()).collect();
     Ok(DownloadPlan {
         work: matches,
+        work_items: work,
         total,
         skipped,
     })
@@ -1389,6 +1391,7 @@ pub async fn download_system_thumbnails(
 ) -> Result<DownloadStats> {
     let DownloadPlan {
         work,
+        work_items: _,
         total,
         skipped,
     } = plan;

@@ -10,6 +10,7 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 - **`storage_generation: AtomicU64`** on `AppState`. Bumped inside `refresh_storage` (and the deferred-storage paths in `cancel_storage_scans_if_ready`). Long scans capture the generation at start, thread it through `ScanInputs`/`ScanCancellation`, and call `state.ensure_storage_generation(expected)` at every system boundary plus before each writer transaction.
 - **`rom_watcher_generation: AtomicU64`** on `AppState`. Bumped by `restart_rom_watcher`; the watcher loop self-terminates on mismatch. Independent of `storage_generation`.
 - **`is_idle()` gate** on `AppState`. Used by the ROM watcher to suppress its own work during any non-`Idle` activity.
+- **`identity_can_run()` gate** on `AppState`. Identity workers are allowed while `Activity::Identity` owns the activity slot, but stop when any foreground activity or storage-generation change appears.
 - **`require_configured_storage_ready_for_mutation`** — refreshes storage, then rejects mutations when the configured target is not `Ready`. Single-shot, not a serializing mutex.
 - **Pool drain on `reset_to_empty` / `reopen` / `replace_with_file`** — the pool waits for in-flight `Object`s to release before unlinking files. A stalled closure aborts the destructive op rather than racing.
 
@@ -20,19 +21,20 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 | # | Path | Activity | `storage_generation` | Other gating |
 |---|---|---|---|---|
 | L1 | `populate_all_systems` (Startup pipeline + `spawn_populate`) | `Activity::Startup{Scanning}` or `Activity::Rebuild` | yes — between systems and inside `scan_inputs_for_system` | n/a |
-| L2 | `phase_cache_verification` re-scan branch | `Activity::Startup{Scanning}` | yes | n/a |
-| L3 | ROM watcher rescan | none — fires only when `is_idle()` is true | yes | `is_idle()` precondition; `rom_watcher_generation` self-cancels |
-| L4 | `enrich_system_cache_with_cancellation` | inherits caller's guard | yes via `cancellation.ensure_current()` | n/a |
-| L5 | On-demand box-art download hook (`update_box_art_url` from thumbnail orchestrator) | none | none | none — INSERT OR REPLACE upsert is race-tolerant |
-| L6 | `cleanup_orphaned_images` | `Activity::Maintenance{CleanupOrphans}` | none | mutation guard |
-| L7 | `clear_images` | `Activity::Maintenance{ClearImages}` | none | mutation guard |
-| L8 | `delete_rom_cleanup` | none | none | mutation guard |
-| L9 | `rename_rom_cascade` | none | none | mutation guard |
-| L10 | `set_boxart_override` / `reset_boxart_override` | none | none | mutation guard |
-| L11 | `save_region_preference` / `_secondary` (writes settings, invalidates L1, then runs `resolve_release_date_for_library`) | **none** | none | mutation guard not present |
-| L12 | `rebuild_corrupt_library` (`reset_to_empty`) | none | none | mutation guard + corruption flag |
-| L13 | `phase_title_norm_reconcile` (idempotent rebuild of `normalized_title`) | runs ahead of Startup guard | none | n/a |
-| L14 | Storage-swap reopen (`library_writer.reopen`) | none — runs synchronously inside `refresh_storage` | drives generation bumps itself | storage RwLock + pool drain |
+| L2 | Startup full reconciliation via `phase_cache_verification` | `Activity::Startup{Scanning}` | yes | same per-system strict reconcile path as L1 |
+| L3 | Background identity matching after scan/rebuild | `Activity::Identity` | yes — before claim, before/after hashing, and before writes | owns activity slot; rebuild/rescan are blocked while it runs |
+| L4 | ROM watcher rescan | none — fires only when `is_idle()` is true | yes | `is_idle()` precondition; `rom_watcher_generation` self-cancels |
+| L5 | `enrich_system_cache_with_cancellation` | inherits caller's guard | yes via `cancellation.ensure_current()` | n/a |
+| L6 | On-demand box-art download hook (`update_box_art_url` from thumbnail orchestrator) | none | none | none — INSERT OR REPLACE upsert is race-tolerant |
+| L7 | `cleanup_orphaned_images` | `Activity::Maintenance{CleanupOrphans}` | none | mutation guard |
+| L8 | `clear_images` | `Activity::Maintenance{ClearImages}` | none | mutation guard |
+| L9 | `delete_rom_cleanup` | none | none | mutation guard |
+| L10 | `rename_rom_cascade` | none | none | mutation guard |
+| L11 | `set_boxart_override` / `reset_boxart_override` | none | none | mutation guard |
+| L12 | `save_region_preference` / `_secondary` (writes settings, invalidates L1, then runs `resolve_release_date_for_library`) | **none** | none | mutation guard not present |
+| L13 | `rebuild_corrupt_library` (`reset_to_empty`) | none | none | mutation guard + corruption flag |
+| L14 | `phase_title_norm_reconcile` (idempotent rebuild of `normalized_title`) | runs ahead of Startup guard | none | n/a |
+| L15 | Storage-swap reopen (`library_writer.reopen`) | none — runs synchronously inside `refresh_storage` | drives generation bumps itself | storage RwLock + pool drain |
 
 ### 1.2 `external_metadata.db` writers
 
@@ -68,15 +70,17 @@ Pairs with non-trivial overlap. "OK" means existing guards prevent the bad outco
 | Pair | Can overlap? | Outcome | Status |
 |---|---|---|---|
 | Rebuild (L1) ↔ Startup (L1/L2) | No — both claim the activity mutex | n/a | OK |
-| Rebuild (L1) ↔ Storage swap reopen (L14) | Yes by design — generation bump cancels in-flight scan | Cancelled scan releases the Rebuild guard; pool reopens after the next system boundary. The follow-up `spawn_pipeline` may briefly fail to claim Startup. | **Gap F-1** |
-| Rebuild (L1) ↔ ROM watcher rescan (L3) | No — watcher gates on `is_idle()` | n/a | OK |
-| Rebuild (L1) ↔ Settings writes (L11) | Yes — `save_region_preference` doesn't claim a guard | No table clear occurs anymore; the handler only invalidates L1 and rewrites `release_date` mirror columns for rows currently present. | OK for data preservation |
-| Rebuild (L1) ↔ External-metadata refresh re-enrichment (E2 + L4) | No — both claim activity mutex | n/a | OK |
-| ROM watcher (L3) ↔ Storage swap (L14) | Yes — `restart_rom_watcher` bumps the watcher generation; an in-flight debounce can complete one cycle | Per-system writes inside that cycle pass `ensure_storage_generation` → `Err(StorageChanged)` → cancelled | OK |
-| Maintenance (L6/L7/E6/E8) ↔ Rebuild | No — activity mutex | n/a | OK |
-| Maintenance ↔ User mutation (U1–U4, L8–L10) | Maintenance holds activity; user mutations don't | All concrete pairs touch disjoint columns; pool layer serializes | OK (harmless) |
-| `regenerate_metadata` clear (E7) ↔ concurrent `Activity::Rebuild` reading enrichment (L4) | Yes — E7 clears provider metadata without claiming activity, then *tries* to claim `RefreshExternalMetadata` | If the spawn-claim fails (busy), provider tables are gone and re-enrichment silently runs against an empty source | **Gap F-2** |
-| `rebuild_corrupt_library` (L12) ↔ in-flight Rebuild | Yes — L12 calls `reset_to_empty` without claiming `Rebuild` | Pool drain blocks until rebuild's writer connection releases; on timeout, L12 aborts cleanly | OK (drain semantics) |
+| Rebuild (L1) ↔ Storage swap reopen (L15) | Yes by design — generation bump cancels in-flight scan | Cancelled scan releases the Rebuild guard; pool reopens after the next system boundary. The follow-up `spawn_pipeline` may briefly fail to claim Startup. | **Gap F-1** |
+| Rebuild (L1) ↔ Identity (L3) | No — both claim the activity mutex | n/a | OK |
+| Rebuild (L1) ↔ ROM watcher rescan (L4) | No — watcher gates on `is_idle()` | n/a | OK |
+| Rebuild (L1) ↔ Settings writes (L12) | Yes — `save_region_preference` doesn't claim a guard | No table clear occurs anymore; the handler only invalidates L1 and rewrites `release_date` mirror columns for rows currently present. | OK for data preservation |
+| Rebuild (L1) ↔ External-metadata refresh re-enrichment (E2 + L5) | No — both claim activity mutex | n/a | OK |
+| Identity (L3) ↔ Storage swap (L15) | Yes by design — generation bump cancels in-flight identity | Workers stop before applying stale results, and unresolved rows remain retryable. | OK |
+| ROM watcher (L4) ↔ Storage swap (L15) | Yes — `restart_rom_watcher` bumps the watcher generation; an in-flight debounce can complete one cycle | Per-system writes inside that cycle pass `ensure_storage_generation` → `Err(StorageChanged)` → cancelled | OK |
+| Maintenance (L7/L8/E6/E8) ↔ Rebuild | No — activity mutex | n/a | OK |
+| Maintenance ↔ User mutation (U1–U4, L9–L11) | Maintenance holds activity; user mutations don't | All concrete pairs touch disjoint columns; pool layer serializes | OK (harmless) |
+| `regenerate_metadata` clear (E7) ↔ concurrent `Activity::Rebuild` reading enrichment (L5) | Yes — E7 clears provider metadata without claiming activity, then *tries* to claim `RefreshExternalMetadata` | If the spawn-claim fails (busy), provider tables are gone and re-enrichment silently runs against an empty source | **Gap F-2** |
+| `rebuild_corrupt_library` (L13) ↔ in-flight Rebuild | Yes — L13 calls `reset_to_empty` without claiming `Rebuild` | Pool drain blocks until rebuild's writer connection releases; on timeout, L13 aborts cleanly | OK (drain semantics) |
 | `repair_corrupt_user_data` / `restore_user_data_backup` ↔ user mutations | Yes — none claim activity | Pool drain blocks; on timeout aborts cleanly | OK |
 | Concurrent `refresh_storage` invocations (config watcher + mountinfo watcher + 60 s poll + mutation gate) | Yes — `refresh_storage` is not protected by a serializing mutex | Two callers can both bump `storage_generation`, both `reopen` pools, both emit `StorageChanged`. Storage status oscillates `Activating → Ready → Activating → Ready`. Correctness preserved (each bump invalidates its predecessor's scans) but pool warmup cost doubles. | **Gap F-4** |
 | L1 cache invalidation during Rebuild (favorites/recents inotify cache wipes) ↔ Rebuild populating L2 | Yes — favorites/recents L1 invalidations are deliberately ungated | Rebuild does not own those caches; next request rebuilds them | OK |

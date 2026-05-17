@@ -4,6 +4,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.11](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.11) - 2026-05-16
+
+### Highlights
+
+- **Large NFS rebuilds become usable much sooner.** The library build now writes the file listing and metadata first, then runs CRC identity matching in the background. On the 95,495-ROM NFS test library, the foreground scan/enrichment pass completed in ~145-148 s, compared with beta.9's 194 s rescan and 636 s forced rebuild path.
+
+### Changed
+
+- Rebuild/rescan is split into foreground discovery/enrichment and a deferred identity phase. Normal rescans still reuse valid cached CRC identity; forced rebuilds mark hash-eligible rows for background re-identification instead of blocking the visible library on every ROM byte read.
+- The identity phase is resumable and bounded. Rows move through explicit identity states, interrupted work is picked up later, and hash matching defaults to two workers for every storage class.
+- Per-system library writes now reconcile via a transaction-local `current_scan_roms` temporary table. The scan upserts the current rows, deletes stale detail/library rows that are not in the temp table, then updates system metadata in the same transaction.
+
+### Fixed
+
+- Fixed a home-page hydration mismatch when refreshing while a game is running. The top-bar pill and home Now Playing card now SSR from the same bootstrapped state that hydration adopts, and the home branch keeps a stable shape while its detail data resolves.
+
+---
+
 ## [0.4.0-beta.10](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.10) - 2026-05-15
 
 ### Highlights

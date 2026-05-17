@@ -8,17 +8,18 @@ use crate::server_fns::{self, Activity, RebuildPhase, RebuildProgress};
 /// surfaces show the same text. Returns `None` when no progress text
 /// applies (terminal phases).
 pub fn format_rebuild_progress_label(locale: Locale, p: &RebuildProgress) -> Option<String> {
-    if p.phase != RebuildPhase::Scanning {
+    if !matches!(p.phase, RebuildPhase::Scanning | RebuildPhase::Enriching) {
         return None;
     }
-    let verb_key = if p.enriching {
+    let enriching = matches!(p.phase, RebuildPhase::Enriching) || p.enriching;
+    let verb_key = if enriching {
         Key::MetadataProgressVerbEnriching
     } else if p.is_rescan {
         Key::MetadataProgressVerbRescanning
     } else {
         Key::MetadataProgressVerbRebuilding
     };
-    let idle_key = if p.enriching {
+    let idle_key = if enriching {
         Key::MetadataBannerEnrichingLibrary
     } else if p.is_rescan {
         Key::MetadataBannerRescanningLibrary
@@ -95,6 +96,17 @@ pub fn MetadataBusyBanner() -> impl IntoView {
         }
         Activity::Rebuild { progress } => {
             format_rebuild_progress_label(i18n.locale.get(), &progress).unwrap_or_default()
+        }
+        Activity::Identity { progress } => {
+            let pct = progress
+                .rows_done
+                .saturating_mul(100)
+                .checked_div(progress.rows_total)
+                .unwrap_or_default();
+            format!(
+                "Matching ROMs ({pct}%, {}/{})...",
+                progress.rows_done, progress.rows_total
+            )
         }
         Activity::Maintenance { kind } => {
             use server_fns::MaintenanceKind;

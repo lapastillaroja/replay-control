@@ -37,25 +37,45 @@ Failure paths set `phase = Failed` with an `error` string before dropping the gu
 
 The download-then-refresh path (`spawn_external_metadata_download_and_refresh`) claims its own guard for the `Downloading` phase, then hands the guard down to `phase_auto_import_inner` so the SSE stream doesn't flicker to `Idle` between phases.
 
-## Phase 2: Cache Verification
+## Phase 2: Startup Library Scan
 
 **Method**: `phase_cache_verification()`
 
-Claims `Activity::Startup { phase: Scanning }`. Works directly with the DB and filesystem (no cache layer) to avoid circular dependencies.
+Claims `Activity::Startup { phase: Scanning }`. Works directly with the DB and filesystem (no request-time cache layer) to avoid circular dependencies.
 
-Loads `game_library_meta` to get cached directory mtimes and ROM counts, then detects three cases:
+Startup runs a full strict reconciliation over every `visible_systems()` platform,
+using the same discovery semantics as a normal manual rescan:
 
-1. **Fresh DB**: `game_library_meta` is empty -- runs `populate_all_systems()` (single per-system pass: strict scan + inline enrich for every visible system).
-2. **Stale mtime**: filesystem directory mtime differs from stored value -- re-scans that system via `scan_and_cache_system()` + `enrich_system_cache()`.
-3. **Interrupted scan**: meta says `rom_count > 0` but `game_library` has 0 rows for that system -- re-scans.
+1. Iterate every visible system.
+2. Strict-walk that system's ROM tree, including nested folders.
+3. Save the successful scan atomically for that system and preserve cached rows
+   when the filesystem read fails ambiguously.
+4. Run inline enrichment for that same system.
+5. Queue hash identity work for new, stale, failed, or unresolved rows.
+
+Startup intentionally does **not** rely on top-level system directory mtimes.
+Users commonly organize ROMs in subfolders, and parent-directory mtimes are not
+a reliable cross-storage signal for offline changes. A full walk is the
+correctness boundary that catches ROMs added while the device was off.
+
+An interrupted rebuild or rescan is recovered by the same rule. Per-system
+writes are transactional, so a system is either committed or rolled back. On the
+next boot, startup walks every visible system again, repairs systems that were
+not reached before shutdown, and resumes normal background identity work. It
+does not automatically continue forced rebuild hashing; explicit manual rebuild
+remains the deep verification path.
 
 For hash-eligible cartridge systems, scan inputs include cached CRC rows for that system unless the caller explicitly forces a rebuild. CRC cache validation uses the ROM filename plus the file size recorded with the hash. Exact `mtime + size` matches reuse the cached CRC; migrated rows with no stored hash size reuse only when mtime still matches; same-size mtime drift is reused as a conservative fast path for normal rescans. This avoids streaming unchanged large ROMs, especially N64/GBA/SNES sets on NFS, while manual rebuild remains the full verification path.
+
+CRC identity work runs after the per-system scan/enrichment write, not inside the filesystem discovery writer closure. While it runs, the activity banner shows "Matching ROMs" progress based on the number of rows being matched. Rebuild and rescan requests are blocked until identity finishes, so normal user actions do not cancel long NFS reads. Storage changes still cancel the identity phase through `storage_generation`, and unresolved rows remain retryable. The worker count defaults to 2 for every storage class, with an advanced override via `REPLAY_CONTROL_IDENTITY_WORKERS` (valid range: 1-4). Keep this bounded: the goal is to overlap storage latency without creating excessive CPU or I/O contention.
 
 `populate_all_systems` no longer pre-walks the filesystem to count systems; it iterates `visible_systems()` directly and lets each per-system call decide what to write (strict reconcile rule). Empty walks on local storage reconcile to empty meta; on NFS they return `Err` and preserve cached state. See `replay-control-app/src/api/library/mod.rs` and the per-system reconcile tests there.
 
 Long startup, rescan, rebuild, and watcher scans capture a storage generation token before they start. If `refresh_storage()` swaps storage, closes/reopens DB pools, or moves into a configured-storage error state, the generation changes. In-flight scans stop at the next system boundary or before the per-system DB write/enrichment step, so stale results cannot land in the wrong active storage DB. Cancellation preserves already-completed systems and leaves untouched systems' existing L2 rows in place.
 
-After all systems are verified, the pipeline continues directly into thumbnail-index recovery. WAL databases rely on SQLite's automatic checkpointing, so startup no longer forces a broad post-scan `library_pool.checkpoint()`.
+ROM file changes made by the user while a scan, rebuild, or identity pass is already running are not treated as a consistency guarantee for that same pass. The supported recovery is a later manual rescan after file changes settle.
+
+After all systems are reconciled, the pipeline continues directly into thumbnail-index recovery. WAL databases rely on SQLite's automatic checkpointing, so startup no longer forces a broad post-scan `library_pool.checkpoint()`.
 
 ## Phase 3: Thumbnail Index Rebuild
 

@@ -562,6 +562,10 @@ REPLAY_SITE_ROOT=/usr/local/share/replay/site
 # Uncomment to override auto-detected config path
 #REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
+# Advanced: hash-identification workers for library rebuilds/rescans.
+# Default is 2 workers for every storage class. Valid range: 1-4.
+#REPLAY_CONTROL_IDENTITY_WORKERS=2
+
 # Log level (trace, debug, info, warn, error)
 RUST_LOG=replay_control_app=info,replay_control_core=info
 ENV
@@ -780,6 +784,10 @@ REPLAY_SITE_ROOT=/usr/local/share/replay/site
 
 # Uncomment to override auto-detected config path
 #REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
+
+# Advanced: hash-identification workers for library rebuilds/rescans.
+# Default is 2 workers for every storage class. Valid range: 1-4.
+#REPLAY_CONTROL_IDENTITY_WORKERS=2
 
 # Log level (trace, debug, info, warn, error)
 RUST_LOG=replay_control_app=info,replay_control_core=info

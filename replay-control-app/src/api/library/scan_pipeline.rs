@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
-use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::rom_hash::{CachedHash, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
@@ -68,6 +67,10 @@ impl ScanInputs {
         self.cancellation.as_ref()
     }
 
+    pub(crate) fn force_rehash(&self) -> bool {
+        self.options.force_rehash
+    }
+
     pub(crate) fn ensure_current(&self) -> Result<()> {
         if let Some(cancellation) = &self.cancellation {
             cancellation.ensure_current()?;
@@ -77,6 +80,46 @@ impl ScanInputs {
 }
 
 impl LibraryService {
+    /// Build hash-result input for discovery without reading ROM bytes.
+    ///
+    /// Valid cached identity is carried into the discovery save so the UI does
+    /// not regress on normal rescans or hidden rebuilds. New/stale rows stay
+    /// identity-pending and are handled by the later identity phase.
+    pub(super) fn cached_identity_for_discovery(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        roms: &[RomEntry],
+        scan_inputs: &ScanInputs,
+    ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
+        use replay_control_core_server::rom_hash;
+
+        if !rom_hash::is_hash_eligible(system) {
+            return HashMap::new();
+        }
+
+        let mut result = HashMap::new();
+        for rom in roms.iter().filter(|rom| !rom.is_m3u) {
+            let rom_filename = &rom.game.rom_filename;
+            if !rom_hash::is_file_hash_eligible(system, rom_filename) {
+                continue;
+            }
+            let Some(cached) = scan_inputs.cached_hashes.get(rom_filename) else {
+                continue;
+            };
+            let abs_path = storage.root.join(rom.game.rom_path.trim_start_matches('/'));
+            let Some(current_mtime) = file_mtime_secs(&abs_path) else {
+                continue;
+            };
+            if let Some(hash) =
+                rom_hash::reusable_cached_hash(rom_filename, cached, current_mtime, rom.size_bytes)
+            {
+                result.insert(rom_filename.clone(), hash);
+            }
+        }
+        result
+    }
+
     /// Hash ROM files for a hash-eligible system and apply identification results.
     ///
     /// For eligible systems (cartridge-based with No-Intro CRC data), this:
@@ -87,17 +130,21 @@ impl LibraryService {
     ///    canonical No-Intro name)
     ///
     /// Returns a map of rom_filename -> HashResult for use by save_roms_to_db.
-    pub(super) async fn hash_roms_for_system(
+    pub(crate) async fn hash_roms_for_system(
         &self,
         storage: &StorageLocation,
         system: &str,
         roms: &mut [RomEntry],
         scan_inputs: &ScanInputs,
-    ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
+        hash_cancel: Option<Arc<AtomicBool>>,
+    ) -> (
+        HashMap<String, replay_control_core_server::rom_hash::HashResult>,
+        HashStats,
+    ) {
         use replay_control_core_server::rom_hash::{self, HashResult};
 
         if !rom_hash::is_hash_eligible(system) {
-            return HashMap::new();
+            return (HashMap::new(), HashStats::default());
         }
 
         let hash_profile_started = Instant::now();
@@ -118,7 +165,7 @@ impl LibraryService {
         let input_ms = input_started.elapsed().as_millis();
 
         let hash_started = Instant::now();
-        let hash_result = rom_hash::hash_and_identify_with_options(
+        let hash_result = rom_hash::hash_and_identify_with_options_and_cancel(
             system,
             &rom_files,
             &scan_inputs.cached_hashes,
@@ -126,11 +173,15 @@ impl LibraryService {
             rom_hash::HashOptions {
                 force_rehash: scan_inputs.options.force_rehash,
             },
+            hash_cancel.clone(),
         )
         .await;
         let hash_ms = hash_started.elapsed().as_millis();
         let stats = hash_result.stats;
         log_hash_stats(system, stats);
+        let cancelled = hash_cancel
+            .as_ref()
+            .is_some_and(|cancel| cancel.load(Ordering::Relaxed));
 
         // Build a lookup map for applying results.
         let display_started = Instant::now();
@@ -186,7 +237,7 @@ impl LibraryService {
         }
 
         tracing::info!(
-            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} input_ms={input_ms} hash_ms={hash_ms} display_ms={display_ms} total_ms={}",
+            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} cancelled={cancelled} input_ms={input_ms} hash_ms={hash_ms} display_ms={display_ms} total_ms={}",
             rom_files.len(),
             result_map.len(),
             stats.reused_exact,
@@ -198,21 +249,17 @@ impl LibraryService {
             hash_profile_started.elapsed().as_millis()
         );
 
-        result_map
+        (result_map, stats)
     }
 
     /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) async fn save_roms_to_db(
+    pub(crate) async fn save_roms_to_db(
         &self,
-        _storage: &StorageLocation,
         system: &str,
         roms: &[RomEntry],
         system_dir: &Path,
         hash_results: &HashMap<String, replay_control_core_server::rom_hash::HashResult>,
-        region_pref: RegionPreference,
-        region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
         scan_inputs: &ScanInputs,
     ) -> Result<()> {
@@ -235,8 +282,7 @@ impl LibraryService {
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
             cached_roms.len()
         );
-        let system_owned = system.to_string();
-        let system_for_save = system_owned.clone();
+        let system_for_save = system.to_string();
         let cached_roms_for_db = cached_roms.clone();
         scan_inputs.ensure_current()?;
         let save_write_started = Instant::now();
@@ -255,74 +301,8 @@ impl LibraryService {
             Ok(Ok(())) => {
                 tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
 
-                // Populate TGDB aliases from embedded build-time data.
-                let aliases_started = Instant::now();
-                self.populate_tgdb_aliases(system, &cached_roms, db, scan_inputs)
-                    .await?;
-                let aliases_ms = aliases_started.elapsed().as_millis();
-
-                // Populate game_series from embedded Wikidata data.
-                let series_started = Instant::now();
-                self.populate_wikidata_series(system, &cached_roms, db, scan_inputs)
-                    .await?;
-                let series_ms = series_started.elapsed().as_millis();
-                scan_inputs.ensure_current()?;
-
-                // Seed `game_release_date` in three steps:
-                //  1. Build-time static emit: TGDB per-region dates + arcade
-                //     MAME/FBNeo/Naomi year rows. This gives us multi-region
-                //     coverage (USA/Japan/Europe dates from TGDB) immediately.
-                //  2. `game_library` mirror columns from the builder — year
-                //     fallback for games TGDB didn't classify per-region
-                //     (CanonicalGame.year → release_date = "YYYY").
-                //  3. Resolve per-region mirror columns from the user's
-                //     region preference.
-                //
-                // The later L2 enrichment pass upserts LaunchBox-sourced
-                // rows (`launchbox` source, world region, day-precision
-                // when the XML provides it) before re-running the resolver.
-                let static_release_started = Instant::now();
-                let static_data =
-                    replay_control_core_server::library_db::fetch_static_release_data().await;
-                let static_release_ms = static_release_started.elapsed().as_millis();
-                scan_inputs.ensure_current()?;
-                let release_write_started = Instant::now();
-                let release_result = db
-                    .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                        if let Err(e) = LibraryDb::seed_release_dates_from_static_for_system(
-                            conn,
-                            &system_owned,
-                            static_data,
-                        ) {
-                            tracing::warn!(
-                                "Static release-date seed failed for {system_owned}: {e}"
-                            );
-                        }
-                        if let Err(e) = LibraryDb::seed_release_dates_from_library_for_system(
-                            conn,
-                            &system_owned,
-                            "builder",
-                        ) {
-                            tracing::warn!(
-                                "Library release-date seed failed for {system_owned}: {e}"
-                            );
-                        }
-                        if let Err(e) = LibraryDb::resolve_release_date_for_system(
-                            conn,
-                            &system_owned,
-                            region_pref,
-                            region_secondary,
-                        ) {
-                            tracing::warn!("Release-date resolve failed for {system_owned}: {e}");
-                        }
-                    })
-                    .await;
-                let release_write_ms = release_write_started.elapsed().as_millis();
-                if let Err(e) = release_result {
-                    tracing::warn!("Release-date write failed for {system}: {e}");
-                }
                 tracing::info!(
-                    "L2 save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} aliases_ms={aliases_ms} series_ms={series_ms} static_release_ms={static_release_ms} release_write_ms={release_write_ms} total_ms={}",
+                    "L2 discovery save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} total_ms={}",
                     cached_roms.len(),
                     save_profile_started.elapsed().as_millis()
                 );
@@ -340,6 +320,14 @@ impl LibraryService {
             }
         }
     }
+}
+
+fn file_mtime_secs(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
 }
 
 fn log_hash_stats(system: &str, stats: HashStats) {

@@ -50,8 +50,9 @@ mkdir -p "$ARCH_DIR"
 
 declare -A ARCH_WEIGHTS=(
     ["technical-foundation"]=101 ["design-decisions"]=102 ["startup-pipeline"]=103
-    ["database-schema"]=104 ["server-functions"]=105 ["connection-pooling"]=106
-    ["enrichment"]=107 ["rom-classification"]=108 ["activity-system"]=109
+    ["library-build-pipeline"]=104 ["database-schema"]=105 ["server-functions"]=106
+    ["connection-pooling"]=107 ["enrichment"]=108 ["rom-classification"]=109
+    ["activity-system"]=110
 )
 
 for f in "$REPO_ROOT/docs/architecture/"*.md; do

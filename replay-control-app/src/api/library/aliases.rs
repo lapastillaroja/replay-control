@@ -1,10 +1,81 @@
 use replay_control_core::title_utils::fuzzy_match_key;
 use replay_control_core_server::library_db::LibraryDb;
+use std::time::Instant;
 
 use super::{LibraryService, ScanInputs};
+use crate::api::AppState;
 use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
 
 impl LibraryService {
+    pub(super) async fn populate_scan_derived_metadata(
+        &self,
+        state: &AppState,
+        system: &str,
+        roms: &[replay_control_core_server::library_db::GameEntry],
+        scan_inputs: &ScanInputs,
+    ) -> replay_control_core::error::Result<()> {
+        let started = Instant::now();
+
+        let aliases_started = Instant::now();
+        self.populate_tgdb_aliases(system, roms, &state.library_writer, scan_inputs)
+            .await?;
+        let aliases_ms = aliases_started.elapsed().as_millis();
+
+        let series_started = Instant::now();
+        self.populate_wikidata_series(system, roms, &state.library_writer, scan_inputs)
+            .await?;
+        let series_ms = series_started.elapsed().as_millis();
+        scan_inputs.ensure_current()?;
+
+        let static_release_started = Instant::now();
+        let static_data = replay_control_core_server::library_db::fetch_static_release_data().await;
+        let static_release_ms = static_release_started.elapsed().as_millis();
+        scan_inputs.ensure_current()?;
+
+        let system_owned = system.to_string();
+        let release_write_started = Instant::now();
+        let region_pref = state.region_preference();
+        let region_secondary = state.region_preference_secondary();
+        let release_result = state
+            .library_writer
+            .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                if let Err(e) = LibraryDb::seed_release_dates_from_static_for_system(
+                    conn,
+                    &system_owned,
+                    static_data,
+                ) {
+                    tracing::warn!("Static release-date seed failed for {system_owned}: {e}");
+                }
+                if let Err(e) = LibraryDb::seed_release_dates_from_library_for_system(
+                    conn,
+                    &system_owned,
+                    "builder",
+                ) {
+                    tracing::warn!("Library release-date seed failed for {system_owned}: {e}");
+                }
+                if let Err(e) = LibraryDb::resolve_release_date_for_system(
+                    conn,
+                    &system_owned,
+                    region_pref,
+                    region_secondary,
+                ) {
+                    tracing::warn!("Release-date resolve failed for {system_owned}: {e}");
+                }
+            })
+            .await;
+        let release_write_ms = release_write_started.elapsed().as_millis();
+        if let Err(e) = release_result {
+            tracing::warn!("Release-date write failed for {system}: {e}");
+        }
+
+        tracing::info!(
+            "Scan-derived enrichment profile: {system}: roms={} aliases_ms={aliases_ms} series_ms={series_ms} static_release_ms={static_release_ms} release_write_ms={release_write_ms} total_ms={}",
+            roms.len(),
+            started.elapsed().as_millis()
+        );
+        Ok(())
+    }
+
     /// Populate game_alias table with TGDB alternate names for a system.
     ///
     /// Builds lookup maps from library entries, delegates the matching to

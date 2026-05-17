@@ -143,6 +143,8 @@ pub struct GameEntry {
     /// No-Intro canonical name if CRC32 matched the DAT data.
     /// NULL means either not hashed, or hashed but no match.
     pub hash_matched_name: Option<String>,
+    /// Durable ROM identity phase state for resumable hash matching.
+    pub identity_state: IdentityState,
     /// Algorithmic series key for franchise grouping.
     /// Computed by stripping trailing numbers/roman numerals from `base_title`.
     /// Empty string means no series could be extracted.
@@ -169,6 +171,44 @@ pub struct GameEntry {
     /// for console ROMs and arcade parents. Lets the matcher fall back to the
     /// parent's metadata without a separate per-ROM lookup at enrich time.
     pub normalized_title_alt: String,
+}
+
+/// Durable identity state for ROM hash matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityState {
+    Unknown = 0,
+    NotApplicable = 1,
+    Pending = 2,
+    Running = 3,
+    CompleteMatched = 4,
+    CompleteUnmatched = 5,
+    Failed = 6,
+}
+
+impl IdentityState {
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
+
+    pub fn from_i64(value: i64) -> Self {
+        match value {
+            1 => Self::NotApplicable,
+            2 => Self::Pending,
+            3 => Self::Running,
+            4 => Self::CompleteMatched,
+            5 => Self::CompleteUnmatched,
+            6 => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn from_hash_match(matched_name: Option<&str>) -> Self {
+        if matched_name.is_some() {
+            Self::CompleteMatched
+        } else {
+            Self::CompleteUnmatched
+        }
+    }
 }
 
 impl GameEntry {
@@ -216,6 +256,15 @@ pub struct LibraryGameResource {
     pub mime_type: Option<String>,
 }
 
+/// Durable thumbnail download job stored in `library.db`.
+#[derive(Debug, Clone)]
+pub struct ThumbnailDownloadJob {
+    pub system: String,
+    pub rom_filename: String,
+    pub kind: crate::thumbnails::ThumbnailKind,
+    pub manifest: crate::thumbnail_manifest::ManifestMatch,
+}
+
 /// A game alias entry for bulk insertion into the `game_alias` table.
 #[derive(Debug, Clone)]
 pub struct AliasInsert {
@@ -246,6 +295,77 @@ pub struct SystemMeta {
     pub scanned_at: i64,
     pub rom_count: usize,
     pub total_size_bytes: u64,
+    pub discovery_state: PhaseState,
+    pub enrichment_state: PhaseState,
+    pub thumbnail_state: ThumbnailPhaseState,
+}
+
+/// Durable per-system phase state for discovery/enrichment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhaseState {
+    Unknown = 0,
+    Pending = 1,
+    Running = 2,
+    Complete = 3,
+    Failed = 4,
+}
+
+impl PhaseState {
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
+
+    pub fn from_i64(value: i64) -> Self {
+        match value {
+            1 => Self::Pending,
+            2 => Self::Running,
+            3 => Self::Complete,
+            4 => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Durable per-system thumbnail queue state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailPhaseState {
+    Unknown = 0,
+    Pending = 1,
+    Queued = 2,
+    Running = 3,
+    Complete = 4,
+    Failed = 5,
+}
+
+impl ThumbnailPhaseState {
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
+
+    pub fn from_i64(value: i64) -> Self {
+        match value {
+            1 => Self::Pending,
+            2 => Self::Queued,
+            3 => Self::Running,
+            4 => Self::Complete,
+            5 => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Durable per-ROM thumbnail download job state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailJobState {
+    Queued = 1,
+    Running = 2,
+    Failed = 3,
+}
+
+impl ThumbnailJobState {
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
 }
 
 /// Shared SQL `ORDER BY` prefix that ranks rows by release date (oldest first,
@@ -363,6 +483,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         hash_mtime INTEGER,
         hash_size_bytes INTEGER,
         hash_matched_name TEXT,
+        identity_state INTEGER NOT NULL DEFAULT 0,
         release_date TEXT,
         release_precision TEXT,
         release_region_used TEXT,
@@ -380,7 +501,10 @@ const CREATE_GAME_LIBRARY_META_SQL: &str = "
         dir_mtime_secs INTEGER,
         scanned_at INTEGER NOT NULL,
         rom_count INTEGER NOT NULL DEFAULT 0,
-        total_size_bytes INTEGER NOT NULL DEFAULT 0
+        total_size_bytes INTEGER NOT NULL DEFAULT 0,
+        discovery_state INTEGER NOT NULL DEFAULT 0,
+        enrichment_state INTEGER NOT NULL DEFAULT 0,
+        thumbnail_state INTEGER NOT NULL DEFAULT 0
     );
 ";
 
@@ -421,6 +545,29 @@ const CREATE_LIBRARY_GAME_RESOURCE_SQL: &str = "
     );
     CREATE INDEX IF NOT EXISTS library_game_resource_idx_rom_type
         ON library_game_resource(system, rom_filename, resource_type);
+";
+
+const CREATE_LIBRARY_THUMBNAIL_JOB_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS library_thumbnail_job (
+        system TEXT NOT NULL,
+        rom_filename TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        repo_url_name TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        is_symlink INTEGER NOT NULL DEFAULT 0,
+        state INTEGER NOT NULL DEFAULT 1,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (system, rom_filename, kind, filename),
+        FOREIGN KEY (system, rom_filename)
+            REFERENCES game_library(system, rom_filename)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_thumbnail_job_state
+        ON library_thumbnail_job(state, system);
+    CREATE INDEX IF NOT EXISTS idx_library_thumbnail_job_key
+        ON library_thumbnail_job(system, kind, filename);
 ";
 
 const LIBRARY_GAME_RESOURCE_COLUMNS: &[&str] = &[
@@ -478,6 +625,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "hash_mtime",
     "hash_size_bytes",
     "hash_matched_name",
+    "identity_state",
     "release_date",
     "release_precision",
     "release_region_used",
@@ -509,6 +657,7 @@ impl LibraryDb {
         "game_library_meta",
         "game_detail_metadata",
         "library_game_resource",
+        "library_thumbnail_job",
         "game_release_date",
         "game_alias",
         "game_series",
@@ -546,9 +695,11 @@ impl LibraryDb {
             let conn = crate::sqlite::open_connection(db_path, "library.db")?;
             Self::run_migrations(&conn)?;
             Self::init_tables(&conn)?;
+            Self::recover_running_states(&conn)?;
             return Ok(conn);
         }
 
+        Self::recover_running_states(&conn)?;
         Ok(conn)
     }
 
@@ -626,6 +777,44 @@ impl LibraryDb {
         Ok(())
     }
 
+    fn recover_running_states(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "UPDATE game_library
+             SET identity_state = ?1
+             WHERE identity_state = ?2",
+            rusqlite::params![
+                IdentityState::Pending.as_i64(),
+                IdentityState::Running.as_i64()
+            ],
+        )
+        .map_err(|e| Error::Other(format!("recover running identity states: {e}")))?;
+        conn.execute(
+            "UPDATE game_library_meta
+             SET discovery_state = ?1
+             WHERE discovery_state = ?2",
+            rusqlite::params![PhaseState::Pending.as_i64(), PhaseState::Running.as_i64()],
+        )
+        .map_err(|e| Error::Other(format!("recover running discovery states: {e}")))?;
+        conn.execute(
+            "UPDATE game_library_meta
+             SET enrichment_state = ?1
+             WHERE enrichment_state = ?2",
+            rusqlite::params![PhaseState::Pending.as_i64(), PhaseState::Running.as_i64()],
+        )
+        .map_err(|e| Error::Other(format!("recover running enrichment states: {e}")))?;
+        conn.execute(
+            "UPDATE game_library_meta
+             SET thumbnail_state = ?1
+             WHERE thumbnail_state = ?2",
+            rusqlite::params![
+                ThumbnailPhaseState::Pending.as_i64(),
+                ThumbnailPhaseState::Running.as_i64()
+            ],
+        )
+        .map_err(|e| Error::Other(format!("recover running thumbnail states: {e}")))?;
+        Ok(())
+    }
+
     /// Create all tables if they don't exist.
     ///
     /// On column-set mismatch, drop the four rebuildable derived tables
@@ -667,6 +856,8 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("Failed to create library_meta: {e}")))?;
         conn.execute_batch(CREATE_LIBRARY_GAME_RESOURCE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create library_game_resource: {e}")))?;
+        conn.execute_batch(CREATE_LIBRARY_THUMBNAIL_JOB_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create library_thumbnail_job: {e}")))?;
 
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
@@ -700,6 +891,18 @@ impl LibraryDb {
                   WHERE base_title != '';
 
                 -- Covers: search filter coop_only, random_coop_games recommendation
+                CREATE INDEX IF NOT EXISTS idx_game_library_identity_pending
+                  ON game_library(system, identity_state)
+                  WHERE identity_state IN (2, 3, 6);
+
+                CREATE INDEX IF NOT EXISTS idx_game_library_meta_discovery_state
+                  ON game_library_meta(discovery_state)
+                  WHERE discovery_state IN (1, 2, 4);
+
+                CREATE INDEX IF NOT EXISTS idx_game_library_meta_enrichment_state
+                  ON game_library_meta(enrichment_state)
+                  WHERE enrichment_state IN (1, 2, 4);
+
                 CREATE INDEX IF NOT EXISTS idx_game_library_cooperative
                   ON game_library (system, cooperative)
                   WHERE cooperative = 1;
@@ -773,7 +976,10 @@ impl LibraryDb {
     ///   are validated by mtime + size without a post-upgrade rehash storm.
     /// - **v6**: renames `game_description` to `game_detail_metadata` and
     ///   adds derived `library_game_resource`.
-    pub const SCHEMA_VERSION: i64 = 6;
+    /// - **v7**: adds per-row `identity_state` for resumable hash matching.
+    /// - **v8**: adds per-system discovery/enrichment/thumbnail state.
+    /// - **v9**: adds durable per-ROM thumbnail download jobs.
+    pub const SCHEMA_VERSION: i64 = 9;
 
     /// Run pending migrations.
     ///
@@ -899,6 +1105,32 @@ impl LibraryDb {
             }
         }
 
+        if (1..7).contains(&current) {
+            tracing::info!("Library DB v6 → v7: adding identity_state column");
+            conn.execute_batch(
+                "ALTER TABLE game_library
+                     ADD COLUMN identity_state INTEGER NOT NULL DEFAULT 0;",
+            )
+            .map_err(|e| Error::Other(format!("v6→v7 alter game_library: {e}")))?;
+        }
+
+        if (1..8).contains(&current) {
+            tracing::info!("Library DB v7 → v8: adding per-system phase state columns");
+            conn.execute_batch(
+                "ALTER TABLE game_library_meta
+                     ADD COLUMN discovery_state INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE game_library_meta
+                     ADD COLUMN enrichment_state INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE game_library_meta
+                     ADD COLUMN thumbnail_state INTEGER NOT NULL DEFAULT 0;",
+            )
+            .map_err(|e| Error::Other(format!("v7→v8 alter game_library_meta: {e}")))?;
+        }
+
+        if (1..9).contains(&current) {
+            tracing::info!("Library DB v8 → v9: durable thumbnail job table ready");
+        }
+
         let now = unix_now();
         conn.execute(
             "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
@@ -934,7 +1166,7 @@ impl LibraryDb {
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
-    ///   release_date, release_precision, release_region_used, cooperative,
+    ///   identity_state, release_date, release_precision, release_region_used, cooperative,
     ///   normalized_title, normalized_title_alt
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
@@ -978,15 +1210,16 @@ impl LibraryDb {
                 .unwrap_or_default()
                 .map(|s| s as u64),
             hash_matched_name: row.get(24).unwrap_or_default(),
-            release_date: row.get::<_, Option<String>>(25).unwrap_or_default(),
+            identity_state: IdentityState::from_i64(row.get::<_, i64>(25).unwrap_or_default()),
+            release_date: row.get::<_, Option<String>>(26).unwrap_or_default(),
             release_precision: row
-                .get::<_, Option<DpSql>>(26)
+                .get::<_, Option<DpSql>>(27)
                 .unwrap_or_default()
                 .map(|DpSql(d)| d),
-            release_region_used: row.get::<_, Option<String>>(27).unwrap_or_default(),
-            cooperative: row.get::<_, bool>(28).unwrap_or_default(),
-            normalized_title: row.get::<_, String>(29).unwrap_or_default(),
-            normalized_title_alt: row.get::<_, String>(30).unwrap_or_default(),
+            release_region_used: row.get::<_, Option<String>>(28).unwrap_or_default(),
+            cooperative: row.get::<_, bool>(29).unwrap_or_default(),
+            normalized_title: row.get::<_, String>(30).unwrap_or_default(),
+            normalized_title_alt: row.get::<_, String>(31).unwrap_or_default(),
         })
     }
 }
@@ -1035,6 +1268,7 @@ mod tests {
             hash_mtime: None,
             hash_size_bytes: None,
             hash_matched_name: None,
+            identity_state: IdentityState::Unknown,
             series_key: String::new(),
             developer: String::new(),
             release_date: None,

@@ -202,6 +202,10 @@ pub struct AppState {
     /// rebuild/rescan/startup tasks to stop before writing into a DB that no
     /// longer belongs to the active storage.
     pub(crate) storage_generation: Arc<AtomicU64>,
+    /// Serializes deferred identity hashing batches. Hashing is intentionally
+    /// background work, but multiple rebuild/rescan/startup batches must not
+    /// compete with each other.
+    pub(crate) identity_phase: Arc<tokio::sync::Mutex<()>>,
     /// Reportable health issues with shipped data assets (catalog schema
     /// mismatch today; future asset types via the release-asset-manifest plan).
     /// Populated at startup; consumed by the SSE init payload + the
@@ -653,6 +657,7 @@ impl AppState {
             now_playing_tx,
             rom_watcher_generation: Arc::new(AtomicU64::new(0)),
             storage_generation: Arc::new(AtomicU64::new(0)),
+            identity_phase: Arc::new(tokio::sync::Mutex::new(())),
             asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
 
