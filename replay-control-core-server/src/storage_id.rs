@@ -58,7 +58,7 @@ impl StorageId {
         // `getrandom` reads from `getrandom(2)` (Linux) which never blocks
         // after early boot. A failure means the kernel RNG itself is broken;
         // there's no useful local fallback so panic loudly.
-        getrandom::getrandom(&mut buf).expect("OS RNG must be available");
+        getrandom::fill(&mut buf).expect("OS RNG must be available");
         Self::from_kind_and_crc(kind, u32::from_le_bytes(buf))
     }
 

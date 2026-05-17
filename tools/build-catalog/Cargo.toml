@@ -11,7 +11,7 @@ repository.workspace = true
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 csv = "1"
-quick-xml = "0.39"
+quick-xml = "0.40"
 ring = "0.17"
 serde = { workspace = true }
 serde_json = { workspace = true }

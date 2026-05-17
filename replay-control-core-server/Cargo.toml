@@ -27,10 +27,10 @@ deadpool = "0.13"
 deadpool-sync = "0.2"
 tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process", "io-util"] }
 tokio-stream = { version = "0.1", optional = true }
-quick-xml = { version = "0.39", optional = true }
+quick-xml = { version = "0.40", optional = true }
 reqwest = { workspace = true, features = ["stream"], optional = true }
 tempfile = "3"
-getrandom = "0.2"
+getrandom = "0.4"
 
 [[bin]]
 name = "library_report"
