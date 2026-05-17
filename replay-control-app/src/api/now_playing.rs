@@ -53,7 +53,7 @@ mod linux {
     use replay_control_core_server::db_pool::rusqlite::OptionalExtension;
     use replay_control_core_server::library_db::LibraryDb;
     use replay_control_core_server::replay_proc::{
-        find_replay_pid, maps_have_active_game_core, pid_is_replay,
+        ReplayState, current_replay_state, loaded_core_systems,
     };
 
     use super::{AppState, POLL_INTERVAL};
@@ -73,12 +73,14 @@ mod linux {
 
         loop {
             let pid_in = cached_pid;
-            let (next_pid, observation) = tokio::task::spawn_blocking(move || observe(pid_in))
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::debug!("now-playing observe task failed: {e}");
-                    (None, None)
-                });
+            let prev_target = session.target.clone();
+            let (next_pid, observation) =
+                tokio::task::spawn_blocking(move || observe(pid_in, prev_target))
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::debug!("now-playing observe task failed: {e}");
+                        (None, None)
+                    });
             cached_pid = next_pid;
 
             // Debounce: confirm a state change only when two consecutive
@@ -140,6 +142,14 @@ mod linux {
                     rom_path,
                 }) => {
                     let resolved = lookup_game_info(state, &system, &filename, &rom_path).await;
+                    if resolved.is_none() {
+                        tracing::warn!(
+                            system = %system,
+                            filename = %filename,
+                            rom_path = %rom_path,
+                            "now-playing: no library match"
+                        );
+                    }
                     let canonical_filename = resolved
                         .as_ref()
                         .map(|info| info.filename.clone())
@@ -226,36 +236,36 @@ mod linux {
     }
 
     /// One detection tick. Returns the (possibly updated) cached PID plus
-    /// the new observation. We deliberately walk the heap on every tick —
-    /// in-core game switches (e.g. Sonic 1 → Sonic 2 on `genesis_plus_gx`)
-    /// don't change `/proc/<pid>/maps`, so the heap is the only signal.
-    /// Cost on the supported cores' ~50 MB heap is ~80–120 ms per tick.
-    fn observe(cached_pid: Option<u32>) -> (Option<u32>, Option<Observation>) {
-        // Cheap PID check first: re-verify the cached PID via /proc/<pid>/comm
-        // before scanning all of /proc. Saves the dirent walk in steady state
-        // (which is most of the appliance's life — replay PID rarely changes).
-        let pid = match cached_pid.and_then(|p| pid_is_replay(p).then_some(p)) {
-            Some(p) => p,
-            None => match find_replay_pid() {
-                Some(p) => p,
-                None => return (None, None),
-            },
+    /// the new observation. We walk the heap on every tick because in-core
+    /// game switches (e.g. Sonic 1 → Sonic 2 on `genesis_plus_gx`) don't
+    /// change `/proc/<pid>/maps`, so the heap is the only signal. Cost on
+    /// the supported cores' ~50 MB heap is ~80–120 ms per tick.
+    ///
+    /// `previous` is the (system, filename) of the last confirmed playing
+    /// target, threaded in so we can keep it locked when it's still in the
+    /// heap candidate set (defends against the overlay-menu leak: the menu
+    /// drops other-section rom paths into the heap that look like the active
+    /// game). See `select_rom_path` for the full selection rules.
+    fn observe(
+        cached_pid: Option<u32>,
+        previous: Option<(String, String)>,
+    ) -> (Option<u32>, Option<Observation>) {
+        let (pid, maps) = match current_replay_state(cached_pid) {
+            ReplayState::NotRunning => return (None, None),
+            ReplayState::Menu { pid } => return (Some(pid), Some(Observation::Menu { pid })),
+            ReplayState::Playing { pid, maps } => (pid, maps),
         };
-
-        let maps = match fs::read_to_string(format!("/proc/{pid}/maps")) {
-            Ok(m) => m,
-            // Process disappeared between PID find and maps read.
-            Err(_) => return (None, None),
-        };
-
-        if !maps_have_active_game_core(&maps) {
-            return (Some(pid), Some(Observation::Menu { pid }));
-        }
 
         // Game core is mapped but the heap walk may miss the ROM path during
         // a fresh launch or a partial read mid-allocation. Hold the user at
         // Menu rather than dropping to NotRunning so the UI doesn't flap.
-        let Some(rom_path) = scan_heap_for_rom_path(pid, &maps) else {
+        let candidates = scan_heap_for_rom_paths(pid, &maps);
+        let allowed_systems = loaded_core_systems(&maps);
+        let Some(rom_path) = select_rom_path(
+            candidates,
+            allowed_systems,
+            previous.as_ref().map(|(s, f)| (s.as_str(), f.as_str())),
+        ) else {
             return (Some(pid), Some(Observation::Menu { pid }));
         };
         let Some((system, filename)) = parse_system_and_filename(&rom_path) else {
@@ -270,6 +280,81 @@ mod linux {
                 rom_path,
             }),
         )
+    }
+
+    /// Pick the active ROM out of all rom_paths found in the heap. Applies,
+    /// in order:
+    ///
+    /// 1. **Prefix-dedup**: drop a path P if some other path P' is `P + "."
+    ///    + ext` (e.g. drop `…/gunlock` when `…/gunlock.zip` is also there).
+    ///      These are heap-walk truncation artefacts of the same string.
+    /// 2. **Cross-system filter**: if `allowed_systems` is `Some`, drop paths
+    ///    whose `<system>` isn't in the loaded core's allowed set. Catches
+    ///    overlay-menu leaks when browsing a section that uses a different
+    ///    core (Shenmue `sega_dc` leaks when playing a Genesis game).
+    /// 3. **Sticky previous target**: if `previous` is still a candidate,
+    ///    return it. Defends against same-system menu browse — when playing
+    ///    Crazy Taxi 2 on Flycast and the menu highlights Shenmue (also DC),
+    ///    both paths are in the heap; without stickiness, frequency could
+    ///    occasionally flip.
+    /// 4. **Highest count, latest in heap as tiebreaker**: the active core
+    ///    references the running game's rom_path multiple times (save paths,
+    ///    state, etc.) — menu artefacts appear once or twice. When counts
+    ///    tie, the latest-encountered path wins (preserves the historical
+    ///    "use the last match" semantics).
+    fn select_rom_path(
+        mut candidates: Vec<(String, usize)>,
+        allowed_systems: Option<&'static [&'static str]>,
+        previous: Option<(&str, &str)>,
+    ) -> Option<String> {
+        // 1. Prefix-dedup.
+        let drop: std::collections::HashSet<usize> = candidates
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (p, _))| {
+                let prefix = format!("{p}.");
+                candidates
+                    .iter()
+                    .any(|(other, _)| other.starts_with(&prefix))
+                    .then_some(i)
+            })
+            .collect();
+        let mut idx = 0;
+        candidates.retain(|_| {
+            let keep = !drop.contains(&idx);
+            idx += 1;
+            keep
+        });
+
+        // 2. Cross-system filter.
+        if let Some(allowed) = allowed_systems {
+            candidates.retain(|(p, _)| {
+                parse_system_and_filename(p)
+                    .map(|(sys, _)| allowed.contains(&sys.as_str()))
+                    .unwrap_or(false)
+            });
+        }
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // 3. Sticky previous target.
+        if let Some((prev_sys, prev_fname)) = previous
+            && let Some((path, _)) = candidates.iter().find(|(p, _)| {
+                parse_system_and_filename(p)
+                    .map(|(sys, fname)| sys == prev_sys && fname == prev_fname)
+                    .unwrap_or(false)
+            })
+        {
+            return Some(path.clone());
+        }
+
+        // 4. Highest count, last-in-vec as tiebreaker (heap scan is address-ordered).
+        candidates
+            .into_iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(p, _)| p)
     }
 
     async fn lookup_game_info(
@@ -338,25 +423,42 @@ mod linux {
             .flatten()
     }
 
-    fn scan_heap_for_rom_path(pid: u32, maps: &str) -> Option<String> {
-        let heap_line = maps.lines().find(|l| l.contains("[heap]"))?;
-        let range = heap_line.split_whitespace().next()?;
-        let (start_hex, end_hex) = range.split_once('-')?;
-        let start = u64::from_str_radix(start_hex, 16).ok()?;
-        let end = u64::from_str_radix(end_hex, 16).ok()?;
+    /// Scan the full heap and return every `/media/.../roms/...` path found
+    /// together with how many times it appears, in address order. The vec is
+    /// preserved in scan order so callers can use position as the
+    /// last-match tiebreaker.
+    fn scan_heap_for_rom_paths(pid: u32, maps: &str) -> Vec<(String, usize)> {
+        let Some(heap_line) = maps.lines().find(|l| l.contains("[heap]")) else {
+            return Vec::new();
+        };
+        let Some(range) = heap_line.split_whitespace().next() else {
+            return Vec::new();
+        };
+        let Some((start_hex, end_hex)) = range.split_once('-') else {
+            return Vec::new();
+        };
+        let Ok(start) = u64::from_str_radix(start_hex, 16) else {
+            return Vec::new();
+        };
+        let Ok(end) = u64::from_str_radix(end_hex, 16) else {
+            return Vec::new();
+        };
 
-        let mut mem = fs::File::open(format!("/proc/{pid}/mem")).ok()?;
-        mem.seek(SeekFrom::Start(start)).ok()?;
+        let Ok(mut mem) = fs::File::open(format!("/proc/{pid}/mem")) else {
+            return Vec::new();
+        };
+        if mem.seek(SeekFrom::Start(start)).is_err() {
+            return Vec::new();
+        }
 
-        // We deliberately scan the whole heap and keep the LAST match rather
-        // than early-exiting on the first one. Earlier matches are stale paths
-        // from previous games / the menu's recents list; the active ROM lives
-        // at the highest address. Cost on the supported cores' ~50 MB heap is
-        // ~80–120 ms (chunked reads via this 1 MB buffer; detector RSS stays
-        // around 2–3 MB). Fine at the 4 s cadence.
+        // Accumulate occurrences as a Vec to preserve scan order; the
+        // last-encountered path of a tied count wins downstream. Cost on the
+        // supported cores' ~50 MB heap is ~80-120 ms per tick at the 4 s
+        // cadence; detector RSS stays around 2-3 MB.
+        let mut order: Vec<String> = Vec::new();
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         let mut buf = vec![0u8; CHUNK_SIZE];
         let mut offset = start;
-        let mut found: Option<String> = None;
         let mut overlap = Vec::new();
         while offset < end {
             let to_read = CHUNK_SIZE.min((end - offset) as usize);
@@ -364,21 +466,31 @@ mod linux {
             if mem.read_exact(slice).is_err() {
                 break;
             }
-            if let Some(path) = find_rom_path_with_overlap(&overlap, slice) {
-                found = Some(path);
+            for path in find_rom_paths_with_overlap(&overlap, slice) {
+                let count = counts.entry(path.clone()).or_insert(0);
+                if *count == 0 {
+                    order.push(path);
+                }
+                *count += 1;
             }
             overlap.clear();
             let keep = OVERLAP_SIZE.min(slice.len());
             overlap.extend_from_slice(&slice[slice.len() - keep..]);
             offset += to_read as u64;
         }
-        found
+        order
+            .into_iter()
+            .map(|p| {
+                let c = counts.get(&p).copied().unwrap_or(0);
+                (p, c)
+            })
+            .collect()
     }
 
-    fn find_rom_path_in_chunk(bytes: &[u8]) -> Option<String> {
+    fn find_rom_paths_in_chunk(bytes: &[u8]) -> Vec<String> {
         let needle = b"/media/";
+        let mut out = Vec::new();
         let mut i = 0;
-        let mut candidate: Option<String> = None;
         while i + needle.len() < bytes.len() {
             if &bytes[i..i + needle.len()] == needle {
                 let start = i;
@@ -390,24 +502,24 @@ mod linux {
                     && s.contains("/roms/")
                     && !s.contains("/_extra/")
                 {
-                    candidate = Some(s.to_string());
+                    out.push(s.to_string());
                 }
                 i = end;
             } else {
                 i += 1;
             }
         }
-        candidate
+        out
     }
 
-    fn find_rom_path_with_overlap(overlap: &[u8], current: &[u8]) -> Option<String> {
+    fn find_rom_paths_with_overlap(overlap: &[u8], current: &[u8]) -> Vec<String> {
         if overlap.is_empty() {
-            return find_rom_path_in_chunk(current);
+            return find_rom_paths_in_chunk(current);
         }
         let mut combined = Vec::with_capacity(overlap.len() + current.len());
         combined.extend_from_slice(overlap);
         combined.extend_from_slice(current);
-        find_rom_path_in_chunk(&combined)
+        find_rom_paths_in_chunk(&combined)
     }
 
     fn parse_system_and_filename(path: &str) -> Option<(String, String)> {
@@ -474,10 +586,10 @@ mod linux {
             let second = &path[5..];
 
             let overlap = &first[first.len() - OVERLAP_SIZE..];
-            let found = find_rom_path_with_overlap(overlap, second);
+            let found = find_rom_paths_with_overlap(overlap, second);
             assert_eq!(
-                found.as_deref(),
-                Some("/media/usb/roms/arcade_fbneo/00 Clean Romset/sfiii3.zip")
+                found,
+                vec!["/media/usb/roms/arcade_fbneo/00 Clean Romset/sfiii3.zip".to_string()]
             );
         }
 
@@ -519,6 +631,95 @@ mod linux {
                 "/media/usb/roms/snes/other.sfc"
             )));
             assert!(!base.matches(&Observation::Menu { pid: 1 }));
+        }
+
+        // ── select_rom_path ─────────────────────────────────────────
+
+        const SMD_SYSTEMS: &[&str] = &["sega_smd", "sega_sms", "sega_gg", "sega_sg", "sega_cd"];
+        const DC_SYSTEMS: &[&str] = &["arcade_dc", "sega_dc"];
+
+        #[test]
+        fn select_drops_prefix_truncation_artefact() {
+            // Heap leaks both `gunlock` and `gunlock.zip`; the prefix-dedup
+            // should keep only the extended form.
+            let candidates = vec![
+                ("/media/nfs/roms/arcade_fbneo/gunlock".to_string(), 1),
+                ("/media/nfs/roms/arcade_fbneo/gunlock.zip".to_string(), 1),
+            ];
+            let picked = select_rom_path(candidates, None, None);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/arcade_fbneo/gunlock.zip")
+            );
+        }
+
+        #[test]
+        fn select_filters_cross_system_when_core_allowed_systems_known() {
+            // Genesis game running, DC menu leaked Shenmue path. Loaded core
+            // is genesis_plus_gx → Shenmue's `sega_dc` is rejected.
+            let candidates = vec![
+                (
+                    "/media/nfs/roms/sega_smd/Sonic & Knuckles.md".to_string(),
+                    1,
+                ),
+                ("/media/nfs/roms/sega_dc/Shenmue.m3u".to_string(), 1),
+            ];
+            let picked = select_rom_path(candidates, Some(SMD_SYSTEMS), None);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/sega_smd/Sonic & Knuckles.md")
+            );
+        }
+
+        #[test]
+        fn select_picks_highest_count_for_same_system_browse() {
+            // DC game running with frequency 4, DC menu-leaked title at
+            // frequency 2. Both pass the cross-system filter; count wins.
+            let candidates = vec![
+                ("/media/nfs/roms/sega_dc/Crazy Taxi 2.gdi".to_string(), 4),
+                ("/media/nfs/roms/sega_dc/Shenmue.m3u".to_string(), 2),
+            ];
+            let picked = select_rom_path(candidates, Some(DC_SYSTEMS), None);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/sega_dc/Crazy Taxi 2.gdi")
+            );
+        }
+
+        #[test]
+        fn select_sticks_with_previous_when_still_present() {
+            // Frequencies tie. Without stickiness the latest-encountered
+            // wins; with the previous target locked, we keep it.
+            let candidates = vec![
+                ("/media/nfs/roms/sega_dc/Crazy Taxi 2.gdi".to_string(), 1),
+                ("/media/nfs/roms/sega_dc/Shenmue.m3u".to_string(), 1),
+            ];
+            let previous = Some(("sega_dc", "Crazy Taxi 2.gdi"));
+            let picked = select_rom_path(candidates, Some(DC_SYSTEMS), previous);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/sega_dc/Crazy Taxi 2.gdi")
+            );
+        }
+
+        #[test]
+        fn select_abandons_previous_when_no_longer_in_heap() {
+            // In-core same-system switch: old ROM path is gone from heap,
+            // new one is in. Adopt the new one.
+            let candidates = vec![("/media/nfs/roms/sega_smd/Speedball 2.md".to_string(), 1)];
+            let previous = Some(("sega_smd", "Sonic & Knuckles.md"));
+            let picked = select_rom_path(candidates, Some(SMD_SYSTEMS), previous);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/sega_smd/Speedball 2.md")
+            );
+        }
+
+        #[test]
+        fn select_returns_none_when_filter_kills_everything() {
+            let candidates = vec![("/media/nfs/roms/sega_dc/Shenmue.m3u".to_string(), 1)];
+            let picked = select_rom_path(candidates, Some(SMD_SYSTEMS), None);
+            assert_eq!(picked, None);
         }
     }
 }

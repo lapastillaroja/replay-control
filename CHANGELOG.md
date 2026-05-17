@@ -17,10 +17,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Per-system library writes now reconcile with durable scan tokens. Current rows are upserted in bounded chunks, stale rows are deleted only after finalization, and unchanged ROM resources survive rescans.
 - First-run metadata and thumbnail-source downloads no longer block the first library scan. The library appears from local discovery first, then optional metadata and artwork fill in as background work completes.
 - Thumbnail downloads now use a durable per-storage queue with box art first, then title screens, then screenshots. Temporary GitHub throttling and service errors are retried with bounded backoff instead of creating request bursts.
+- Large enrichment writes now run in bounded batches where safe, and game-detail descriptions/resources are staged before replacing live rows so interrupted enrichment does not empty existing detail pages.
 
 ### Fixed
 
 - Fixed a home-page hydration mismatch when refreshing while a game is running. The top-bar pill and home Now Playing card now SSR from the same bootstrapped state that hydration adopts, and the home branch keeps a stable shape while its detail data resolves.
+- Fixed Launch on TV failing on Pis with large libraries or slow storage. The post-launch watcher now polls the replay binary's actual state instead of using fixed 5s/10s timers, so launches still succeed when the binary takes longer than 5 seconds to read the autostart file (observed up to ~7 seconds on 100k-ROM Pi 5 setups). The recovery restart now only fires when the binary is genuinely hung, removing the second screen flash on the common menu-recovered path.
+- Fixed Now Playing flipping to the wrong game when navigating the ReplayOS overlay menu while playing. Browsing some sections (notably Dreamcast and PlayStation) leaks the highlighted ROM path into the running process's heap, which the detector previously mistook for the active game. The detector now filters by which systems the loaded core can run, keeps the previously-tracked game locked when it is still present in the heap, and prefers the path with the highest occurrence count.
+- Fixed games occasionally showing as a plain filename with no box art and a dead detail link (e.g. gunlock). The heap walk could pick up a truncated copy of the ROM path that did not match the library row; truncated variants are now dropped when the full path is also present.
 
 ---
 

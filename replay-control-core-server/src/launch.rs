@@ -1,66 +1,46 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
 
-/// Check whether the replay process has a libretro game core loaded.
-/// Returns `false` for any failure (process not found, unreadable maps, etc.).
-#[cfg(target_os = "linux")]
-fn check_game_loaded() -> bool {
-    use crate::replay_proc::{find_replay_pid, maps_have_active_game_core};
+/// How often the post-launch watcher polls `/proc/<replay-pid>/maps`.
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-    let Some(pid) = find_replay_pid() else {
-        tracing::debug!("health check: replay process not found");
-        return false;
-    };
-    let maps_path = format!("/proc/{pid}/maps");
-    let maps = match std::fs::read_to_string(&maps_path) {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::warn!("health check: failed to read {maps_path}: {e}");
-            return false;
-        }
-    };
-    let loaded = maps_have_active_game_core(&maps);
-    if loaded {
-        tracing::info!("health check: game core detected in {maps_path}");
-    } else {
-        tracing::warn!("health check: no game core found in {maps_path}");
-    }
-    loaded
-}
-
-#[cfg(not(target_os = "linux"))]
-fn check_game_loaded() -> bool {
-    // Non-Linux dev hosts: no /proc, treat as "loaded" so the recovery path
-    // doesn't fire.
-    true
-}
+/// How long the watcher will wait for the binary to reach a terminal state
+/// (game core mapped, or back at the menu) before giving up. Chosen to cover
+/// slow autostart reads on large libraries — observed up to ~7s on 100k-ROM
+/// Pi 5 setups, with headroom for slower configurations.
+const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Launch a game on RePlayOS via the autostart + systemctl restart mechanism.
 ///
-/// Writes the `rom_path` to `_autostart/autostart.auto`, restarts the
-/// `replay.service`, then spawns a background thread that:
+/// Writes the `rom_path` to `_autostart/autostart.auto`, restarts
+/// `replay.service`, then spawns a background watcher that polls
+/// `/proc/<replay-pid>/maps` until one of:
 ///
-/// 1. Waits 5 seconds for the replay binary to boot and read the autostart file
-/// 2. Deletes the autostart file (cleanup)
-/// 3. Waits 5 more seconds (10s total from restart) for the game to load
-/// 4. Checks if a libretro game core is loaded via `/proc/PID/maps`
-/// 5. If no game core is found, restarts the service cleanly (boots to menu)
+/// - A libretro game core is mapped → success; delete the autostart file.
+/// - The binary is alive but only the menu/frontend is mapped, for the full
+///   timeout window → autostart was not picked up; delete the file. No
+///   recovery restart is needed because the binary has already recovered
+///   itself to the menu.
+/// - No replay process is alive at the timeout → genuinely hung (e.g. a core
+///   that fails silently and leaves the screen black); delete the file and
+///   restart `replay.service` so the user gets back to the menu.
 ///
-/// The health check recovery exists because some cores (notably Flycast for
-/// arcade_dc systems like Atomiswave/Naomi) can fail to load silently, leaving
-/// the user stuck on a blank screen. By detecting the failure and restarting
-/// to the menu, we ensure the user can always recover without manual
-/// intervention. This also future-proofs against any core crash at launch time.
+/// `autostart.auto` must not be deleted on a fixed short timer: on large
+/// libraries the binary's read of the file can take several seconds, and
+/// removing it before that read causes the launch to silently fall back to
+/// the menu.
 ///
 /// NOTE: This uses the autostart mechanism documented in RePlayOS — there
-/// is no official API for programmatic game launching. The autostart mechanism
-/// was designed for boot-time auto-launch, not companion app integration.
-/// Check RePlayOS changelogs for official remote launch support in future
-/// releases.
+/// is no official API for programmatic game launching. The autostart
+/// mechanism was designed for boot-time auto-launch, not companion app
+/// integration. Check RePlayOS changelogs for official remote launch support
+/// in future releases.
 pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()> {
+    tracing::info!(rom = %rom_path, "launching game via autostart");
+
     // Validate the ROM exists on disk
     let full_path = storage.root.join(rom_path.trim_start_matches('/'));
     if !tokio::fs::try_exists(&full_path).await.unwrap_or(false) {
@@ -95,23 +75,64 @@ pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()
         )));
     }
 
-    // Spawn background thread: cleanup autostart file, then health check.
-    let cleanup_path = autostart_file.clone();
-    std::thread::spawn(move || {
-        // Wait 5s for the replay binary to boot and read the autostart file
-        std::thread::sleep(Duration::from_secs(5));
-        let _ = std::fs::remove_file(&cleanup_path);
-        tracing::debug!("autostart file cleaned up");
+    std::thread::spawn({
+        let autostart_file = autostart_file.clone();
+        move || watch_launch(autostart_file)
+    });
 
-        // Wait 5 more seconds (10s total) for the game core to load
-        std::thread::sleep(Duration::from_secs(5));
+    Ok(())
+}
 
-        if !check_game_loaded() {
-            tracing::warn!("game core not loaded -- restarting service to recover to menu");
-            let result = std::process::Command::new("systemctl")
+/// Background watcher: polls the replay binary's state until it lands in a
+/// terminal one, then cleans up `autostart.auto` and (only if the binary is
+/// hung) triggers a recovery restart.
+#[cfg(target_os = "linux")]
+fn watch_launch(autostart_file: PathBuf) {
+    use crate::replay_proc::{ReplayState, current_replay_state};
+
+    let start = std::time::Instant::now();
+    let mut cached_pid: Option<u32> = None;
+
+    let timed_out_state = loop {
+        let state = current_replay_state(cached_pid);
+        match &state {
+            ReplayState::Playing { pid, .. } => {
+                tracing::info!(
+                    pid = *pid,
+                    "launch: game core mapped, cleaning up autostart"
+                );
+                let _ = std::fs::remove_file(&autostart_file);
+                return;
+            }
+            ReplayState::Menu { pid } => cached_pid = Some(*pid),
+            ReplayState::NotRunning => cached_pid = None,
+        }
+        if start.elapsed() >= POLL_TIMEOUT {
+            break state;
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    };
+
+    // Timed out without seeing a game core. Always clean up so we don't
+    // re-launch a stale ROM on the next boot.
+    let _ = std::fs::remove_file(&autostart_file);
+
+    match timed_out_state {
+        ReplayState::Menu { pid } => {
+            tracing::info!(
+                pid,
+                "launch: binary stayed on menu, autostart not picked up -- no recovery needed"
+            );
+        }
+        ReplayState::NotRunning => {
+            tracing::warn!(
+                "launch: no replay process after {}s -- restarting to recover",
+                POLL_TIMEOUT.as_secs()
+            );
+            match std::process::Command::new("systemctl")
                 .args(["restart", "replay.service"])
-                .output();
-            match result {
+                .output()
+            {
                 Ok(o) if o.status.success() => {
                     tracing::info!("recovery restart successful");
                 }
@@ -124,7 +145,13 @@ pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()
                 }
             }
         }
-    });
+        ReplayState::Playing { .. } => unreachable!("Playing returns early from the poll loop"),
+    }
+}
 
-    Ok(())
+#[cfg(not(target_os = "linux"))]
+fn watch_launch(_autostart_file: PathBuf) {
+    // Non-Linux dev hosts: no /proc to poll. The autostart file is left in
+    // place since there's no real replay binary to drive cleanup; tests
+    // that need a clean tree handle this themselves.
 }
