@@ -177,6 +177,34 @@ def list_all_category_names() -> set[str]:
     return names
 
 
+def iter_categorymembers(category: str):
+    """Yield every main-namespace member title of `Category:<category>`,
+    paginated through `cmcontinue` until exhausted. Shared by the
+    orientation walk and the `Category:Video Index` walk so both have one
+    place to update pagination/throttling concerns."""
+    cmcontinue: str | None = None
+    while True:
+        params = {
+            "action": "query",
+            "list": "categorymembers",
+            "cmtitle": f"Category:{category}",
+            "cmnamespace": str(NS_MAIN),
+            "cmlimit": "500",
+            "format": "json",
+            "formatversion": "2",
+        }
+        if cmcontinue:
+            params["cmcontinue"] = cmcontinue
+        data = http_get_json(params)
+        for row in data.get("query", {}).get("categorymembers", []):
+            title = row.get("title")
+            if title:
+                yield title
+        cmcontinue = data.get("continue", {}).get("cmcontinue")
+        if not cmcontinue:
+            break
+
+
 def list_orientation_games() -> set[str]:
     """Game titles enumerated by the wiki's orientation/origin categories.
     These are the authoritative game pages; any title here is kept even if
@@ -189,28 +217,29 @@ def list_orientation_games() -> set[str]:
         "Independent/Doujin shooting games",
         "Free to Play shooting games",
     ]:
-        cmcontinue: str | None = None
-        while True:
-            params = {
-                "action": "query",
-                "list": "categorymembers",
-                "cmtitle": f"Category:{category}",
-                "cmnamespace": str(NS_MAIN),
-                "cmlimit": "500",
-                "format": "json",
-                "formatversion": "2",
-            }
-            if cmcontinue:
-                params["cmcontinue"] = cmcontinue
-            data = http_get_json(params)
-            for row in data.get("query", {}).get("categorymembers", []):
-                title = row.get("title")
-                if title:
-                    titles.add(title)
-            cmcontinue = data.get("continue", {}).get("cmcontinue")
-            if not cmcontinue:
-                break
+        titles.update(iter_categorymembers(category))
     return titles
+
+
+VIDEO_INDEX_SUFFIX = "/Video Index"
+
+
+def list_video_index_pages() -> set[str]:
+    """Parent page titles that have a `<title>/Video Index` sub-page,
+    enumerated from `Category:Video Index`. Members come back as full
+    subpage titles like `"DoDonPachi DaiOuJou/Video Index"`; strip the
+    trailing suffix to get the parent game's page title.
+
+    Wiki editors hand-curate this category, so it's the authoritative
+    list of games whose article has a separate video-walkthrough page.
+    Used to flag `video_index: true` on the matching index rows; the
+    runtime then renders a second deep link next to the strategy guide.
+    """
+    return {
+        title[: -len(VIDEO_INDEX_SUFFIX)]
+        for title in iter_categorymembers("Video Index")
+        if title.endswith(VIDEO_INDEX_SUFFIX)
+    }
 
 
 def list_redirects_for_targets(targets: set[str]) -> dict[str, str]:
@@ -357,7 +386,7 @@ def main() -> int:
     print("shmups-wiki-extract: enumerating main-namespace pages...", file=sys.stderr)
     titles = collect_game_pages()
 
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, object]] = []
     seen_keys: set[str] = set()
     collisions: list[tuple[str, str, str]] = []
 
@@ -391,6 +420,22 @@ def main() -> int:
     print(
         f"shmups-wiki-extract: added {synonyms_added} synonym row(s) "
         f"from {len(redirect_map)} redirects",
+        file=sys.stderr,
+    )
+
+    print(
+        "shmups-wiki-extract: enumerating Category:Video Index members...",
+        file=sys.stderr,
+    )
+    video_index_parents = list_video_index_pages()
+    flagged = 0
+    for row in rows:
+        if row["page_title"] in video_index_parents:
+            row["video_index"] = True
+            flagged += 1
+    print(
+        f"shmups-wiki-extract: flagged {flagged} row(s) as having a video index "
+        f"({len(video_index_parents)} parent pages in Category:Video Index)",
         file=sys.stderr,
     )
 

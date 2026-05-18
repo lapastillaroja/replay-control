@@ -16,6 +16,10 @@ pub const VIDEO: &str = "video";
 /// populated only from Shmups Wiki).
 pub const STRATEGY_GUIDE: &str = "strategy_guide";
 
+/// `resource_type` for external video index deep links (currently
+/// populated only from Shmups Wiki sub-pages under `Category:Video Index`).
+pub const VIDEO_INDEX: &str = "video_index";
+
 /// `source` value identifying rows derived from the bundled Shmups Wiki
 /// page-title index.
 pub const SHMUPS_WIKI_SOURCE: &str = "shmups_wiki";

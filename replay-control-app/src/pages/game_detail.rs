@@ -213,16 +213,14 @@ fn GameDetailContent(
         replay_control_core::systems::find_system(&system)
             .and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
     );
-    let shmups_wiki_url = StoredValue::new(
-        detail
-            .library_resources
-            .iter()
-            .find(|resource| {
-                resource.resource_type == resource_kind::STRATEGY_GUIDE
-                    && resource.source == resource_kind::SHMUPS_WIKI_SOURCE
-            })
-            .map(|resource| resource.url.clone()),
-    );
+    let shmups_wiki_url = StoredValue::new(detail.find_resource_url(
+        resource_kind::STRATEGY_GUIDE,
+        resource_kind::SHMUPS_WIKI_SOURCE,
+    ));
+    let shmups_wiki_video_index_url = StoredValue::new(detail.find_resource_url(
+        resource_kind::VIDEO_INDEX,
+        resource_kind::SHMUPS_WIKI_SOURCE,
+    ));
 
     // Images — box_art_url is an RwSignal so the picker can update it reactively.
     let box_art_url = RwSignal::new(game.box_art_url.clone());
@@ -545,20 +543,13 @@ fn GameDetailContent(
                 })}
             </div>
             {gamefaqs_url.get_value().map(|url| view! {
-                <p class="game-meta-external-link">
-                    <a href=url target="_blank" rel="noopener noreferrer">
-                        {move || t(i18n.locale.get(), Key::GameDetailGameFaqsLink)}
-                        " ↗"
-                    </a>
-                </p>
+                <ExternalMetaLink url label_key=Key::GameDetailGameFaqsLink />
             })}
             {shmups_wiki_url.get_value().map(|url| view! {
-                <p class="game-meta-external-link">
-                    <a href=url target="_blank" rel="noopener noreferrer">
-                        {move || t(i18n.locale.get(), Key::GameDetailShmupsWikiLink)}
-                        " ↗"
-                    </a>
-                </p>
+                <ExternalMetaLink url label_key=Key::GameDetailShmupsWikiLink />
+            })}
+            {shmups_wiki_video_index_url.get_value().map(|url| view! {
+                <ExternalMetaLink url label_key=Key::GameDetailShmupsWikiVideoIndexLink />
             })}
         </section>
 
@@ -1100,6 +1091,22 @@ fn GameChipRow(title_key: Key, chips: Vec<ChipItem>) -> impl IntoView {
                 }).collect::<Vec<_>>()}
             </div>
         </section>
+    }
+}
+
+/// One-line `<a target="_blank">` row used for the external-link section
+/// of the game info card (GameFAQs search, Shmups Wiki page, Shmups Wiki
+/// video index, …). Shares the `.game-meta-external-link` class.
+#[component]
+fn ExternalMetaLink(url: String, label_key: Key) -> impl IntoView {
+    let i18n = use_i18n();
+    view! {
+        <p class="game-meta-external-link">
+            <a href=url target="_blank" rel="noopener noreferrer">
+                {move || t(i18n.locale.get(), label_key)}
+                " ↗"
+            </a>
+        </p>
     }
 }
 

@@ -16,7 +16,7 @@ use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::DatePrecision;
 use replay_control_core::developer::normalize_developer;
 use replay_control_core::resource_kind;
-use replay_control_core::shmups_wiki::shmups_wiki_page;
+use replay_control_core::shmups_wiki::{SHMUPS_WIKI_VERSION, shmups_wiki_page};
 use replay_control_core::title_utils::{filename_stem, normalize_title_for_metadata};
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
@@ -24,6 +24,60 @@ pub use crate::image_resolution::{
     ArcadeInfoLookup, BoxArtResult, ImageIndex, build_image_index, format_box_art_url,
     resolve_box_art_with_hash,
 };
+
+/// Composite version stamp identifying every bundled input the enrichment
+/// pipeline reads from. Persisted per storage as
+/// [`crate::library_db::library_meta::keys::ENRICHMENT_INPUTS_VERSION`];
+/// when the stored stamp differs from this value on boot, the reconcile
+/// phase re-runs enrichment for every active system so libraries pick up
+/// new manual catalog rows, new Shmups Wiki index data, and matcher
+/// improvements without a manual rescan.
+///
+/// Inputs composed today:
+/// - `catalog.sqlite.db_meta.catalog_resource_version` — SHA over
+///   `catalog_game_resource` rows (manual links built by `build-catalog`).
+/// - [`SHMUPS_WIKI_VERSION`] — bundled Shmups Wiki page index plus the
+///   matching logic in [`shmups_wiki_page`].
+///
+/// Returns `None` only if the catalog DB has no version stamp (treated
+/// as "skip reconcile this boot").
+pub async fn enrichment_inputs_version() -> Option<String> {
+    let catalog_version = crate::catalog_pool::catalog_resource_version().await?;
+    Some(compose_enrichment_inputs_version(&catalog_version))
+}
+
+/// Build the composite stamp string from the catalog version. Pure so
+/// the format contract is unit-testable independently of the async
+/// catalog read in [`enrichment_inputs_version`].
+///
+/// Format: `"<catalog_version>|<prefix><value>[|<prefix><value>…]"`.
+/// Each bundled input after the catalog hash is appended as
+/// `|<2-letter prefix><value>`. Today: `sw` for [`SHMUPS_WIKI_VERSION`].
+/// When adding a new bundled input, pick a fresh 2-letter prefix, append
+/// it here, extend the test below to pin the new format, and bump the
+/// input's version constant.
+fn compose_enrichment_inputs_version(catalog_version: &str) -> String {
+    format!("{catalog_version}|sw{SHMUPS_WIKI_VERSION}")
+}
+
+#[cfg(test)]
+mod enrichment_inputs_version_tests {
+    use super::*;
+
+    #[test]
+    fn composite_pins_catalog_and_shmups_format() {
+        let stamp = compose_enrichment_inputs_version("abc123");
+        assert_eq!(stamp, format!("abc123|sw{SHMUPS_WIKI_VERSION}"));
+    }
+
+    #[test]
+    fn distinct_catalog_versions_produce_distinct_stamps() {
+        assert_ne!(
+            compose_enrichment_inputs_version("v1"),
+            compose_enrichment_inputs_version("v2"),
+        );
+    }
+}
 
 /// All enrichment updates produced for a single system.
 ///
@@ -327,17 +381,23 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
                 .find_map(|alt| shmups_wiki_page(alt))
         });
         if let Some(page) = hit {
-            resource_rows.push(LibraryGameResource {
-                rom_filename: rom_filename.clone(),
-                source: resource_kind::SHMUPS_WIKI_SOURCE.to_string(),
-                resource_type: resource_kind::STRATEGY_GUIDE.to_string(),
-                resource_id: page.page_title.clone(),
-                url: page.url,
-                title: Some(page.page_title),
-                languages: None,
-                platform: None,
-                mime_type: Some("text/html".to_string()),
-            });
+            let mut push_row = |resource_type: &str, url: String| {
+                resource_rows.push(LibraryGameResource {
+                    rom_filename: rom_filename.clone(),
+                    source: resource_kind::SHMUPS_WIKI_SOURCE.to_string(),
+                    resource_type: resource_type.to_string(),
+                    resource_id: page.page_title.clone(),
+                    url,
+                    title: Some(page.page_title.clone()),
+                    languages: None,
+                    platform: None,
+                    mime_type: Some("text/html".to_string()),
+                });
+            };
+            push_row(resource_kind::STRATEGY_GUIDE, page.url);
+            if let Some(video_index_url) = page.video_index_url {
+                push_row(resource_kind::VIDEO_INDEX, video_index_url);
+            }
         }
     }
 

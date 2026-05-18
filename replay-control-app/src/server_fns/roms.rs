@@ -68,6 +68,19 @@ pub struct RomDetail {
     pub library_resources: Vec<LibraryResourceLink>,
 }
 
+impl RomDetail {
+    /// Return the URL of the first `library_resources` entry whose
+    /// `resource_type` and `source` match. Single helper so UI code
+    /// doesn't repeat the `iter().find(…).map(url.clone())` pattern for
+    /// every external link surfaced on the detail page.
+    pub fn find_resource_url(&self, resource_type: &str, source: &str) -> Option<String> {
+        self.library_resources
+            .iter()
+            .find(|r| r.resource_type == resource_type && r.source == source)
+            .map(|r| r.url.clone())
+    }
+}
+
 fn default_true() -> bool {
     true
 }

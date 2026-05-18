@@ -281,7 +281,7 @@ impl BackgroundManager {
             };
 
             Self::phase_cache_verification(state).await;
-            Self::phase_catalog_resource_reconcile(state).await;
+            Self::phase_enrichment_inputs_reconcile(state).await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
             state.cache.resume_pending_thumbnail_downloads(state).await;
@@ -1489,29 +1489,35 @@ impl BackgroundManager {
         }
     }
 
-    async fn phase_catalog_resource_reconcile(state: &AppState) {
+    /// Phase: detect changes in bundled enrichment inputs (catalog DB
+    /// rows + Shmups Wiki page index + matcher) and re-run per-system
+    /// enrichment when the per-storage stamp is stale. The composite
+    /// version comes from
+    /// [`replay_control_core_server::library::enrichment::enrichment_inputs_version`]
+    /// so every input that affects enrichment output is rolled into one
+    /// stamp.
+    async fn phase_enrichment_inputs_reconcile(state: &AppState) {
+        use replay_control_core_server::library::enrichment;
         use replay_control_core_server::library_db::library_meta;
 
-        let Some(catalog_version) =
-            replay_control_core_server::catalog_pool::catalog_resource_version().await
-        else {
+        let Some(current_version) = enrichment::enrichment_inputs_version().await else {
             return;
         };
 
         let stored_version = state
             .library_reader
             .read(|conn| {
-                library_meta::read_meta(conn, library_meta::keys::CATALOG_RESOURCE_VERSION)
+                library_meta::read_meta(conn, library_meta::keys::ENRICHMENT_INPUTS_VERSION)
             })
             .await
             .unwrap_or_default();
-        if stored_version.as_deref() == Some(catalog_version.as_str()) {
+        if stored_version.as_deref() == Some(current_version.as_str()) {
             return;
         }
 
         let with_games = super::library_systems::active_systems(
             &state.library_reader,
-            "catalog_resource_reconcile",
+            "enrichment_inputs_reconcile",
         )
         .await;
         if with_games.is_empty() {
@@ -1519,7 +1525,7 @@ impl BackgroundManager {
         }
 
         tracing::info!(
-            "Catalog resource version changed; enriching {} system(s)",
+            "Enrichment inputs version changed; enriching {} system(s)",
             with_games.len()
         );
         let mut failed = false;
@@ -1529,34 +1535,32 @@ impl BackgroundManager {
                 .enrich_system_cache_with_cancellation(state, system.clone(), None)
                 .await
             {
-                tracing::warn!("Catalog resource enrichment failed for {system}: {e}");
+                tracing::warn!("Enrichment failed for {system}: {e}");
                 failed = true;
             }
         }
         if failed {
-            tracing::warn!(
-                "Catalog resource version not stamped; startup will retry resource enrichment"
-            );
+            tracing::warn!("Enrichment inputs version not stamped; startup will retry enrichment");
             return;
         }
 
-        let version = catalog_version.clone();
+        let version = current_version.clone();
         let write_result = state
             .library_writer
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
                 library_meta::write_meta(
                     conn,
-                    library_meta::keys::CATALOG_RESOURCE_VERSION,
+                    library_meta::keys::ENRICHMENT_INPUTS_VERSION,
                     Some(&version),
                 )
             })
             .await;
         match write_result {
             Ok(Ok(())) => {
-                tracing::info!("Catalog resource enrichment applied version {catalog_version}")
+                tracing::info!("Enrichment applied inputs version {current_version}")
             }
-            Ok(Err(e)) => tracing::warn!("Catalog resource version write failed: {e}"),
-            Err(e) => tracing::warn!("Catalog resource version write failed: {e}"),
+            Ok(Err(e)) => tracing::warn!("Enrichment inputs version write failed: {e}"),
+            Err(e) => tracing::warn!("Enrichment inputs version write failed: {e}"),
         }
     }
 

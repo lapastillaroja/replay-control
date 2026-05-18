@@ -4,6 +4,22 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.12]
+
+### Added
+
+- A second "Video index on Shmups Wiki" link appears on the game detail page for games whose wiki page has a curated Video Index sub-page (members of Shmups Wiki's Category:Video Index), such as DoDonPachi DaiOuJou.
+
+### Changed
+
+- The startup reconcile that re-runs per-system enrichment when bundled inputs change is now a single composite stamp covering every bundled enrichment input (the catalog database hash and the Shmups Wiki page index + matcher version). Any input changing invalidates the per-storage stamp, so upgrades pick up new manual links, new Video Index entries, and matcher improvements automatically without a manual rescan.
+
+### Fixed
+
+- Fixed Shmups Wiki linking missing arcade dual-name base titles. Lookups now also try the parts on each side of ` - ` (subtitle, e.g. `darius gaiden - silver hawk`) and ` / ` (dual-region name, e.g. `soukyugurentai / terra diver`) after a direct miss, so MAME/FBNeo entries like Darius Gaiden and Soukyugurentai resolve to their wiki pages. Real titles with hyphens (`R-Type`) are preserved because only space-wrapped separators trigger the fallback.
+
+---
+
 ## [0.4.0-beta.11](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.11) - 2026-05-16
 
 ### Highlights
