@@ -9,14 +9,15 @@ set -euo pipefail
 # Usage:
 #   ./dev.sh [--storage-path /path/to/roms] [--port 8091]
 #   ./dev.sh --pi [IP]
+#   ./dev.sh --build-only             # build fast dev artifacts, do not run
 #
 #   ./dev.sh --clean                  # clear cargo + sccache caches before build
 #
 # Local mode (default):
-#   Builds WASM (wasm-dev) + SSR (dev) and runs with cargo-watch auto-reload.
+#   Builds WASM (wasm-dev-fast) + SSR (dev-fast) and runs with cargo-watch auto-reload.
 #
 # Pi mode (--pi):
-#   Cross-compiles for aarch64 using dev profiles (fast!), deploys to Pi.
+#   Cross-compiles for aarch64 using fast dev profiles, deploys to Pi.
 #
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
 PORT="${PORT:-8091}"
 TARGET_TRIPLE="aarch64-unknown-linux-gnu"
+DEV_SERVER_PROFILE="${REPLAY_DEV_SERVER_PROFILE:-dev-fast}"
+DEV_WASM_PROFILE="${REPLAY_DEV_WASM_PROFILE:-wasm-dev-fast}"
 
 PI_USER="root"
 PI_PASSWORD="${PI_PASS:-replayos}"
@@ -72,6 +75,7 @@ fatal()   { error "$@"; exit 1; }
 MODE="local"        # local or pi
 PI_IP=""
 CLEAN=false
+BUILD_ONLY=false
 
 SERVER_ARGS=""
 
@@ -102,6 +106,10 @@ parse_args() {
                 ;;
             --clean)
                 CLEAN=true
+                shift
+                ;;
+            --build-only)
+                BUILD_ONLY=true
                 shift
                 ;;
 
@@ -155,6 +163,16 @@ human_size() {
     fi
 }
 
+# Cargo uses `debug` as the artifact directory for the built-in dev profile.
+# Custom dev profiles use their profile name directly.
+cargo_profile_dir() {
+    if [[ "$1" == "dev" ]]; then
+        echo "debug"
+    else
+        echo "$1"
+    fi
+}
+
 # ── Build functions ──────────────────────────────────────────────────────────
 
 ssr_features() {
@@ -162,10 +180,13 @@ ssr_features() {
 }
 
 build_wasm() {
-    phase "Building WASM (wasm-dev)"
+    local wasm_profile_dir
+    wasm_profile_dir=$(cargo_profile_dir "$DEV_WASM_PROFILE")
+
+    phase "Building WASM (${DEV_WASM_PROFILE})"
     cargo build -p "$CRATE" --lib \
         --target wasm32-unknown-unknown \
-        --profile wasm-dev \
+        --profile "$DEV_WASM_PROFILE" \
         --features hydrate \
         --no-default-features
 
@@ -174,7 +195,7 @@ build_wasm() {
     # Drop previously hashed assets so old hashes don't accumulate locally.
     rm -f "$PKG_DIR/${CRATE_SNAKE}".*.wasm "$PKG_DIR/${CRATE_SNAKE}".*.wasm.gz "$PKG_DIR/${CRATE_SNAKE}".*.js
     wasm-bindgen \
-        "$TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE_SNAKE}.wasm" \
+        "$TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm" \
         --out-dir "$PKG_DIR" \
         --out-name "${CRATE_SNAKE}" \
         --target web \
@@ -203,12 +224,16 @@ build_wasm() {
 build_ssr_local() {
     local features
     features=$(ssr_features)
-    phase "Building server (dev)"
+    local server_profile_dir
+    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
+
+    phase "Building server (${DEV_SERVER_PROFILE})"
     cargo build -p "$CRATE" --bin "$CRATE" \
+        --profile "$DEV_SERVER_PROFILE" \
         --features "$features" \
         --no-default-features
 
-    local bin="$TARGET_DIR/debug/$CRATE"
+    local bin="$TARGET_DIR/$server_profile_dir/$CRATE"
     if [[ -f "$bin" ]]; then
         local size
         size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
@@ -219,15 +244,19 @@ build_ssr_local() {
 build_ssr_aarch64() {
     local features
     features=$(ssr_features)
-    phase "Building server (dev, aarch64)"
+    local server_profile_dir
+    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
+
+    phase "Building server (${DEV_SERVER_PROFILE}, aarch64)"
     check_aarch64_sysroot
 
     cargo build -p "$CRATE" --bin "$CRATE" \
+        --profile "$DEV_SERVER_PROFILE" \
         --target "$TARGET_TRIPLE" \
         --features "$features" \
         --no-default-features
 
-    local bin="$TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE"
+    local bin="$TARGET_DIR/$TARGET_TRIPLE/$server_profile_dir/$CRATE"
     if [[ -f "$bin" ]]; then
         local size
         size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
@@ -397,7 +426,9 @@ BOOTSTRAP
 }
 
 deploy_to_pi() {
-    local bin_path="$TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE"
+    local server_profile_dir
+    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
+    local bin_path="$TARGET_DIR/$TARGET_TRIPLE/$server_profile_dir/$CRATE"
 
     if [[ ! -f "$bin_path" ]]; then
         fatal "Binary not found: $bin_path"
@@ -494,6 +525,10 @@ run_local() {
     info "Build completed in ${BOLD}$(timer_elapsed)${RESET}"
     echo ""
 
+    if $BUILD_ONLY; then
+        return 0
+    fi
+
     phase "Starting cargo-watch on port ${PORT}"
     info "Watching: replay-control-app/src, replay-control-core/src, replay-control-app/style"
     info "Press Ctrl+C to stop."
@@ -501,6 +536,8 @@ run_local() {
 
     local features
     features=$(ssr_features)
+    local wasm_profile_dir
+    wasm_profile_dir=$(cargo_profile_dir "$DEV_WASM_PROFILE")
 
     exec cargo watch \
         -w replay-control-app/src \
@@ -509,9 +546,9 @@ run_local() {
         -s "$(cat <<INNER
 set -e
 BUILD_START=\$(date +%s)
-cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
+cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile $DEV_WASM_PROFILE --features hydrate --no-default-features
 rm -f $PKG_DIR/${CRATE_SNAKE}.*.wasm $PKG_DIR/${CRATE_SNAKE}.*.wasm.gz $PKG_DIR/${CRATE_SNAKE}.*.js
-wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript
+wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript
 WASM_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}_bg.wasm | cut -c1-16)
 mv $PKG_DIR/${CRATE_SNAKE}_bg.wasm $PKG_DIR/${CRATE_SNAKE}.\${WASM_HASH}.wasm
 sed -i "s|${CRATE_SNAKE}_bg\\.wasm|${CRATE_SNAKE}.\${WASM_HASH}.wasm|g" $PKG_DIR/${CRATE_SNAKE}.js
@@ -519,12 +556,12 @@ JS_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}.js | cut -c1-16)
 mv $PKG_DIR/${CRATE_SNAKE}.js $PKG_DIR/${CRATE_SNAKE}.\${JS_HASH}.js
 printf 'js: %s\nwasm: %s\n' "\${JS_HASH}" "\${WASM_HASH}" > $OUT_DIR/hash.txt
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
-cargo build -p $CRATE --bin $CRATE --features $features --no-default-features
+cargo build -p $CRATE --bin $CRATE --profile $DEV_SERVER_PROFILE --features $features --no-default-features
 BUILD_END=\$(date +%s)
 echo ""
 echo "    Rebuilt in \$(( BUILD_END - BUILD_START ))s"
 echo ""
-cargo run -p $CRATE --features $features --no-default-features -- --port $PORT $SERVER_ARGS
+cargo run -p $CRATE --profile $DEV_SERVER_PROFILE --features $features --no-default-features -- --port $PORT $SERVER_ARGS
 INNER
 )"
 }

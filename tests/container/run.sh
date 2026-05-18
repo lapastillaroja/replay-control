@@ -10,6 +10,7 @@
 # Environment variables:
 #   CONTAINER_ENGINE  - "podman" or "docker" (auto-detected if unset)
 #   SKIP_BUILD        - set to "1" to skip app build (use existing artifacts)
+#   BUILD_PROFILE     - "release" (default) or "debug" for faster local e2e
 #   MOCK_PORT         - port for mock GitHub server (default: 9999)
 #   MOCK_HOST         - host/address the app container uses for the mock server
 #   APP_PORT          - port to expose the app on, or 0 for automatic (default: 8080)
@@ -47,7 +48,24 @@ echo "Using container engine: $ENGINE"
 MOCK_PORT="${MOCK_PORT:-9999}"
 APP_PORT="${APP_PORT:-8080}"
 APP_HOST="${APP_HOST:-127.0.0.1}"
-IMAGE_NAME="replay-control-replayos"
+BUILD_PROFILE="${BUILD_PROFILE:-release}"
+case "$BUILD_PROFILE" in
+    release)
+        APP_PROFILE_DIR="release"
+        ;;
+    debug | dev)
+        BUILD_PROFILE="debug"
+        APP_PROFILE_DIR="${REPLAY_DEV_SERVER_PROFILE:-dev-fast}"
+        if [[ "$APP_PROFILE_DIR" == "dev" ]]; then
+            APP_PROFILE_DIR="debug"
+        fi
+        ;;
+    *)
+        echo "ERROR: BUILD_PROFILE must be 'release' or 'debug' (got: $BUILD_PROFILE)" >&2
+        exit 1
+        ;;
+esac
+IMAGE_NAME="replay-control-replayos-$BUILD_PROFILE"
 CONTAINER_NAME="replay-control-test-$$"
 MOCK_CONTAINER_NAME="replay-control-mock-$$"
 MOCK_IMAGE_NAME="replay-control-mock-github:e2e"
@@ -104,11 +122,15 @@ trap cleanup EXIT
 
 # --- Step 1: Build the app ---
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
-    echo "Building x86_64 binary + WASM + site assets..."
+    echo "Building x86_64 binary + WASM + site assets ($BUILD_PROFILE)..."
     cd "$PROJECT_ROOT"
-    ./build.sh
+    if [[ "$BUILD_PROFILE" == "debug" ]]; then
+        ./dev.sh --build-only
+    else
+        ./build.sh
+    fi
 else
-    echo "Skipping build (SKIP_BUILD=1)"
+    echo "Skipping build (SKIP_BUILD=1, BUILD_PROFILE=$BUILD_PROFILE)"
 fi
 
 # --- Step 2: Build the container image ---
@@ -119,8 +141,9 @@ if [[ "$TARGET_DIR" != /* ]]; then
     TARGET_DIR="$PROJECT_ROOT/$TARGET_DIR"
 fi
 
-APP_BINARY="$TARGET_DIR/release/replay-control-app"
+APP_BINARY="$TARGET_DIR/$APP_PROFILE_DIR/replay-control-app"
 SITE_DIR="$TARGET_DIR/site"
+echo "Using app binary: $APP_BINARY"
 for required_path in "$APP_BINARY" "$SITE_DIR" "$PROJECT_ROOT/catalog.sqlite"; do
     if [[ ! -e "$required_path" ]]; then
         echo "ERROR: required build artifact missing: $required_path"
@@ -129,18 +152,23 @@ for required_path in "$APP_BINARY" "$SITE_DIR" "$PROJECT_ROOT/catalog.sqlite"; d
 done
 
 BUILD_CONTEXT="$(mktemp -d "${TMPDIR:-/tmp}/replay-control-container.XXXXXX")"
+APP_CONTEXT_BINARY="target/$APP_PROFILE_DIR/replay-control-app"
 mkdir -p \
-    "$BUILD_CONTEXT/target/release" \
+    "$BUILD_CONTEXT/target/$APP_PROFILE_DIR" \
     "$BUILD_CONTEXT/tests/container/fixtures"
 cp "$PROJECT_ROOT/Containerfile.replayos" "$BUILD_CONTEXT/Containerfile.replayos"
 cp "$PROJECT_ROOT/tests/container/mock_systemctl.sh" "$BUILD_CONTEXT/tests/container/mock_systemctl.sh"
 cp "$PROJECT_ROOT/tests/container/fixtures/replay.cfg" "$BUILD_CONTEXT/tests/container/fixtures/replay.cfg"
 cp "$PROJECT_ROOT/tests/container/fixtures/environment" "$BUILD_CONTEXT/tests/container/fixtures/environment"
-cp "$APP_BINARY" "$BUILD_CONTEXT/target/release/replay-control-app"
+cp "$APP_BINARY" "$BUILD_CONTEXT/$APP_CONTEXT_BINARY"
 cp -R "$SITE_DIR" "$BUILD_CONTEXT/target/site"
 cp "$PROJECT_ROOT/catalog.sqlite" "$BUILD_CONTEXT/catalog.sqlite"
 
-$ENGINE build -f "$BUILD_CONTEXT/Containerfile.replayos" -t "$IMAGE_NAME" "$BUILD_CONTEXT"
+$ENGINE build \
+    --build-arg "APP_BINARY=$APP_CONTEXT_BINARY" \
+    -f "$BUILD_CONTEXT/Containerfile.replayos" \
+    -t "$IMAGE_NAME" \
+    "$BUILD_CONTEXT"
 
 # --- Step 3: Start mock GitHub server ---
 if [[ "$DIRECT_BRIDGE" == "true" ]]; then

@@ -23,16 +23,43 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 # ── Profiles ──────────────────────────────────────────────────────────────────
 #
-# Four profiles are intentional — SSR and WASM have different optimisation
-# goals (speed vs size), so each environment (dev / prod) needs a pair.
+# Six profiles are intentional — SSR and WASM have different optimisation
+# goals (speed vs size), and local dev iteration favors compile speed over
+# binary size.
 #
 #              SSR server          WASM client
-#   dev:       dev (opt 1)         wasm-dev (opt "s")
+#   dev.sh:    dev-fast (opt 0)    wasm-dev-fast (opt 0)
+#   debug:     dev (opt 1)         wasm-dev (opt "s")
 #   prod:      release (opt 3)     wasm-release (opt "z")
 #
-# Why wasm-dev exists: even in dev, unoptimised WASM (opt 0/1) can be 20-40 MB,
-# making page loads painfully slow. opt "s" keeps dev WASM at a few MB without
-# the full cost of a release build.
+# Why two dev pairs exist: dev.sh should rebuild quickly and can tolerate larger
+# artifacts. The older dev/wasm-dev pair remains available when a smaller Pi
+# deploy or smaller browser payload is worth the extra compile time.
+
+# ── Fast dev (used by dev.sh) ────────────────────────────────────────────────
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 0
+debug = 0
+strip = "none"
+
+[profile.dev-fast.package."*"]
+opt-level = 0
+
+[profile.dev-fast.build-override]
+opt-level = 0
+
+[profile.wasm-dev-fast]
+inherits = "dev"
+opt-level = 0
+debug = 0
+strip = "none"
+
+[profile.wasm-dev-fast.package."*"]
+opt-level = 0
+
+[profile.wasm-dev-fast.build-override]
+opt-level = 0
 
 # ── Dev (SSR server) ──────────────────────────────────────────────────────────
 [profile.dev]

@@ -52,11 +52,13 @@ Produces a server binary and site assets at `target/site/`.
 ./dev.sh --storage-path /path/to/roms
 ```
 
-This builds both WASM (wasm-dev profile) and the SSR server (dev profile), then starts `cargo-watch` for auto-rebuild and reload on file changes. The app runs on port 8091 by default.
+This builds both WASM (`wasm-dev-fast` profile) and the SSR server (`dev-fast` profile), then starts `cargo-watch` for auto-rebuild and reload on file changes. The app runs on port 8091 by default.
 
 Options:
 - `--storage-path /path/to/roms` — path to ROM storage (required for local dev)
 - `--port 8091` — override the default port
+
+Set `REPLAY_DEV_WASM_PROFILE=wasm-dev` and/or `REPLAY_DEV_SERVER_PROFILE=dev` when smaller dev artifacts are more important than rebuild latency.
 
 
 ## Running Locally
@@ -145,11 +147,8 @@ work is no-oped.
 ### Fast iteration (recommended)
 
 ```bash
-# Single deploy (dev profile, cross-compiled for aarch64)
+# Single deploy (fast dev profile, cross-compiled for aarch64)
 ./dev.sh --pi [IP]
-
-# Watch mode: auto-rebuild + redeploy on file changes
-./dev.sh --pi [IP] --watch
 ```
 
 If no IP is specified, defaults to `replay.local`.

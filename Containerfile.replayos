@@ -68,7 +68,8 @@ RUN mkdir -p /media/usb/roms \
     /media/usb/.replay-control/media
 
 # --- App binary + site assets ---
-COPY target/release/replay-control-app /usr/local/bin/replay-control-app
+ARG APP_BINARY=target/release/replay-control-app
+COPY ${APP_BINARY} /usr/local/bin/replay-control-app
 COPY target/site /usr/local/share/replay/site
 # Catalog DB: the app looks for `catalog.sqlite` next to the executable by
 # default (or at --catalog-path). Without this the container exits with

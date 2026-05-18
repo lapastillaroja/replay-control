@@ -48,6 +48,7 @@ Read task-specific docs as needed:
 - Integration tests: `replay-control-app/tests/*.rs` (e.g. `corruption_tests.rs`) — server functions exercised via `test_router`
 - Container integration: `tests/integration/run.sh` — boots the app in a podman/docker container and asserts HTTP responses
 - Browser e2e: `tests/e2e/*.py` — Playwright; see `tests/e2e/README.md`
+- During local e2e development, prefer the debug container path to avoid slow release rebuilds: `BUILD_PROFILE=debug SKIP_DATA=1 PODMAN_DIRECT_BRIDGE=1 PYTEST_ARGS='tests/e2e/test_library_build_pipeline.py::<test_name> -v' ./tests/container/run.sh`. This uses `./dev.sh --build-only` for fast dev artifacts; use the default release path before final validation when performance or release-only behavior matters.
 - See [CONTRIBUTING.md "Running Tests"](CONTRIBUTING.md#running-tests) for the full command set, including useful subsets and the local-dev-server path
 
 ## Docs Site
