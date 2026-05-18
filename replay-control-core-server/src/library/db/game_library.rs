@@ -2980,7 +2980,7 @@ mod tests {
             "pending enrichment must not be treated as clean"
         );
 
-        LibraryDb::set_enrichment_state(&mut conn, "nintendo_snes", PhaseState::Complete).unwrap();
+        LibraryDb::set_enrichment_state(&conn, "nintendo_snes", PhaseState::Complete).unwrap();
         assert_eq!(
             LibraryDb::clean_startup_discovery_fingerprint(&conn, "nintendo_snes").unwrap(),
             Some("fingerprint-1".to_string())
@@ -2990,7 +2990,7 @@ mod tests {
         pending.identity_state = IdentityState::Pending;
         LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[pending], None).unwrap();
         library_meta::write_meta(&conn, &key, Some("fingerprint-2")).unwrap();
-        LibraryDb::set_enrichment_state(&mut conn, "nintendo_snes", PhaseState::Complete).unwrap();
+        LibraryDb::set_enrichment_state(&conn, "nintendo_snes", PhaseState::Complete).unwrap();
         assert_eq!(
             LibraryDb::clean_startup_discovery_fingerprint(&conn, "nintendo_snes").unwrap(),
             None,
