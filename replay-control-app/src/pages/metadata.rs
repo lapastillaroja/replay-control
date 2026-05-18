@@ -5,8 +5,9 @@ use server_fn::ServerFnError;
 use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
-    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataLibraryOverview,
-    MetadataPageSnapshot, RebuildProgress, SystemCoverage, ThumbnailPhase,
+    self, Activity, CountBucket, DriverStatusCounts, ImportState, LibrarySummary,
+    MetadataLibraryOverview, MetadataPageSnapshot, RebuildProgress, SystemCoverage,
+    SystemStatsRefreshState, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
 
@@ -259,21 +260,25 @@ pub fn MetadataPage() -> impl IntoView {
                             let locale = i18n.locale.get();
                             let snap = snapshot.await?;
                             let ds = snap.data_source;
-                            let (with_boxart, with_snap, media_size) = snap.image_stats;
+                            let image_stats = snap.image_stats;
 
-                            Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
+                            Ok::<_, ServerFnError>(if ds.entry_count == 0 && image_stats.total_files == 0 {
                                 view! {
                                     <p class="data-source-summary dim">{t(locale, Key::MetadataNoData)}</p>
                                 }.into_any()
                             } else {
-                                let images_line = if with_boxart > 0 || with_snap > 0 {
+                                let images_line = if image_stats.total_files > 0 {
                                     format!(
-                                        "{} {}, {} {} — {} {}",
-                                        with_boxart,
+                                        "{} {} · {} {}, {} {}, {} {} — {} {}",
+                                        format_number(image_stats.total_files),
+                                        t(locale, Key::MetadataSummaryDownloadedArt).to_lowercase(),
+                                        format_number(image_stats.boxart_files),
                                         t(locale, Key::MetadataThumbnailSummary),
-                                        with_snap,
+                                        format_number(image_stats.snap_files),
                                         t(locale, Key::MetadataThumbnailSnaps),
-                                        format_size(media_size),
+                                        format_number(image_stats.title_files),
+                                        t(locale, Key::MetadataRowTitleScreens).to_lowercase(),
+                                        format_size(image_stats.total_size_bytes),
                                         t(locale, Key::MetadataThumbnailOnDisk),
                                     )
                                 } else {
@@ -972,13 +977,16 @@ fn SummaryCards(
 ) -> impl IntoView {
     let s = summary;
 
-    // Enrichment: weighted average of genre/developer/rating/art coverage.
+    // Enrichment: weighted average of core metadata coverage fields.
     let enrichment_value = if s.total_games > 0 {
         let avg = (pct(s.with_genre, s.total_games)
             + pct(s.with_developer, s.total_games)
+            + pct(s.with_publisher, s.total_games)
+            + pct(s.with_release_date, s.total_games)
             + pct(s.with_rating, s.total_games)
+            + pct(s.with_manual, s.total_games)
             + pct(s.with_box_art, s.total_games))
-            / 4;
+            / 7;
         format!("{avg}%")
     } else {
         "--".to_string()
@@ -1008,6 +1016,9 @@ fn SummaryCards(
             <StatCard compact=true
                 value=format_size(s.total_size_bytes)
                 label=t(locale, Key::MetadataSummaryLibrarySize) />
+            <StatCard compact=true
+                value=format_number(s.downloaded_thumbnail_files)
+                label=t(locale, Key::MetadataSummaryDownloadedArt) />
             <StatCard compact=true
                 value=storage_label
                 label=t(locale, Key::MetadataSummaryStorage) />
@@ -1093,10 +1104,12 @@ fn SystemRowHeader(cov: StoredValue<SystemCoverage>) -> impl IntoView {
     let (display_name, size_bytes, overall, games_text) = cov.with_value(|c| {
         let g = pct(c.with_genre, c.total_games);
         let d = pct(c.with_developer, c.total_games);
+        let p = pct(c.with_publisher, c.total_games);
+        let date = pct(c.with_release_date, c.total_games);
         let r = pct(c.with_rating, c.total_games);
         let desc = pct(c.with_description, c.total_games);
         let art = pct(c.with_thumbnail, c.total_games);
-        let overall = (g + d + r + desc + art) / 5;
+        let overall = (g + d + p + date + r + desc + art) / 7;
         (
             c.display_name.clone(),
             c.size_bytes,
@@ -1142,13 +1155,21 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
         <div class="system-row-details" on:click=|ev| ev.stop_propagation()>
             <CoverageBarRow cov field=CoverageField::Genre />
             <CoverageBarRow cov field=CoverageField::Developer />
+            <CoverageBarRow cov field=CoverageField::Publisher />
+            <CoverageBarRow cov field=CoverageField::ReleaseDate />
             <CoverageBarRow cov field=CoverageField::Rating />
             <CoverageBarRow cov field=CoverageField::Description />
             <CoverageBarRow cov field=CoverageField::BoxArt />
+            <CoverageBarRow cov field=CoverageField::Manuals />
+            <CoverageBarRow cov field=CoverageField::Videos />
 
             <div class="composition-row">
                 {move || composition_text(cov, i18n.locale.get())}
             </div>
+
+            {move || media_row_view(cov, i18n.locale.get())}
+
+            {move || distribution_rows_view(cov, i18n.locale.get())}
 
             {move || driver_row_view(cov, i18n.locale.get())}
 
@@ -1161,9 +1182,13 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
 enum CoverageField {
     Genre,
     Developer,
+    Publisher,
+    ReleaseDate,
     Rating,
     Description,
     BoxArt,
+    Manuals,
+    Videos,
 }
 
 #[component]
@@ -1172,6 +1197,12 @@ fn CoverageBarRow(cov: StoredValue<SystemCoverage>, field: CoverageField) -> imp
     let (count, total, label_key) = cov.with_value(|c| match field {
         CoverageField::Genre => (c.with_genre, c.total_games, Key::MetadataRowGenre),
         CoverageField::Developer => (c.with_developer, c.total_games, Key::MetadataRowDeveloper),
+        CoverageField::Publisher => (c.with_publisher, c.total_games, Key::MetadataRowPublisher),
+        CoverageField::ReleaseDate => (
+            c.with_release_date,
+            c.total_games,
+            Key::MetadataRowReleaseDate,
+        ),
         CoverageField::Rating => (c.with_rating, c.total_games, Key::MetadataRowRating),
         CoverageField::Description => (
             c.with_description,
@@ -1179,6 +1210,8 @@ fn CoverageBarRow(cov: StoredValue<SystemCoverage>, field: CoverageField) -> imp
             Key::MetadataRowDescription,
         ),
         CoverageField::BoxArt => (c.with_thumbnail, c.total_games, Key::MetadataRowBoxArt),
+        CoverageField::Manuals => (c.with_manual, c.total_games, Key::MetadataRowManuals),
+        CoverageField::Videos => (c.with_video, c.total_games, Key::MetadataRowVideos),
     });
     let value = pct(count, total);
     let width = format!("width:{value}%");
@@ -1204,6 +1237,8 @@ fn composition_text(cov: StoredValue<SystemCoverage>, locale: crate::i18n::Local
             (c.clone_count, Key::MetadataRowClones),
             (c.hack_count, Key::MetadataRowHacks),
             (c.translation_count, Key::MetadataRowTranslations),
+            (c.homebrew_count, Key::MetadataRowHomebrew),
+            (c.unlicensed_count, Key::MetadataRowUnlicensed),
             (c.special_count, Key::MetadataRowSpecial),
         ];
         std::iter::once(format!(
@@ -1220,6 +1255,132 @@ fn composition_text(cov: StoredValue<SystemCoverage>, locale: crate::i18n::Local
         .collect::<Vec<_>>()
         .join(" \u{00B7} ")
     })
+}
+
+fn media_row_view(
+    cov: StoredValue<SystemCoverage>,
+    locale: crate::i18n::Locale,
+) -> Option<leptos::prelude::AnyView> {
+    let text = cov.with_value(|c| {
+        let mut parts = Vec::new();
+        if c.downloaded_boxart_files > 0 {
+            parts.push(format!(
+                "{} {}",
+                format_number(c.downloaded_boxart_files),
+                t(locale, Key::MetadataRowBoxArt).to_lowercase()
+            ));
+        }
+        if c.downloaded_snap_files > 0 {
+            parts.push(format!(
+                "{} {}",
+                format_number(c.downloaded_snap_files),
+                t(locale, Key::MetadataRowScreenshots).to_lowercase()
+            ));
+        }
+        if c.downloaded_title_files > 0 {
+            parts.push(format!(
+                "{} {}",
+                format_number(c.downloaded_title_files),
+                t(locale, Key::MetadataRowTitleScreens).to_lowercase()
+            ));
+        }
+        if c.downloaded_thumbnail_bytes > 0 {
+            parts.push(format_size(c.downloaded_thumbnail_bytes));
+        }
+        (!parts.is_empty()).then(|| {
+            format!(
+                "{} {}",
+                t(locale, Key::MetadataRowDownloadedMedia),
+                parts.join(" \u{00B7} ")
+            )
+        })
+    })?;
+    Some(view! { <div class="footer-row">{text}</div> }.into_any())
+}
+
+fn distribution_rows_view(
+    cov: StoredValue<SystemCoverage>,
+    locale: crate::i18n::Locale,
+) -> Option<leptos::prelude::AnyView> {
+    let rows = cov.with_value(|c| {
+        [
+            distribution_text(
+                Key::MetadataRowRegions,
+                &c.region_counts,
+                c.total_games,
+                locale,
+            ),
+            distribution_text(
+                Key::MetadataRowGenreGroups,
+                &c.genre_group_counts,
+                c.total_games,
+                locale,
+            ),
+            distribution_text(
+                Key::MetadataRowPlayers,
+                &c.player_count_distribution,
+                c.total_games,
+                locale,
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+    });
+    if rows.is_empty() {
+        return None;
+    }
+    Some(
+        view! {
+            <div class="footer-row">
+                {rows.join(" \u{00B7} ")}
+            </div>
+        }
+        .into_any(),
+    )
+}
+
+fn distribution_text(
+    label_key: Key,
+    buckets: &[CountBucket],
+    total_games: usize,
+    locale: crate::i18n::Locale,
+) -> Option<String> {
+    if buckets.is_empty() {
+        return None;
+    }
+    let total = total_games.max(1);
+    let values = buckets
+        .iter()
+        .take(3)
+        .map(|bucket| {
+            format!(
+                "{} {}%",
+                distribution_label(&bucket.label),
+                pct(bucket.count, total)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!("{} {}", t(locale, label_key), values))
+}
+
+fn distribution_label(label: &str) -> String {
+    if label.is_empty() {
+        return "--".to_string();
+    }
+    label
+        .split(['_', '-'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn driver_row_view(
@@ -1268,6 +1429,30 @@ fn footer_row_view(
                 format_number(c.coop_count),
                 t(locale, Key::MetadataRowCoOp)
             ));
+        }
+        match c.stats_refresh_state {
+            SystemStatsRefreshState::Refreshing => {
+                parts.push(format!(
+                    "{} {}",
+                    t(locale, Key::MetadataRowStats),
+                    t(locale, Key::MetadataStatsRefreshing)
+                ));
+            }
+            SystemStatsRefreshState::Stale => {
+                parts.push(format!(
+                    "{} {}",
+                    t(locale, Key::MetadataRowStats),
+                    t(locale, Key::MetadataStatsStale)
+                ));
+            }
+            SystemStatsRefreshState::Failed => {
+                parts.push(format!(
+                    "{} {}",
+                    t(locale, Key::MetadataRowStats),
+                    t(locale, Key::MetadataStatsFailed)
+                ));
+            }
+            SystemStatsRefreshState::Unknown | SystemStatsRefreshState::Fresh => {}
         }
         if parts.is_empty() {
             None

@@ -288,7 +288,7 @@ Per-system scan metadata. Used by `system_summaries` to derive UI counts and by 
 
 ### game_library_system_stats
 
-Rebuildable per-system romset facts for metadata/coverage pages. The table is a materialized view over `game_library`, `game_detail_metadata`, and `library_game_resource`; it is refreshed after discovery finalization, enrichment completion, and box-art writes. Missing rows are backfilled when `library.db` opens so upgraded installs do not need a manual rescan before coverage appears. Request-time metadata pages read library summary, image counts, and per-system coverage from this table and do not keep an additional app-local snapshot cache.
+Rebuildable per-system romset facts for metadata/coverage pages. Most columns are a materialized view over `game_library`, `game_detail_metadata`, and `library_game_resource`; thumbnail media columns are refreshed from the downloaded media folders after scan/rebuild/startup verification and thumbnail update maintenance. Missing rows are backfilled when `library.db` opens so upgraded installs do not need a manual rescan before coverage appears. Request-time metadata pages read library summary, matched artwork coverage, downloaded artwork totals, and per-system coverage from this table and do not keep an additional app-local snapshot cache.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -315,6 +315,11 @@ Rebuildable per-system romset facts for metadata/coverage pages. The table is a 
 | boxart_count | INTEGER | ROMs with box art URL coverage |
 | snap_count | INTEGER | Reserved for screenshot coverage |
 | title_screen_count | INTEGER | Reserved for title-screen coverage |
+| thumbnail_total_size_bytes | INTEGER | Total size of valid downloaded thumbnail media for this system |
+| thumbnail_file_count | INTEGER | Total valid downloaded thumbnail files for this system |
+| thumbnail_boxart_file_count | INTEGER | Valid downloaded box art files for this system |
+| thumbnail_snap_file_count | INTEGER | Valid downloaded screenshot files for this system |
+| thumbnail_title_file_count | INTEGER | Valid downloaded title-screen files for this system |
 | manual_count | INTEGER | ROMs with manual resource suggestions |
 | video_count | INTEGER | ROMs with video resource suggestions |
 | resource_count | INTEGER | Total rebuildable resource rows |

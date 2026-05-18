@@ -5,8 +5,13 @@ use std::collections::BTreeMap;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
+use replay_control_core::resource_kind;
 
-use super::{DriverStatusCounts, LibraryDb, SystemCoverage};
+use super::{
+    CountBucket, DownloadedThumbnailStats, DriverStatusCounts, LibraryDb, SystemCoverage,
+    SystemStatsRefreshState,
+};
+use crate::thumbnails::ThumbnailMediaStats;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum StatsRefreshState {
@@ -30,6 +35,16 @@ impl StatsRefreshState {
             3 => Self::Refreshing,
             4 => Self::Failed,
             _ => Self::Unknown,
+        }
+    }
+
+    fn as_wire(self) -> SystemStatsRefreshState {
+        match self {
+            Self::Unknown => SystemStatsRefreshState::Unknown,
+            Self::Fresh => SystemStatsRefreshState::Fresh,
+            Self::Stale => SystemStatsRefreshState::Stale,
+            Self::Refreshing => SystemStatsRefreshState::Refreshing,
+            Self::Failed => SystemStatsRefreshState::Failed,
         }
     }
 }
@@ -76,17 +91,36 @@ struct OverviewStatsRow {
     clone_count: usize,
     hack_count: usize,
     translation_count: usize,
+    homebrew_count: usize,
+    unlicensed_count: usize,
     special_count: usize,
+    region_counts_json: Option<String>,
     release_year_min: Option<u16>,
     release_year_max: Option<u16>,
+    release_date_known_count: usize,
     genre_counts_json: Option<String>,
+    genre_group_counts_json: Option<String>,
     developer_known_count: usize,
+    publisher_known_count: usize,
+    player_count_distribution_json: Option<String>,
     rating_known_count: usize,
     description_count: usize,
     boxart_count: usize,
+    snap_count: usize,
+    title_screen_count: usize,
+    thumbnail_total_size_bytes: u64,
+    thumbnail_file_count: usize,
+    thumbnail_boxart_file_count: usize,
+    thumbnail_snap_file_count: usize,
+    thumbnail_title_file_count: usize,
+    manual_count: usize,
+    video_count: usize,
+    resource_count: usize,
     coop_count: usize,
     verified_count: usize,
     driver_status_json: Option<String>,
+    refresh_state: StatsRefreshState,
+    updated_at: Option<i64>,
 }
 
 impl LibraryDb {
@@ -178,6 +212,100 @@ impl LibraryDb {
         .map_err(|e| Error::Other(format!("clear game_library_system_stats boxart: {e}")))
     }
 
+    pub fn replace_thumbnail_media_stats(
+        conn: &mut Connection,
+        stats: &[ThumbnailMediaStats],
+    ) -> Result<()> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("begin thumbnail media stats refresh: {e}")))?;
+        let now = unix_now();
+        tx.execute(
+            "UPDATE game_library_system_stats
+             SET thumbnail_total_size_bytes = 0,
+                 thumbnail_file_count = 0,
+                 thumbnail_boxart_file_count = 0,
+                 thumbnail_snap_file_count = 0,
+                 thumbnail_title_file_count = 0,
+                 updated_at = ?1",
+            params![now],
+        )
+        .map_err(|e| Error::Other(format!("clear thumbnail media stats: {e}")))?;
+        for stat in stats {
+            tx.execute(
+                "INSERT INTO game_library_system_stats (
+                    system,
+                    thumbnail_total_size_bytes,
+                    thumbnail_file_count,
+                    thumbnail_boxart_file_count,
+                    thumbnail_snap_file_count,
+                    thumbnail_title_file_count,
+                    updated_at
+                 )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(system) DO UPDATE SET
+                    thumbnail_total_size_bytes = excluded.thumbnail_total_size_bytes,
+                    thumbnail_file_count = excluded.thumbnail_file_count,
+                    thumbnail_boxart_file_count = excluded.thumbnail_boxart_file_count,
+                    thumbnail_snap_file_count = excluded.thumbnail_snap_file_count,
+                    thumbnail_title_file_count = excluded.thumbnail_title_file_count,
+                    updated_at = excluded.updated_at",
+                params![
+                    stat.system,
+                    stat.total_size_bytes as i64,
+                    stat.file_count as i64,
+                    stat.boxart_file_count as i64,
+                    stat.snap_file_count as i64,
+                    stat.title_file_count as i64,
+                    now,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("upsert thumbnail media stats: {e}")))?;
+        }
+        tx.commit()
+            .map_err(|e| Error::Other(format!("commit thumbnail media stats refresh: {e}")))
+    }
+
+    pub fn clear_thumbnail_media_stats(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "UPDATE game_library_system_stats
+             SET thumbnail_total_size_bytes = 0,
+                 thumbnail_file_count = 0,
+                 thumbnail_boxart_file_count = 0,
+                 thumbnail_snap_file_count = 0,
+                 thumbnail_title_file_count = 0,
+                 updated_at = CAST(strftime('%s', 'now') AS INTEGER)",
+            [],
+        )
+        .map(|_| ())
+        .map_err(|e| Error::Other(format!("clear thumbnail media stats: {e}")))
+    }
+
+    pub fn thumbnail_media_totals_from_system_stats(
+        conn: &Connection,
+    ) -> Result<DownloadedThumbnailStats> {
+        conn.query_row(
+            "SELECT
+                COALESCE(SUM(thumbnail_file_count), 0),
+                COALESCE(SUM(thumbnail_boxart_file_count), 0),
+                COALESCE(SUM(thumbnail_snap_file_count), 0),
+                COALESCE(SUM(thumbnail_title_file_count), 0),
+                COALESCE(SUM(thumbnail_total_size_bytes), 0)
+             FROM game_library_system_stats",
+            [],
+            |row| {
+                Ok(DownloadedThumbnailStats {
+                    total_files: row.get::<_, i64>(0).unwrap_or(0).max(0) as usize,
+                    boxart_files: row.get::<_, i64>(1).unwrap_or(0).max(0) as usize,
+                    snap_files: row.get::<_, i64>(2).unwrap_or(0).max(0) as usize,
+                    title_files: row.get::<_, i64>(3).unwrap_or(0).max(0) as usize,
+                    total_size_bytes: row.get::<_, i64>(4).unwrap_or(0).max(0) as u64,
+                })
+            },
+        )
+        .map_err(|e| Error::Other(format!("read thumbnail media stats: {e}")))
+    }
+
     #[cfg(test)]
     fn load_game_library_system_stats(conn: &Connection) -> Result<Vec<GameLibrarySystemStats>> {
         let mut stmt = conn
@@ -246,10 +374,16 @@ impl LibraryDb {
         let mut stmt = conn
             .prepare(
                 "SELECT system, rom_count, total_size_bytes, clone_count, hack_count,
-                        translation_count, special_count, release_year_min, release_year_max,
-                        genre_counts_json, developer_known_count, rating_known_count,
-                        description_count, boxart_count, coop_count, verified_count,
-                        driver_status_json
+                        translation_count, homebrew_count, unlicensed_count, special_count,
+                        region_counts_json, release_year_min, release_year_max,
+                        release_date_known_count, genre_counts_json, genre_group_counts_json,
+                        developer_known_count, publisher_known_count,
+                        player_count_distribution_json, rating_known_count, description_count,
+                        boxart_count, snap_count, title_screen_count,
+                        thumbnail_total_size_bytes, thumbnail_file_count,
+                        thumbnail_boxart_file_count, thumbnail_snap_file_count,
+                        thumbnail_title_file_count, manual_count, video_count, resource_count,
+                        coop_count, verified_count, driver_status_json, refresh_state, updated_at
                  FROM game_library_system_stats
                  WHERE rom_count > 0",
             )
@@ -263,17 +397,36 @@ impl LibraryDb {
                     clone_count: row.get::<_, i64>(3).unwrap_or(0) as usize,
                     hack_count: row.get::<_, i64>(4).unwrap_or(0) as usize,
                     translation_count: row.get::<_, i64>(5).unwrap_or(0) as usize,
-                    special_count: row.get::<_, i64>(6).unwrap_or(0) as usize,
-                    release_year_min: row.get::<_, Option<i64>>(7)?.map(|v| v as u16),
-                    release_year_max: row.get::<_, Option<i64>>(8)?.map(|v| v as u16),
-                    genre_counts_json: row.get(9)?,
-                    developer_known_count: row.get::<_, i64>(10).unwrap_or(0) as usize,
-                    rating_known_count: row.get::<_, i64>(11).unwrap_or(0) as usize,
-                    description_count: row.get::<_, i64>(12).unwrap_or(0) as usize,
-                    boxart_count: row.get::<_, i64>(13).unwrap_or(0) as usize,
-                    coop_count: row.get::<_, i64>(14).unwrap_or(0) as usize,
-                    verified_count: row.get::<_, i64>(15).unwrap_or(0) as usize,
-                    driver_status_json: row.get(16)?,
+                    homebrew_count: row.get::<_, i64>(6).unwrap_or(0) as usize,
+                    unlicensed_count: row.get::<_, i64>(7).unwrap_or(0) as usize,
+                    special_count: row.get::<_, i64>(8).unwrap_or(0) as usize,
+                    region_counts_json: row.get(9)?,
+                    release_year_min: row.get::<_, Option<i64>>(10)?.map(|v| v as u16),
+                    release_year_max: row.get::<_, Option<i64>>(11)?.map(|v| v as u16),
+                    release_date_known_count: row.get::<_, i64>(12).unwrap_or(0) as usize,
+                    genre_counts_json: row.get(13)?,
+                    genre_group_counts_json: row.get(14)?,
+                    developer_known_count: row.get::<_, i64>(15).unwrap_or(0) as usize,
+                    publisher_known_count: row.get::<_, i64>(16).unwrap_or(0) as usize,
+                    player_count_distribution_json: row.get(17)?,
+                    rating_known_count: row.get::<_, i64>(18).unwrap_or(0) as usize,
+                    description_count: row.get::<_, i64>(19).unwrap_or(0) as usize,
+                    boxart_count: row.get::<_, i64>(20).unwrap_or(0) as usize,
+                    snap_count: row.get::<_, i64>(21).unwrap_or(0) as usize,
+                    title_screen_count: row.get::<_, i64>(22).unwrap_or(0) as usize,
+                    thumbnail_total_size_bytes: row.get::<_, i64>(23).unwrap_or(0) as u64,
+                    thumbnail_file_count: row.get::<_, i64>(24).unwrap_or(0) as usize,
+                    thumbnail_boxart_file_count: row.get::<_, i64>(25).unwrap_or(0) as usize,
+                    thumbnail_snap_file_count: row.get::<_, i64>(26).unwrap_or(0) as usize,
+                    thumbnail_title_file_count: row.get::<_, i64>(27).unwrap_or(0) as usize,
+                    manual_count: row.get::<_, i64>(28).unwrap_or(0) as usize,
+                    video_count: row.get::<_, i64>(29).unwrap_or(0) as usize,
+                    resource_count: row.get::<_, i64>(30).unwrap_or(0) as usize,
+                    coop_count: row.get::<_, i64>(31).unwrap_or(0) as usize,
+                    verified_count: row.get::<_, i64>(32).unwrap_or(0) as usize,
+                    driver_status_json: row.get(33)?,
+                    refresh_state: StatsRefreshState::from_i64(row.get::<_, i64>(34)?),
+                    updated_at: row.get(35)?,
                 })
             })
             .map_err(|e| Error::Other(format!("query library overview stats: {e}")))?;
@@ -292,10 +445,22 @@ impl LibraryDb {
             summary.system_count += 1;
             summary.with_genre += with_genre;
             summary.with_developer += row.developer_known_count;
+            summary.with_publisher += row.publisher_known_count;
             summary.with_rating += row.rating_known_count;
+            summary.with_release_date += row.release_date_known_count;
             summary.with_box_art += row.boxart_count.min(row.rom_count);
+            summary.with_snap += row.snap_count.min(row.rom_count);
+            summary.with_title_screen += row.title_screen_count.min(row.rom_count);
+            summary.with_manual += row.manual_count.min(row.rom_count);
+            summary.with_video += row.video_count.min(row.rom_count);
+            summary.with_resource += row.resource_count;
             summary.coop_games += row.coop_count;
             summary.total_size_bytes += row.total_size_bytes;
+            summary.downloaded_thumbnail_files += row.thumbnail_file_count;
+            summary.downloaded_boxart_files += row.thumbnail_boxart_file_count;
+            summary.downloaded_snap_files += row.thumbnail_snap_file_count;
+            summary.downloaded_title_files += row.thumbnail_title_file_count;
+            summary.downloaded_thumbnail_bytes += row.thumbnail_total_size_bytes;
             summary.min_year = min_optional(summary.min_year, row.release_year_min);
             summary.max_year = max_optional(summary.max_year, row.release_year_max);
 
@@ -303,43 +468,46 @@ impl LibraryDb {
                 display_name: replay_control_core::systems::system_display_name(&row.system),
                 total_games: row.rom_count,
                 with_thumbnail: row.boxart_count.min(row.rom_count),
+                with_snap: row.snap_count.min(row.rom_count),
+                with_title_screen: row.title_screen_count.min(row.rom_count),
+                with_manual: row.manual_count.min(row.rom_count),
+                with_video: row.video_count.min(row.rom_count),
+                with_resource: row.resource_count,
                 with_genre,
                 with_developer: row.developer_known_count,
+                with_publisher: row.publisher_known_count,
                 with_rating: row.rating_known_count,
+                with_release_date: row.release_date_known_count,
                 size_bytes: row.total_size_bytes,
                 with_description: row.description_count.min(row.rom_count),
                 clone_count: row.clone_count,
                 hack_count: row.hack_count,
                 translation_count: row.translation_count,
+                homebrew_count: row.homebrew_count,
+                unlicensed_count: row.unlicensed_count,
                 special_count: row.special_count,
                 coop_count: row.coop_count,
                 verified_count: row.verified_count,
                 min_year: row.release_year_min,
                 max_year: row.release_year_max,
                 driver_status,
+                downloaded_thumbnail_files: row.thumbnail_file_count,
+                downloaded_boxart_files: row.thumbnail_boxart_file_count,
+                downloaded_snap_files: row.thumbnail_snap_file_count,
+                downloaded_title_files: row.thumbnail_title_file_count,
+                downloaded_thumbnail_bytes: row.thumbnail_total_size_bytes,
+                stats_refresh_state: row.refresh_state.as_wire(),
+                stats_updated_at: row.updated_at,
+                region_counts: parse_count_buckets(row.region_counts_json.as_deref()),
+                genre_group_counts: parse_count_buckets(row.genre_group_counts_json.as_deref()),
+                player_count_distribution: parse_count_buckets(
+                    row.player_count_distribution_json.as_deref(),
+                ),
                 system: row.system,
             });
         }
         coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
         Ok((summary, coverage))
-    }
-
-    pub fn image_stats_from_system_stats(conn: &Connection) -> Result<(usize, usize)> {
-        conn.query_row(
-            "SELECT
-                COALESCE(SUM(boxart_count), 0),
-                COALESCE(SUM(snap_count), 0)
-             FROM game_library_system_stats
-             WHERE rom_count > 0",
-            [],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0).unwrap_or(0) as usize,
-                    row.get::<_, i64>(1).unwrap_or(0) as usize,
-                ))
-            },
-        )
-        .map_err(|e| Error::Other(format!("image_stats_from_system_stats: {e}")))
     }
 
     fn compute_game_library_system_stats(
@@ -416,8 +584,8 @@ impl LibraryDb {
             )
             .map_err(|e| Error::Other(format!("query publisher stats: {e}")))? as usize;
 
-        let manual_count = resource_rom_count(conn, system, "manual")?;
-        let video_count = resource_rom_count(conn, system, "video")?;
+        let manual_count = resource_rom_count(conn, system, resource_kind::MANUAL)?;
+        let video_count = resource_rom_count(conn, system, resource_kind::VIDEO)?;
         let resource_count =
             conn.query_row(
                 "SELECT COUNT(*)
@@ -648,6 +816,17 @@ fn count_json_total(json: Option<&str>) -> usize {
         .unwrap_or(0)
 }
 
+fn parse_count_buckets(json: Option<&str>) -> Vec<CountBucket> {
+    json.and_then(|json| serde_json::from_str::<BTreeMap<String, usize>>(json).ok())
+        .map(|counts| {
+            counts
+                .into_iter()
+                .map(|(label, count)| CountBucket { label, count })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn min_optional(current: Option<u16>, next: Option<u16>) -> Option<u16> {
     match (current, next) {
         (Some(a), Some(b)) => Some(a.min(b)),
@@ -731,7 +910,7 @@ mod tests {
             &[LibraryGameResource {
                 rom_filename: "Mario.sfc".to_string(),
                 source: "catalog".to_string(),
-                resource_type: "manual".to_string(),
+                resource_type: resource_kind::MANUAL.to_string(),
                 resource_id: "mario-manual".to_string(),
                 url: "https://example.invalid/manual.pdf".to_string(),
                 title: Some("Manual".to_string()),
@@ -770,9 +949,59 @@ mod tests {
         assert_eq!(summary.coop_games, 1);
         assert_eq!(summary.min_year, Some(1991));
         assert_eq!(summary.max_year, Some(1991));
+    }
 
-        let image_stats = LibraryDb::image_stats_from_system_stats(&conn).unwrap();
-        assert_eq!(image_stats, (1, 0));
+    #[test]
+    fn thumbnail_media_stats_are_materialized_on_system_stats() {
+        let (mut conn, _tmp) = super::super::tests::open_temp_db();
+        let mario = super::super::tests::make_game_entry("snes", "Mario.sfc", false);
+        LibraryDb::save_system_entries(&mut conn, "snes", &[mario], None).unwrap();
+
+        LibraryDb::replace_thumbnail_media_stats(
+            &mut conn,
+            &[
+                ThumbnailMediaStats {
+                    system: "snes".to_string(),
+                    total_size_bytes: 300,
+                    file_count: 3,
+                    boxart_file_count: 1,
+                    snap_file_count: 2,
+                    title_file_count: 0,
+                },
+                ThumbnailMediaStats {
+                    system: "genesis".to_string(),
+                    total_size_bytes: 200,
+                    file_count: 2,
+                    boxart_file_count: 1,
+                    snap_file_count: 0,
+                    title_file_count: 1,
+                },
+            ],
+        )
+        .unwrap();
+
+        let media = LibraryDb::thumbnail_media_totals_from_system_stats(&conn).unwrap();
+        assert_eq!(media.total_files, 5);
+        assert_eq!(media.boxart_files, 2);
+        assert_eq!(media.snap_files, 2);
+        assert_eq!(media.title_files, 1);
+        assert_eq!(media.total_size_bytes, 500);
+
+        LibraryDb::refresh_game_library_system_stats(&conn, "snes").unwrap();
+        let media = LibraryDb::thumbnail_media_totals_from_system_stats(&conn).unwrap();
+        assert_eq!(media.total_files, 5);
+        assert_eq!(media.boxart_files, 2);
+        assert_eq!(media.snap_files, 2);
+        assert_eq!(media.title_files, 1);
+        assert_eq!(media.total_size_bytes, 500);
+
+        LibraryDb::clear_thumbnail_media_stats(&conn).unwrap();
+        let media = LibraryDb::thumbnail_media_totals_from_system_stats(&conn).unwrap();
+        assert_eq!(media.total_files, 0);
+        assert_eq!(media.boxart_files, 0);
+        assert_eq!(media.snap_files, 0);
+        assert_eq!(media.title_files, 0);
+        assert_eq!(media.total_size_bytes, 0);
     }
 
     #[test]

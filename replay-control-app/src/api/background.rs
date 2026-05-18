@@ -1695,6 +1695,43 @@ impl BackgroundManager {
         }
     }
 
+    async fn refresh_thumbnail_media_stats(
+        state: &AppState,
+        storage: &StorageLocation,
+        generation: u64,
+        phase: &'static str,
+    ) -> Result<(), replay_control_core::error::Error> {
+        state.ensure_storage_generation(generation)?;
+        let root = storage.root.clone();
+        let started = Instant::now();
+        let stats = tokio::task::spawn_blocking(move || {
+            replay_control_core_server::thumbnails::scan_media_stats(&root)
+        })
+        .await
+        .map_err(|e| {
+            replay_control_core::error::Error::Other(format!(
+                "{phase}: thumbnail media stat scan task panicked: {e}"
+            ))
+        })?;
+        state.ensure_storage_generation(generation)?;
+        let system_count = stats.len();
+        let file_count: usize = stats.iter().map(|s| s.file_count).sum();
+        let total_size_bytes: u64 = stats.iter().map(|s| s.total_size_bytes).sum();
+        let write = state
+            .library_writer
+            .try_write(move |conn| LibraryDb::replace_thumbnail_media_stats(conn, &stats))
+            .await;
+        match write {
+            Ok(Ok(())) => tracing::info!(
+                "{phase}: thumbnail media stats refreshed systems={system_count} files={file_count} bytes={total_size_bytes} in {}ms",
+                started.elapsed().as_millis()
+            ),
+            Ok(Err(e)) => tracing::warn!("{phase}: thumbnail media stats SQL failed: {e}"),
+            Err(e) => tracing::warn!("{phase}: thumbnail media stats write failed: {e}"),
+        }
+        Ok(())
+    }
+
     /// Pre-populate L2 cache for all systems that have games. Walks ROM
     /// directories, hashes new files, and enriches box art / ratings.
     pub(crate) async fn populate_all_systems(
@@ -1807,6 +1844,7 @@ impl BackgroundManager {
             start.elapsed().as_secs_f64()
         );
 
+        Self::refresh_thumbnail_media_stats(state, storage, generation, "L2 populate").await?;
         Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);
         Ok(())
     }

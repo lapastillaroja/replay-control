@@ -21,7 +21,10 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
     match state
         .library_writer
-        .try_write(|conn| LibraryDb::clear_all_box_art_urls(conn))
+        .try_write(|conn| {
+            LibraryDb::clear_all_box_art_urls(conn)?;
+            LibraryDb::clear_thumbnail_media_stats(conn)
+        })
         .await
     {
         Ok(Ok(_)) => {}

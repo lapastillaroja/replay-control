@@ -38,6 +38,12 @@ The downloader keeps request concurrency bounded. If GitHub responds with
 temporary throttling or service-unavailable errors, Replay Control retries a few
 times with backoff instead of opening many requests at once.
 
+After scan/rebuild and thumbnail update maintenance, Replay Control refreshes
+stored artwork totals from the downloaded media folders, split by box art,
+title screens, and screenshots. The metadata page reads those stored totals
+instead of walking the media folders while the page loads, so already-downloaded
+artwork is counted even when no new files were fetched.
+
 ## Image Matching
 
 The app uses smart multi-tier matching to connect ROM files with their images:
@@ -66,4 +72,5 @@ On the game detail page, you can pick alternate region-variant cover art. The fe
 
 ## Thumbnail Counts
 
-The metadata page shows per-system thumbnail counts, reflecting how many games in your library have box art available.
+The metadata page shows per-system thumbnail counts, reflecting both matched
+box-art coverage and downloaded artwork already present on disk.

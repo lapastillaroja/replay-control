@@ -11,7 +11,6 @@ use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 /// library overview is loaded separately from `game_library_system_stats` so
 /// it does not wait for filesystem media sizing or bundled catalog stats.
 pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
-    let storage = state.storage();
     let em_db_path = state.external_metadata_reader.db_path();
 
     // Independent reads across two pools. The pools serialize them on their
@@ -20,24 +19,16 @@ pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {
     // if a pool is briefly unavailable.
     let lib_pool = &state.library_reader;
     let em_pool = &state.external_metadata_reader;
-    let (stats, data_source_stats, image_count_pair) = tokio::join!(
+    let (stats, data_source_stats, image_stats) = tokio::join!(
         em_pool
             .read(move |c| external_metadata::launchbox_stats(c, &em_db_path).unwrap_or_default()),
         em_pool.read(|c| external_metadata::get_data_source_stats(c, "libretro-thumbnails").ok()),
-        lib_pool.read(|c| LibraryDb::image_stats_from_system_stats(c).unwrap_or((0, 0))),
+        lib_pool
+            .read(|c| LibraryDb::thumbnail_media_totals_from_system_stats(c).unwrap_or_default()),
     );
     let stats = stats.unwrap_or_default();
     let data_source_stats = data_source_stats.unwrap_or_default();
-    let image_count_pair: (usize, usize) = image_count_pair.unwrap_or((0, 0));
-
-    // Off-pool work: on-disk media size and bundled-catalog read-only stats.
-    let storage_root = storage.root.clone();
-    let media_size = tokio::task::spawn_blocking(move || {
-        replay_control_core_server::thumbnails::media_dir_size(&storage_root)
-    })
-    .await
-    .unwrap_or(0);
-    let image_stats = (image_count_pair.0, image_count_pair.1, media_size);
+    let image_stats = image_stats.unwrap_or_default();
 
     let data_source = build_data_source_summary(data_source_stats);
     let builtin_stats = build_builtin_stats().await;

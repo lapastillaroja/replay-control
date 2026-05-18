@@ -97,8 +97,8 @@ pub use crate::types::{
 };
 
 pub use replay_control_core::library_db::{
-    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
-    SystemCoverage,
+    CountBucket, DownloadedThumbnailStats, DriverStatusCounts, ImportProgress, ImportState,
+    ImportStats, LibrarySummary, MetadataStats, SystemCoverage, SystemStatsRefreshState,
 };
 
 /// Aggregated `/settings/metadata` payload. Server-side this is built from
@@ -108,8 +108,7 @@ pub use replay_control_core::library_db::{
 pub struct MetadataPageSnapshot {
     pub stats: MetadataStats,
     pub data_source: super::DataSourceSummary,
-    /// (boxart_count, snap_count, media_size_bytes)
-    pub image_stats: (usize, usize, u64),
+    pub image_stats: DownloadedThumbnailStats,
     pub builtin_stats: BuiltinDbStats,
 }
 

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Acquire a write lock, panicking on poison with a standard message.
 fn write_lock<'a, T>(
@@ -438,6 +439,26 @@ impl ThumbnailPipeline {
             // (legacy `update_image_paths_from_disk` removed in v2 — box_art_url
             // now lives in `game_library` and is rewritten by the enrichment
             // pass spawned below.)
+        }
+
+        let media_stats_root = storage_root.clone();
+        let media_stats = tokio::task::spawn_blocking(move || {
+            replay_control_core_server::thumbnails::scan_media_stats(&media_stats_root)
+        })
+        .await;
+        match media_stats {
+            Ok(stats) => {
+                let write = state
+                    .library_writer
+                    .try_write(move |conn| LibraryDb::replace_thumbnail_media_stats(conn, &stats))
+                    .await;
+                match write {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => tracing::warn!("Thumbnail media stats SQL failed: {e}"),
+                    Err(e) => tracing::warn!("Thumbnail media stats write failed: {e}"),
+                }
+            }
+            Err(e) => tracing::warn!("Thumbnail media stats scan task panicked: {e}"),
         }
 
         // Image index is no longer cached — enrichment builds it fresh each run.

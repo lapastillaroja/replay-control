@@ -60,8 +60,9 @@ pub fn resolve_launchbox_xml(
 }
 
 pub use replay_control_core::library_db::{
-    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibraryResourceLink,
-    LibrarySummary, MetadataStats, SystemCoverage,
+    CountBucket, DownloadedThumbnailStats, DriverStatusCounts, ImportProgress, ImportState,
+    ImportStats, LibraryResourceLink, LibrarySummary, MetadataStats, SystemCoverage,
+    SystemStatsRefreshState,
 };
 
 pub use replay_control_core::DatePrecision;
@@ -599,6 +600,11 @@ const CREATE_GAME_LIBRARY_SYSTEM_STATS_SQL: &str = "
         boxart_count INTEGER NOT NULL DEFAULT 0,
         snap_count INTEGER NOT NULL DEFAULT 0,
         title_screen_count INTEGER NOT NULL DEFAULT 0,
+        thumbnail_total_size_bytes INTEGER NOT NULL DEFAULT 0,
+        thumbnail_file_count INTEGER NOT NULL DEFAULT 0,
+        thumbnail_boxart_file_count INTEGER NOT NULL DEFAULT 0,
+        thumbnail_snap_file_count INTEGER NOT NULL DEFAULT 0,
+        thumbnail_title_file_count INTEGER NOT NULL DEFAULT 0,
         manual_count INTEGER NOT NULL DEFAULT 0,
         video_count INTEGER NOT NULL DEFAULT 0,
         resource_count INTEGER NOT NULL DEFAULT 0,
@@ -715,6 +721,11 @@ const GAME_LIBRARY_SYSTEM_STATS_COLUMNS: &[&str] = &[
     "boxart_count",
     "snap_count",
     "title_screen_count",
+    "thumbnail_total_size_bytes",
+    "thumbnail_file_count",
+    "thumbnail_boxart_file_count",
+    "thumbnail_snap_file_count",
+    "thumbnail_title_file_count",
     "manual_count",
     "video_count",
     "resource_count",
@@ -997,7 +1008,6 @@ impl LibraryDb {
         ) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS game_library_system_stats;");
         }
-
         conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_release_date: {e}")))?;
         conn.execute_batch(CREATE_GAME_DETAIL_METADATA_SQL)
@@ -1027,7 +1037,6 @@ impl LibraryDb {
             .map_err(|e| {
                 Error::Other(format!("Failed to create game_library_system_stats: {e}"))
             })?;
-
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
                 -- developer_genre_groups with system filter

@@ -27,6 +27,17 @@ pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] = &[
     ThumbnailKind::Snap,
 ];
 
+/// Persistable thumbnail media counters for one system.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThumbnailMediaStats {
+    pub system: String,
+    pub total_size_bytes: u64,
+    pub file_count: usize,
+    pub boxart_file_count: usize,
+    pub snap_file_count: usize,
+    pub title_file_count: usize,
+}
+
 impl ThumbnailKind {
     /// Subdirectory name in the libretro-thumbnails repo.
     pub fn repo_dir(&self) -> &'static str {
@@ -453,25 +464,58 @@ fn collect_rom_filenames_recursive(
     }
 }
 
-/// Get the total size of the media directory for all systems.
-pub fn media_dir_size(storage_root: &Path) -> u64 {
+/// Scan downloaded thumbnail media once and return materializable counters.
+/// This is maintenance work; request-time handlers should read the persisted
+/// values from `library.db` instead of calling this.
+pub fn scan_media_stats(storage_root: &Path) -> Vec<ThumbnailMediaStats> {
     let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
-    dir_size(&media_dir)
+    scan_media_stats_dir(&media_dir)
 }
 
-fn dir_size(path: &Path) -> u64 {
-    let mut total = 0;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                total += dir_size(&p);
-            } else if let Ok(meta) = p.metadata() {
-                total += meta.len();
-            }
+fn scan_media_stats_dir(media_dir: &Path) -> Vec<ThumbnailMediaStats> {
+    let mut stats_by_system = Vec::new();
+    let Ok(systems) = std::fs::read_dir(media_dir) else {
+        return stats_by_system;
+    };
+
+    for system in systems.flatten() {
+        let system_path = system.path();
+        if !system_path.is_dir() {
+            continue;
+        }
+        let mut stats = ThumbnailMediaStats {
+            system: system.file_name().to_string_lossy().into_owned(),
+            ..ThumbnailMediaStats::default()
+        };
+        for kind in ALL_THUMBNAIL_KINDS {
+            scan_kind_media_dir(&system_path.join(kind.media_dir()), *kind, &mut stats);
+        }
+        if stats.file_count > 0 {
+            stats_by_system.push(stats);
         }
     }
-    total
+    stats_by_system.sort_by(|a, b| a.system.cmp(&b.system));
+    stats_by_system
+}
+
+fn scan_kind_media_dir(kind_dir: &Path, kind: ThumbnailKind, stats: &mut ThumbnailMediaStats) {
+    let Ok(files) = std::fs::read_dir(kind_dir) else {
+        return;
+    };
+    for file in files.flatten() {
+        let path = file.path();
+        if !path.is_file() || !is_valid_image_sync(&path) {
+            continue;
+        }
+        let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+        stats.total_size_bytes = stats.total_size_bytes.saturating_add(size);
+        stats.file_count += 1;
+        match kind {
+            ThumbnailKind::Boxart => stats.boxart_file_count += 1,
+            ThumbnailKind::Snap => stats.snap_file_count += 1,
+            ThumbnailKind::Title => stats.title_file_count += 1,
+        }
+    }
 }
 
 /// Delete media files for a single system.
@@ -660,6 +704,34 @@ mod tests {
     #[test]
     fn thumbnail_filename_multiple_colons() {
         assert_eq!(thumbnail_filename("Title: Sub: Part"), "Title_ Sub_ Part");
+    }
+
+    #[test]
+    fn scan_media_stats_counts_valid_media_by_kind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let system_dir = tmp
+            .path()
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join("snes");
+        let boxart_dir = system_dir.join(ThumbnailKind::Boxart.media_dir());
+        let snap_dir = system_dir.join(ThumbnailKind::Snap.media_dir());
+        let title_dir = system_dir.join(ThumbnailKind::Title.media_dir());
+        std::fs::create_dir_all(&boxart_dir).unwrap();
+        std::fs::create_dir_all(&snap_dir).unwrap();
+        std::fs::create_dir_all(&title_dir).unwrap();
+        std::fs::write(boxart_dir.join("A.png"), vec![1u8; 201]).unwrap();
+        std::fs::write(snap_dir.join("B.jpg"), vec![2u8; 250]).unwrap();
+        std::fs::write(title_dir.join("fake.png"), vec![3u8; 50]).unwrap();
+
+        let stats = scan_media_stats(tmp.path());
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].system, "snes");
+        assert_eq!(stats[0].file_count, 2);
+        assert_eq!(stats[0].boxart_file_count, 1);
+        assert_eq!(stats[0].snap_file_count, 1);
+        assert_eq!(stats[0].title_file_count, 0);
+        assert_eq!(stats[0].total_size_bytes, 451);
     }
 
     // --- strip_tags ---

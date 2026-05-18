@@ -57,11 +57,25 @@ pub struct SystemCoverage {
     pub total_games: usize,
     pub with_thumbnail: usize,
     #[serde(default)]
+    pub with_snap: usize,
+    #[serde(default)]
+    pub with_title_screen: usize,
+    #[serde(default)]
+    pub with_manual: usize,
+    #[serde(default)]
+    pub with_video: usize,
+    #[serde(default)]
+    pub with_resource: usize,
+    #[serde(default)]
     pub with_genre: usize,
     #[serde(default)]
     pub with_developer: usize,
     #[serde(default)]
+    pub with_publisher: usize,
+    #[serde(default)]
     pub with_rating: usize,
+    #[serde(default)]
+    pub with_release_date: usize,
     #[serde(default)]
     pub size_bytes: u64,
     #[serde(default)]
@@ -72,6 +86,10 @@ pub struct SystemCoverage {
     pub hack_count: usize,
     #[serde(default)]
     pub translation_count: usize,
+    #[serde(default)]
+    pub homebrew_count: usize,
+    #[serde(default)]
+    pub unlicensed_count: usize,
     #[serde(default)]
     pub special_count: usize,
     #[serde(default)]
@@ -85,6 +103,33 @@ pub struct SystemCoverage {
     /// Driver status counts for arcade systems. `None` for non-arcade systems.
     #[serde(default)]
     pub driver_status: Option<DriverStatusCounts>,
+    #[serde(default)]
+    pub downloaded_thumbnail_files: usize,
+    #[serde(default)]
+    pub downloaded_boxart_files: usize,
+    #[serde(default)]
+    pub downloaded_snap_files: usize,
+    #[serde(default)]
+    pub downloaded_title_files: usize,
+    #[serde(default)]
+    pub downloaded_thumbnail_bytes: u64,
+    #[serde(default)]
+    pub stats_refresh_state: SystemStatsRefreshState,
+    #[serde(default)]
+    pub stats_updated_at: Option<i64>,
+    #[serde(default)]
+    pub region_counts: Vec<CountBucket>,
+    #[serde(default)]
+    pub genre_group_counts: Vec<CountBucket>,
+    #[serde(default)]
+    pub player_count_distribution: Vec<CountBucket>,
+}
+
+/// A named count used by small metadata-page distributions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CountBucket {
+    pub label: String,
+    pub count: usize,
 }
 
 /// Per-system counts for arcade `driver_status` values.
@@ -96,6 +141,27 @@ pub struct DriverStatusCounts {
     pub unknown: usize,
 }
 
+/// Downloaded thumbnail media totals.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct DownloadedThumbnailStats {
+    pub total_files: usize,
+    pub boxart_files: usize,
+    pub snap_files: usize,
+    pub title_files: usize,
+    pub total_size_bytes: u64,
+}
+
+/// Refresh state for materialized per-system library stats.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SystemStatsRefreshState {
+    #[default]
+    Unknown,
+    Fresh,
+    Stale,
+    Refreshing,
+    Failed,
+}
+
 /// Aggregate summary of the entire game library.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibrarySummary {
@@ -103,12 +169,24 @@ pub struct LibrarySummary {
     pub system_count: usize,
     pub with_genre: usize,
     pub with_developer: usize,
+    pub with_publisher: usize,
     pub with_rating: usize,
+    pub with_release_date: usize,
     pub with_box_art: usize,
+    pub with_snap: usize,
+    pub with_title_screen: usize,
+    pub with_manual: usize,
+    pub with_video: usize,
+    pub with_resource: usize,
     pub coop_games: usize,
     pub min_year: Option<u16>,
     pub max_year: Option<u16>,
     pub total_size_bytes: u64,
+    pub downloaded_thumbnail_files: usize,
+    pub downloaded_boxart_files: usize,
+    pub downloaded_snap_files: usize,
+    pub downloaded_title_files: usize,
+    pub downloaded_thumbnail_bytes: u64,
 }
 
 /// Wire-shape mirror of `library_game_resource` rows — the per-ROM payload
