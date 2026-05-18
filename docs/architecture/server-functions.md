@@ -4,14 +4,15 @@ Defined across `replay-control-app/src/main.rs`, `src/pages/`, and `src/server_f
 
 ## Leptos 0.7 SSR with WASM Hydration
 
-The app uses server-side rendering with client-side WASM hydration. Four build profiles handle this:
+The app uses server-side rendering with client-side WASM hydration. Six build profiles handle this:
 
 | Environment | SSR Server | WASM Client |
 |-------------|-----------|-------------|
-| Dev | `dev` (opt 1) | `wasm-dev` (opt "s") |
+| Fast dev (`dev.sh`) | `dev-fast` (opt 0) | `wasm-dev-fast` (opt 0) |
+| Debug / compact dev | `dev` (opt 1) | `wasm-dev` (opt "s") |
 | Prod | `release` (opt 3) | `wasm-release` (opt "z") |
 
-`wasm-dev` exists because unoptimized WASM can be 20-40 MB. `opt "s"` keeps dev WASM at a few MB.
+`dev.sh` uses the fast profiles because rebuild latency matters more than artifact size during iteration. `wasm-dev` remains available when a smaller development WASM payload is worth the extra compile time.
 
 ## any_spawner::Executor::init_tokio()
 

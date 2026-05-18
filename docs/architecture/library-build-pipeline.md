@@ -16,23 +16,27 @@ share the same per-system building block:
 4. Run enrichment for that same system immediately.
 5. Queue hash identity work when the system is hash-eligible.
 
-The difference is the hash policy:
+The main differences are the startup no-op gate and the hash policy:
 
-| Mode | Discovery write | Hash identity |
-|---|---|---|
-| First scan / fresh DB | Reconciles every visible system | No cache exists; queues hash-eligible rows for background identity |
-| Startup scan | Reconciles every visible system | Reuses valid cached CRC rows; queues new/stale/failed rows |
-| Manual rescan | Reconciles every visible system | Reuses valid cached CRC rows; queues new/stale/failed rows |
-| Manual rebuild | Reconciles every visible system | Forces hash-eligible rows through background re-identification |
-| Local watcher rescan | Reconciles the changed system | Reuses valid cached CRC rows; queues new/stale/failed rows |
+| Mode | Discovery write | Enrichment | Hash identity |
+|---|---|---|---|
+| First scan / fresh DB | Reconciles every visible system | Runs for each scanned system | No cache exists; queues hash-eligible rows for background identity |
+| Startup scan | Walks every visible system; skips DB writes only when the durable per-system fingerprint and prior phase states are clean | Skips only with the same clean fingerprint gate | Reuses valid cached CRC rows; queues new/stale/failed rows |
+| Manual rescan | Reconciles every visible system | Always runs for each successfully scanned system | Reuses valid cached CRC rows; queues new/stale/failed rows |
+| Manual rebuild | Reconciles every visible system | Always runs for each successfully scanned system | Forces hash-eligible rows through background re-identification |
+| Local watcher rescan | Reconciles the changed system | Always runs for each successfully scanned system | Reuses valid cached CRC rows; queues new/stale/failed rows |
 
 First scan and manual rebuild both touch every visible system, but they differ
 in why identity work is needed. First scan has no CRC cache yet, so all
 hash-eligible rows start unresolved. Manual rebuild deliberately ignores the
 existing CRC cache for eligible rows and verifies them again. Startup scan and
-manual rescan are the normal reconciliation paths: they walk every visible
-system, catch ROMs added while Replay Control was off, and keep valid identity
-for unchanged files.
+manual rescan both walk every visible system and catch ROMs added while Replay
+Control was off. Startup uses the completed walk to compare a durable
+per-system fingerprint made from relative paths, filenames, sizes, and mtimes.
+If that fingerprint matches the last clean run, and discovery, enrichment, and
+identity all completed previously, startup skips the DB write and enrichment
+for that system. Manual rescan intentionally bypasses that gate so it can
+refresh metadata without requiring a full hash rebuild.
 
 Startup scan intentionally does not depend on top-level system directory mtimes.
 Users often store ROMs in nested folders, and some storage backends do not make
@@ -60,14 +64,16 @@ flowchart TD
     B -->|First scan| C["All visible systems<br/>No CRC cache yet"]
     B -->|Manual rescan| D["All visible systems<br/>Reuse valid CRC cache"]
     B -->|Manual rebuild| E["All visible systems<br/>Force CRC recheck"]
-    B -->|Startup scan| F["All visible systems<br/>Reuse valid CRC cache"]
+    B -->|Startup scan| F["All visible systems<br/>Walk then fingerprint check"]
     B -->|Local watcher| G["Changed system only"]
 
     C --> H["Per-system strict walk"]
     D --> H
     E --> H
-    F --> H
     G --> H
+    F --> S{"Clean fingerprint<br/>and complete phases?"}
+    S -->|Yes| N
+    S -->|No| H
 
     H --> I["Build rows from filenames,<br/>catalog data, cached identity"]
     I --> J["Reconcile with temporary table<br/>inside one transaction"]
@@ -98,6 +104,10 @@ handled independently:
 The foreground pass includes enrichment because enrichment is what makes the
 freshly-discovered rows useful: display metadata, release dates, descriptions,
 resources, and thumbnail matches are written before the next system starts.
+Startup is the only exception: when the post-walk fingerprint proves the system
+is unchanged and the previous discovery, enrichment, and identity phases are
+complete, enrichment is skipped for that system because the existing enriched
+rows are already current.
 Enrichment calculation runs outside the library writer. Repeatable per-ROM
 updates such as developers, cooperative flags, release-date rows, and
 box-art/genre/rating fields are flushed in bounded app-level chunks, with a

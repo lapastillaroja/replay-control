@@ -22,6 +22,10 @@ pub struct RomEntry {
     pub game: GameRef,
     /// File size in bytes
     pub size_bytes: u64,
+    /// File mtime in nanoseconds at scan time. Used only by server-side no-op
+    /// scan checks; it is not part of the client wire payload.
+    #[serde(default, skip)]
+    pub mtime_nanos: Option<i128>,
     /// Whether this is an M3U playlist file
     pub is_m3u: bool,
     /// Whether this ROM is in the user's favorites

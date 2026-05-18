@@ -139,6 +139,8 @@ impl LibraryService {
             &library_entries,
             &ScanInputs::new(
                 Default::default(),
+                None,
+                false,
                 Default::default(),
                 cancellation.cloned(),
             ),

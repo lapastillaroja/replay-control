@@ -298,10 +298,77 @@ fn prepare_storage_dbs(
         &library,
     )
     .map_err(|e| format!("Failed to migrate library DB: {e}"))?;
+    {
+        let conn = replay_control_core_server::library_db::LibraryDb::open_at(&library)
+            .map_err(|e| format!("Failed to open library DB for mtime probe metadata: {e}"))?;
+        ensure_mtime_probe_metadata(&conn, storage)
+            .map_err(|e| format!("Failed to record storage mtime probe: {e}"))?;
+    }
 
     let user_data = replay_control_core_server::user_data_db::UserDataDb::db_path(&storage.root);
 
     Ok(ResolvedDbPaths { library, user_data })
+}
+
+fn ensure_mtime_probe_metadata(
+    conn: &rusqlite::Connection,
+    storage: &replay_control_core_server::storage::StorageLocation,
+) -> replay_control_core::error::Result<()> {
+    use replay_control_core_server::library_db::library_meta;
+
+    const PROBE_VERSION: &str = "1";
+
+    let signature = storage.mtime_probe_signature();
+    let existing_signature =
+        library_meta::read_meta_result(conn, library_meta::keys::MTIME_PROBE_SIGNATURE)?;
+    let existing_version =
+        library_meta::read_meta_result(conn, library_meta::keys::MTIME_PROBE_VERSION)?;
+    if existing_signature.as_deref() == Some(signature.as_str())
+        && existing_version.as_deref() == Some(PROBE_VERSION)
+    {
+        let existing_trustworthy =
+            library_meta::read_meta_result(conn, library_meta::keys::MTIME_PROBE_TRUSTWORTHY)?
+                .as_deref()
+                == Some("true");
+        tracing::info!(
+            "storage mtime probe: reused signature={} trustworthy={existing_trustworthy}",
+            signature
+        );
+        return Ok(());
+    }
+
+    let probe = storage.probe_mtime_reliability();
+    tracing::info!(
+        "storage mtime probe: root={} kind={} fs={} advanced={} trustworthy={} grain_ns={:?} signature={}",
+        storage.root.display(),
+        storage.kind.as_str(),
+        probe.fs_type.as_deref().unwrap_or("unknown"),
+        probe.advanced,
+        probe.trustworthy,
+        probe.grain_ns,
+        probe.signature
+    );
+    library_meta::write_meta(
+        conn,
+        library_meta::keys::MTIME_PROBE_TRUSTWORTHY,
+        Some(if probe.trustworthy { "true" } else { "false" }),
+    )?;
+    library_meta::write_meta(
+        conn,
+        library_meta::keys::MTIME_PROBE_SIGNATURE,
+        Some(&probe.signature),
+    )?;
+    library_meta::write_meta(
+        conn,
+        library_meta::keys::MTIME_PROBE_FSTYPE,
+        probe.fs_type.as_deref(),
+    )?;
+    library_meta::write_meta(
+        conn,
+        library_meta::keys::MTIME_PROBE_VERSION,
+        Some(PROBE_VERSION),
+    )?;
+    Ok(())
 }
 
 /// Reopen `pool` at `db_path`, but flag corrupt without opening when the

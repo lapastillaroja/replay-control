@@ -5,11 +5,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
-use replay_control_core_server::rom_hash::{CachedHash, HashStats};
+use replay_control_core_server::rom_hash::{CachedHash, HashResult, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 
-use replay_control_core_server::library_db::{DISCOVERY_SAVE_CHUNK_ROWS, LibraryDb};
+use replay_control_core_server::library_db::{
+    DISCOVERY_SAVE_CHUNK_ROWS, DiscoveryFinalizeStats, LibraryDb,
+};
 
 use super::{LibraryService, dir_mtime_secs};
 use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
@@ -17,11 +19,14 @@ use crate::api::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryWritePool};
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ScanOptions {
     pub force_rehash: bool,
+    pub skip_unchanged_startup: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ScanInputs {
     cached_hashes: HashMap<String, CachedHash>,
+    clean_startup_fingerprint: Option<String>,
+    mtime_probe_trustworthy: bool,
     options: ScanOptions,
     /// None is valid for unit tests and in-process harnesses that do not need
     /// storage-swap cancellation.
@@ -53,11 +58,15 @@ impl ScanCancellation {
 impl ScanInputs {
     pub(crate) fn new(
         cached_hashes: HashMap<String, CachedHash>,
+        clean_startup_fingerprint: Option<String>,
+        mtime_probe_trustworthy: bool,
         options: ScanOptions,
         cancellation: Option<ScanCancellation>,
     ) -> Self {
         Self {
             cached_hashes,
+            clean_startup_fingerprint,
+            mtime_probe_trustworthy,
             options,
             cancellation,
         }
@@ -71,12 +80,38 @@ impl ScanInputs {
         self.options.force_rehash
     }
 
+    pub(crate) fn startup_skip_enabled(&self) -> bool {
+        self.options.skip_unchanged_startup
+    }
+
+    pub(crate) fn startup_can_skip(&self, current_fingerprint: &str) -> bool {
+        self.options.skip_unchanged_startup
+            && self.mtime_probe_trustworthy
+            && self.clean_startup_fingerprint.as_deref() == Some(current_fingerprint)
+    }
+
     pub(crate) fn ensure_current(&self) -> Result<()> {
         if let Some(cancellation) = &self.cancellation {
             cancellation.ensure_current()?;
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ScanOutcome {
+    pub roms: Arc<Vec<RomEntry>>,
+    pub discovery_changed: bool,
+}
+
+pub(crate) struct DiscoverySaveRequest<'a> {
+    pub system: &'a str,
+    pub roms: &'a [RomEntry],
+    pub system_dir: &'a Path,
+    pub hash_results: &'a HashMap<String, HashResult>,
+    pub db: &'a LibraryWritePool,
+    pub scan_inputs: &'a ScanInputs,
+    pub scan_fingerprint: &'a str,
 }
 
 impl LibraryService {
@@ -254,15 +289,16 @@ impl LibraryService {
 
     /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
-    pub(crate) async fn save_roms_to_db(
-        &self,
-        system: &str,
-        roms: &[RomEntry],
-        system_dir: &Path,
-        hash_results: &HashMap<String, replay_control_core_server::rom_hash::HashResult>,
-        db: &LibraryWritePool,
-        scan_inputs: &ScanInputs,
-    ) -> Result<()> {
+    pub(crate) async fn save_roms_to_db(&self, request: DiscoverySaveRequest<'_>) -> Result<()> {
+        let DiscoverySaveRequest {
+            system,
+            roms,
+            system_dir,
+            hash_results,
+            db,
+            scan_inputs,
+            scan_fingerprint,
+        } = request;
         let save_profile_started = Instant::now();
         let mtime_started = Instant::now();
         let mtime_secs = dir_mtime_secs(system_dir);
@@ -343,6 +379,7 @@ impl LibraryService {
 
         scan_inputs.ensure_current()?;
         let finalize_system = system.to_string();
+        let finalize_fingerprint = scan_fingerprint.to_string();
         let rom_count = unique_roms.len();
         let finalize_result = db
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
@@ -350,10 +387,13 @@ impl LibraryService {
                     conn,
                     &finalize_system,
                     scan_token,
-                    mtime_secs,
-                    rom_count,
-                    total_size,
-                    scanned_at,
+                    DiscoveryFinalizeStats {
+                        dir_mtime_secs: mtime_secs,
+                        rom_count,
+                        total_size,
+                        scanned_at,
+                        scan_fingerprint: Some(&finalize_fingerprint),
+                    },
                 )
             })
             .await;
@@ -420,6 +460,8 @@ mod tests {
         let current_generation = Arc::new(AtomicU64::new(7));
         let inputs = ScanInputs::new(
             HashMap::new(),
+            None,
+            false,
             ScanOptions::default(),
             Some(ScanCancellation::new(current_generation.clone(), 7)),
         );
@@ -430,5 +472,30 @@ mod tests {
             inputs.ensure_current(),
             Err(Error::StorageChanged)
         ));
+    }
+
+    #[test]
+    fn startup_skip_requires_trustworthy_mtime_probe() {
+        let options = ScanOptions {
+            force_rehash: false,
+            skip_unchanged_startup: true,
+        };
+        let missing_probe = ScanInputs::new(
+            HashMap::new(),
+            Some("fingerprint".to_string()),
+            false,
+            options,
+            None,
+        );
+        assert!(!missing_probe.startup_can_skip("fingerprint"));
+
+        let trusted_probe = ScanInputs::new(
+            HashMap::new(),
+            Some("fingerprint".to_string()),
+            true,
+            options,
+            None,
+        );
+        assert!(trusted_probe.startup_can_skip("fingerprint"));
     }
 }

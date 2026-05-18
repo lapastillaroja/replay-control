@@ -195,9 +195,11 @@ Custom `build.sh` handles the two-step compilation:
 
 This gives direct control over compilation profiles (separate optimization levels for WASM size vs server speed), wasm-opt flags, and cross-compilation without depending on cargo-leptos's assumptions.
 
-Four Cargo profiles serve different goals:
-- `dev` (SSR): opt-level 1, strip debuginfo
-- `wasm-dev`: opt-level "s" (even dev WASM must be small enough to load)
+Six Cargo profiles serve different goals:
+- `dev-fast` (SSR): opt-level 0 for fast `dev.sh` iteration
+- `wasm-dev-fast`: opt-level 0 for fast `dev.sh` hydration rebuilds
+- `dev` (SSR): opt-level 1, strip debuginfo, useful when compact dev artifacts matter
+- `wasm-dev`: opt-level "s" for smaller dev WASM payloads
 - `release` (SSR): opt-level 3, thin LTO, strip symbols
 - `wasm-release`: opt-level "z", fat LTO (best size reduction)
 

@@ -346,8 +346,64 @@ impl BackgroundManager {
             std::collections::HashMap::new()
         };
 
+        let (clean_startup_fingerprint, mtime_probe_trustworthy) = if options.skip_unchanged_startup
+        {
+            let system_owned = system.to_string();
+            let probe_signature = state.storage().mtime_probe_signature();
+            match state
+                .library_reader
+                .read(move |conn| {
+                    use replay_control_core_server::library_db::library_meta;
+
+                    let fingerprint =
+                        LibraryDb::clean_startup_discovery_fingerprint(conn, &system_owned)?;
+                    let stored_signature = library_meta::read_meta_result(
+                        conn,
+                        library_meta::keys::MTIME_PROBE_SIGNATURE,
+                    )?;
+                    let trustworthy = library_meta::read_meta_result(
+                        conn,
+                        library_meta::keys::MTIME_PROBE_TRUSTWORTHY,
+                    )?
+                    .as_deref()
+                        == Some("true");
+                    Ok::<_, replay_control_core::error::Error>((
+                        fingerprint,
+                        trustworthy
+                            && stored_signature.as_deref() == Some(probe_signature.as_str()),
+                    ))
+                })
+                .await
+            {
+                Some(Ok((fingerprint, trustworthy))) => {
+                    if !trustworthy {
+                        tracing::info!(
+                            "Startup scan skip disabled for {system}: storage mtime probe missing, failed, or stale"
+                        );
+                    }
+                    (fingerprint, trustworthy)
+                }
+                Some(Err(e)) => {
+                    tracing::warn!(
+                        "Could not load startup scan fingerprint for {system}: {e}; system will be reconciled"
+                    );
+                    (None, false)
+                }
+                None => {
+                    tracing::warn!(
+                        "Could not load startup scan fingerprint for {system}: library DB unavailable; system will be reconciled"
+                    );
+                    (None, false)
+                }
+            }
+        } else {
+            (None, false)
+        };
+
         Ok(ScanInputs::new(
             cached_hashes,
+            clean_startup_fingerprint,
+            mtime_probe_trustworthy,
             options,
             Some(ScanCancellation::new(
                 state.storage_generation.clone(),
@@ -1419,6 +1475,7 @@ impl BackgroundManager {
             PopulateProgress::Startup,
             ScanOptions {
                 force_rehash: false,
+                skip_unchanged_startup: true,
             },
             generation,
         )
@@ -1789,7 +1846,8 @@ impl BackgroundManager {
                 .await;
             let scan_ms = scan_started.elapsed().as_millis();
             match scan_result {
-                Ok(roms) => {
+                Ok(outcome) => {
+                    let roms = outcome.roms;
                     if !roms.is_empty() {
                         tracing::debug!(
                             "L2 populate: {} — {} ROMs (scan+enrich)",
@@ -1797,6 +1855,19 @@ impl BackgroundManager {
                             roms.len()
                         );
                         total_roms += roms.len();
+                    }
+                    if !outcome.discovery_changed {
+                        tracing::debug!(
+                            "L2 populate: {} unchanged; skipping enrichment and identity",
+                            sys.folder_name
+                        );
+                        tracing::info!(
+                            "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms=0 total_ms={}",
+                            sys.folder_name,
+                            roms.len(),
+                            system_started.elapsed().as_millis()
+                        );
+                        continue;
                     }
                     // Inline enrichment runs on every Ok (including
                     // Ok(empty), which clears stale game_detail_metadata rows
@@ -2434,6 +2505,7 @@ impl AppState {
                     PopulateProgress::Startup,
                     ScanOptions {
                         force_rehash: false,
+                        skip_unchanged_startup: true,
                     },
                     state.storage_generation(),
                 )
@@ -2508,6 +2580,7 @@ impl AppState {
                 PopulateProgress::Rebuild { start },
                 ScanOptions {
                     force_rehash: !scan_hint,
+                    skip_unchanged_startup: false,
                 },
                 state.storage_generation(),
             )
@@ -2933,6 +3006,7 @@ impl AppState {
                         system,
                         ScanOptions {
                             force_rehash: false,
+                            skip_unchanged_startup: false,
                         },
                         storage_generation,
                     )
@@ -2960,7 +3034,8 @@ impl AppState {
                         )
                         .await
                     {
-                        Ok(roms) => {
+                        Ok(outcome) => {
+                            let roms = outcome.roms;
                             if state.ensure_storage_generation(storage_generation).is_err() {
                                 tracing::info!("ROM watcher: storage changed before enrichment");
                                 break;

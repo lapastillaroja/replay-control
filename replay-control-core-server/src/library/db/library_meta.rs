@@ -27,6 +27,24 @@ pub mod keys {
     /// `catalog.sqlite.db_meta.catalog_resource_version` last copied into
     /// `library_game_resource` by enrichment for this storage.
     pub const CATALOG_RESOURCE_VERSION: &str = "catalog_resource_version";
+
+    /// Per-system recursive ROM scan fingerprint used by startup verification
+    /// to skip unchanged systems without trusting directory mtimes.
+    pub fn discovery_fingerprint(system: &str) -> String {
+        format!("discovery_fingerprint:{system}")
+    }
+
+    /// Storage-scoped mtime probe verdict used by startup verification.
+    pub const MTIME_PROBE_TRUSTWORTHY: &str = "mtime_probe_trustworthy";
+
+    /// Storage signature the mtime probe verdict applies to.
+    pub const MTIME_PROBE_SIGNATURE: &str = "mtime_probe_signature";
+
+    /// Informational filesystem type observed during the mtime probe.
+    pub const MTIME_PROBE_FSTYPE: &str = "mtime_probe_fstype";
+
+    /// Probe implementation version. Bump when the probe policy changes.
+    pub const MTIME_PROBE_VERSION: &str = "mtime_probe_version";
 }
 
 /// Read a value from `library_meta`. Returns `None` for missing keys.

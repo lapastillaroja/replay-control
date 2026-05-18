@@ -75,11 +75,12 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 
 ## Stack
 
-**Leptos 0.7 SSR with WASM hydration** — the server renders full HTML pages on the Pi, then the browser hydrates with a lightweight WASM bundle for client-side interactivity. Four compilation profiles handle the dual-target build:
+**Leptos 0.7 SSR with WASM hydration** — the server renders full HTML pages on the Pi, then the browser hydrates with a lightweight WASM bundle for client-side interactivity. Six compilation profiles handle the dual-target build:
 
 | Environment | SSR Server | WASM Client |
 |-------------|-----------|-------------|
-| Dev | `dev` (opt 1) | `wasm-dev` (opt "s") |
+| Fast dev (`dev.sh`) | `dev-fast` (opt 0) | `wasm-dev-fast` (opt 0) |
+| Debug / compact dev | `dev` (opt 1) | `wasm-dev` (opt "s") |
 | Prod | `release` (opt 3, thin LTO) | `wasm-release` (opt "z", fat LTO) |
 
 The entire app compiles to a single binary — no Node.js runtime, no separate build tools at deployment time. Static assets (CSS, service worker, manifest) are embedded in the binary via `include_str!`; larger assets (WASM bundle, icons) are served from disk.

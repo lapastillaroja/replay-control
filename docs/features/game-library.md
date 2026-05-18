@@ -106,6 +106,7 @@ On first launch, normal startup, or after a rebuild, the app scans all visible s
 
 - The server responds immediately with a banner showing the active phase, such as scanning the library, enriching metadata, rebuilding the thumbnail index, or matching ROMs
 - Pages are fully usable while scanning runs in the background
+- Startup still checks subfolders, but systems that have not changed since the last complete scan are skipped after the file check, so restarts are faster on stable libraries
 - If no storage is connected, a waiting page is shown until storage becomes available
 - Interrupted scans are repaired automatically by the next startup scan
 - If the configured storage changes or becomes unavailable during a long scan, the in-flight scan is cancelled before the next system write so stale results are not saved to the wrong storage database

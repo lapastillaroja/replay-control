@@ -1,4 +1,6 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::config::SystemConfig;
 use replay_control_core::error::{Error, Result};
@@ -92,6 +94,7 @@ pub const SETTINGS_FILE: &str = "settings.cfg";
 /// Used to namespace the central `library.db` so ROM-storage swaps preserve
 /// library state across reboots and mount-path churn.
 pub const STORAGE_ID_FILE: &str = "storage-id";
+const MTIME_PROBE_FILE: &str = "mtime-probe";
 
 /// Well-known paths relative to the storage root.
 const ROMS_DIR: &str = "roms";
@@ -206,6 +209,77 @@ impl StorageLocation {
     pub fn is_ready(&self) -> bool {
         is_mount_point(&self.root)
     }
+
+    /// Probe whether this storage can use file mtimes as a startup-scan
+    /// change detector. Failure is conservative: callers must scan normally.
+    pub fn probe_mtime_reliability(&self) -> MtimeProbeResult {
+        let signature = self.mtime_probe_signature();
+        let mount = mount_entry_for(&self.root);
+        let fs_type = mount.as_ref().map(|entry| entry.fs_type.clone());
+
+        if matches!(fs_type.as_deref(), Some("exfat" | "vfat" | "msdos")) {
+            return MtimeProbeResult {
+                trustworthy: true,
+                advanced: true,
+                fs_type,
+                signature,
+                grain_ns: Some(2_000_000_000),
+            };
+        }
+
+        match probe_mtime_inner(&self.rc_dir()) {
+            Ok((advanced, grain_ns)) => MtimeProbeResult {
+                trustworthy: advanced,
+                advanced,
+                fs_type,
+                signature,
+                grain_ns: Some(grain_ns),
+            },
+            Err(e) => {
+                tracing::warn!(
+                    "storage mtime probe failed at {}: {e}; startup skip disabled for this storage",
+                    self.root.display()
+                );
+                MtimeProbeResult {
+                    trustworthy: false,
+                    advanced: false,
+                    fs_type,
+                    signature,
+                    grain_ns: None,
+                }
+            }
+        }
+    }
+
+    /// Stable identity for the mtime-probe decision. A stored probe result is
+    /// reused only when this signature still matches the active storage.
+    pub fn mtime_probe_signature(&self) -> String {
+        let root = std::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        match mount_entry_for(&self.root) {
+            Some(entry) => format!(
+                "v1|kind={}|root={}|fs={}|source={}|mount={}",
+                self.kind.as_str(),
+                root.display(),
+                entry.fs_type,
+                entry.source,
+                entry.mount_point
+            ),
+            None => format!(
+                "v1|kind={}|root={}|fs=unknown|source=unknown|mount=unknown",
+                self.kind.as_str(),
+                root.display()
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MtimeProbeResult {
+    pub trustworthy: bool,
+    pub advanced: bool,
+    pub fs_type: Option<String>,
+    pub signature: String,
+    pub grain_ns: Option<u128>,
 }
 
 /// Read or create the storage-id marker inside `rc_dir`. Public for callers
@@ -272,7 +346,6 @@ fn read_marker(marker: &Path) -> Result<Option<crate::storage_id::StorageId>> {
 }
 
 fn write_marker(rc_dir: &Path, marker: &Path, id: &crate::storage_id::StorageId) -> Result<()> {
-    use std::io::Write;
     std::fs::create_dir_all(rc_dir).map_err(|e| Error::io(rc_dir, e))?;
     // tmp + sync + rename keeps the marker crash-safe (no torn write on power
     // loss). Two replay-control processes racing here is last-writer-wins
@@ -294,6 +367,58 @@ fn write_marker(rc_dir: &Path, marker: &Path, id: &crate::storage_id::StorageId)
     std::fs::rename(&tmp, marker).map_err(|e| Error::io(marker, e))?;
     tracing::info!("Wrote storage id {id} ({})", marker.display());
     Ok(())
+}
+
+fn probe_mtime_inner(rc_dir: &Path) -> Result<(bool, u128)> {
+    std::fs::create_dir_all(rc_dir).map_err(|e| Error::io(rc_dir, e))?;
+    let probe = rc_dir.join(MTIME_PROBE_FILE);
+    let _ = std::fs::remove_file(&probe);
+
+    write_and_sync(&probe, b"probe-a")?;
+    let first = std::fs::metadata(&probe)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|e| Error::io(&probe, e))?;
+
+    std::thread::sleep(Duration::from_millis(1200));
+
+    write_and_sync(&probe, b"probe-b")?;
+    let second = std::fs::metadata(&probe)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|e| Error::io(&probe, e))?;
+    let _ = std::fs::remove_file(&probe);
+
+    Ok((second > first, timestamp_grain_ns(first, second)))
+}
+
+fn write_and_sync(path: &Path, content: &[u8]) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)
+        .map_err(|e| Error::io(path, e))?;
+    file.write_all(content)
+        .and_then(|_| file.sync_all())
+        .map_err(|e| Error::io(path, e))?;
+    Ok(())
+}
+
+fn timestamp_grain_ns(first: SystemTime, second: SystemTime) -> u128 {
+    let first = first
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let second = second
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    if first.is_multiple_of(1_000_000_000) && second.is_multiple_of(1_000_000_000) {
+        1_000_000_000
+    } else if first.is_multiple_of(1_000_000) && second.is_multiple_of(1_000_000) {
+        1_000_000
+    } else {
+        1
+    }
 }
 
 /// Resolved mount entry for a path: the source (block device or NFS export)
@@ -487,5 +612,15 @@ mod tests {
         let id = ensure_storage_id_at(&rc_dir, "usb").unwrap();
         let written = std::fs::read_to_string(rc_dir.join(STORAGE_ID_FILE)).unwrap();
         assert_eq!(written.trim(), id.as_str());
+    }
+
+    #[test]
+    fn mtime_probe_advances_on_temp_storage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Usb);
+        let probe = storage.probe_mtime_reliability();
+        assert!(probe.advanced);
+        assert!(probe.trustworthy);
+        assert!(probe.signature.contains("kind=usb"));
     }
 }

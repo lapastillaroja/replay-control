@@ -5,7 +5,9 @@ pub mod metadata_snapshot;
 pub(crate) mod query;
 mod recommendations_snapshot;
 mod scan_pipeline;
-pub(crate) use scan_pipeline::{ScanCancellation, ScanInputs, ScanOptions};
+pub(crate) use scan_pipeline::{
+    DiscoverySaveRequest, ScanCancellation, ScanInputs, ScanOptions, ScanOutcome,
+};
 pub mod ssr_snapshot;
 
 use std::path::Path;
@@ -134,6 +136,7 @@ impl LibraryService {
             &ScanInputs::default(),
         )
         .await
+        .map(|outcome| outcome.roms)
     }
 
     pub(crate) async fn scan_and_cache_system_with_inputs(
@@ -144,7 +147,7 @@ impl LibraryService {
         region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
         scan_inputs: &ScanInputs,
-    ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
+    ) -> Result<ScanOutcome, replay_control_core::error::Error> {
         scan_inputs.ensure_current()?;
         let system_dir = storage.roms_dir().join(system);
 
@@ -186,18 +189,62 @@ impl LibraryService {
         };
         let list_ms = list_started.elapsed().as_millis();
         tracing::debug!("L3 reconcile scan for {system}: found {} ROMs", roms.len());
+        if scan_inputs.startup_skip_enabled() {
+            let mtime_stats = replay_control_core_server::roms::scan_mtime_stats(&roms);
+            if mtime_stats.is_suspicious() {
+                tracing::info!(
+                    "L2 scan mtime profile: {system}: suspicious distribution total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}; startup skip remains gated by storage probe",
+                    mtime_stats.total,
+                    mtime_stats.unique_mtimes,
+                    mtime_stats.unique_ratio(),
+                    mtime_stats.dominant_count,
+                    mtime_stats.dominant_ratio(),
+                    mtime_stats.missing_or_invalid,
+                );
+            } else {
+                tracing::debug!(
+                    "L2 scan mtime profile: {system}: total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}",
+                    mtime_stats.total,
+                    mtime_stats.unique_mtimes,
+                    mtime_stats.unique_ratio(),
+                    mtime_stats.dominant_count,
+                    mtime_stats.dominant_ratio(),
+                    mtime_stats.missing_or_invalid,
+                );
+            }
+        }
         scan_inputs.ensure_current()?;
 
+        let scan_fingerprint = replay_control_core_server::roms::scan_fingerprint(&roms);
+        let arc = Arc::new(roms);
+        if scan_inputs.startup_can_skip(&scan_fingerprint) {
+            tracing::info!(
+                "L2 scan profile: {system}: roms={} list_ms={list_ms} unchanged; skipped discovery save and enrichment total_ms={}",
+                arc.len(),
+                total_started.elapsed().as_millis()
+            );
+            return Ok(ScanOutcome {
+                roms: arc,
+                discovery_changed: false,
+            });
+        }
+
         let identity_started = Instant::now();
-        let hash_results = self.cached_identity_for_discovery(storage, system, &roms, scan_inputs);
+        let hash_results = self.cached_identity_for_discovery(storage, system, &arc, scan_inputs);
         let identity_ms = identity_started.elapsed().as_millis();
         scan_inputs.ensure_current()?;
 
-        let arc = Arc::new(roms);
-
         let save_started = Instant::now();
         let save_result = self
-            .save_roms_to_db(system, &arc, &system_dir, &hash_results, db, scan_inputs)
+            .save_roms_to_db(DiscoverySaveRequest {
+                system,
+                roms: &arc,
+                system_dir: &system_dir,
+                hash_results: &hash_results,
+                db,
+                scan_inputs,
+                scan_fingerprint: &scan_fingerprint,
+            })
             .await;
         let save_ms = save_started.elapsed().as_millis();
         if let Err(e) = save_result {
@@ -214,7 +261,10 @@ impl LibraryService {
             total_started.elapsed().as_millis()
         );
 
-        Ok(arc)
+        Ok(ScanOutcome {
+            roms: arc,
+            discovery_changed: true,
+        })
     }
 
     /// Try to load ROMs from SQLite game_library, validating via mtime.
@@ -281,6 +331,7 @@ impl LibraryService {
                         cr.display_name,
                     ),
                     size_bytes: cr.size_bytes,
+                    mtime_nanos: None,
                     is_m3u: cr.is_m3u,
                     is_favorite: false, // Set by caller via get_favorites_set()
                     box_art_url: cr.box_art_url,
@@ -376,7 +427,10 @@ mod tests {
     use replay_control_core_server::rom_hash::{CachedHash, HashResult};
     use replay_control_core_server::roms::RomEntry;
     use replay_control_core_server::test_utils::build_library_pool;
-    use replay_control_core_server::{library_db::LibraryDb, storage::StorageKind};
+    use replay_control_core_server::{
+        library_db::{LibraryDb, PhaseState},
+        storage::StorageKind,
+    };
     use std::{collections::HashMap, sync::atomic::AtomicU64};
 
     /// `system_summaries` is strictly read-only: an empty
@@ -705,8 +759,11 @@ mod tests {
         );
         let scan_inputs = ScanInputs::new(
             cached_hashes,
+            None,
+            false,
             ScanOptions {
                 force_rehash: false,
+                skip_unchanged_startup: false,
             },
             None,
         );
@@ -737,6 +794,109 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn startup_scan_skips_only_clean_unchanged_systems() {
+        use replay_control_core_server::storage::StorageLocation;
+
+        let (pool, _db_tmp) = build_library_pool();
+        let reader = LibraryReadPool::from_pool(pool.clone());
+        let writer = LibraryWritePool::from_pool(pool);
+        let storage_tmp = tempfile::tempdir().unwrap();
+        let roms_dir = storage_tmp.path().join("roms").join("sony_psx");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path = roms_dir.join("Crash Bandicoot.chd");
+        std::fs::write(&rom_path, b"rom").unwrap();
+
+        let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+        let first = svc
+            .scan_and_cache_system_with_inputs(
+                &storage,
+                "sony_psx",
+                RegionPreference::default(),
+                None,
+                &writer,
+                &ScanInputs::default(),
+            )
+            .await
+            .unwrap();
+        assert!(first.discovery_changed);
+
+        writer
+            .try_write(|conn| {
+                LibraryDb::set_enrichment_state(conn, "sony_psx", PhaseState::Complete)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let clean_fingerprint = reader
+            .read(|conn| LibraryDb::clean_startup_discovery_fingerprint(conn, "sony_psx"))
+            .await
+            .unwrap()
+            .unwrap()
+            .expect("complete system should expose a startup fingerprint");
+
+        let startup_inputs = ScanInputs::new(
+            HashMap::new(),
+            Some(clean_fingerprint.clone()),
+            true,
+            ScanOptions {
+                force_rehash: false,
+                skip_unchanged_startup: true,
+            },
+            None,
+        );
+        let unchanged = svc
+            .scan_and_cache_system_with_inputs(
+                &storage,
+                "sony_psx",
+                RegionPreference::default(),
+                None,
+                &writer,
+                &startup_inputs,
+            )
+            .await
+            .unwrap();
+        assert!(!unchanged.discovery_changed);
+
+        let manual_inputs = ScanInputs::new(
+            HashMap::new(),
+            Some(clean_fingerprint.clone()),
+            false,
+            ScanOptions {
+                force_rehash: false,
+                skip_unchanged_startup: false,
+            },
+            None,
+        );
+        let manual = svc
+            .scan_and_cache_system_with_inputs(
+                &storage,
+                "sony_psx",
+                RegionPreference::default(),
+                None,
+                &writer,
+                &manual_inputs,
+            )
+            .await
+            .unwrap();
+        assert!(manual.discovery_changed);
+
+        std::fs::write(&rom_path, b"changed rom").unwrap();
+        let changed = svc
+            .scan_and_cache_system_with_inputs(
+                &storage,
+                "sony_psx",
+                RegionPreference::default(),
+                None,
+                &writer,
+                &startup_inputs,
+            )
+            .await
+            .unwrap();
+        assert!(changed.discovery_changed);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn stale_storage_generation_prevents_scan_save_write() {
         use replay_control_core_server::storage::StorageLocation;
 
@@ -764,6 +924,8 @@ mod tests {
         let current_generation = Arc::new(AtomicU64::new(2));
         let stale_inputs = ScanInputs::new(
             HashMap::new(),
+            None,
+            false,
             ScanOptions::default(),
             Some(ScanCancellation::new(current_generation, 1)),
         );
@@ -775,6 +937,7 @@ mod tests {
                 None,
             ),
             size_bytes: 11,
+            mtime_nanos: None,
             is_m3u: false,
             is_favorite: false,
             box_art_url: None,
@@ -795,14 +958,15 @@ mod tests {
         );
 
         let err = svc
-            .save_roms_to_db(
-                "nintendo_snes",
-                &roms,
-                &roms_dir,
-                &hash_results,
-                &writer,
-                &stale_inputs,
-            )
+            .save_roms_to_db(DiscoverySaveRequest {
+                system: "nintendo_snes",
+                roms: &roms,
+                system_dir: &roms_dir,
+                hash_results: &hash_results,
+                db: &writer,
+                scan_inputs: &stale_inputs,
+                scan_fingerprint: "test-fingerprint",
+            })
             .await
             .expect_err("stale generation should cancel before DB writes");
         assert!(matches!(

@@ -18,7 +18,7 @@ pub mod release_dates;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_description::GameDescription;
-pub use game_library::{DISCOVERY_SAVE_CHUNK_ROWS, SearchFilter};
+pub use game_library::{DISCOVERY_SAVE_CHUNK_ROWS, DiscoveryFinalizeStats, SearchFilter};
 pub use game_library_system_stats::StatsRefreshState;
 pub use release_dates::{
     ReleaseDateMirrorUpdate, ReleaseDateRow, StaticReleaseData, fetch_static_release_data,

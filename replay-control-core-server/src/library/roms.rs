@@ -149,6 +149,89 @@ pub async fn list_roms(
     Ok(roms)
 }
 
+/// Stable fingerprint for a recursive system scan. Includes path, filename,
+/// size, and mtime so a same-size file replacement dirties the system.
+pub fn scan_fingerprint(roms: &[RomEntry]) -> String {
+    let mut rows: Vec<_> = roms
+        .iter()
+        .map(|rom| {
+            (
+                rom.game.rom_path.as_str(),
+                rom.game.rom_filename.as_str(),
+                rom.size_bytes,
+                rom.mtime_nanos,
+            )
+        })
+        .collect();
+    rows.sort_unstable_by(|a, b| a.0.cmp(b.0).then(a.1.cmp(b.1)));
+
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(b"replay-control-scan-v1\0");
+    for (path, filename, size, mtime) in rows {
+        hash_str(&mut hasher, path);
+        hash_str(&mut hasher, filename);
+        hasher.update(&size.to_le_bytes());
+        hasher.update(&mtime.unwrap_or(-1).to_le_bytes());
+    }
+    format!("{:08x}", hasher.finalize())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScanMtimeStats {
+    pub total: usize,
+    pub unique_mtimes: usize,
+    pub dominant_count: usize,
+    pub missing_or_invalid: usize,
+}
+
+impl ScanMtimeStats {
+    pub fn unique_ratio(self) -> f64 {
+        if self.total == 0 {
+            1.0
+        } else {
+            self.unique_mtimes as f64 / self.total as f64
+        }
+    }
+
+    pub fn dominant_ratio(self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            self.dominant_count as f64 / self.total as f64
+        }
+    }
+
+    pub fn is_suspicious(self) -> bool {
+        self.total >= 50
+            && (self.unique_ratio() < 0.05
+                || self.dominant_ratio() > 0.5
+                || self.missing_or_invalid > 0)
+    }
+}
+
+pub fn scan_mtime_stats(roms: &[RomEntry]) -> ScanMtimeStats {
+    let mut counts = std::collections::HashMap::new();
+    let mut missing_or_invalid = 0usize;
+    for rom in roms {
+        let Some(mtime) = rom.mtime_nanos.filter(|mtime| *mtime > 0) else {
+            missing_or_invalid += 1;
+            continue;
+        };
+        *counts.entry(mtime).or_insert(0usize) += 1;
+    }
+    ScanMtimeStats {
+        total: roms.len(),
+        unique_mtimes: counts.len(),
+        dominant_count: counts.values().copied().max().unwrap_or(0),
+        missing_or_invalid,
+    }
+}
+
+fn hash_str(hasher: &mut crc32fast::Hasher, value: &str) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
 /// Walk the system's ROM directory on the blocking pool. Returns `Ok(empty)`
 /// if the system directory does not exist (caller treats that as a real
 /// "no ROMs" answer per the per-system reconcile rule). Returns `Err` on
@@ -938,6 +1021,7 @@ struct RawRom {
     rom_filename: String,
     rom_path: String,
     size_bytes: u64,
+    mtime_nanos: Option<i128>,
     is_m3u: bool,
 }
 
@@ -965,7 +1049,13 @@ fn collect_raw_roms_recursive(
                 .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
                 .unwrap_or(&path);
             let rom_path = format!("/{}", relative.display());
-            let size_bytes = entry.metadata().map_err(|e| Error::io(&path, e))?.len();
+            let metadata = entry.metadata().map_err(|e| Error::io(&path, e))?;
+            let size_bytes = metadata.len();
+            let mtime_nanos = metadata
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos() as i128);
             let is_m3u = path
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
@@ -974,6 +1064,7 @@ fn collect_raw_roms_recursive(
                 rom_filename,
                 rom_path,
                 size_bytes,
+                mtime_nanos,
                 is_m3u,
             });
         }
@@ -1008,6 +1099,7 @@ async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntr
             out.push(RomEntry {
                 game,
                 size_bytes: r.size_bytes,
+                mtime_nanos: r.mtime_nanos,
                 is_m3u: r.is_m3u,
                 is_favorite: false,
                 box_art_url: None,
@@ -1026,6 +1118,7 @@ async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntr
             out.push(RomEntry {
                 game,
                 size_bytes: r.size_bytes,
+                mtime_nanos: r.mtime_nanos,
                 is_m3u: r.is_m3u,
                 is_favorite: false,
                 box_art_url: None,
@@ -1252,6 +1345,26 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    fn rom_with_mtime(index: usize, mtime_nanos: Option<i128>) -> RomEntry {
+        let filename = format!("Game {index}.nes");
+        RomEntry {
+            game: GameRef::from_parts(
+                "nintendo_nes",
+                filename.clone(),
+                format!("/roms/nintendo_nes/{filename}"),
+                None,
+            ),
+            size_bytes: 1,
+            mtime_nanos,
+            is_m3u: false,
+            is_favorite: false,
+            box_art_url: None,
+            driver_status: None,
+            rating: None,
+            players: None,
+        }
+    }
+
     #[test]
     fn is_rom_file_matches_extensions() {
         let sys = systems::find_system("nintendo_nes").unwrap();
@@ -1273,6 +1386,24 @@ mod tests {
         assert!(!is_rom_file(Path::new("gds-0009a.chd"), sys));
         assert!(!is_rom_file(Path::new("GDL-0010.chd"), sys));
         assert!(!is_rom_file(Path::new("GDS-0009A.CHD"), sys));
+    }
+
+    #[test]
+    fn scan_mtime_stats_flags_large_uniform_distribution() {
+        let roms: Vec<_> = (0..100)
+            .map(|index| rom_with_mtime(index, Some(1_700_000_000_000_000_000)))
+            .collect();
+        let stats = scan_mtime_stats(&roms);
+        assert_eq!(stats.unique_mtimes, 1);
+        assert!(stats.is_suspicious());
+    }
+
+    #[test]
+    fn scan_mtime_stats_accepts_small_uniform_distribution() {
+        let roms: Vec<_> = (0..10)
+            .map(|index| rom_with_mtime(index, Some(1_700_000_000_000_000_000)))
+            .collect();
+        assert!(!scan_mtime_stats(&roms).is_suspicious());
     }
 
     #[test]

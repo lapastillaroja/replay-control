@@ -592,7 +592,12 @@ fn DataManagementSection(
     is_busy: Memo<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let controls_hydrated = RwSignal::new(false);
     let show_advanced = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        controls_hydrated.set(true);
+    });
 
     let rebuilding = Memo::new(
         move |_| matches!(activity.get(), Activity::Rebuild { progress } if !progress.is_rescan),
@@ -760,7 +765,13 @@ fn DataManagementSection(
     view! {
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataDataManagement)}</h2>
-            <div class="manage-actions">
+            <div class=move || {
+                if controls_hydrated.get() {
+                    "manage-actions is-hydrated"
+                } else {
+                    "manage-actions"
+                }
+            }>
                 <RescanActionCard
                     rescanning=rescanning
                     result=result_message

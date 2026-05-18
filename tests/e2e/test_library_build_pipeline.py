@@ -63,6 +63,7 @@ def _exec_checked(cmd: str, timeout: int = 30) -> str:
 
 
 def _reset_container_library(worker_count: int):
+    logs_before = _container_logs()
     _exec_checked(
         f"""
         systemctl stop replay-control >/dev/null 2>&1 || true
@@ -79,8 +80,8 @@ def _reset_container_library(worker_count: int):
         """,
         timeout=30,
     )
-    _wait_for_app()
-    _wait_for_activity_idle(timeout=20)
+    _wait_for_app(timeout=90)
+    _wait_for_new_log(logs_before, "L2 populate: done", timeout=120)
 
 
 def _create_hash_workload(count=80, size_mb=2):
@@ -96,6 +97,70 @@ def _create_hash_workload(count=80, size_mb=2):
         """,
         timeout=30,
     )
+
+
+def _create_hash_workload_before_startup(count=80, size_mb=2):
+    logs_before = _container_logs()
+    _exec_checked("systemctl stop replay-control >/dev/null 2>&1 || true", timeout=30)
+    _create_hash_workload(count=count, size_mb=size_mb)
+    _exec_checked("systemctl start replay-control >/dev/null", timeout=30)
+    _wait_for_app(timeout=90)
+    _wait_for_new_log(logs_before, "L2 populate: done", timeout=120)
+    _wait_for_new_log(logs_before, "Identity phase: queued work finished", timeout=120)
+
+
+def _create_startup_skip_workload():
+    _exec_checked(
+        """
+        set -e
+        roms=/media/usb/roms/sony_psx
+        mkdir -p "$roms"
+        printf 'rom-data' > "$roms/Crash Bandicoot.chd"
+        """,
+        timeout=30,
+    )
+
+
+def _restart_service_and_wait_idle(timeout=60):
+    logs_before = _container_logs()
+    _exec_checked("systemctl restart replay-control >/dev/null", timeout=30)
+    _wait_for_app(timeout=timeout)
+    _wait_for_new_log(logs_before, "L2 populate: done", timeout=timeout)
+
+
+def _container_logs() -> str:
+    engine = CONTAINER_ENGINE or "podman"
+    result = subprocess.run(
+        [engine, "logs", CONTAINER],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"container logs failed with {result.returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    return result.stdout + result.stderr
+
+
+def _new_logs_since(previous_logs: str) -> str:
+    current_logs = _container_logs()
+    if current_logs.startswith(previous_logs):
+        return current_logs[len(previous_logs) :]
+    return current_logs
+
+
+def _wait_for_new_log(previous_logs: str, pattern: str, timeout: int = 60) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        new_logs = _new_logs_since(previous_logs)
+        if pattern in new_logs:
+            return new_logs
+        time.sleep(0.5)
+    raise AssertionError(f"timed out waiting for log pattern: {pattern}")
 
 
 def _read_one_activity(timeout=10):
@@ -154,26 +219,30 @@ class ActivityStream:
         raise AssertionError(f"timed out waiting for activity; events={events!r}")
 
 
-def test_rescan_streams_identity_progress_and_blocks_second_rescan(
+def test_rebuild_streams_identity_progress_and_blocks_rescan(
     page,
     isolated_container_library,
 ):
-    _create_hash_workload()
+    _create_hash_workload_before_startup()
     page.goto(f"{PI_URL}/settings/metadata", wait_until="load", timeout=30000)
+    page.locator(".manage-actions.is-hydrated").wait_for(timeout=15000)
     rescan_button = page.get_by_role("button", name="Rescan Library")
     expect(rescan_button).to_be_enabled(timeout=10000)
+    page.get_by_role("button", name="Advanced").click()
+    advanced_actions = page.locator(".manage-actions-grid")
+    rebuild_button = advanced_actions.get_by_role("button", name="Rebuild Game Library")
+    expect(rebuild_button).to_be_enabled(timeout=10000)
+    rebuild_button.click()
+    expect(rebuild_button).to_be_enabled(timeout=10000)
 
     with ActivityStream(timeout=30) as stream:
-        initial = stream.next_event()
-        assert initial["type"] == "Idle"
-
-        rescan_button.click()
+        rebuild_button.click()
 
         rebuild = stream.wait_for(
             lambda event: event.get("type") == "Rebuild",
             timeout=10,
         )
-        assert rebuild["progress"]["is_rescan"] is True
+        assert rebuild["progress"]["is_rescan"] is False
 
         identity = stream.wait_for(
             lambda event: event.get("type") == "Identity"
@@ -196,3 +265,31 @@ def test_rescan_streams_identity_progress_and_blocks_second_rescan(
             timeout=60,
         )
         assert complete["progress"]["rows_done"] == complete["progress"]["rows_total"]
+
+
+def test_startup_verification_skips_unchanged_systems_but_reconciles_touched_rom(
+    isolated_container_library,
+):
+    _create_startup_skip_workload()
+    first_scan_before = _container_logs()
+    _restart_service_and_wait_idle(timeout=90)
+    first_scan_logs = _new_logs_since(first_scan_before)
+    assert "L2 discovery save profile: sony_psx:" in first_scan_logs
+
+    unchanged_before = _container_logs()
+    _restart_service_and_wait_idle(timeout=90)
+    unchanged_logs = _new_logs_since(unchanged_before)
+    assert "L2 scan profile: sony_psx:" in unchanged_logs
+    assert "unchanged; skipped discovery save and enrichment" in unchanged_logs
+
+    time.sleep(1.1)
+    _exec_checked("touch '/media/usb/roms/sony_psx/Crash Bandicoot.chd'", timeout=30)
+    touched_before = _container_logs()
+    _restart_service_and_wait_idle(timeout=90)
+    touched_logs = _new_logs_since(touched_before)
+    assert "L2 discovery save profile: sony_psx:" in touched_logs
+    assert "L2 scan profile: sony_psx:" in touched_logs
+    assert "sony_psx" in touched_logs
+    assert "unchanged; skipped discovery save and enrichment" not in "\n".join(
+        line for line in touched_logs.splitlines() if "sony_psx" in line
+    )

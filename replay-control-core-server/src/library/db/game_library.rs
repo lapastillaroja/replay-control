@@ -8,7 +8,7 @@ use replay_control_core::error::{Error, Result};
 
 use super::{
     DpSql, GameEntry, LibraryDb, PhaseState, SystemMeta, ThumbnailDownloadJob, ThumbnailJobState,
-    ThumbnailPhaseState, unix_now,
+    ThumbnailPhaseState, library_meta, unix_now,
 };
 
 /// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
@@ -23,6 +23,15 @@ const GAME_ENTRY_COLUMNS: &str = "\
     normalized_title, normalized_title_alt";
 
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DiscoveryFinalizeStats<'a> {
+    pub dir_mtime_secs: Option<i64>,
+    pub rom_count: usize,
+    pub total_size: u64,
+    pub scanned_at: i64,
+    pub scan_fingerprint: Option<&'a str>,
+}
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
@@ -287,10 +296,13 @@ impl LibraryDb {
             &tx,
             system,
             token,
-            dir_mtime_secs,
-            unique_roms.len(),
-            total_size,
-            now,
+            DiscoveryFinalizeStats {
+                dir_mtime_secs,
+                rom_count: unique_roms.len(),
+                total_size,
+                scanned_at: now,
+                scan_fingerprint: None,
+            },
         )?;
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
@@ -346,24 +358,13 @@ impl LibraryDb {
         conn: &mut Connection,
         system: &str,
         scan_token: i64,
-        dir_mtime_secs: Option<i64>,
-        rom_count: usize,
-        total_size: u64,
-        scanned_at: i64,
+        stats: DiscoveryFinalizeStats<'_>,
     ) -> Result<()> {
         let finalize_started = std::time::Instant::now();
         let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
-        Self::finalize_discovery(
-            &tx,
-            system,
-            scan_token,
-            dir_mtime_secs,
-            rom_count,
-            total_size,
-            scanned_at,
-        )?;
+        Self::finalize_discovery(&tx, system, scan_token, stats)?;
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         let finalize_elapsed = finalize_started.elapsed();
@@ -372,7 +373,7 @@ impl LibraryDb {
                 "discovery.save slow finalize system={} scan_token={} rows={} finalize_ms={}",
                 system,
                 scan_token,
-                rom_count,
+                stats.rom_count,
                 finalize_elapsed.as_millis()
             );
         }
@@ -535,10 +536,7 @@ impl LibraryDb {
         tx: &Transaction<'_>,
         system: &str,
         scan_token: i64,
-        dir_mtime_secs: Option<i64>,
-        rom_count: usize,
-        total_size: u64,
-        now: i64,
+        stats: DiscoveryFinalizeStats<'_>,
     ) -> Result<()> {
         tx.execute(
             "DELETE FROM game_detail_metadata
@@ -578,16 +576,18 @@ impl LibraryDb {
                 thumbnail_state = excluded.thumbnail_state",
             params![
                 system,
-                dir_mtime_secs,
-                now,
-                rom_count as i64,
-                total_size as i64,
+                stats.dir_mtime_secs,
+                stats.scanned_at,
+                stats.rom_count as i64,
+                stats.total_size as i64,
                 PhaseState::Complete.as_i64(),
                 PhaseState::Pending.as_i64(),
                 ThumbnailPhaseState::Pending.as_i64()
             ],
         )
         .map_err(|e| Error::Other(format!("Upsert game_library_meta failed: {e}")))?;
+        let fingerprint_key = library_meta::keys::discovery_fingerprint(system);
+        library_meta::write_meta(tx, &fingerprint_key, stats.scan_fingerprint)?;
         Self::refresh_game_library_system_stats_state(tx, system, super::StatsRefreshState::Stale)?;
         Ok(())
     }
@@ -776,6 +776,44 @@ impl LibraryDb {
         )
         .optional()
         .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
+    }
+
+    /// Return the last complete startup-skip fingerprint only when the system
+    /// is fully reconciled and has no unresolved identity work.
+    pub fn clean_startup_discovery_fingerprint(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<Option<String>> {
+        let Some(meta) = Self::load_system_meta(conn, system)? else {
+            return Ok(None);
+        };
+        if meta.discovery_state != PhaseState::Complete
+            || meta.enrichment_state != PhaseState::Complete
+        {
+            return Ok(None);
+        }
+
+        let unresolved_identity_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM game_library
+                 WHERE system = ?1
+                   AND identity_state NOT IN (?2, ?3, ?4)",
+                params![
+                    system,
+                    super::IdentityState::NotApplicable.as_i64(),
+                    super::IdentityState::CompleteMatched.as_i64(),
+                    super::IdentityState::CompleteUnmatched.as_i64(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Query unresolved identity count: {e}")))?;
+        if unresolved_identity_count > 0 {
+            return Ok(None);
+        }
+
+        let fingerprint_key = library_meta::keys::discovery_fingerprint(system);
+        library_meta::read_meta_result(conn, &fingerprint_key)
     }
 
     /// Load library metadata for all systems.
@@ -2556,7 +2594,7 @@ impl LibraryDb {
 #[cfg(test)]
 mod tests {
     use super::super::tests::*;
-    use super::super::{LibraryDb, LibraryGameResource};
+    use super::super::{IdentityState, LibraryDb, LibraryGameResource, PhaseState, library_meta};
     use super::SearchFilter;
     use replay_control_core::resource_kind;
 
@@ -2924,6 +2962,39 @@ mod tests {
         assert_eq!(
             meta.thumbnail_state,
             super::super::ThumbnailPhaseState::Pending
+        );
+    }
+
+    #[test]
+    fn clean_startup_discovery_fingerprint_requires_complete_system_state() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut complete = make_game_entry("nintendo_snes", "Complete.sfc", false);
+        complete.identity_state = IdentityState::CompleteMatched;
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[complete], None).unwrap();
+        let key = library_meta::keys::discovery_fingerprint("nintendo_snes");
+        library_meta::write_meta(&conn, &key, Some("fingerprint-1")).unwrap();
+
+        assert_eq!(
+            LibraryDb::clean_startup_discovery_fingerprint(&conn, "nintendo_snes").unwrap(),
+            None,
+            "pending enrichment must not be treated as clean"
+        );
+
+        LibraryDb::set_enrichment_state(&mut conn, "nintendo_snes", PhaseState::Complete).unwrap();
+        assert_eq!(
+            LibraryDb::clean_startup_discovery_fingerprint(&conn, "nintendo_snes").unwrap(),
+            Some("fingerprint-1".to_string())
+        );
+
+        let mut pending = make_game_entry("nintendo_snes", "Pending.sfc", false);
+        pending.identity_state = IdentityState::Pending;
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[pending], None).unwrap();
+        library_meta::write_meta(&conn, &key, Some("fingerprint-2")).unwrap();
+        LibraryDb::set_enrichment_state(&mut conn, "nintendo_snes", PhaseState::Complete).unwrap();
+        assert_eq!(
+            LibraryDb::clean_startup_discovery_fingerprint(&conn, "nintendo_snes").unwrap(),
+            None,
+            "pending identity must not be treated as clean"
         );
     }
 
