@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
+use replay_control_core::resource_kind;
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::db_pool::rusqlite::Connection;
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
@@ -710,8 +711,13 @@ async fn load_launchbox_resources(
     let sys = system.to_string();
     em_reader
         .read(move |conn| {
-            external_metadata::system_provider_resources(conn, LAUNCHBOX_PROVIDER, &sys, "video")
-                .unwrap_or_default()
+            external_metadata::system_provider_resources(
+                conn,
+                LAUNCHBOX_PROVIDER,
+                &sys,
+                resource_kind::VIDEO,
+            )
+            .unwrap_or_default()
         })
         .await
         .unwrap_or_default()
@@ -736,7 +742,7 @@ async fn load_catalog_manual_resources(
     replay_control_core_server::catalog_pool::lookup_catalog_game_resources(
         system,
         &normalized_titles,
-        "manual",
+        resource_kind::MANUAL,
     )
     .await
 }

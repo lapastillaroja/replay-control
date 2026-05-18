@@ -1,5 +1,7 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core::resource_kind;
+#[cfg(feature = "ssr")]
 use replay_control_core::systems;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
@@ -60,7 +62,9 @@ pub async fn get_provider_game_videos(
     let state = expect_context::<crate::api::AppState>();
     let resources = state
         .library_reader
-        .read(move |conn| LibraryDb::game_resources(conn, &system, &rom_filename, "video"))
+        .read(move |conn| {
+            LibraryDb::game_resources(conn, &system, &rom_filename, resource_kind::VIDEO)
+        })
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;

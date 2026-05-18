@@ -60,8 +60,8 @@ pub fn resolve_launchbox_xml(
 }
 
 pub use replay_control_core::library_db::{
-    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
-    SystemCoverage,
+    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibraryResourceLink,
+    LibrarySummary, MetadataStats, SystemCoverage,
 };
 
 pub use replay_control_core::DatePrecision;
@@ -239,6 +239,23 @@ pub struct LibraryGameResource {
     pub languages: Option<String>,
     pub platform: Option<String>,
     pub mime_type: Option<String>,
+}
+
+/// Strip the redundant `rom_filename` field (already scoped by the caller's
+/// per-ROM payload) and hand back the wire-shape view consumed by SSR.
+impl From<LibraryGameResource> for LibraryResourceLink {
+    fn from(r: LibraryGameResource) -> Self {
+        LibraryResourceLink {
+            source: r.source,
+            resource_type: r.resource_type,
+            resource_id: r.resource_id,
+            url: r.url,
+            title: r.title,
+            languages: r.languages,
+            platform: r.platform,
+            mime_type: r.mime_type,
+        }
+    }
 }
 
 /// Durable thumbnail download job stored in `library.db`.

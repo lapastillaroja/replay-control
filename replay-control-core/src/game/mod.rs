@@ -3,4 +3,5 @@ pub mod developer;
 pub mod game_ref;
 pub mod genre;
 pub mod rom_tags;
+pub mod shmups_wiki;
 pub mod title_utils;

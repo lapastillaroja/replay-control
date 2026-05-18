@@ -319,6 +319,7 @@ pub enum Key {
     GameDetailPublisher,
     GameDetailRating,
     GameDetailGameFaqsLink,
+    GameDetailShmupsWikiLink,
 
     // Metadata management
     MoreMetadata,

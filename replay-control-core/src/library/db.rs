@@ -110,3 +110,23 @@ pub struct LibrarySummary {
     pub max_year: Option<u16>,
     pub total_size_bytes: u64,
 }
+
+/// Wire-shape mirror of `library_game_resource` rows — the per-ROM payload
+/// of `get_rom_detail`. `rom_filename` is dropped from the wire because
+/// rows are already scoped to a single ROM. UI code partitions by
+/// `resource_type` (manual / video / strategy_guide / …) and `source`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryResourceLink {
+    pub source: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub url: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub languages: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+}

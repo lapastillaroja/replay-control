@@ -15,6 +15,7 @@ pub use game::developer;
 pub use game::game_ref;
 pub use game::genre;
 pub use game::rom_tags;
+pub use game::shmups_wiki;
 pub use game::title_utils;
 
 pub mod library;
@@ -23,6 +24,7 @@ pub use library::favorites;
 pub use library::manuals::game_docs;
 pub use library::manuals::retrokit as retrokit_manuals;
 pub use library::recents;
+pub use library::resource_kind;
 pub use library::roms;
 
 pub mod user_data;

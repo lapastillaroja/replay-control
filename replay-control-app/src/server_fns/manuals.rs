@@ -5,6 +5,8 @@ use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::user_data_db::{ManualEntry, ManualOrigin, UserDataDb};
 
 pub use replay_control_core::game_docs::GameDocument;
+#[cfg(feature = "ssr")]
+use replay_control_core::resource_kind;
 pub use replay_control_core::retrokit_manuals::ManualRecommendation;
 
 /// A local manual file found on disk in `<storage>/manuals/<system>/`.
@@ -219,7 +221,7 @@ async fn library_manual_recommendations(
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                LibraryDb::game_resources(conn, &system, &rom_filename, "manual")
+                LibraryDb::game_resources(conn, &system, &rom_filename, resource_kind::MANUAL)
                     .unwrap_or_default()
             }
         })

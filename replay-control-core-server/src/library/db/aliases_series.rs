@@ -105,6 +105,28 @@ impl LibraryDb {
         titles
     }
 
+    /// Bulk-load every `(base_title, alias_name)` pair for one system in a
+    /// single query. Enrichment uses this to build an in-memory equivalence
+    /// map instead of calling [`Self::alias_base_titles`] per-ROM.
+    pub fn alias_pairs_for_system(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<Vec<(String, String)>> {
+        let mut stmt = conn
+            .prepare("SELECT base_title, alias_name FROM game_alias WHERE system = ?1")
+            .map_err(|e| Error::Other(format!("Prepare alias_pairs_for_system: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query alias_pairs_for_system: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| Error::Other(format!("Read alias_pair: {e}")))?);
+        }
+        Ok(out)
+    }
+
     /// Clear all game aliases.
     pub fn clear_aliases(conn: &Connection) -> Result<()> {
         conn.execute("DELETE FROM game_alias", [])

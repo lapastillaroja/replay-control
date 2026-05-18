@@ -131,6 +131,8 @@ data/*
 !data/README.md
 !data/wikidata/
 !data/wikidata/series.json
+!data/shmups-wiki/
+!data/shmups-wiki/games.json
 # Hand-curated arcade sources (e.g. Flycast Naomi/Atomiswave CSV) live in data/arcade/
 # and ARE tracked in git.
 !data/arcade

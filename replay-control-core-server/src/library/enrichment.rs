@@ -15,6 +15,8 @@ use crate::library_db::{BoxArtGenreRating, LibraryDb, LibraryGameResource, Relea
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::DatePrecision;
 use replay_control_core::developer::normalize_developer;
+use replay_control_core::resource_kind;
+use replay_control_core::shmups_wiki::shmups_wiki_page;
 use replay_control_core::title_utils::{filename_stem, normalize_title_for_metadata};
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
@@ -226,6 +228,13 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
     let norm_by_rom = LibraryDb::visible_normalized_titles(conn, system).unwrap_or_default();
     let hash_matched_names: HashMap<String, String> =
         LibraryDb::visible_hash_matched_names(conn, system).unwrap_or_default();
+    // base_title_by_rom is consumed by the shmups_wiki lookup loop, the
+    // release-date resolver, and the description writer; load it once here
+    // so the same query isn't issued three times.
+    let base_title_by_rom: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
     let lb_by_rom = match_launchbox_rows(
         &norm_by_rom,
         &hash_matched_names,
@@ -295,6 +304,43 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         }
     }
 
+    // Strategy-guide deep links to Shmups Wiki. We try each ROM's stored
+    // `base_title` against the bundled wiki index; if that misses (regional
+    // name like "Gunlock" for what the wiki files under "RayForce"), we
+    // walk this game's recorded aliases from `game_alias` and try each. One
+    // bulk load builds the equivalence map so misses don't cost an alias
+    // query each.
+    let alias_pairs = LibraryDb::alias_pairs_for_system(conn, system).unwrap_or_default();
+    let mut alias_equiv: HashMap<String, Vec<String>> = HashMap::new();
+    for (base_title, alias_name) in alias_pairs {
+        let bt_key = base_title.to_lowercase();
+        let an_key = alias_name.to_lowercase();
+        alias_equiv.entry(bt_key).or_default().push(alias_name);
+        alias_equiv.entry(an_key).or_default().push(base_title);
+    }
+    for (rom_filename, base_title) in &base_title_by_rom {
+        let direct = shmups_wiki_page(base_title);
+        let hit = direct.or_else(|| {
+            alias_equiv
+                .get(&base_title.to_lowercase())?
+                .iter()
+                .find_map(|alt| shmups_wiki_page(alt))
+        });
+        if let Some(page) = hit {
+            resource_rows.push(LibraryGameResource {
+                rom_filename: rom_filename.clone(),
+                source: resource_kind::SHMUPS_WIKI_SOURCE.to_string(),
+                resource_type: resource_kind::STRATEGY_GUIDE.to_string(),
+                resource_id: page.page_title.clone(),
+                url: page.url,
+                title: Some(page.page_title),
+                languages: None,
+                platform: None,
+                mime_type: Some("text/html".to_string()),
+            });
+        }
+    }
+
     // Build enrichment entries + collect manifest download requests.
     let mut manifest_downloads: Vec<(String, ManifestMatch)> = Vec::new();
 
@@ -351,7 +397,7 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
     // ── Second pass: base_title fallback ──────────────────────────────
     // If a ROM has no art but a sibling (same system + base_title) does, use it.
     // This covers region variants (USA has art, Europe doesn't), revisions, etc.
-    let enrichments = apply_base_title_fallback(conn, system, enrichments, &rom_filenames);
+    let enrichments = apply_base_title_fallback(&base_title_by_rom, enrichments, &rom_filenames);
 
     // Developer enrichment: fill from LaunchBox for ROMs that don't already have one.
     let developer_updates: Vec<(String, String)> = rom_filenames
@@ -377,9 +423,6 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
     //
     // LaunchBox doesn't tag releases by region in the imported data; pick
     // `"world"` so the resolver's region preference can fall back to it.
-    let base_title_by_rom: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
-        .map(|pairs| pairs.into_iter().collect())
-        .unwrap_or_default();
     let release_date_rows: Vec<ReleaseDateRow> = rom_filenames
         .iter()
         .filter_map(|f| {
@@ -488,17 +531,10 @@ fn precision_rank(p: DatePrecision) -> u8 {
 ///
 /// Returns a new enrichments vec with fallback art injected.
 fn apply_base_title_fallback(
-    conn: &Connection,
-    system: &str,
+    base_titles: &HashMap<String, String>,
     mut enrichments: Vec<BoxArtGenreRating>,
     rom_filenames: &[String],
 ) -> Vec<BoxArtGenreRating> {
-    // Load base_title for every ROM in this system.
-    let base_titles: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
-
     // Build map: base_title → box_art_url from enrichments that resolved art.
     let mut art_by_base_title: HashMap<&str, &str> = HashMap::new();
     for e in &enrichments {
@@ -698,6 +734,15 @@ mod tests {
         (conn, dir)
     }
 
+    /// Helper: load `(rom_filename, base_title)` pairs for tests that call
+    /// `apply_base_title_fallback`.
+    fn load_base_titles(conn: &rusqlite::Connection, system: &str) -> HashMap<String, String> {
+        LibraryDb::visible_base_titles(conn, system)
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+    }
+
     /// Helper: create a game entry with a specific base_title.
     fn make_entry_with_base_title(
         system: &str,
@@ -781,7 +826,8 @@ mod tests {
             "Sonic (Europe).md".to_string(),
         ];
 
-        let result = apply_base_title_fallback(&conn, "sega_smd", enrichments, &rom_filenames);
+        let base_titles = load_base_titles(&conn, "sega_smd");
+        let result = apply_base_title_fallback(&base_titles, enrichments, &rom_filenames);
 
         let europe = result
             .iter()
@@ -828,7 +874,8 @@ mod tests {
         let enrichments: Vec<BoxArtGenreRating> = vec![];
         let rom_filenames = vec!["Sonic (USA).gg".to_string()];
 
-        let result = apply_base_title_fallback(&conn, "sega_gg", enrichments, &rom_filenames);
+        let base_titles = load_base_titles(&conn, "sega_gg");
+        let result = apply_base_title_fallback(&base_titles, enrichments, &rom_filenames);
 
         // GG should NOT get MD's art — fallback is per-system only.
         let gg = result.iter().find(|e| e.rom_filename == "Sonic (USA).gg");
@@ -866,7 +913,8 @@ mod tests {
 
         let rom_filenames = vec!["ROM_A.md".to_string(), "ROM_B.md".to_string()];
 
-        let result = apply_base_title_fallback(&conn, "sega_smd", enrichments, &rom_filenames);
+        let base_titles = load_base_titles(&conn, "sega_smd");
+        let result = apply_base_title_fallback(&base_titles, enrichments, &rom_filenames);
 
         // ROM_B should NOT get art — empty base_title is excluded.
         let rom_b = result.iter().find(|e| e.rom_filename == "ROM_B.md");
@@ -981,7 +1029,8 @@ mod tests {
             "Zelda (Japan).sfc".to_string(),
         ];
 
-        let result = apply_base_title_fallback(&conn, "snes", enrichments, &rom_filenames);
+        let base_titles = load_base_titles(&conn, "snes");
+        let result = apply_base_title_fallback(&base_titles, enrichments, &rom_filenames);
 
         let japan = result
             .iter()

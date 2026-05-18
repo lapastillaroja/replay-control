@@ -338,6 +338,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPublisher => "発売元",
         Key::GameDetailRating => "評価",
         Key::GameDetailGameFaqsLink => "GameFAQs で検索",
+        Key::GameDetailShmupsWikiLink => "Shmups Wiki の攻略情報",
 
         // Metadata management
         Key::MoreMetadata => "ゲームメタデータ",

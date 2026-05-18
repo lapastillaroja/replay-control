@@ -22,6 +22,11 @@ Game series relationships.
 Source: [Wikidata](https://www.wikidata.org/)
 License: CC0 (public domain)
 
+### Shmups Wiki
+Page-title index used to deep-link the game-detail page to the canonical strategy article. Wiki prose is not embedded.
+Source: [shmups.wiki](https://shmups.wiki/library/)
+License: CC BY-SA 4.0 (one-way compatible with GPL-3.0-or-later per the Creative Commons [compatibility list](https://creativecommons.org/compatiblelicenses/)). Attribution is surfaced inline at every link.
+
 ## Runtime Data (downloaded by user)
 
 ### LaunchBox

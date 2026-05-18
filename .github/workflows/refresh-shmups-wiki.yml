@@ -1,0 +1,105 @@
+name: Refresh Shmups Wiki Index
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly refresh. The snapshot is reviewed via PR before release builds use it.
+    - cron: '0 7 1 * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Refresh Shmups Wiki index
+        run: |
+          mkdir -p data/shmups-wiki
+          python3 scripts/shmups-wiki-extract.py > data/shmups-wiki/games.json
+
+      - name: Validate snapshot
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/shmups-wiki/games.json")
+          rows = json.loads(path.read_text(encoding="utf-8"))
+          required = {"normalized_title", "page_title"}
+          if not isinstance(rows, list):
+              raise SystemExit("snapshot must be a JSON array")
+          if rows:
+              bad_shape = [
+                  idx for idx, row in enumerate(rows)
+                  if not isinstance(row, dict) or set(row) != required
+              ]
+              if bad_shape:
+                  raise SystemExit(f"rows with unexpected shape: {bad_shape[:10]}")
+              empty_keys = [
+                  idx for idx, row in enumerate(rows)
+                  if not row["normalized_title"] or not row["page_title"]
+              ]
+              if empty_keys:
+                  raise SystemExit(f"rows with empty keys: {empty_keys[:10]}")
+              keys = [row["normalized_title"] for row in rows]
+              if len(keys) != len(set(keys)):
+                  raise SystemExit("snapshot contains duplicate normalized_title keys")
+              if keys != sorted(keys):
+                  raise SystemExit("snapshot must be sorted by normalized_title")
+          print(f"validated {len(rows)} Shmups Wiki rows")
+          PY
+
+      - name: Build replay-control-core with refreshed snapshot
+        # The snapshot is embedded at compile time via include_str!; this
+        # confirms the new JSON deserializes cleanly into the IndexEntry shape.
+        # Debug build is sufficient — release adds no extra validation here.
+        run: cargo check -p replay-control-core
+
+      - name: Run shmups_wiki unit tests
+        run: cargo test -p replay-control-core -- shmups_wiki
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-shmups-wiki
+        run: |
+          if git diff --quiet -- data/shmups-wiki/games.json; then
+            echo "No Shmups Wiki changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/shmups-wiki/games.json
+          git commit -m "chore: refresh shmups wiki index"
+          git push --force-with-lease origin "$BRANCH"
+
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')"
+          body="Refreshes the committed Shmups Wiki page-title index.
+
+          Validation performed by this workflow:
+          - JSON shape check (one row per page, sorted, deduplicated)
+          - replay-control-core build with the refreshed snapshot embedded
+          - shmups_wiki unit tests"
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "chore: refresh Shmups Wiki index" \
+              --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: refresh Shmups Wiki index" \
+              --body "$body"
+          fi

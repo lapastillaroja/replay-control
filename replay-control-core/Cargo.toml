@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+percent-encoding = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = "2"

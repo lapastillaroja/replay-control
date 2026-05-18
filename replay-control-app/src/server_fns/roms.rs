@@ -1,6 +1,7 @@
 use super::*;
+use replay_control_core::library_db::LibraryResourceLink;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +53,19 @@ pub struct RomDetail {
     /// Multi-disc set info (if part of a disc set without M3U wrapper).
     #[serde(default)]
     pub disc_info: Option<DiscInfoDto>,
+    /// Every `library_game_resource` row for this ROM, loaded once at SSR
+    /// in `get_rom_detail` and partitioned client-side by `resource_type` /
+    /// `source`. Today this carries the Shmups Wiki strategy-guide link
+    /// (`resource_type="strategy_guide"`, `source="shmups_wiki"`); future
+    /// external-link sources (HG101, etc.) plug into the same Vec without
+    /// expanding the wire shape.
+    ///
+    /// Manuals and videos still load lazily through their own server fns —
+    /// they do alias-expanded user_data joins and filesystem walks beyond
+    /// the bare resource read, and live behind UI sections that aren't
+    /// always shown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub library_resources: Vec<LibraryResourceLink>,
 }
 
 fn default_true() -> bool {
@@ -293,6 +307,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             siblings: di.siblings,
         });
 
+    let library_resources = load_library_resources(&state, &system, &filename).await;
+
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),
@@ -311,7 +327,42 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         rename_allowed,
         rename_reason,
         disc_info,
+        library_resources,
     })
+}
+
+/// One trip through the reader pool to fetch every `library_game_resource`
+/// row for this ROM. Consumers partition by `resource_type` / `source`
+/// (e.g. the Shmups Wiki strategy-guide link picks the row with
+/// `resource_type == STRATEGY_GUIDE && source == SHMUPS_WIKI_SOURCE`).
+/// Returns an empty Vec on pool-acquire failure or SQL error — the link
+/// surfaces are best-effort and never block detail-page render.
+#[cfg(feature = "ssr")]
+async fn load_library_resources(
+    state: &crate::api::AppState,
+    system: &str,
+    filename: &str,
+) -> Vec<LibraryResourceLink> {
+    let sys_owned = system.to_string();
+    let fname_owned = filename.to_string();
+    let result = state
+        .library_reader
+        .read(move |conn| LibraryDb::game_resources_for_rom(conn, &sys_owned, &fname_owned))
+        .await;
+    let rows: Vec<LibraryGameResource> = match result {
+        Some(Ok(rows)) => rows,
+        Some(Err(e)) => {
+            tracing::warn!(
+                system = %system,
+                filename = %filename,
+                error = %e,
+                "load_library_resources: SQL failed; surfacing no external links"
+            );
+            Vec::new()
+        }
+        None => Vec::new(),
+    };
+    rows.into_iter().map(LibraryResourceLink::from).collect()
 }
 
 /// Reject paths that attempt directory traversal.

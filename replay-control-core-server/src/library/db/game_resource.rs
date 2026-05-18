@@ -189,6 +189,18 @@ impl LibraryDb {
         Ok((desc_count, resource_count))
     }
 
+    /// Read every derived resource for one ROM (any type), ordered by
+    /// `(resource_type, source, title, url)` so consumers that partition by
+    /// type get contiguous runs. Use this when `get_rom_detail`-style code
+    /// needs more than one type from a single trip through the reader pool.
+    pub fn game_resources_for_rom(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<LibraryGameResource>> {
+        query_game_resources(conn, system, rom_filename, None)
+    }
+
     /// Read derived resources for one ROM and type, ordered by provenance/title.
     pub fn game_resources(
         conn: &Connection,
@@ -196,35 +208,7 @@ impl LibraryDb {
         rom_filename: &str,
         resource_type: &str,
     ) -> Result<Vec<LibraryGameResource>> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT source, resource_type, resource_id, url, title, languages, platform, mime_type
-                 FROM library_game_resource
-                 WHERE system = ?1 AND rom_filename = ?2 AND resource_type = ?3
-                 ORDER BY source, COALESCE(title, ''), url",
-            )
-            .map_err(|e| Error::Other(format!("prepare game_resources: {e}")))?;
-        let rows = stmt
-            .query_map(params![system, rom_filename, resource_type], |row| {
-                Ok(LibraryGameResource {
-                    rom_filename: rom_filename.to_string(),
-                    source: row.get(0)?,
-                    resource_type: row.get(1)?,
-                    resource_id: row.get(2)?,
-                    url: row.get(3)?,
-                    title: row.get(4)?,
-                    languages: row.get(5)?,
-                    platform: row.get(6)?,
-                    mime_type: row.get(7)?,
-                })
-            })
-            .map_err(|e| Error::Other(format!("query game_resources: {e}")))?;
-
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| Error::Other(format!("game_resource row: {e}")))?);
-        }
-        Ok(out)
+        query_game_resources(conn, system, rom_filename, Some(resource_type))
     }
 
     /// Replace derived resources for `system`. Caller owns surrounding transaction
@@ -308,16 +292,65 @@ impl LibraryDb {
     }
 }
 
+fn query_game_resources(
+    conn: &Connection,
+    system: &str,
+    rom_filename: &str,
+    resource_type: Option<&str>,
+) -> Result<Vec<LibraryGameResource>> {
+    let sql = match resource_type {
+        Some(_) => {
+            "SELECT source, resource_type, resource_id, url, title, languages, platform, mime_type
+             FROM library_game_resource
+             WHERE system = ?1 AND rom_filename = ?2 AND resource_type = ?3
+             ORDER BY source, COALESCE(title, ''), url"
+        }
+        None => {
+            "SELECT source, resource_type, resource_id, url, title, languages, platform, mime_type
+             FROM library_game_resource
+             WHERE system = ?1 AND rom_filename = ?2
+             ORDER BY resource_type, source, COALESCE(title, ''), url"
+        }
+    };
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| Error::Other(format!("prepare game_resources: {e}")))?;
+    let map_row = |row: &rusqlite::Row| -> rusqlite::Result<LibraryGameResource> {
+        Ok(LibraryGameResource {
+            rom_filename: rom_filename.to_string(),
+            source: row.get(0)?,
+            resource_type: row.get(1)?,
+            resource_id: row.get(2)?,
+            url: row.get(3)?,
+            title: row.get(4)?,
+            languages: row.get(5)?,
+            platform: row.get(6)?,
+            mime_type: row.get(7)?,
+        })
+    };
+    let mut out = Vec::new();
+    let rows = match resource_type {
+        Some(rt) => stmt.query_map(params![system, rom_filename, rt], map_row),
+        None => stmt.query_map(params![system, rom_filename], map_row),
+    }
+    .map_err(|e| Error::Other(format!("query game_resources: {e}")))?;
+    for row in rows {
+        out.push(row.map_err(|e| Error::Other(format!("game_resource row: {e}")))?);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::{make_game_entry, open_temp_db};
     use super::*;
+    use replay_control_core::resource_kind;
 
     fn manual_resource(rom_filename: &str, url: &str) -> LibraryGameResource {
         LibraryGameResource {
             rom_filename: rom_filename.to_string(),
             source: "test".to_string(),
-            resource_type: "manual".to_string(),
+            resource_type: resource_kind::MANUAL.to_string(),
             resource_id: url.to_string(),
             url: url.to_string(),
             title: Some("Manual".to_string()),
@@ -373,7 +406,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(description.description.as_deref(), Some("old description"));
-        let resources = LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+        let resources =
+            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", resource_kind::MANUAL).unwrap();
         assert_eq!(resources[0].url, "https://example.test/old.pdf");
 
         let (detail_count, resource_count) =
@@ -385,7 +419,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(description.description.as_deref(), Some("new description"));
-        let resources = LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+        let resources =
+            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", resource_kind::MANUAL).unwrap();
         assert_eq!(resources[0].url, "https://example.test/new.pdf");
     }
 }

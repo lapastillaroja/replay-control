@@ -2558,6 +2558,7 @@ mod tests {
     use super::super::tests::*;
     use super::super::{LibraryDb, LibraryGameResource};
     use super::SearchFilter;
+    use replay_control_core::resource_kind;
 
     // Removed: `genre_enrichment_fills_empty_genre_from_launchbox` — exercised
     // LibraryDb::bulk_upsert + the legacy game_metadata table. The
@@ -2794,7 +2795,8 @@ mod tests {
         rescanned.display_name = Some("Super Mario World".into());
         LibraryDb::save_system_entries(&mut conn, "snes", &[rescanned], Some(123)).unwrap();
 
-        let resources = LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+        let resources =
+            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", resource_kind::MANUAL).unwrap();
         assert_eq!(resources.len(), 1);
         assert_eq!(resources[0].url, "https://example.test/Mario.sfc.pdf");
     }
@@ -2830,9 +2832,9 @@ mod tests {
         .unwrap();
 
         let mario_resources =
-            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", "manual").unwrap();
+            LibraryDb::game_resources(&conn, "snes", "Mario.sfc", resource_kind::MANUAL).unwrap();
         let zelda_resources =
-            LibraryDb::game_resources(&conn, "snes", "Zelda.sfc", "manual").unwrap();
+            LibraryDb::game_resources(&conn, "snes", "Zelda.sfc", resource_kind::MANUAL).unwrap();
         assert_eq!(mario_resources.len(), 1);
         assert!(zelda_resources.is_empty());
     }
@@ -3080,7 +3082,8 @@ mod tests {
         assert_eq!(pending.display_name.as_deref(), Some("Canonical Pending"));
 
         let sibling_resources =
-            LibraryDb::game_resources(&conn, "nintendo_snes", "Sibling.sfc", "manual").unwrap();
+            LibraryDb::game_resources(&conn, "nintendo_snes", "Sibling.sfc", resource_kind::MANUAL)
+                .unwrap();
         assert_eq!(sibling_resources.len(), 1);
     }
 
@@ -3179,7 +3182,7 @@ mod tests {
         LibraryGameResource {
             rom_filename: rom_filename.into(),
             source: "test".into(),
-            resource_type: "manual".into(),
+            resource_type: resource_kind::MANUAL.into(),
             resource_id: format!("manual:{rom_filename}"),
             url: format!("https://example.test/{rom_filename}.pdf"),
             title: Some(format!("{rom_filename} Manual")),

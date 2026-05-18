@@ -12,6 +12,7 @@ use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
+use replay_control_core::resource_kind;
 
 /// Maximum number of capture thumbnails shown before "View all".
 const INITIAL_CAPTURE_COUNT: usize = 12;
@@ -211,6 +212,16 @@ fn GameDetailContent(
     let gamefaqs_url = StoredValue::new(
         replay_control_core::systems::find_system(&system)
             .and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
+    );
+    let shmups_wiki_url = StoredValue::new(
+        detail
+            .library_resources
+            .iter()
+            .find(|resource| {
+                resource.resource_type == resource_kind::STRATEGY_GUIDE
+                    && resource.source == resource_kind::SHMUPS_WIKI_SOURCE
+            })
+            .map(|resource| resource.url.clone()),
     );
 
     // Images — box_art_url is an RwSignal so the picker can update it reactively.
@@ -537,6 +548,14 @@ fn GameDetailContent(
                 <p class="game-meta-external-link">
                     <a href=url target="_blank" rel="noopener noreferrer">
                         {move || t(i18n.locale.get(), Key::GameDetailGameFaqsLink)}
+                        " ↗"
+                    </a>
+                </p>
+            })}
+            {shmups_wiki_url.get_value().map(|url| view! {
+                <p class="game-meta-external-link">
+                    <a href=url target="_blank" rel="noopener noreferrer">
+                        {move || t(i18n.locale.get(), Key::GameDetailShmupsWikiLink)}
                         " ↗"
                     </a>
                 </p>
