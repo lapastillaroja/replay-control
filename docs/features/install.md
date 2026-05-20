@@ -4,21 +4,57 @@ How to install, update, and uninstall Replay Control on a Raspberry Pi running R
 
 ## Install
 
+These steps work on **Windows 10+, macOS, and Linux**. On Windows, open **PowerShell** or **Windows Terminal**.
+
+First, connect to the Pi:
+
+```bash
+ssh root@replay.local
+```
+
+If SSH asks whether you trust the host, type `yes` and press Enter.
+
+When it asks for a password, type:
+
+```text
+replayos
+```
+
+You will not see the password characters while typing. That is normal.
+
+After you are connected to the Pi, paste this command:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-Run this on your Pi over SSH or from any computer on the same network — the installer detects which case it's in and does the right thing. It auto-discovers the Pi via mDNS, downloads the latest stable release (falling back to the latest beta if no stable exists), installs the systemd service, and starts it. The web UI will be at `http://replay.local:8080`.
+The installer downloads the latest stable release, installs the service, and starts Replay Control. When it finishes, type `exit`, then open `http://replay.local:8080` in your browser.
 
-### If auto-discovery fails
+### If `replay.local` doesn't resolve
 
-Pass the Pi's IP address explicitly:
+Some Windows networks cannot find `replay.local`. Use the Pi's IP address instead:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip 192.168.1.50
+ssh root@192.168.1.50
 ```
 
-Find the IP in your router's connected-devices list, or run `hostname -I` on the Pi.
+Replace `192.168.1.50` with your Pi's real IP address. After you are connected, paste the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+```
+
+Find the IP in your router's connected-devices list. Use the same IP in the browser too: `http://192.168.1.50:8080`.
+
+## Install from another computer (no SSH session)
+
+If you'd rather skip logging into the Pi yourself, you can run the installer from any Linux or macOS computer on the same network — it will SSH into the Pi for you and run the same steps:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+```
+
+Pass `--ip ADDRESS` if mDNS discovery fails. This flow runs bash on your local machine, so on Windows use the SSH-first flow above instead.
 
 ## Update / Uninstall
 
@@ -116,4 +152,6 @@ The service starts automatically on boot and listens on port 8080. Customise beh
 
 **SD card rootfs not mounted.** On Linux, the ext4 rootfs partition often doesn't auto-mount. Use `lsblk -o NAME,LABEL,FSTYPE` to find it and mount it manually.
 
-**Windows.** Run the install commands inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
+**Windows: `ssh` command not found.** OpenSSH client ships with Windows 10 build 1809 (Oct 2018) and later, and with all Windows 11 versions. If it's missing, enable it from **Settings → Apps → Optional Features → Add a feature → OpenSSH Client**.
+
+**Windows: `replay.local` doesn't resolve.** Use the Pi's IP address from your router's connected-devices list, then `ssh root@<ip>` and `http://<ip>:8080`. Common on Windows in VMs, where multicast often doesn't cross between host and guest.

@@ -86,12 +86,12 @@
     <div class="container">
       <h2 class="text-center mb-4">Quick Install</h2>
       <div class="row justify-content-center">
-        <div class="col-lg-8">
-<div class="highlight"><pre class="chroma" style="white-space: pre-wrap; word-break: break-all;"><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash</code></pre></div>
-          <p class="text-center mt-2" style="color: #888; font-size: 0.85rem;">Auto-discovers your Pi on the network. Run on the Pi itself or from any computer.</p>
-          <p class="text-center mt-3 mb-2">Or install the latest beta:</p>
-<div class="highlight"><pre class="chroma" style="white-space: pre-wrap; word-break: break-all;"><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --version beta</code></pre></div>
-          <p class="text-center mt-3">Then open <code>http://replay.local:8080</code> in your browser.</p>
+        <div class="col-lg-10 col-xl-9">
+          <p class="text-center mb-3" style="color: #ccc;">Open PowerShell, Terminal, or any shell. Connect to the Pi first, then paste the installer:</p>
+          {{ highlight "ssh root@replay.local\n# default password: replayos\ncurl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash" "bash" "" }}
+          <p class="mt-3 text-center" style="color: #888; font-size: 0.85rem;">If <code>replay.local</code> doesn't resolve (common on Windows and in VMs), find the Pi's IP in your router and use <code>ssh root@&lt;ip&gt;</code> instead.</p>
+          <p class="mt-2 text-center">Then open <code>http://replay.local:8080</code> in your browser.</p>
+          <p class="mt-4 text-center" style="color: #888; font-size: 0.85rem;">See the <a href="{{ relref . "docs/features/install.md" }}">install guide</a> for beta builds, SD-card install, and other options.</p>
         </div>
       </div>
     </div>

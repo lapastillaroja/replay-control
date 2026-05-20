@@ -91,31 +91,41 @@ This is a personal project born from my love for retro gaming on real hardware. 
 
 ## Quick Install
 
+Works on **Windows 10+, macOS, and Linux** — all three ship with SSH built in. SSH into your Pi, then run the installer:
+
 ```bash
+ssh root@replay.local
+# default password: replayos
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-No arguments needed — the installer auto-discovers your Pi on the network via mDNS, or installs locally when run directly on the Pi. If no stable release exists yet, it falls back to the latest beta.
+If `replay.local` doesn't resolve (common on Windows and in VMs), find the Pi's IP in your router's connected-devices list and use `ssh root@<ip>` instead.
 
 <details>
 <summary>More install options</summary>
 
-**Specific version:**
+**Run from another computer (Linux/macOS only, no SSH session):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+```
+The installer auto-discovers your Pi via mDNS and SSHes in for you. Doesn't work on Windows — use the SSH-first flow above.
+
+**Specific version (run on the Pi after SSHing in):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --version v0.2.0
 ```
 
-**Skip discovery (specify Pi address):**
+**Skip discovery from another computer (specify Pi address):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip 192.168.1.50
 ```
 
-**Custom password:**
+**Custom SSH password (when running from another computer):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword
 ```
 
-**Install to SD card (before first boot):**
+**Install to SD card (before first boot — Linux/macOS only, needs ext4):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --sdcard /path/to/mounted/sdcard
 ```
@@ -124,8 +134,6 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --dry-run
 ```
-
-> **Windows users:** Run these commands in [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
 
 See [GitHub Releases](https://github.com/lapastillaroja/replay-control/releases) for all versions.
 

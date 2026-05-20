@@ -12,15 +12,17 @@ A quick guide to get Replay Control running on your Pi.
 
 ## Install
 
-From any computer on the same network, or directly on the Pi:
+Open PowerShell, Terminal, or any shell. Connect to the Pi first, then paste the installer:
 
 ```bash
+ssh root@replay.local
+# default password: replayos
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-No arguments needed -- the installer auto-discovers your Pi on the network, or installs locally when run on the Pi itself. If no stable release exists yet, it falls back to the latest beta.
+If SSH asks whether you trust the host, type `yes` and press Enter. When it asks for a password, type `replayos`; the password will not appear while typing. The installer downloads the latest stable release, installs the service, and starts Replay Control.
 
-If auto-discovery doesn't find your Pi, specify the address directly with `--ip your-pi-ip`. For more install options (SD card, specific version, custom password), see the [Installation guide](install.md).
+If `replay.local` doesn't resolve, find the Pi's IP in your router's connected-devices list and use `ssh root@<ip>` instead. For other install options (specific version, SD-card install before first boot, running the installer from another computer without SSHing first), see the [Installation guide](install.md).
 
 ## First Launch
 
