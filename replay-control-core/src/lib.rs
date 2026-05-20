@@ -15,7 +15,6 @@ pub use game::developer;
 pub use game::game_ref;
 pub use game::genre;
 pub use game::rom_tags;
-pub use game::shmups_wiki;
 pub use game::title_utils;
 
 pub mod library;

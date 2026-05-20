@@ -435,8 +435,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinManualLinks => {
             "enlaces a manuales de MiSTer Manual Downloader y Retrokit"
         }
+        Key::MetadataBuiltinGuideLinks => "enlaces de guías/videos de Shmups Wiki",
         Key::MetadataBuiltinHint => {
-            "Nombres, géneros, desarrolladores, distribuidores, número de jugadores, enlaces a manuales y otros metadatos incluidos en la app. No se necesita importar nada."
+            "Nombres, géneros, desarrolladores, distribuidores, número de jugadores, enlaces a manuales, enlaces a guías y otros metadatos incluidos en la app. No se necesita importar nada."
         }
 
         // Library summary cards

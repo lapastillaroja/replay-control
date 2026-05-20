@@ -104,5 +104,8 @@ async fn build_builtin_stats() -> BuiltinDbStats {
         manual_resource_entries: catalog_resources.manual_resources,
         mister_manual_resource_entries: catalog_resources.mister_manual_resources,
         retrokit_manual_resource_entries: catalog_resources.retrokit_manual_resources,
+        shmups_wiki_resource_entries: catalog_resources.shmups_wiki_resources,
+        shmups_wiki_strategy_guide_entries: catalog_resources.shmups_wiki_strategy_guides,
+        shmups_wiki_video_index_entries: catalog_resources.shmups_wiki_video_indexes,
     }
 }

@@ -402,6 +402,7 @@ pub enum Key {
     MetadataBuiltinWikidataEntries,
     MetadataBuiltinWikidataSeries,
     MetadataBuiltinManualLinks,
+    MetadataBuiltinGuideLinks,
     MetadataBuiltinHint,
 
     // Library summary cards

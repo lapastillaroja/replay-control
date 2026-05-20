@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 use deadpool::managed::{self, Metrics, Pool, PoolConfig, RecycleResult};
 use deadpool_sqlite::Runtime;
 use deadpool_sync::SyncWrapper;
+use replay_control_core::library::resource_kind;
 
 static CATALOG_POOL: OnceLock<Pool<CatalogManager>> = OnceLock::new();
 
@@ -200,31 +201,49 @@ pub struct CatalogGameResourceRow {
 
 #[derive(Debug, Clone, Default)]
 pub struct CatalogResourceStats {
+    pub total_resources: usize,
     pub manual_resources: usize,
     pub mister_manual_resources: usize,
     pub retrokit_manual_resources: usize,
+    pub shmups_wiki_resources: usize,
+    pub shmups_wiki_strategy_guides: usize,
+    pub shmups_wiki_video_indexes: usize,
 }
 
 pub async fn catalog_resource_stats() -> CatalogResourceStats {
     with_catalog(|conn| {
         let mut stmt = conn.prepare_cached(
-            "SELECT source, COUNT(*)
+            "SELECT source, resource_type, COUNT(*)
              FROM catalog_game_resource
-             WHERE resource_type = 'manual'
-             GROUP BY source",
+             GROUP BY source, resource_type",
         )?;
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?;
         let mut stats = CatalogResourceStats::default();
         for row in rows {
-            let (source, count) = row?;
+            let (source, resource_type, count) = row?;
             let count = count.max(0) as usize;
-            stats.manual_resources += count;
-            match source.as_str() {
-                "mister_manuals" => stats.mister_manual_resources = count,
-                "retrokit" => stats.retrokit_manual_resources = count,
-                _ => {}
+            stats.total_resources += count;
+            if resource_type == resource_kind::MANUAL {
+                stats.manual_resources += count;
+                match source.as_str() {
+                    resource_kind::MISTER_MANUALS_SOURCE => stats.mister_manual_resources = count,
+                    resource_kind::RETROKIT_SOURCE => stats.retrokit_manual_resources = count,
+                    _ => {}
+                }
+            }
+            if source == resource_kind::SHMUPS_WIKI_SOURCE {
+                stats.shmups_wiki_resources += count;
+                match resource_type.as_str() {
+                    resource_kind::STRATEGY_GUIDE => stats.shmups_wiki_strategy_guides = count,
+                    resource_kind::VIDEO_INDEX => stats.shmups_wiki_video_indexes = count,
+                    _ => {}
+                }
             }
         }
         Ok(stats)
@@ -246,26 +265,19 @@ pub async fn catalog_resource_version() -> Option<String> {
 
 pub async fn lookup_catalog_game_resources(
     system: &str,
-    normalized_titles: &[String],
-    resource_type: &str,
 ) -> HashMap<String, Vec<CatalogGameResourceRow>> {
-    if normalized_titles.is_empty() {
-        return HashMap::new();
-    }
     let system = system.to_string();
-    let resource_type = resource_type.to_string();
-    let titles_json = serde_json::to_string(normalized_titles).unwrap_or_else(|_| "[]".into());
     with_catalog(move |conn| {
         let mut stmt = conn.prepare_cached(
             "SELECT normalized_title, source, resource_type, resource_id, url, title, languages, mime_type
              FROM catalog_game_resource
-             WHERE system = ?1
-               AND resource_type = ?2
-               AND normalized_title IN (SELECT value FROM json_each(?3))
-             ORDER BY normalized_title, source, title, url",
+             WHERE system = ?1 OR system = ?2
+             ORDER BY normalized_title,
+                      CASE WHEN system = ?1 THEN 0 ELSE 1 END,
+                      resource_type, source, title, url",
         )?;
         let rows = stmt.query_map(
-            rusqlite::params![system, resource_type, titles_json],
+            rusqlite::params![system, resource_kind::GLOBAL_SYSTEM],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,

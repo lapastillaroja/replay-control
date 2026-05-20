@@ -46,11 +46,11 @@ Data imported: description, rating, rating count, publisher, developer, genre, m
 
 Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps. Description, publisher, and resource suggestions are denormalized into per-storage `library.db` tables so the game-detail page reads them from a single pool.
 
-### Bundled Manual Links
+### Bundled Resource Links
 
-Release builds also bundle manual links from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals) into `catalog.sqlite`. Only URL indexes are bundled; the manual PDF/text file itself is downloaded and validated only when the user saves it from a game detail page.
+Release builds also bundle manual links from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals), plus Shmups Wiki strategy guide and video-index links, into `catalog.sqlite`. Only URL indexes are bundled; the manual PDF/text file itself is downloaded and validated only when the user saves it from a game detail page.
 
-During scan/enrichment, matching manual resources are copied into the per-storage library cache. Game detail pages can then show manual suggestions offline without fetching source indexes at request time; saving a manual downloads and validates the file so it remains available later if the appliance is offline. The metadata page shows the total bundled manual-link count in the built-in data section.
+During scan/enrichment, matching resources are copied into the per-storage library cache. Game detail pages can then show manual suggestions and guide links offline without fetching source indexes at request time; saving a manual downloads and validates the file so it remains available later if the appliance is offline. The metadata page shows bundled manual-link and guide-link counts in the built-in data section.
 
 ### Box Art and Screenshots
 

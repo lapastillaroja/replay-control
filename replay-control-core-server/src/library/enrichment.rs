@@ -15,8 +15,6 @@ use crate::library_db::{BoxArtGenreRating, LibraryDb, LibraryGameResource, Relea
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::DatePrecision;
 use replay_control_core::developer::normalize_developer;
-use replay_control_core::resource_kind;
-use replay_control_core::shmups_wiki::{SHMUPS_WIKI_VERSION, shmups_wiki_page};
 use replay_control_core::title_utils::{filename_stem, normalize_title_for_metadata};
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
@@ -35,48 +33,13 @@ pub use crate::image_resolution::{
 ///
 /// Inputs composed today:
 /// - `catalog.sqlite.db_meta.catalog_resource_version` — SHA over
-///   `catalog_game_resource` rows (manual links built by `build-catalog`).
-/// - [`SHMUPS_WIKI_VERSION`] — bundled Shmups Wiki page index plus the
-///   matching logic in [`shmups_wiki_page`].
+///   `catalog_game_resource` rows (manual links, Shmups Wiki links, and
+///   future catalog-bundled resources built by `build-catalog`).
 ///
 /// Returns `None` only if the catalog DB has no version stamp (treated
 /// as "skip reconcile this boot").
 pub async fn enrichment_inputs_version() -> Option<String> {
-    let catalog_version = crate::catalog_pool::catalog_resource_version().await?;
-    Some(compose_enrichment_inputs_version(&catalog_version))
-}
-
-/// Build the composite stamp string from the catalog version. Pure so
-/// the format contract is unit-testable independently of the async
-/// catalog read in [`enrichment_inputs_version`].
-///
-/// Format: `"<catalog_version>|<prefix><value>[|<prefix><value>…]"`.
-/// Each bundled input after the catalog hash is appended as
-/// `|<2-letter prefix><value>`. Today: `sw` for [`SHMUPS_WIKI_VERSION`].
-/// When adding a new bundled input, pick a fresh 2-letter prefix, append
-/// it here, extend the test below to pin the new format, and bump the
-/// input's version constant.
-fn compose_enrichment_inputs_version(catalog_version: &str) -> String {
-    format!("{catalog_version}|sw{SHMUPS_WIKI_VERSION}")
-}
-
-#[cfg(test)]
-mod enrichment_inputs_version_tests {
-    use super::*;
-
-    #[test]
-    fn composite_pins_catalog_and_shmups_format() {
-        let stamp = compose_enrichment_inputs_version("abc123");
-        assert_eq!(stamp, format!("abc123|sw{SHMUPS_WIKI_VERSION}"));
-    }
-
-    #[test]
-    fn distinct_catalog_versions_produce_distinct_stamps() {
-        assert_ne!(
-            compose_enrichment_inputs_version("v1"),
-            compose_enrichment_inputs_version("v2"),
-        );
-    }
+    crate::catalog_pool::catalog_resource_version().await
 }
 
 /// All enrichment updates produced for a single system.
@@ -209,6 +172,98 @@ fn match_resource_key(
     None
 }
 
+fn split_resource_title_candidates(base_title: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    for sep in [" - ", " / "] {
+        if base_title.contains(sep) {
+            for piece in base_title.split(sep) {
+                let trimmed = piece.trim();
+                if !trimmed.is_empty() && !out.contains(&trimmed) {
+                    out.push(trimmed);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn push_normalized_resource_candidate(out: &mut Vec<String>, title: &str) {
+    let normalized = normalize_title_for_metadata(title);
+    if !normalized.is_empty() && !out.contains(&normalized) {
+        out.push(normalized);
+    }
+}
+
+fn catalog_resource_candidates(
+    norm: &str,
+    norm_alt: &str,
+    hash_name: Option<&str>,
+    base_title: Option<&str>,
+    aliases: &[String],
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    for title in [norm, norm_alt]
+        .into_iter()
+        .filter(|title| !title.is_empty())
+    {
+        if !candidates.iter().any(|candidate| candidate == title) {
+            candidates.push(title.to_string());
+        }
+    }
+    if let Some(hash_name) = hash_name {
+        push_normalized_resource_candidate(&mut candidates, filename_stem(hash_name));
+    }
+    if let Some(base_title) = base_title {
+        push_normalized_resource_candidate(&mut candidates, base_title);
+        for title in split_resource_title_candidates(base_title) {
+            push_normalized_resource_candidate(&mut candidates, title);
+        }
+    }
+    for alias in aliases {
+        push_normalized_resource_candidate(&mut candidates, alias);
+        for title in split_resource_title_candidates(alias) {
+            push_normalized_resource_candidate(&mut candidates, title);
+        }
+    }
+    candidates
+}
+
+fn append_catalog_resources_for_candidates(
+    resource_rows: &mut Vec<LibraryGameResource>,
+    rom_filename: &str,
+    candidates: &[String],
+    catalog_resources: &HashMap<String, Vec<CatalogGameResourceRow>>,
+) {
+    let mut seen = HashSet::new();
+    for candidate in candidates {
+        let Some(rows) = catalog_resources.get(candidate) else {
+            continue;
+        };
+        for row in rows {
+            let key = (
+                row.source.as_str(),
+                row.resource_type.as_str(),
+                row.resource_id.as_str(),
+                row.url.as_str(),
+            );
+            if !seen.insert(key) {
+                continue;
+            }
+            resource_rows.push(LibraryGameResource {
+                rom_filename: rom_filename.to_string(),
+                source: row.source.clone(),
+                resource_type: row.resource_type.clone(),
+                resource_id: row.resource_id.clone(),
+                url: row.url.clone(),
+                title: Some(row.title.clone()),
+                languages: Some(row.languages.clone()),
+                platform: None,
+                mime_type: Some(row.mime_type.clone()),
+            });
+        }
+    }
+}
+
 /// Run the full enrichment pipeline for a system.
 ///
 /// Pure data function: reads from DB + filesystem, returns all updates.
@@ -282,7 +337,7 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
     let norm_by_rom = LibraryDb::visible_normalized_titles(conn, system).unwrap_or_default();
     let hash_matched_names: HashMap<String, String> =
         LibraryDb::visible_hash_matched_names(conn, system).unwrap_or_default();
-    // base_title_by_rom is consumed by the shmups_wiki lookup loop, the
+    // base_title_by_rom is consumed by catalog resource fallback, the
     // release-date resolver, and the description writer; load it once here
     // so the same query isn't issued three times.
     let base_title_by_rom: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
@@ -299,8 +354,15 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
     let mut resource_rows = Vec::new();
     let provider_resource_keys: HashSet<&str> =
         provider_resources.keys().map(String::as_str).collect();
-    let catalog_resource_keys: HashSet<&str> =
-        catalog_resources.keys().map(String::as_str).collect();
+    let alias_pairs = LibraryDb::alias_pairs_for_system(conn, system).unwrap_or_default();
+    let mut alias_equiv: HashMap<String, Vec<String>> = HashMap::new();
+    for (base_title, alias_name) in alias_pairs {
+        let bt_key = base_title.to_lowercase();
+        let an_key = alias_name.to_lowercase();
+        alias_equiv.entry(bt_key).or_default().push(alias_name);
+        alias_equiv.entry(an_key).or_default().push(base_title);
+    }
+
     for (rom_filename, (norm, norm_alt)) in &norm_by_rom {
         let provider_key = match_resource_key(
             norm,
@@ -331,74 +393,24 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
                 });
             }
         }
-        let catalog_key = match_resource_key(
+        let base_title = base_title_by_rom.get(rom_filename).map(String::as_str);
+        let aliases = base_title
+            .and_then(|title| alias_equiv.get(&title.to_lowercase()))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let catalog_candidates = catalog_resource_candidates(
             norm,
             norm_alt,
             hash_matched_names.get(rom_filename).map(String::as_str),
-            &catalog_resource_keys,
-            None,
+            base_title,
+            aliases,
         );
-        if let Some(rows) = catalog_key
-            .as_deref()
-            .and_then(|matched_key| catalog_resources.get(matched_key))
-        {
-            for row in rows {
-                resource_rows.push(LibraryGameResource {
-                    rom_filename: rom_filename.clone(),
-                    source: row.source.clone(),
-                    resource_type: row.resource_type.clone(),
-                    resource_id: row.resource_id.clone(),
-                    url: row.url.clone(),
-                    title: Some(row.title.clone()),
-                    languages: Some(row.languages.clone()),
-                    platform: None,
-                    mime_type: Some(row.mime_type.clone()),
-                });
-            }
-        }
-    }
-
-    // Strategy-guide deep links to Shmups Wiki. We try each ROM's stored
-    // `base_title` against the bundled wiki index; if that misses (regional
-    // name like "Gunlock" for what the wiki files under "RayForce"), we
-    // walk this game's recorded aliases from `game_alias` and try each. One
-    // bulk load builds the equivalence map so misses don't cost an alias
-    // query each.
-    let alias_pairs = LibraryDb::alias_pairs_for_system(conn, system).unwrap_or_default();
-    let mut alias_equiv: HashMap<String, Vec<String>> = HashMap::new();
-    for (base_title, alias_name) in alias_pairs {
-        let bt_key = base_title.to_lowercase();
-        let an_key = alias_name.to_lowercase();
-        alias_equiv.entry(bt_key).or_default().push(alias_name);
-        alias_equiv.entry(an_key).or_default().push(base_title);
-    }
-    for (rom_filename, base_title) in &base_title_by_rom {
-        let direct = shmups_wiki_page(base_title);
-        let hit = direct.or_else(|| {
-            alias_equiv
-                .get(&base_title.to_lowercase())?
-                .iter()
-                .find_map(|alt| shmups_wiki_page(alt))
-        });
-        if let Some(page) = hit {
-            let mut push_row = |resource_type: &str, url: String| {
-                resource_rows.push(LibraryGameResource {
-                    rom_filename: rom_filename.clone(),
-                    source: resource_kind::SHMUPS_WIKI_SOURCE.to_string(),
-                    resource_type: resource_type.to_string(),
-                    resource_id: page.page_title.clone(),
-                    url,
-                    title: Some(page.page_title.clone()),
-                    languages: None,
-                    platform: None,
-                    mime_type: Some("text/html".to_string()),
-                });
-            };
-            push_row(resource_kind::STRATEGY_GUIDE, page.url);
-            if let Some(video_index_url) = page.video_index_url {
-                push_row(resource_kind::VIDEO_INDEX, video_index_url);
-            }
-        }
+        append_catalog_resources_for_candidates(
+            &mut resource_rows,
+            rom_filename,
+            &catalog_candidates,
+            catalog_resources,
+        );
     }
 
     // Build enrichment entries + collect manifest download requests.
@@ -657,6 +669,7 @@ fn apply_base_title_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use replay_control_core::library::resource_kind;
 
     // ── match_for_rom tests (Phase 3 chain) ──────────────────────────
 
@@ -673,6 +686,78 @@ mod tests {
             cooperative: false,
             players: None,
         }
+    }
+
+    fn catalog_resource_row(
+        source: &str,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> CatalogGameResourceRow {
+        CatalogGameResourceRow {
+            source: source.to_string(),
+            resource_type: resource_type.to_string(),
+            resource_id: resource_id.to_string(),
+            url: format!("https://example.invalid/{resource_id}"),
+            title: resource_id.to_string(),
+            languages: String::new(),
+            mime_type: "text/html".to_string(),
+        }
+    }
+
+    #[test]
+    fn catalog_resources_collect_all_matching_candidate_keys() {
+        let mut catalog_resources = HashMap::new();
+        catalog_resources.insert(
+            "romfilename".to_string(),
+            vec![catalog_resource_row(
+                resource_kind::RETROKIT_SOURCE,
+                resource_kind::MANUAL,
+                "manual",
+            )],
+        );
+        catalog_resources.insert(
+            "basetitle".to_string(),
+            vec![catalog_resource_row(
+                resource_kind::SHMUPS_WIKI_SOURCE,
+                resource_kind::STRATEGY_GUIDE,
+                "guide",
+            )],
+        );
+
+        let mut rows = Vec::new();
+        append_catalog_resources_for_candidates(
+            &mut rows,
+            "ROM Filename.sfc",
+            &["romfilename".to_string(), "basetitle".to_string()],
+            &catalog_resources,
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row.resource_id == "manual"));
+        assert!(rows.iter().any(|row| row.resource_id == "guide"));
+    }
+
+    #[test]
+    fn catalog_resources_deduplicate_same_resource_across_candidates() {
+        let row = catalog_resource_row(
+            resource_kind::SHMUPS_WIKI_SOURCE,
+            resource_kind::STRATEGY_GUIDE,
+            "same-guide",
+        );
+        let mut catalog_resources = HashMap::new();
+        catalog_resources.insert("filename".to_string(), vec![row.clone()]);
+        catalog_resources.insert("alias".to_string(), vec![row]);
+
+        let mut rows = Vec::new();
+        append_catalog_resources_for_candidates(
+            &mut rows,
+            "ROM Filename.sfc",
+            &["filename".to_string(), "alias".to_string()],
+            &catalog_resources,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].resource_id, "same-guide");
     }
 
     #[test]

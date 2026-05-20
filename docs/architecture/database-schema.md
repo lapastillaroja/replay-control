@@ -167,14 +167,14 @@ Per-region console release dates, sourced from TGDB during catalog build.
 
 ### catalog_game_resource
 
-Catalog-bundled resources linked to normalized game titles. Currently used for manual URL indexes from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals). Only URLs are bundled in `catalog.sqlite`; PDFs are downloaded later only when a user saves a manual. These rows are copied into `library.db.library_game_resource` during scan/enrichment so game-detail reads stay on the library DB.
+Catalog-bundled resources linked to normalized game titles. Currently used for manual URL indexes from [MiSTer Manual Downloader](https://github.com/antiKk/MiSTer_ManualDownloader) and the [Retrokit manuals Archive.org collection](https://archive.org/download/retrokit-manuals), plus strategy guide and video-index links from Shmups Wiki. Only URLs are bundled in `catalog.sqlite`; PDFs are downloaded later only when a user saves a manual. These rows are copied into `library.db.library_game_resource` during scan/enrichment so game-detail reads stay on the library DB.
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| system | TEXT | RePlay system folder (PK part 1) |
+| system | TEXT | RePlay system folder, or `"*"` for a global title resource that applies to every system (PK part 1) |
 | normalized_title | TEXT | Normalized game title (PK part 2) |
-| resource_type | TEXT | Resource kind, currently `"manual"` (PK part 3) |
-| source | TEXT | Catalog source, e.g. `"mister_manuals"` or `"retrokit"` (PK part 4) |
+| resource_type | TEXT | Resource kind, e.g. `"manual"`, `"strategy_guide"`, or `"video_index"` (PK part 3) |
+| source | TEXT | Catalog source, e.g. `"mister_manuals"`, `"retrokit"`, or `"shmups_wiki"` (PK part 4) |
 | resource_id | TEXT | Source-stable resource identifier or URL hash (PK part 5) |
 | url | TEXT | Download URL |
 | title | TEXT | Human-readable resource title |
@@ -183,7 +183,7 @@ Catalog-bundled resources linked to normalized game titles. Currently used for m
 
 **PRIMARY KEY**: `(system, normalized_title, resource_type, source, resource_id)`
 
-**Index**: `catalog_game_resource_idx_lookup ON catalog_game_resource(system, normalized_title, resource_type)` — supports enrichment lookups for all known titles in one system.
+**Index**: `catalog_game_resource_idx_lookup ON catalog_game_resource(system, normalized_title, resource_type)` — supports enrichment lookups for all known titles in one system. Global (`"*"`) resources are intentionally small and may be loaded as a whole for the requested resource types.
 
 ### db_meta
 
@@ -196,7 +196,7 @@ Build metadata for the bundled catalog.
 
 **PRIMARY KEY**: `key`
 
-Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_resource_version` (a content hash over bundled catalog resources; startup compares it with `library_meta.catalog_resource_version` to decide whether existing libraries need resource re-enrichment).
+Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_resource_version` (a content hash over bundled catalog resources; startup compares it with `library_meta.enrichment_inputs_version` to decide whether existing libraries need resource re-enrichment).
 
 ## library.db
 
@@ -521,7 +521,7 @@ Known keys include:
 | Key | Purpose |
 |-----|---------|
 | `title_norm_version` | `replay_control_core::title_utils::TITLE_NORM_VERSION` used when `game_library.normalized_title` / `normalized_title_alt` were last reconciled |
-| `catalog_resource_version` | Bundled `catalog_game_resource` content hash that was last flushed into `library_game_resource` |
+| `enrichment_inputs_version` | Bundled `catalog_game_resource` content hash that was last flushed into `library_game_resource` |
 | `discovery_fingerprint:<system>` | Last clean recursive startup-scan fingerprint for one system; startup uses it to skip unchanged systems after a full file walk |
 
 ### schema_version

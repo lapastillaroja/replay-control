@@ -176,6 +176,9 @@ pub struct BuiltinDbStats {
     pub manual_resource_entries: usize,
     pub mister_manual_resource_entries: usize,
     pub retrokit_manual_resource_entries: usize,
+    pub shmups_wiki_resource_entries: usize,
+    pub shmups_wiki_strategy_guide_entries: usize,
+    pub shmups_wiki_video_index_entries: usize,
 }
 
 /// Clear cached provider metadata and reset the XML hash stamp so the next

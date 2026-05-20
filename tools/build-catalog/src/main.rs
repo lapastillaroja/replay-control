@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
+use replay_control_core::library::resource_kind;
 use rusqlite::{Connection, params};
 
 #[allow(dead_code)]
@@ -2327,11 +2328,13 @@ const RETROKIT_MANUAL_FOLDERS: &[(&str, &[&str])] = &[
 struct CatalogResourceBuild {
     system: String,
     normalized_title: String,
+    resource_type: &'static str,
     source: &'static str,
     resource_id: String,
     url: String,
     title: String,
     languages: String,
+    mime_type: &'static str,
 }
 
 fn sha256_resource_id(url: &str) -> String {
@@ -2408,28 +2411,28 @@ fn insert_catalog_resources(conn: &Connection, sources_dir: &Path) -> rusqlite::
     let mut resources = Vec::new();
     resources.extend(load_mister_manual_resources(sources_dir));
     resources.extend(load_retrokit_manual_resources(sources_dir));
+    resources.extend(load_shmups_wiki_resources(sources_dir));
 
     let mut stmt = conn.prepare(
         "INSERT OR IGNORE INTO catalog_game_resource
          (system, normalized_title, resource_type, source, resource_id, url, title, languages, mime_type)
-         VALUES (?1, ?2, 'manual', ?3, ?4, ?5, ?6, ?7, 'application/pdf')",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
     for row in &resources {
         stmt.execute(params![
             row.system,
             row.normalized_title,
+            row.resource_type,
             row.source,
             row.resource_id,
             row.url,
             row.title,
             row.languages,
+            row.mime_type,
         ])?;
     }
 
-    eprintln!(
-        "Catalog resources: Inserted {} manual rows",
-        resources.len()
-    );
+    eprintln!("Catalog resources: Inserted {} rows", resources.len());
     Ok(())
 }
 
@@ -2496,11 +2499,13 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
             out.push(CatalogResourceBuild {
                 system: system.to_string(),
                 normalized_title,
-                source: "mister_manuals",
+                resource_type: resource_kind::MANUAL,
+                source: resource_kind::MISTER_MANUALS_SOURCE,
                 resource_id: sha256_resource_id(&url),
                 url,
                 title: display_title,
                 languages: "en".to_string(),
+                mime_type: "application/pdf",
             });
         }
     }
@@ -2541,16 +2546,104 @@ fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuil
                 out.push(CatalogResourceBuild {
                     system: system.to_string(),
                     normalized_title: normalized_title.clone(),
-                    source: "retrokit",
+                    resource_type: resource_kind::MANUAL,
+                    source: resource_kind::RETROKIT_SOURCE,
                     resource_id: sha256_resource_id(&url),
                     url: url.clone(),
                     title: title.to_string(),
                     languages: languages.to_string(),
+                    mime_type: "application/pdf",
                 });
             }
         }
     }
     out
+}
+
+#[derive(serde::Deserialize)]
+struct ShmupsWikiBuildEntry {
+    normalized_title: String,
+    page_title: String,
+    #[serde(default)]
+    video_index: bool,
+}
+
+fn load_shmups_wiki_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
+    let path = sources_dir.join("shmups-wiki/games.json");
+    let Ok(file) = File::open(&path) else {
+        return Vec::new();
+    };
+    let entries: Vec<ShmupsWikiBuildEntry> = match serde_json::from_reader(BufReader::new(file)) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to parse Shmups Wiki JSON {}: {e}",
+                path.display()
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut out = Vec::new();
+    for entry in entries {
+        if entry.normalized_title.is_empty() || entry.page_title.is_empty() {
+            continue;
+        }
+        let page_url = shmups_wiki_page_url(&entry.page_title);
+        out.push(CatalogResourceBuild {
+            system: resource_kind::GLOBAL_SYSTEM.to_string(),
+            normalized_title: entry.normalized_title.clone(),
+            resource_type: resource_kind::STRATEGY_GUIDE,
+            source: resource_kind::SHMUPS_WIKI_SOURCE,
+            resource_id: entry.page_title.clone(),
+            url: page_url.clone(),
+            title: entry.page_title.clone(),
+            languages: String::new(),
+            mime_type: "text/html",
+        });
+        if entry.video_index {
+            out.push(CatalogResourceBuild {
+                system: resource_kind::GLOBAL_SYSTEM.to_string(),
+                normalized_title: entry.normalized_title,
+                resource_type: resource_kind::VIDEO_INDEX,
+                source: resource_kind::SHMUPS_WIKI_SOURCE,
+                resource_id: entry.page_title.clone(),
+                url: format!("{page_url}/Video_Index"),
+                title: entry.page_title,
+                languages: String::new(),
+                mime_type: "text/html",
+            });
+        }
+    }
+    out
+}
+
+fn shmups_wiki_page_url(page_title: &str) -> String {
+    let with_underscores = page_title.replace(' ', "_");
+    format!(
+        "https://shmups.wiki/library/{}",
+        mediawiki_path_encode(&with_underscores)
+    )
+}
+
+fn mediawiki_path_encode(input: &str) -> String {
+    let mut out = String::new();
+    for byte in input.as_bytes() {
+        if is_mediawiki_path_safe(*byte) {
+            out.push(*byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn is_mediawiki_path_safe(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'-' | b'.' | b'_' | b'~' | b'!' | b'(' | b')' | b'*' | b'\''
+        )
 }
 
 fn catalog_resource_version(conn: &Connection) -> rusqlite::Result<String> {
@@ -2789,6 +2882,60 @@ mod tests {
             )
             .unwrap();
         assert_eq!(genre, "Board & Card");
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn insert_catalog_resources_includes_shmups_wiki_links() {
+        let dir = temp_sources_dir();
+        fs::create_dir_all(dir.join("shmups-wiki")).unwrap();
+        fs::write(
+            dir.join("shmups-wiki/games.json"),
+            r#"[
+  {"normalized_title":"battlegaregga","page_title":"Battle Garegga","video_index":true},
+  {"normalized_title":"rtypefinal2trial","page_title":"R-Type Final 2 (Trial)"}
+]"#,
+        )
+        .unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        insert_catalog_resources(&conn, &dir).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM catalog_game_resource WHERE source = ?1",
+                [resource_kind::SHMUPS_WIKI_SOURCE],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+
+        let url: String = conn
+            .query_row(
+                "SELECT url FROM catalog_game_resource
+                 WHERE normalized_title = 'rtypefinal2trial'
+                   AND resource_type = ?1",
+                [resource_kind::STRATEGY_GUIDE],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(url, "https://shmups.wiki/library/R-Type_Final_2_(Trial)");
+
+        let video_url: String = conn
+            .query_row(
+                "SELECT url FROM catalog_game_resource
+                 WHERE normalized_title = 'battlegaregga'
+                   AND resource_type = ?1",
+                [resource_kind::VIDEO_INDEX],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            video_url,
+            "https://shmups.wiki/library/Battle_Garegga/Video_Index"
+        );
 
         fs::remove_dir_all(dir).unwrap();
     }

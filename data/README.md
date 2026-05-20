@@ -67,6 +67,14 @@ mkdir -p data/wikidata
 python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 ```
 
+### Shmups Wiki resource snapshot
+
+| File | Source | Description |
+|------|--------|-------------|
+| `shmups-wiki/games.json` | [Shmups Wiki](https://shmups.wiki/) | Strategy guide and video-index link titles used to build `catalog.sqlite` resources |
+
+This snapshot is checked into git so release builds do not depend on the wiki during CI.
+
 ## When to refresh
 
 Re-download when upstream data changes (e.g., a genre fix gets merged):

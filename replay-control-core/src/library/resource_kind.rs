@@ -20,6 +20,16 @@ pub const STRATEGY_GUIDE: &str = "strategy_guide";
 /// populated only from Shmups Wiki sub-pages under `Category:Video Index`).
 pub const VIDEO_INDEX: &str = "video_index";
 
-/// `source` value identifying rows derived from the bundled Shmups Wiki
-/// page-title index.
+/// `source` value identifying rows derived from the Shmups Wiki catalog
+/// resource index.
 pub const SHMUPS_WIKI_SOURCE: &str = "shmups_wiki";
+
+/// `source` value identifying manual rows from MiSTer Manual Downloader.
+pub const MISTER_MANUALS_SOURCE: &str = "mister_manuals";
+
+/// `source` value identifying manual rows from the Retrokit manuals archive.
+pub const RETROKIT_SOURCE: &str = "retrokit";
+
+/// `catalog_game_resource.system` value for resources that can match any
+/// library system.
+pub const GLOBAL_SYSTEM: &str = "*";

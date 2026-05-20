@@ -24,14 +24,13 @@ pub mod keys {
     /// `game_library.normalized_title{,_alt}` was last (re)populated.
     pub const TITLE_NORM_VERSION: &str = "title_norm_version";
 
-    /// Composite version of every bundled input the last successful
-    /// enrichment for this storage was computed against. Produced by
-    /// [`crate::library::enrichment::enrichment_inputs_version`] —
-    /// today: catalog DB `db_meta.catalog_resource_version` (manual
-    /// links) and `replay_control_core::shmups_wiki::SHMUPS_WIKI_VERSION`
-    /// (bundled Shmups Wiki page index + matcher). Any input changing
-    /// invalidates the stamp and forces per-system re-enrichment on
-    /// next boot.
+    /// Catalog resource version the last successful enrichment for this
+    /// storage was computed against. Produced by
+    /// [`crate::library::enrichment::enrichment_inputs_version`] from
+    /// `catalog.sqlite.db_meta.catalog_resource_version`, which covers
+    /// manual links, Shmups Wiki links, and future catalog-bundled
+    /// resources. Any input changing invalidates the stamp and forces
+    /// per-system re-enrichment on next boot.
     pub const ENRICHMENT_INPUTS_VERSION: &str = "enrichment_inputs_version";
 
     /// Per-system recursive ROM scan fingerprint used by startup verification

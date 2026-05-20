@@ -155,7 +155,6 @@ impl LibraryService {
         // Two pools (library, external_metadata) plus the arcade lookup;
         // `join!` lets the slowest overlap with the others.
         let setup_started = Instant::now();
-        let catalog_titles = catalog_resource_lookup_titles(&rom_filenames);
         let (
             index,
             launchbox_rows,
@@ -168,7 +167,7 @@ impl LibraryService {
             load_launchbox_rows(&state.external_metadata_reader, &system),
             load_launchbox_alt_to_primary(&state.external_metadata_reader, &system),
             load_launchbox_resources(&state.external_metadata_reader, &system),
-            load_catalog_manual_resources(&system, catalog_titles),
+            load_catalog_resources(&system),
             ArcadeInfoLookup::build(&system, &rom_filenames),
         );
         let setup_ms = setup_started.elapsed().as_millis();
@@ -725,28 +724,10 @@ async fn load_launchbox_resources(
         .unwrap_or_default()
 }
 
-fn catalog_resource_lookup_titles(rom_filenames: &[String]) -> Vec<String> {
-    let mut titles = std::collections::HashSet::new();
-    for filename in rom_filenames {
-        let stem = replay_control_core::title_utils::filename_stem(filename);
-        let normalized = replay_control_core::title_utils::normalize_title_for_metadata(stem);
-        if !normalized.is_empty() {
-            titles.insert(normalized);
-        }
-    }
-    titles.into_iter().collect()
-}
-
-async fn load_catalog_manual_resources(
+async fn load_catalog_resources(
     system: &str,
-    normalized_titles: Vec<String>,
 ) -> HashMap<String, Vec<replay_control_core_server::catalog_pool::CatalogGameResourceRow>> {
-    replay_control_core_server::catalog_pool::lookup_catalog_game_resources(
-        system,
-        &normalized_titles,
-        resource_kind::MANUAL,
-    )
-    .await
+    replay_control_core_server::catalog_pool::lookup_catalog_game_resources(system).await
 }
 
 /// Load the per-system libretro repo manifest data from

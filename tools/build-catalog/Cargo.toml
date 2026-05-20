@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+replay-control-core = { path = "../../replay-control-core" }
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 csv = "1"
