@@ -1,0 +1,13 @@
+{{/*
+  OVERRIDE: @thulite/doks-core render-codeblock.html.
+  The theme wraps every fenced code block in an "Expressive Code" terminal
+  frame (figure.frame.is-terminal) which adds macOS-style traffic-light dots
+  and conflicts with our GitHub-styled `.highlight` rules. We just want chroma
+  output, so emit the standard `<div class="highlight"><pre class="chroma">...`
+  with no surrounding figure/figcaption.
+
+  Specific languages (mermaid, math, kroki, goat) keep their own theme hooks —
+  this only replaces the catch-all.
+*/}}
+{{- $result := transform.HighlightCodeBlock . -}}
+{{ $result.Wrapped }}
