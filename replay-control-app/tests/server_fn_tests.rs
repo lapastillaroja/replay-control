@@ -62,6 +62,27 @@ async fn invoke_server_fn<F: ServerFn>(app: axum::Router, body: String) -> Statu
     resp.status()
 }
 
+async fn invoke_server_fn_response<F: ServerFn>(
+    app: axum::Router,
+    body: String,
+) -> (StatusCode, String) {
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(F::PATH)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("accept", "application/x-www-form-urlencoded")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8_lossy(&body).into_owned())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_systems_returns_test_systems() {
     setup();
@@ -263,6 +284,197 @@ async fn sfn_dismiss_setup_returns_200() {
         StatusCode::OK,
         "DismissSetup should return 200"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_wifi_save_writes_config_and_returns_restart_result() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::SaveWifiConfig>(
+        app,
+        form_body(&[
+            ("ssid", "ReplayNet"),
+            ("password", "wifi-secret"),
+            ("country", "US"),
+            ("mode", "wpa2"),
+            ("hidden", "false"),
+        ]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
+        "save should return the RePlayOS restart path result"
+    );
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(config.contains("wifi_name = \"ReplayNet\""));
+    assert!(config.contains("wifi_pwd = \"wifi-secret\""));
+    assert!(config.contains("wifi_country = \"US\""));
+    assert!(config.contains("wifi_mode = \"wpa2\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_nfs_save_writes_config_and_returns_restart_result() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::SaveNfsConfig>(
+        app,
+        form_body(&[
+            ("server", "192.168.1.10"),
+            ("share", "/exports/roms"),
+            ("version", "4"),
+        ]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
+        "save should return the RePlayOS restart path result"
+    );
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(config.contains("nfs_server = \"192.168.1.10\""));
+    assert!(config.contains("nfs_share = \"/exports/roms\""));
+    assert!(config.contains("nfs_version = \"4\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_read_never_returns_password() {
+    setup();
+    let env = TestEnv::new().await;
+    env.state
+        .update_retroachievements_credentials("player", "supersecret")
+        .unwrap();
+    let app = test_router(env.state.clone());
+
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::GetRetroachievementsConfig>(app, String::new())
+            .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("player"),
+        "response should include configured username"
+    );
+    assert!(
+        body.contains("true"),
+        "response should include password-present state"
+    );
+    assert!(
+        !body.contains("supersecret"),
+        "response must never include the stored password"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_rejects_username_without_password() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
+        app,
+        form_body(&[("username", "player"), ("password", "")]),
+    )
+    .await;
+
+    assert_ne!(status, StatusCode::OK);
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(
+        !config.contains("rcheevos_username"),
+        "partial credentials must not be written"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_rejects_password_without_username() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
+        app,
+        form_body(&[("username", ""), ("password", "secret")]),
+    )
+    .await;
+
+    assert_ne!(status, StatusCode::OK);
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(
+        !config.contains("rcheevos_password"),
+        "partial credentials must not be written"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_username_change_requires_password() {
+    setup();
+    let env = TestEnv::new().await;
+    env.state
+        .update_retroachievements_credentials("player1", "secret1")
+        .unwrap();
+    let app = test_router(env.state.clone());
+
+    let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
+        app,
+        form_body(&[("username", "player2"), ("password", "")]),
+    )
+    .await;
+
+    assert_ne!(status, StatusCode::OK);
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(config.contains("rcheevos_username = \"player1\""));
+    assert!(config.contains("rcheevos_password = \"secret1\""));
+    assert!(!config.contains("player2"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_clear_writes_empty_values() {
+    setup();
+    let env = TestEnv::new().await;
+    env.state
+        .update_retroachievements_credentials("player", "secret")
+        .unwrap();
+    let app = test_router(env.state.clone());
+
+    let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
+        app,
+        form_body(&[("username", ""), ("password", "")]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(config.contains("rcheevos_username = \"\""));
+    assert!(config.contains("rcheevos_password = \"\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_save_writes_before_restart_result() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::SaveRetroachievementsConfigAndRestart>(
+            app,
+            form_body(&[("username", "player"), ("password", "secret")]),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
+        "save should return the restart path result"
+    );
+    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
+    assert!(config.contains("rcheevos_username = \"player\""));
+    assert!(config.contains("rcheevos_password = \"secret\""));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -17,6 +17,14 @@ pub struct NfsConfig {
     pub version: String,
 }
 
+/// RetroAchievements configuration. The password is write-only and is never
+/// returned to the browser.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetroAchievementsConfig {
+    pub username: String,
+    pub password_configured: bool,
+}
+
 /// Skin info for the skin page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkinInfo {
@@ -74,11 +82,9 @@ pub async fn save_wifi_config(
     country: String,
     mode: String,
     hidden: bool,
-) -> Result<(), ServerFnError> {
+) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state
-        .update_wifi(&ssid, &password, &country, &mode, hidden)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    apply_replay_config_change(move || state.update_wifi(&ssid, &password, &country, &mode, hidden))
 }
 
 #[server(prefix = "/sfn")]
@@ -97,11 +103,73 @@ pub async fn save_nfs_config(
     server: String,
     share: String,
     version: String,
-) -> Result<(), ServerFnError> {
+) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state
-        .update_nfs(&server, &share, &version)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    apply_replay_config_change(move || state.update_nfs(&server, &share, &version))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_retroachievements_config() -> Result<RetroAchievementsConfig, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let config = state.config.read().expect("config lock poisoned");
+    Ok(RetroAchievementsConfig {
+        username: config
+            .retroachievements_username()
+            .unwrap_or("")
+            .to_string(),
+        password_configured: config.retroachievements_password_configured(),
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_retroachievements_config_and_restart(
+    username: String,
+    password: String,
+) -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    apply_replay_config_change(move || {
+        state.update_retroachievements_credentials(&username, &password)
+    })
+}
+
+#[cfg(feature = "ssr")]
+fn apply_replay_config_change<F>(write_config: F) -> Result<String, ServerFnError>
+where
+    F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
+{
+    if !is_replayos() {
+        write_config().map_err(|e| ServerFnError::new(e.to_string()))?;
+        return Ok("Restart skipped (not running on ReplayOS)".to_string());
+    }
+
+    systemctl_replay("stop").map_err(|e| ServerFnError::new(format!("Failed to stop: {e}")))?;
+
+    if let Err(save_error) = write_config() {
+        let start_result = systemctl_replay("start");
+        return match start_result {
+            Ok(()) => Err(ServerFnError::new(format!("Failed to save: {save_error}"))),
+            Err(start_error) => Err(ServerFnError::new(format!(
+                "Failed to save: {save_error}; also failed to start ReplayOS: {start_error}"
+            ))),
+        };
+    }
+
+    systemctl_replay("start").map_err(|e| ServerFnError::new(format!("Failed to start: {e}")))?;
+    Ok("ReplayOS restarted".to_string())
+}
+
+#[cfg(feature = "ssr")]
+fn systemctl_replay(action: &str) -> Result<(), String> {
+    let output = std::process::Command::new("systemctl")
+        .args([action, "replay.service"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
 }
 
 #[server(prefix = "/sfn")]

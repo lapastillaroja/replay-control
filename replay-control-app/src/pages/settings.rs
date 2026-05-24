@@ -82,6 +82,7 @@ pub fn SettingsPage() -> impl IntoView {
                         <div class="settings-section-body">
                             <div class="menu-list">
                                 <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                                <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=Some("/settings/retroachievements") />
                             </div>
 
                             <div class="settings-inline-setting">

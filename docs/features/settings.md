@@ -24,6 +24,16 @@ Primary and secondary preferred ROM region. Options: USA, Europe, Japan, World (
 
 Primary and secondary language (e.g., English, Spanish, Japanese). Defaults based on your region preference. Used for sorting game manual search results by language relevance.
 
+## RetroAchievements
+
+Configure your RetroAchievements username and password from **Settings > RetroAchievements**. The password field is always blank when the page opens; Replay Control only shows whether a password is already saved.
+
+Credentials are saved together. Enter both username and password to set the account, or use **Clear & Restart RePlayOS** to remove both. Changing the username also requires entering the password again.
+
+Use **Save & Restart RePlayOS** to apply changes. Restarting RePlayOS stops any running game and briefly disconnects the TV frontend.
+
+Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control stops the TV frontend, saves the updated RePlayOS configuration, then starts the frontend again. On development systems outside RePlayOS, the configuration file is still updated but the restart step is skipped.
+
 ## Font Size
 
 Normal or large text. Applied across the entire app.

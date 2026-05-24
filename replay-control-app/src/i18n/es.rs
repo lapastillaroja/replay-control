@@ -3,12 +3,9 @@ use super::Key;
 pub fn translate(key: Key) -> &'static str {
     match key {
         // App chrome
-        Key::AppTitle => "Replay Control",
-        Key::NavHome => "Juegos",
         Key::NavGames => "Juegos",
         Key::NavFavorites => "Favs",
         Key::NavSearch => "Buscar",
-        Key::NavMore => "Más",
         Key::NavSettings => "Ajustes",
 
         // Home page
@@ -18,18 +15,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::HomeLibrary => "Biblioteca",
         Key::HomeNoGamesPlayed => "Aún no has jugado ningún juego",
         Key::HomeNoRecent => "Sin juegos recientes",
-        Key::HomeNoSystems => "No hay sistemas con juegos",
         Key::HomeDiscover => "Descubrir",
-        Key::HomeDiscoverRandom => "Redescubre tu biblioteca",
-        Key::HomeDiscoverMultiplayer => "Multijugador",
-        Key::HomeDiscoverGames => "juegos",
 
         // Stats
         Key::StatsGames => "Juegos",
         Key::StatsFavorites => "Favoritos",
-        Key::StatsUsed => "Usado",
-        Key::StatsStorage => "Almacenamiento",
-        Key::StatsStorageUsed => "Almacenamiento usado",
         Key::CountGames => "{0} juegos",
         Key::CountGamesPartial => "{0} / {1} juegos",
         Key::CountFavorites => "{0} favoritos",
@@ -121,16 +111,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsSectionSystem => "Sistema",
 
         // More page (legacy keys)
-        Key::MoreTitle => "Más",
-        Key::MoreSectionPreferences => "Preferencias",
         Key::MoreSectionGamePreferences => "Preferencias de juego",
-        Key::MoreSectionGameData => "Datos de juegos",
-        Key::MoreSectionSystem => "Sistema",
-        Key::MoreSectionSystemInfo => "Información del sistema",
-        Key::MoreUpload => "Subir ROMs",
         Key::MoreWifi => "Configuración Wi-Fi",
         Key::MoreNfs => "Ajustes de recurso compartido NFS",
-        Key::MoreSystemInfo => "Información del sistema",
         Key::MoreStorage => "Almacenamiento",
         Key::MorePath => "Ruta",
         Key::MoreDiskTotal => "Total en disco",
@@ -139,13 +122,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreEthernetIp => "IP Ethernet",
         Key::MoreWifiIp => "IP Wi-Fi",
         Key::MoreNotConnected => "No conectado",
-        Key::MoreRefreshStorage => "Actualizar almacenamiento",
-        Key::MoreRefreshing => "Actualizando...",
-        Key::MoreStorageChanged => "Almacenamiento actualizado",
-        Key::MoreStorageUnchanged => "Almacenamiento sin cambios",
 
         // App language (UI locale selector)
-        Key::MoreLocale => "Idioma",
         Key::LocaleTitle => "Idioma de la app",
         Key::LocaleSaved => "Idioma guardado",
         Key::LocaleAuto => "Igual que el navegador",
@@ -158,7 +136,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreTextSizeHint => "Ajusta el tamaño del texto de la app",
 
         // Region preference
-        Key::MoreRegion => "Región",
         Key::RegionTitle => "Preferencias de región",
         Key::RegionHint => {
             "Los juegos de tu región principal aparecen primero. La región secundaria se usa como alternativa cuando la principal no está disponible."
@@ -189,12 +166,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::LanguagePt => "Portugués",
         Key::LanguageSaved => "Preferencia de idioma guardada",
 
+        // RetroAchievements settings
+        Key::MoreRetroAchievements => "RetroAchievements",
+        Key::RetroAchievementsTitle => "RetroAchievements",
+        Key::RetroAchievementsUsername => "Usuario",
+        Key::RetroAchievementsPassword => "Contraseña",
+        Key::RetroAchievementsPasswordSaved => "Contraseña guardada",
+        Key::RetroAchievementsPasswordMissing => "No hay contraseña guardada",
+        Key::RetroAchievementsCredentialsRequired => {
+            "Introduce usuario y contraseña, o usa Borrar y reiniciar RePlayOS para quitar la cuenta guardada."
+        }
+        Key::RetroAchievementsSaveRestart => "Guardar y reiniciar RePlayOS",
+        Key::RetroAchievementsClearRestart => "Borrar y reiniciar RePlayOS",
+        Key::RetroAchievementsSaved => "Credenciales de RetroAchievements actualizadas",
+
         // Skin
         Key::MoreSkin => "Tema visual",
         Key::SkinTitle => "Tema visual",
         Key::SkinCurrent => "Actual",
         Key::SkinHint => "Selecciona un tema para aplicarlo.",
-        Key::SkinApplied => "Tema aplicado.",
         Key::SkinSync => "Sincronizar con ReplayOS",
         Key::SkinSyncHint => "Al activarlo, el tema de la app sigue el ajuste de tema de ReplayOS.",
 
@@ -211,18 +201,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::NfsServer => "Dirección del servidor",
         Key::NfsShare => "Ruta del recurso compartido",
         Key::NfsVersion => "Versión NFS",
-        Key::NfsHint => "Es necesario reiniciar para que los cambios de NFS surtan efecto.",
 
         // Settings (shared)
         Key::SettingsSave => "Guardar",
+        Key::SettingsSaveRestart => "Guardar y reiniciar RePlayOS",
         Key::SettingsSaving => "Guardando...",
         Key::SettingsSaved => "Ajustes guardados",
-        Key::SettingsApplyHint => "Reinicia ReplayOS para aplicar los cambios.",
-        Key::SettingsRestartUi => "Reiniciar ReplayOS",
         Key::SettingsRestarting => "Reiniciando...",
+        Key::SettingsReplayRestartWarning => {
+            "Reiniciar RePlayOS detiene cualquier juego en ejecución y desconecta brevemente la interfaz de TV."
+        }
         Key::SettingsReboot => "Reiniciar sistema",
         Key::SettingsRebooting => "Reiniciando...",
-        Key::SettingsRebootHint => "Es necesario reiniciar para que los cambios surtan efecto.",
         Key::SettingsPasswordEnter => "Introduce la contraseña",
 
         // Game detail page
@@ -231,7 +221,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFilename => "Nombre de archivo",
         Key::GameDetailFileSize => "Tamaño del archivo",
         Key::GameDetailFormat => "Formato",
-        Key::GameDetailArcadeInfo => "Información arcade",
         Key::GameDetailReleased => "Lanzamiento",
         Key::MonthJanShort => "ene",
         Key::MonthFebShort => "feb",
@@ -245,12 +234,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MonthOctShort => "oct",
         Key::MonthNovShort => "nov",
         Key::MonthDecShort => "dic",
-        Key::GameDetailManufacturer => "Fabricante",
         Key::GameDetailPlayers => "Jugadores",
         Key::GameDetailRotation => "Orientación",
-        Key::GameDetailCategory => "Categoría",
         Key::GameDetailParentRom => "Versión original",
-        Key::GameDetailMetadata => "Metadatos",
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
 
@@ -258,14 +244,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRawCategory => "Categoría MAME",
         Key::GameDetailRegion => "Región",
         Key::GameDetailDescription => "Descripción",
-        Key::GameDetailNoDescription => "Descripción no disponible",
         Key::GameDetailScreenshots => "Capturas de pantalla",
         Key::GameDetailTitleScreen => "Pantalla de título",
         Key::GameDetailInGame => "En juego",
-        Key::GameDetailNoScreenshots => "Sin capturas de pantalla disponibles",
         Key::GameDetailVideos => "Vídeos",
         Key::GameDetailNoVideos => "Sin vídeos disponibles",
-        Key::GameDetailMyVideos => "Mis vídeos",
         Key::GameDetailAddVideo => "Añadir",
         Key::GameDetailAddVideoPlaceholder => "Pega una URL de YouTube o Twitch...",
         Key::GameDetailAddVideoError => "URL no válida. Compatible con YouTube, Twitch y Vimeo.",
@@ -335,8 +318,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailResetDefault => "Restablecer predeterminado",
         Key::GameDetailDownloading => "Descargando...",
         Key::GameDetailNoVariants => "No se encontraron portadas alternativas",
-        Key::GameDetailBuildIndexFirst => "Descarga primero el índice de miniaturas",
-        Key::GameDetailExternalMetadata => "Información adicional",
         Key::GameDetailPublisher => "Editora",
         Key::GameDetailRating => "Valoración",
         Key::GameDetailGameFaqsLink => "Buscar en GameFAQs",
@@ -350,7 +331,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataDescriptionsRatings => "Descripciones y valoraciones",
         Key::MetadataNoData => "Aún no importado",
         Key::MetadataEntriesSummary => "entradas",
-        Key::MetadataLastUpdated => "última actualización",
         Key::MetadataDownloadingFile => "Descargando metadatos...",
         Key::MetadataMatched => "coincidencias",
         Key::MetadataDataManagement => "Gestión de datos",
@@ -381,13 +361,11 @@ pub fn translate(key: Key) -> &'static str {
         // Game library
         Key::MetadataRebuildGameLibrary => "Reconstruir biblioteca de juegos",
         Key::MetadataRebuildingGameLibrary => "Reconstruyendo...",
-        Key::MetadataGameLibraryRebuilt => "Biblioteca de juegos reconstruida correctamente",
         Key::MetadataConfirmRebuildGameLibrary => {
             "¿Reconstruir la biblioteca de juegos? Se vuelven a escanear todos los juegos desde el disco."
         }
         Key::MetadataRescanGameLibrary => "Reescanear biblioteca",
         Key::MetadataRescanningGameLibrary => "Reescaneando...",
-        Key::MetadataGameLibraryRescanned => "Reescaneo de biblioteca completado",
         Key::MetadataRescanGameLibraryHint => {
             "Detecta ROMs añadidas recientemente sin esperar. La detección automática en NFS tiene cierto retraso."
         }
@@ -425,9 +403,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Built-in metadata
         Key::MetadataBuiltin => "Datos de juegos integrados",
-        Key::MetadataBuiltinArcade => "Base de datos arcade",
         Key::MetadataBuiltinArcadeSummary => "entradas, MAME",
-        Key::MetadataBuiltinConsole => "Base de datos de consolas",
         Key::MetadataBuiltinConsoleSummaryEntries => "entradas de ROMs en",
         Key::MetadataBuiltinConsoleSummarySystems => "sistemas",
         Key::MetadataBuiltinWikidataEntries => "entradas de series de Wikidata en",
@@ -510,22 +486,18 @@ pub fn translate(key: Key) -> &'static str {
         }
 
         // Search
-        Key::SearchTitle => "Buscar",
         Key::SearchPlaceholder => "Buscar todos los juegos...",
         Key::SearchNoResults => "No se encontraron resultados",
-        Key::SearchNoResultsWithFilters => "Sin resultados. Intenta eliminar algunos filtros.",
         Key::SearchResultsSummary => "resultados en",
         Key::SearchSystems => "sistemas",
         Key::SearchBrowsingGenre => "Explorando todo",
         Key::SearchGamesBy => "Juegos de",
         Key::SearchRandomGame => "Juego aleatorio",
         Key::SearchRecentSearches => "Búsquedas recientes",
-        Key::SearchClearRecent => "Borrar",
         Key::SearchOtherDevelopers => "Otros desarrolladores que coinciden con",
 
         // Filters
         Key::FilterHideHacks => "Ocultar hacks",
-        Key::FilterGenre => "Género",
         Key::FilterGenreAll => "Todos los géneros",
         Key::FilterHideTranslations => "Ocultar traducciones",
         Key::FilterHideBetas => "Ocultar betas",
@@ -533,9 +505,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterMultiplayer => "Multijugador",
         Key::FilterCoOp => "Cooperativo",
         Key::FilterRatingAny => "Cualquier valoración",
-        Key::FilterClearFilters => "Borrar filtros",
-        Key::FilterActiveSearch => "Buscar",
-        Key::FilterFilteredResults => "Resultados filtrados",
 
         // Developer page
         Key::DeveloperNoGames => "No se encontraron juegos de este desarrollador",
@@ -545,7 +514,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBusyBanner => {
             "Actualización de metadatos en curso \u{2014} puede que alguna información no esté disponible temporalmente"
         }
-        Key::MetadataScanningBanner => "Escaneando biblioteca de juegos...",
         Key::MetadataBannerFetchingGameMetadata => "Obteniendo metadatos de juegos...",
         Key::MetadataBannerAlreadyUpToDate => "Ya está actualizado",
 
@@ -581,7 +549,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SpotlightCoOp => "Juegos cooperativos",
 
         // Analytics
-        Key::MoreSectionPrivacy => "Privacidad",
         Key::AnalyticsTitle => "Estadísticas de uso anónimas",
         Key::AnalyticsDescription => {
             "Ayuda a mejorar Replay Control enviando estadísticas de instalación anónimas"
@@ -597,7 +564,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::AnalyticsNotCollected => {
             "No se recopila: direcciones IP, biblioteca de juegos, patrones de uso ni información personal."
         }
-        Key::AnalyticsPrivacyLink => "Leer la política de privacidad completa",
 
         // Updates
         Key::MoreSectionUpdates => "Actualizaciones",
@@ -607,23 +573,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateNow => "Actualizar ahora",
         Key::UpdateCheckButton => "Buscar actualizaciones",
         Key::UpdateChecking => "Comprobando...",
-        Key::UpdateCheckFailed => "Error al buscar actualizaciones",
-        Key::UpdateChannel => "Canal de actualización",
         Key::UpdateChannelStable => "Estable",
         Key::UpdateChannelBeta => "Beta",
         Key::UpdateCurrentVersion => "Versión actual: v{0} ({1})",
         Key::UpdateUpToDate => "Actualizado",
         Key::UpdateDownloading => "Descargando actualización...",
-        Key::UpdateInstalling => "Instalando actualización...",
         Key::UpdateRestarting => "Reiniciando Replay Control...",
         Key::UpdateFailed => "Error en la actualización",
         Key::UpdateDoNotNavigate => "No cierres ni navegues fuera de esta página",
         Key::UpdateReloadingIn => "Recargando en {0} segundos...",
         Key::UpdateWaitingForServer => "Esperando al servidor...",
         Key::UpdateBackToSettings => "Volver a ajustes",
-        Key::UpdateSystemBusy => {
-            "El sistema está ocupado. Espera a que termine la operación actual."
-        }
         Key::UpdatePageTitle => "Actualizando Replay Control",
 
         // Setup checklist (first-run)
@@ -641,7 +601,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupDismiss => "Cerrar",
         Key::SetupComplete => "\u{00a1}Configuraci\u{00f3}n completada!",
         Key::SetupInProgress => "En progreso\u{2026}",
-        Key::SetupTaskDone => "Hecho",
         Key::SetupStart => "Iniciar",
         Key::SetupUpdate => "Actualizar",
     }

@@ -43,6 +43,7 @@ use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::nfs::NfsPage;
 use pages::password::PasswordPage;
+use pages::retroachievements::RetroAchievementsPage;
 use pages::search::SearchPage;
 use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
@@ -187,6 +188,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
                         <Route path=path!("/settings/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/retroachievements") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><RetroAchievementsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />

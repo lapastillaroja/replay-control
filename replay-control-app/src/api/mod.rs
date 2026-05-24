@@ -1018,9 +1018,14 @@ impl AppState {
         hidden: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = self.config.write().expect("config lock poisoned");
+        let mut config = if config_path.exists() {
+            SystemConfig::from_file(&config_path)?
+        } else {
+            SystemConfig::parse("")?
+        };
         config.set_wifi(ssid, password, country, mode, hidden);
         config.write_to_file(&config_path, &config_path)?;
+        *self.config.write().expect("config lock poisoned") = config;
         Ok(())
     }
 
@@ -1032,9 +1037,32 @@ impl AppState {
         version: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = self.config.write().expect("config lock poisoned");
+        let mut config = if config_path.exists() {
+            SystemConfig::from_file(&config_path)?
+        } else {
+            SystemConfig::parse("")?
+        };
         config.set_nfs(server, share, version);
         config.write_to_file(&config_path, &config_path)?;
+        *self.config.write().expect("config lock poisoned") = config;
+        Ok(())
+    }
+
+    /// Update RetroAchievements credentials in `replay.cfg` and write back to disk.
+    pub fn update_retroachievements_credentials(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let config_path = self.config_file_path();
+        let mut config = if config_path.exists() {
+            SystemConfig::from_file(&config_path)?
+        } else {
+            SystemConfig::parse("")?
+        };
+        config.set_retroachievements_credentials(username, password)?;
+        config.write_to_file(&config_path, &config_path)?;
+        *self.config.write().expect("config lock poisoned") = config;
         Ok(())
     }
 

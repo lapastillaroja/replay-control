@@ -28,7 +28,7 @@ Server-only native implementation. Compiled for native targets only (never wasm)
 - **Update I/O**: GitHub release polling (`update::check_github_update`), asset download (`update::download_asset`), and `available.json` filesystem helpers — gated on the `http` feature
 - **Platform adapters**: `/proc/mounts` filesystem detection, `df` disk usage, storage location detection
 - **HTTP client**: `reqwest`-backed helpers (feature-gated)
-- **Settings store**: `replay.cfg` / `settings.cfg` reader+writer
+- **Settings store**: `replay.cfg` / `settings.cfg` reader+writer, including RePlayOS RetroAchievements credential keys (`rcheevos_username`, `rcheevos_password`). RePlayOS-facing config saves stop `replay.service`, write `replay.cfg`, then start `replay.service`.
 - **Launch**: spawns `replay` process for game playback
 - **Test utilities**: `test_utils` module with shared fixtures (`build_library_pool`, `insert_game_library_row`) used by both inline `#[cfg(test)]` modules and any `tests/*.rs` integration tests
 

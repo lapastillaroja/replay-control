@@ -6,12 +6,18 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.4.0-beta.12]
 
+### Highlights
+
+- **RetroAchievements credentials are configurable from Replay Control.** Settings now includes a RetroAchievements page that writes the RePlayOS username/password keys without ever returning the saved password to the browser. Applying RetroAchievements, Wi-Fi, and NFS config changes now stops the TV frontend, writes `replay.cfg`, then starts the frontend again so the behavior matches how RePlayOS consumes those settings.
+
 ### Added
 
+- Settings now includes a RetroAchievements page for configuring `rcheevos_username` and `rcheevos_password` in the RePlayOS config. Credentials are all-or-nothing, clearing removes both fields, and the stored password is write-only from the UI.
 - A second "Video index on Shmups Wiki" link appears on the game detail page for games whose wiki page has a curated Video Index sub-page (members of Shmups Wiki's Category:Video Index), such as DoDonPachi DaiOuJou.
 
 ### Changed
 
+- Wi-Fi, NFS, and RetroAchievements config saves now apply by stopping `replay.service`, writing `replay.cfg`, and starting `replay.service` instead of leaving the user to perform a separate reboot/restart step.
 - The startup reconcile that re-runs per-system enrichment when bundled inputs change is now a single composite stamp covering every bundled enrichment input (the catalog database hash and the Shmups Wiki page index + matcher version). Any input changing invalidates the per-storage stamp, so upgrades pick up new manual links, new Video Index entries, and matcher improvements automatically without a manual rescan.
 
 ### Fixed

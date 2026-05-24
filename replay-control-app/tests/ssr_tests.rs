@@ -58,6 +58,25 @@ async fn settings_page_returns_200() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn retroachievements_settings_page_returns_200() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/settings/retroachievements")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_page_returns_200_with_not_found_message() {
     setup();
     let env = TestEnv::new().await;

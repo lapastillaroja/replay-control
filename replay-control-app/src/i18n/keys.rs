@@ -1,16 +1,13 @@
 /// All translation keys, one variant per string.
 ///
 /// Naming convention: dot-separated key → PascalCase.
-/// `"nav.home"` → `Key::NavHome`, `"game_detail.n_of_m"` → `Key::GameDetailNOfM`.
+/// `"nav.games"` → `Key::NavGames`, `"game_detail.n_of_m"` → `Key::GameDetailNOfM`.
 #[derive(Clone, Copy)]
 pub enum Key {
     // App chrome
-    AppTitle,
-    NavHome,
     NavGames,
     NavFavorites,
     NavSearch,
-    NavMore,
     NavSettings,
 
     // Home page
@@ -20,18 +17,11 @@ pub enum Key {
     HomeLibrary,
     HomeNoGamesPlayed,
     HomeNoRecent,
-    HomeNoSystems,
     HomeDiscover,
-    HomeDiscoverRandom,
-    HomeDiscoverMultiplayer,
-    HomeDiscoverGames,
 
     // Stats
     StatsGames,
     StatsFavorites,
-    StatsUsed,
-    StatsStorage,
-    StatsStorageUsed,
     CountGames,
     CountGamesPartial,
     CountFavorites,
@@ -113,16 +103,9 @@ pub enum Key {
     SettingsSectionSystem,
 
     // More page (legacy keys still used for sub-items)
-    MoreTitle,
-    MoreSectionPreferences,
     MoreSectionGamePreferences,
-    MoreSectionGameData,
-    MoreSectionSystem,
-    MoreSectionSystemInfo,
-    MoreUpload,
     MoreWifi,
     MoreNfs,
-    MoreSystemInfo,
     MoreStorage,
     MorePath,
     MoreDiskTotal,
@@ -131,13 +114,8 @@ pub enum Key {
     MoreEthernetIp,
     MoreWifiIp,
     MoreNotConnected,
-    MoreRefreshStorage,
-    MoreRefreshing,
-    MoreStorageChanged,
-    MoreStorageUnchanged,
 
     // App language (UI locale selector)
-    MoreLocale,
     LocaleTitle,
     LocaleSaved,
     LocaleAuto,
@@ -150,7 +128,6 @@ pub enum Key {
     MoreTextSizeHint,
 
     // Region preference
-    MoreRegion,
     RegionTitle,
     RegionHint,
     RegionPrimaryLabel,
@@ -177,12 +154,23 @@ pub enum Key {
     LanguagePt,
     LanguageSaved,
 
+    // RetroAchievements settings
+    MoreRetroAchievements,
+    RetroAchievementsTitle,
+    RetroAchievementsUsername,
+    RetroAchievementsPassword,
+    RetroAchievementsPasswordSaved,
+    RetroAchievementsPasswordMissing,
+    RetroAchievementsCredentialsRequired,
+    RetroAchievementsSaveRestart,
+    RetroAchievementsClearRestart,
+    RetroAchievementsSaved,
+
     // Skin
     MoreSkin,
     SkinTitle,
     SkinCurrent,
     SkinHint,
-    SkinApplied,
     SkinSync,
     SkinSyncHint,
 
@@ -199,18 +187,16 @@ pub enum Key {
     NfsServer,
     NfsShare,
     NfsVersion,
-    NfsHint,
 
     // Settings (shared)
     SettingsSave,
+    SettingsSaveRestart,
     SettingsSaving,
     SettingsSaved,
-    SettingsApplyHint,
-    SettingsRestartUi,
     SettingsRestarting,
+    SettingsReplayRestartWarning,
     SettingsReboot,
     SettingsRebooting,
-    SettingsRebootHint,
     SettingsPasswordEnter,
 
     // Game detail page
@@ -219,7 +205,6 @@ pub enum Key {
     GameDetailFilename,
     GameDetailFileSize,
     GameDetailFormat,
-    GameDetailArcadeInfo,
     GameDetailReleased,
     MonthJanShort,
     MonthFebShort,
@@ -233,26 +218,20 @@ pub enum Key {
     MonthOctShort,
     MonthNovShort,
     MonthDecShort,
-    GameDetailManufacturer,
     GameDetailPlayers,
     GameDetailRotation,
-    GameDetailCategory,
     GameDetailParentRom,
-    GameDetailMetadata,
     GameDetailGenre,
     GameDetailDeveloper,
     GameDetailEmulation,
     GameDetailRawCategory,
     GameDetailRegion,
     GameDetailDescription,
-    GameDetailNoDescription,
     GameDetailScreenshots,
     GameDetailTitleScreen,
     GameDetailInGame,
-    GameDetailNoScreenshots,
     GameDetailVideos,
     GameDetailNoVideos,
-    GameDetailMyVideos,
     GameDetailAddVideo,
     GameDetailAddVideoPlaceholder,
     GameDetailAddVideoError,
@@ -314,8 +293,6 @@ pub enum Key {
     GameDetailResetDefault,
     GameDetailDownloading,
     GameDetailNoVariants,
-    GameDetailBuildIndexFirst,
-    GameDetailExternalMetadata,
     GameDetailPublisher,
     GameDetailRating,
     GameDetailGameFaqsLink,
@@ -329,7 +306,6 @@ pub enum Key {
     MetadataDescriptionsRatings,
     MetadataNoData,
     MetadataEntriesSummary,
-    MetadataLastUpdated,
     MetadataDownloadingFile,
     MetadataMatched,
     MetadataDataManagement,
@@ -360,11 +336,9 @@ pub enum Key {
     // Game library
     MetadataRebuildGameLibrary,
     MetadataRebuildingGameLibrary,
-    MetadataGameLibraryRebuilt,
     MetadataConfirmRebuildGameLibrary,
     MetadataRescanGameLibrary,
     MetadataRescanningGameLibrary,
-    MetadataGameLibraryRescanned,
     MetadataRescanGameLibraryHint,
     MetadataBannerRebuildingLibrary,
     MetadataBannerRescanningLibrary,
@@ -394,9 +368,7 @@ pub enum Key {
 
     // Built-in metadata
     MetadataBuiltin,
-    MetadataBuiltinArcade,
     MetadataBuiltinArcadeSummary,
-    MetadataBuiltinConsole,
     MetadataBuiltinConsoleSummaryEntries,
     MetadataBuiltinConsoleSummarySystems,
     MetadataBuiltinWikidataEntries,
@@ -471,22 +443,18 @@ pub enum Key {
     LogsLevelRebootHint,
 
     // Search
-    SearchTitle,
     SearchPlaceholder,
     SearchNoResults,
-    SearchNoResultsWithFilters,
     SearchResultsSummary,
     SearchSystems,
     SearchBrowsingGenre,
     SearchGamesBy,
     SearchRandomGame,
     SearchRecentSearches,
-    SearchClearRecent,
     SearchOtherDevelopers,
 
     // Filters
     FilterHideHacks,
-    FilterGenre,
     FilterGenreAll,
     FilterHideTranslations,
     FilterHideBetas,
@@ -494,9 +462,6 @@ pub enum Key {
     FilterMultiplayer,
     FilterCoOp,
     FilterRatingAny,
-    FilterClearFilters,
-    FilterActiveSearch,
-    FilterFilteredResults,
 
     // Developer page
     DeveloperNoGames,
@@ -504,7 +469,6 @@ pub enum Key {
 
     // Metadata busy/scanning banners
     MetadataBusyBanner,
-    MetadataScanningBanner,
     MetadataBannerFetchingGameMetadata,
     MetadataBannerAlreadyUpToDate,
 
@@ -540,7 +504,6 @@ pub enum Key {
     SpotlightCoOp,
 
     // Analytics
-    MoreSectionPrivacy,
     AnalyticsTitle,
     AnalyticsDescription,
     AnalyticsSaved,
@@ -550,7 +513,6 @@ pub enum Key {
     AnalyticsFieldArch,
     AnalyticsFieldChannel,
     AnalyticsNotCollected,
-    AnalyticsPrivacyLink,
 
     // Updates
     MoreSectionUpdates,
@@ -560,21 +522,17 @@ pub enum Key {
     UpdateNow,
     UpdateCheckButton,
     UpdateChecking,
-    UpdateCheckFailed,
-    UpdateChannel,
     UpdateChannelStable,
     UpdateChannelBeta,
     UpdateCurrentVersion,
     UpdateUpToDate,
     UpdateDownloading,
-    UpdateInstalling,
     UpdateRestarting,
     UpdateFailed,
     UpdateDoNotNavigate,
     UpdateReloadingIn,
     UpdateWaitingForServer,
     UpdateBackToSettings,
-    UpdateSystemBusy,
     UpdatePageTitle,
 
     // Setup checklist (first-run)
@@ -588,7 +546,6 @@ pub enum Key {
     SetupDismiss,
     SetupComplete,
     SetupInProgress,
-    SetupTaskDone,
     SetupStart,
     SetupUpdate,
 }

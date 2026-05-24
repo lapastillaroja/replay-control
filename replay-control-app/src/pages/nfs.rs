@@ -2,7 +2,6 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::components::reboot_button::RebootButton;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
@@ -50,9 +49,12 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
 
         leptos::task::spawn_local(async move {
             match server_fns::save_nfs_config(server, share, version).await {
-                Ok(()) => {
+                Ok(msg) => {
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, Key::SettingsSaved).to_string())));
+                    status.set(Some((
+                        true,
+                        format!("{}: {msg}", t(locale, Key::SettingsSaved)),
+                    )));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -95,6 +97,8 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
                 view! { <div class=class>{msg}</div> }
             })}
 
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsReplayRestartWarning)}</p>
+
             <button
                 class="form-btn"
                 on:click=on_save
@@ -102,11 +106,9 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
+                    if saving.get() { t(locale, Key::SettingsRestarting) } else { t(locale, Key::SettingsSaveRestart) }
                 }}
             </button>
-
-            <RebootButton hint=Key::SettingsRebootHint />
         </div>
     }
 }

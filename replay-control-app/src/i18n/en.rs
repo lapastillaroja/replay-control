@@ -3,12 +3,9 @@ use super::Key;
 pub fn translate(key: Key) -> &'static str {
     match key {
         // App chrome
-        Key::AppTitle => "Replay Control",
-        Key::NavHome => "Games",
         Key::NavGames => "Games",
         Key::NavFavorites => "Favs",
         Key::NavSearch => "Search",
-        Key::NavMore => "More",
         Key::NavSettings => "Settings",
 
         // Home page
@@ -18,18 +15,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::HomeLibrary => "Library",
         Key::HomeNoGamesPlayed => "No games played yet",
         Key::HomeNoRecent => "No recent games",
-        Key::HomeNoSystems => "No systems with games",
         Key::HomeDiscover => "Discover",
-        Key::HomeDiscoverRandom => "Rediscover Your Library",
-        Key::HomeDiscoverMultiplayer => "Multiplayer",
-        Key::HomeDiscoverGames => "games",
 
         // Stats
         Key::StatsGames => "Games",
         Key::StatsFavorites => "Favorites",
-        Key::StatsUsed => "Used",
-        Key::StatsStorage => "Storage",
-        Key::StatsStorageUsed => "Storage Used",
         Key::CountGames => "{0} games",
         Key::CountGamesPartial => "{0} / {1} games",
         Key::CountFavorites => "{0} favorites",
@@ -121,16 +111,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsSectionSystem => "System",
 
         // More page (legacy keys)
-        Key::MoreTitle => "More",
-        Key::MoreSectionPreferences => "Preferences",
         Key::MoreSectionGamePreferences => "Game Preferences",
-        Key::MoreSectionGameData => "Game Data",
-        Key::MoreSectionSystem => "System",
-        Key::MoreSectionSystemInfo => "System Info",
-        Key::MoreUpload => "Upload ROMs",
         Key::MoreWifi => "Wi-Fi Configuration",
         Key::MoreNfs => "NFS Share Settings",
-        Key::MoreSystemInfo => "System Info",
         Key::MoreStorage => "Storage",
         Key::MorePath => "Path",
         Key::MoreDiskTotal => "Disk Total",
@@ -139,13 +122,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreEthernetIp => "Ethernet IP",
         Key::MoreWifiIp => "Wi-Fi IP",
         Key::MoreNotConnected => "Not connected",
-        Key::MoreRefreshStorage => "Refresh Storage",
-        Key::MoreRefreshing => "Refreshing...",
-        Key::MoreStorageChanged => "Storage updated",
-        Key::MoreStorageUnchanged => "Storage unchanged",
 
         // App language (UI locale selector)
-        Key::MoreLocale => "Language",
         Key::LocaleTitle => "App Language",
         Key::LocaleSaved => "Language saved",
         Key::LocaleAuto => "Same as browser",
@@ -158,7 +136,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreTextSizeHint => "Adjust the app text size",
 
         // Region preference
-        Key::MoreRegion => "Region",
         Key::RegionTitle => "Region Preferences",
         Key::RegionHint => {
             "Games from your primary region appear first. The secondary region is used as a fallback when your primary isn't available."
@@ -189,12 +166,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::LanguagePt => "Portuguese",
         Key::LanguageSaved => "Language preference saved",
 
+        // RetroAchievements settings
+        Key::MoreRetroAchievements => "RetroAchievements",
+        Key::RetroAchievementsTitle => "RetroAchievements",
+        Key::RetroAchievementsUsername => "Username",
+        Key::RetroAchievementsPassword => "Password",
+        Key::RetroAchievementsPasswordSaved => "Password saved",
+        Key::RetroAchievementsPasswordMissing => "No password saved",
+        Key::RetroAchievementsCredentialsRequired => {
+            "Enter both username and password, or use Clear & Restart RePlayOS to remove the saved account."
+        }
+        Key::RetroAchievementsSaveRestart => "Save & Restart RePlayOS",
+        Key::RetroAchievementsClearRestart => "Clear & Restart RePlayOS",
+        Key::RetroAchievementsSaved => "RetroAchievements credentials updated",
+
         // Skin
         Key::MoreSkin => "Skin",
         Key::SkinTitle => "Skin",
         Key::SkinCurrent => "Current",
         Key::SkinHint => "Select a skin to apply it.",
-        Key::SkinApplied => "Skin applied.",
         Key::SkinSync => "Sync with ReplayOS",
         Key::SkinSyncHint => "When enabled, the app skin follows the ReplayOS skin setting.",
 
@@ -211,18 +201,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::NfsServer => "Server Address",
         Key::NfsShare => "Share Path",
         Key::NfsVersion => "NFS Version",
-        Key::NfsHint => "A reboot is required for NFS changes to take effect.",
 
         // Settings (shared)
         Key::SettingsSave => "Save",
+        Key::SettingsSaveRestart => "Save & Restart RePlayOS",
         Key::SettingsSaving => "Saving...",
         Key::SettingsSaved => "Settings saved",
-        Key::SettingsApplyHint => "Restart ReplayOS to apply changes.",
-        Key::SettingsRestartUi => "Restart ReplayOS",
         Key::SettingsRestarting => "Restarting...",
+        Key::SettingsReplayRestartWarning => {
+            "Restarting RePlayOS stops any running game and briefly disconnects the TV frontend."
+        }
         Key::SettingsReboot => "Reboot System",
         Key::SettingsRebooting => "Rebooting...",
-        Key::SettingsRebootHint => "A reboot is required for changes to take effect.",
         Key::SettingsPasswordEnter => "Enter password",
 
         // Game detail page
@@ -231,7 +221,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFilename => "Filename",
         Key::GameDetailFileSize => "File Size",
         Key::GameDetailFormat => "Format",
-        Key::GameDetailArcadeInfo => "Arcade Info",
         Key::GameDetailReleased => "Released",
         Key::MonthJanShort => "Jan",
         Key::MonthFebShort => "Feb",
@@ -245,12 +234,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MonthOctShort => "Oct",
         Key::MonthNovShort => "Nov",
         Key::MonthDecShort => "Dec",
-        Key::GameDetailManufacturer => "Manufacturer",
         Key::GameDetailPlayers => "Players",
         Key::GameDetailRotation => "Orientation",
-        Key::GameDetailCategory => "Category",
         Key::GameDetailParentRom => "Original Version",
-        Key::GameDetailMetadata => "Metadata",
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
 
@@ -258,14 +244,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRawCategory => "MAME Category",
         Key::GameDetailRegion => "Region",
         Key::GameDetailDescription => "Description",
-        Key::GameDetailNoDescription => "No description available",
         Key::GameDetailScreenshots => "Screenshots",
         Key::GameDetailTitleScreen => "Title Screen",
         Key::GameDetailInGame => "In-Game",
-        Key::GameDetailNoScreenshots => "No screenshots available",
         Key::GameDetailVideos => "Videos",
         Key::GameDetailNoVideos => "No videos available",
-        Key::GameDetailMyVideos => "My Videos",
         Key::GameDetailAddVideo => "Add",
         Key::GameDetailAddVideoPlaceholder => "Paste a YouTube or Twitch URL...",
         Key::GameDetailAddVideoError => "Invalid URL. Supported: YouTube, Twitch, Vimeo.",
@@ -329,8 +312,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailResetDefault => "Reset to Default",
         Key::GameDetailDownloading => "Downloading...",
         Key::GameDetailNoVariants => "No alternative covers found",
-        Key::GameDetailBuildIndexFirst => "Download thumbnail index first",
-        Key::GameDetailExternalMetadata => "Additional Info",
         Key::GameDetailPublisher => "Publisher",
         Key::GameDetailRating => "Rating",
         Key::GameDetailGameFaqsLink => "Look up on GameFAQs",
@@ -344,7 +325,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataDescriptionsRatings => "Descriptions & Ratings",
         Key::MetadataNoData => "Not imported yet",
         Key::MetadataEntriesSummary => "entries",
-        Key::MetadataLastUpdated => "last updated",
         Key::MetadataDownloadingFile => "Downloading metadata...",
         Key::MetadataMatched => "matched",
         Key::MetadataDataManagement => "Data Management",
@@ -375,13 +355,11 @@ pub fn translate(key: Key) -> &'static str {
         // Game library
         Key::MetadataRebuildGameLibrary => "Rebuild Game Library",
         Key::MetadataRebuildingGameLibrary => "Rebuilding...",
-        Key::MetadataGameLibraryRebuilt => "Game library rebuilt successfully",
         Key::MetadataConfirmRebuildGameLibrary => {
             "Rebuild the game library? This re-scans all games from disk."
         }
         Key::MetadataRescanGameLibrary => "Rescan Library",
         Key::MetadataRescanningGameLibrary => "Rescanning...",
-        Key::MetadataGameLibraryRescanned => "Library rescan complete",
         Key::MetadataRescanGameLibraryHint => {
             "Pick up newly added ROMs without waiting. NFS auto-detection runs on a delay."
         }
@@ -417,9 +395,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Built-in metadata
         Key::MetadataBuiltin => "Built-in Game Data",
-        Key::MetadataBuiltinArcade => "Arcade Database",
         Key::MetadataBuiltinArcadeSummary => "entries, MAME",
-        Key::MetadataBuiltinConsole => "Console Database",
         Key::MetadataBuiltinConsoleSummaryEntries => "ROM entries across",
         Key::MetadataBuiltinConsoleSummarySystems => "systems",
         Key::MetadataBuiltinWikidataEntries => "Wikidata series entries across",
@@ -500,22 +476,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsLevelRebootHint => "Saved changes are applied after the system is rebooted.",
 
         // Search
-        Key::SearchTitle => "Search",
         Key::SearchPlaceholder => "Search all games...",
         Key::SearchNoResults => "No results found",
-        Key::SearchNoResultsWithFilters => "No results. Try removing some filters.",
         Key::SearchResultsSummary => "results across",
         Key::SearchSystems => "systems",
         Key::SearchBrowsingGenre => "Browsing all",
         Key::SearchGamesBy => "Games by",
         Key::SearchRandomGame => "Random Game",
         Key::SearchRecentSearches => "Recent Searches",
-        Key::SearchClearRecent => "Clear",
         Key::SearchOtherDevelopers => "Other developers matching",
 
         // Filters
         Key::FilterHideHacks => "Hide Hacks",
-        Key::FilterGenre => "Genre",
         Key::FilterGenreAll => "All Genres",
         Key::FilterHideTranslations => "Hide Translations",
         Key::FilterHideBetas => "Hide Betas",
@@ -523,9 +495,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterMultiplayer => "Multiplayer",
         Key::FilterCoOp => "Co-op",
         Key::FilterRatingAny => "Any Rating",
-        Key::FilterClearFilters => "Clear Filters",
-        Key::FilterActiveSearch => "Search",
-        Key::FilterFilteredResults => "Filtered results",
 
         // Developer page
         Key::DeveloperNoGames => "No games found for this developer",
@@ -535,7 +504,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBusyBanner => {
             "Metadata update in progress \u{2014} some info may be temporarily unavailable"
         }
-        Key::MetadataScanningBanner => "Scanning game library...",
         Key::MetadataBannerFetchingGameMetadata => "Fetching game metadata...",
         Key::MetadataBannerAlreadyUpToDate => "Already up to date",
 
@@ -571,7 +539,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SpotlightCoOp => "Co-op Games",
 
         // Analytics
-        Key::MoreSectionPrivacy => "Privacy",
         Key::AnalyticsTitle => "Anonymous usage statistics",
         Key::AnalyticsDescription => {
             "Help improve Replay Control by sending anonymous install statistics"
@@ -585,7 +552,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::AnalyticsNotCollected => {
             "Not collected: IP addresses, game library, usage patterns, or any personal information."
         }
-        Key::AnalyticsPrivacyLink => "Read the full privacy policy",
 
         // Updates
         Key::MoreSectionUpdates => "Updates",
@@ -595,21 +561,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateNow => "Update Now",
         Key::UpdateCheckButton => "Check for Updates",
         Key::UpdateChecking => "Checking...",
-        Key::UpdateCheckFailed => "Update check failed",
-        Key::UpdateChannel => "Update Channel",
         Key::UpdateChannelStable => "Stable",
         Key::UpdateChannelBeta => "Beta",
         Key::UpdateCurrentVersion => "Current version: v{0} ({1})",
         Key::UpdateUpToDate => "Up to date",
         Key::UpdateDownloading => "Downloading update...",
-        Key::UpdateInstalling => "Installing update...",
         Key::UpdateRestarting => "Restarting Replay Control...",
         Key::UpdateFailed => "Update failed",
         Key::UpdateDoNotNavigate => "Please do not close or navigate away from this page",
         Key::UpdateReloadingIn => "Reloading in {0} seconds...",
         Key::UpdateWaitingForServer => "Waiting for server...",
         Key::UpdateBackToSettings => "Back to settings",
-        Key::UpdateSystemBusy => "System is busy. Please wait for the current operation to finish.",
         Key::UpdatePageTitle => "Updating Replay Control",
 
         // Setup checklist (first-run)
@@ -627,7 +589,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupDismiss => "Dismiss",
         Key::SetupComplete => "Setup complete!",
         Key::SetupInProgress => "In progress\u{2026}",
-        Key::SetupTaskDone => "Done",
         Key::SetupStart => "Start",
         Key::SetupUpdate => "Update",
     }

@@ -193,7 +193,15 @@ impl SystemConfig {
             .unwrap_or(0)
     }
 
-    // ── Write methods (only wifi + NFS) ──────────────────────────
+    pub fn retroachievements_username(&self) -> Option<&str> {
+        self.inner.get_non_empty("rcheevos_username")
+    }
+
+    pub fn retroachievements_password_configured(&self) -> bool {
+        self.inner.get_non_empty("rcheevos_password").is_some()
+    }
+
+    // ── Write methods (only wifi + NFS + RetroAchievements credentials) ─────
 
     /// Update wifi settings. Only these keys may be written to `replay.cfg`.
     pub fn set_wifi(
@@ -217,6 +225,32 @@ impl SystemConfig {
         self.inner.set("nfs_server", server);
         self.inner.set("nfs_share", share);
         self.inner.set("nfs_version", version);
+    }
+
+    /// Update RetroAchievements credentials. Credentials are all-or-nothing:
+    /// both empty clears the keys, otherwise both username and password are required.
+    pub fn set_retroachievements_credentials(
+        &mut self,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        let username = username.trim();
+        let password = password.trim();
+        match (username.is_empty(), password.is_empty()) {
+            (true, true) => {
+                self.inner.set("rcheevos_username", "");
+                self.inner.set("rcheevos_password", "");
+                Ok(())
+            }
+            (false, false) => {
+                self.inner.set("rcheevos_username", username);
+                self.inner.set("rcheevos_password", password);
+                Ok(())
+            }
+            _ => Err(Error::Other(
+                "RetroAchievements username and password must be provided together".to_string(),
+            )),
+        }
     }
 
     /// Write back to disk, preserving comments and key order from the original file.
@@ -500,6 +534,87 @@ mod tests {
     fn system_skin_parsed() {
         let config = SystemConfig::parse("system_skin = \"5\"").unwrap();
         assert_eq!(config.system_skin(), 5);
+    }
+
+    #[test]
+    fn retroachievements_reads_username_and_password_state() {
+        let config =
+            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
+                .unwrap();
+        assert_eq!(config.retroachievements_username(), Some("player"));
+        assert!(config.retroachievements_password_configured());
+    }
+
+    #[test]
+    fn retroachievements_empty_password_is_not_configured() {
+        let config =
+            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"\"\n")
+                .unwrap();
+        assert_eq!(config.retroachievements_username(), Some("player"));
+        assert!(!config.retroachievements_password_configured());
+    }
+
+    #[test]
+    fn retroachievements_write_preserves_comments_and_unrelated_keys() {
+        use std::io::Write;
+
+        let original = "# RePlayOS config\nsystem_skin = \"3\"\nrcheevos_username = \"old\"\n";
+        let tmp_dir =
+            std::env::temp_dir().join(format!("replay-ra-config-preserve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let original_path = tmp_dir.join("original.cfg");
+        let output_path = tmp_dir.join("output.cfg");
+        std::fs::File::create(&original_path)
+            .unwrap()
+            .write_all(original.as_bytes())
+            .unwrap();
+
+        let mut config = SystemConfig::parse(original).unwrap();
+        config
+            .set_retroachievements_credentials("new-player", "new-pass")
+            .unwrap();
+        config.write_to_file(&original_path, &output_path).unwrap();
+
+        let result = std::fs::read_to_string(&output_path).unwrap();
+        assert!(result.contains("# RePlayOS config"), "comment preserved");
+        assert!(
+            result.contains("system_skin = \"3\""),
+            "unrelated key preserved"
+        );
+        assert!(
+            result.contains("rcheevos_username = \"new-player\""),
+            "username updated"
+        );
+        assert!(
+            result.contains("rcheevos_password = \"new-pass\""),
+            "password appended"
+        );
+    }
+
+    #[test]
+    fn retroachievements_empty_pair_clears_both_fields() {
+        let mut config =
+            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
+                .unwrap();
+        config.set_retroachievements_credentials("", "").unwrap();
+        assert_eq!(config.retroachievements_username(), None);
+        assert!(!config.retroachievements_password_configured());
+    }
+
+    #[test]
+    fn retroachievements_rejects_partial_credentials() {
+        let mut config = SystemConfig::parse("").unwrap();
+        assert!(
+            config
+                .set_retroachievements_credentials("player", "")
+                .is_err()
+        );
+        assert!(
+            config
+                .set_retroachievements_credentials("", "secret")
+                .is_err()
+        );
     }
 
     // ── AppSettings tests ────────────────────────────────────────

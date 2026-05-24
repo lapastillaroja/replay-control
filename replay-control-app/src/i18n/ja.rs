@@ -3,12 +3,9 @@ use super::Key;
 pub fn translate(key: Key) -> &'static str {
     match key {
         // App chrome
-        Key::AppTitle => "Replay Control",
-        Key::NavHome => "ゲーム",
         Key::NavGames => "ゲーム",
         Key::NavFavorites => "お気に入り",
         Key::NavSearch => "検索",
-        Key::NavMore => "その他",
         Key::NavSettings => "設定",
 
         // Home page
@@ -18,18 +15,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::HomeLibrary => "ライブラリ",
         Key::HomeNoGamesPlayed => "まだゲームをプレイしていません",
         Key::HomeNoRecent => "最近のゲームなし",
-        Key::HomeNoSystems => "ゲームのあるシステムなし",
         Key::HomeDiscover => "おすすめ",
-        Key::HomeDiscoverRandom => "あなたのライブラリから",
-        Key::HomeDiscoverMultiplayer => "マルチプレイ",
-        Key::HomeDiscoverGames => "ゲーム",
 
         // Stats
         Key::StatsGames => "ゲーム",
         Key::StatsFavorites => "お気に入り",
-        Key::StatsUsed => "使用中",
-        Key::StatsStorage => "ストレージ",
-        Key::StatsStorageUsed => "使用ストレージ",
         Key::CountGames => "{0} ゲーム",
         Key::CountGamesPartial => "{0} / {1} ゲーム",
         Key::CountFavorites => "{0} お気に入り",
@@ -121,16 +111,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsSectionSystem => "システム",
 
         // More page (legacy keys)
-        Key::MoreTitle => "その他",
-        Key::MoreSectionPreferences => "設定",
         Key::MoreSectionGamePreferences => "ゲーム設定",
-        Key::MoreSectionGameData => "ゲームデータ",
-        Key::MoreSectionSystem => "システム",
-        Key::MoreSectionSystemInfo => "システム情報",
-        Key::MoreUpload => "ROMをアップロード",
         Key::MoreWifi => "Wi-Fi設定",
         Key::MoreNfs => "NFS共有設定",
-        Key::MoreSystemInfo => "システム情報",
         Key::MoreStorage => "ストレージ",
         Key::MorePath => "パス",
         Key::MoreDiskTotal => "ディスク合計",
@@ -139,13 +122,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreEthernetIp => "Ethernet IP",
         Key::MoreWifiIp => "Wi-Fi IP",
         Key::MoreNotConnected => "未接続",
-        Key::MoreRefreshStorage => "ストレージを更新",
-        Key::MoreRefreshing => "更新中...",
-        Key::MoreStorageChanged => "ストレージを更新しました",
-        Key::MoreStorageUnchanged => "ストレージに変更なし",
 
         // App language (UI locale selector)
-        Key::MoreLocale => "言語",
         Key::LocaleTitle => "アプリの言語",
         Key::LocaleSaved => "言語を保存しました",
         Key::LocaleAuto => "ブラウザと同じ",
@@ -158,7 +136,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreTextSizeHint => "アプリの文字サイズを調整します",
 
         // Region preference
-        Key::MoreRegion => "地域",
         Key::RegionTitle => "地域設定",
         Key::RegionHint => {
             "優先地域のゲームが先に表示されます。第二地域は優先地域が利用できない場合の代替として使用されます。"
@@ -189,12 +166,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::LanguagePt => "ポルトガル語",
         Key::LanguageSaved => "言語設定を保存しました",
 
+        // RetroAchievements settings
+        Key::MoreRetroAchievements => "RetroAchievements",
+        Key::RetroAchievementsTitle => "RetroAchievements",
+        Key::RetroAchievementsUsername => "ユーザー名",
+        Key::RetroAchievementsPassword => "パスワード",
+        Key::RetroAchievementsPasswordSaved => "パスワード保存済み",
+        Key::RetroAchievementsPasswordMissing => "パスワード未設定",
+        Key::RetroAchievementsCredentialsRequired => {
+            "ユーザー名とパスワードの両方を入力するか、「消去してRePlayOSを再起動」で保存済みアカウントを削除してください。"
+        }
+        Key::RetroAchievementsSaveRestart => "保存してRePlayOSを再起動",
+        Key::RetroAchievementsClearRestart => "消去してRePlayOSを再起動",
+        Key::RetroAchievementsSaved => "RetroAchievements認証情報を更新しました",
+
         // Skin
         Key::MoreSkin => "スキン",
         Key::SkinTitle => "スキン",
         Key::SkinCurrent => "現在",
         Key::SkinHint => "スキンを選択して適用します。",
-        Key::SkinApplied => "スキンを適用しました。",
         Key::SkinSync => "RePlayOSと同期",
         Key::SkinSyncHint => "有効にすると、アプリのスキンがRePlayOSのスキン設定に従います。",
 
@@ -211,18 +201,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::NfsServer => "サーバーアドレス",
         Key::NfsShare => "共有パス",
         Key::NfsVersion => "NFSバージョン",
-        Key::NfsHint => "NFS設定を反映するには再起動が必要です。",
 
         // Settings (shared)
         Key::SettingsSave => "保存",
+        Key::SettingsSaveRestart => "保存してRePlayOSを再起動",
         Key::SettingsSaving => "保存中...",
         Key::SettingsSaved => "設定を保存しました",
-        Key::SettingsApplyHint => "変更を反映するにはRePlayOSを再起動してください。",
-        Key::SettingsRestartUi => "RePlayOSを再起動",
         Key::SettingsRestarting => "再起動中...",
+        Key::SettingsReplayRestartWarning => {
+            "RePlayOSを再起動すると実行中のゲームが停止し、TVフロントエンドが一時的に切断されます。"
+        }
         Key::SettingsReboot => "システムを再起動",
         Key::SettingsRebooting => "再起動中...",
-        Key::SettingsRebootHint => "変更を反映するには再起動が必要です。",
         Key::SettingsPasswordEnter => "パスワードを入力",
 
         // Game detail page
@@ -231,7 +221,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFilename => "ファイル名",
         Key::GameDetailFileSize => "ファイルサイズ",
         Key::GameDetailFormat => "フォーマット",
-        Key::GameDetailArcadeInfo => "アーケード情報",
         Key::GameDetailReleased => "発売日",
         Key::MonthJanShort => "1月",
         Key::MonthFebShort => "2月",
@@ -245,12 +234,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MonthOctShort => "10月",
         Key::MonthNovShort => "11月",
         Key::MonthDecShort => "12月",
-        Key::GameDetailManufacturer => "メーカー",
         Key::GameDetailPlayers => "プレイヤー数",
         Key::GameDetailRotation => "画面の向き",
-        Key::GameDetailCategory => "カテゴリ",
         Key::GameDetailParentRom => "オリジナル版",
-        Key::GameDetailMetadata => "メタデータ",
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
 
@@ -258,14 +244,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRawCategory => "MAMEカテゴリ",
         Key::GameDetailRegion => "地域",
         Key::GameDetailDescription => "説明",
-        Key::GameDetailNoDescription => "説明はありません",
         Key::GameDetailScreenshots => "スクリーンショット",
         Key::GameDetailTitleScreen => "タイトル画面",
         Key::GameDetailInGame => "ゲーム中",
-        Key::GameDetailNoScreenshots => "スクリーンショットなし",
         Key::GameDetailVideos => "動画",
         Key::GameDetailNoVideos => "動画なし",
-        Key::GameDetailMyVideos => "マイ動画",
         Key::GameDetailAddVideo => "追加",
         Key::GameDetailAddVideoPlaceholder => "YouTubeまたはTwitchのURLを貼り付け...",
         Key::GameDetailAddVideoError => "無効なURL。対応サービス：YouTube、Twitch、Vimeo。",
@@ -333,8 +316,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailResetDefault => "デフォルトに戻す",
         Key::GameDetailDownloading => "ダウンロード中...",
         Key::GameDetailNoVariants => "代替カバーが見つかりません",
-        Key::GameDetailBuildIndexFirst => "先にサムネイルインデックスをダウンロードしてください",
-        Key::GameDetailExternalMetadata => "追加情報",
         Key::GameDetailPublisher => "発売元",
         Key::GameDetailRating => "評価",
         Key::GameDetailGameFaqsLink => "GameFAQs で検索",
@@ -348,7 +329,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataDescriptionsRatings => "説明・評価",
         Key::MetadataNoData => "未インポート",
         Key::MetadataEntriesSummary => "件",
-        Key::MetadataLastUpdated => "最終更新",
         Key::MetadataDownloadingFile => "メタデータをダウンロード中...",
         Key::MetadataMatched => "件一致",
         Key::MetadataDataManagement => "データ管理",
@@ -379,13 +359,11 @@ pub fn translate(key: Key) -> &'static str {
         // Game library
         Key::MetadataRebuildGameLibrary => "ゲームライブラリを再構築",
         Key::MetadataRebuildingGameLibrary => "再構築中...",
-        Key::MetadataGameLibraryRebuilt => "ゲームライブラリを再構築しました",
         Key::MetadataConfirmRebuildGameLibrary => {
             "ゲームライブラリを再構築しますか？ディスクからすべてのゲームを再スキャンします。"
         }
         Key::MetadataRescanGameLibrary => "ライブラリを再スキャン",
         Key::MetadataRescanningGameLibrary => "再スキャン中...",
-        Key::MetadataGameLibraryRescanned => "ライブラリの再スキャンが完了しました",
         Key::MetadataRescanGameLibraryHint => {
             "新しく追加された ROM をすぐに検出します。NFS 共有の自動検出には遅延があります。"
         }
@@ -421,9 +399,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Built-in metadata
         Key::MetadataBuiltin => "内蔵ゲームデータ",
-        Key::MetadataBuiltinArcade => "アーケードデータベース",
         Key::MetadataBuiltinArcadeSummary => "件、MAME",
-        Key::MetadataBuiltinConsole => "コンソールデータベース",
         Key::MetadataBuiltinConsoleSummaryEntries => "件のROMエントリ、",
         Key::MetadataBuiltinConsoleSummarySystems => "システム",
         Key::MetadataBuiltinWikidataEntries => "件のWikidataシリーズエントリ、",
@@ -504,22 +480,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsLevelRebootHint => "保存した変更はシステムの再起動後に適用されます。",
 
         // Search
-        Key::SearchTitle => "検索",
         Key::SearchPlaceholder => "すべてのゲームを検索...",
         Key::SearchNoResults => "結果が見つかりません",
-        Key::SearchNoResultsWithFilters => "結果なし。フィルターを外してみてください。",
         Key::SearchResultsSummary => "件、",
         Key::SearchSystems => "システムで見つかりました",
         Key::SearchBrowsingGenre => "すべて閲覧中",
         Key::SearchGamesBy => "開発元のゲーム",
         Key::SearchRandomGame => "おまかせゲーム",
         Key::SearchRecentSearches => "最近の検索",
-        Key::SearchClearRecent => "消去",
         Key::SearchOtherDevelopers => "一致する他の開発元",
 
         // Filters
         Key::FilterHideHacks => "ハック版を非表示",
-        Key::FilterGenre => "ジャンル",
         Key::FilterGenreAll => "すべてのジャンル",
         Key::FilterHideTranslations => "翻訳版を非表示",
         Key::FilterHideBetas => "ベータ版を非表示",
@@ -527,9 +499,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterMultiplayer => "マルチプレイ",
         Key::FilterCoOp => "協力プレイ",
         Key::FilterRatingAny => "評価を問わない",
-        Key::FilterClearFilters => "フィルターをクリア",
-        Key::FilterActiveSearch => "検索",
-        Key::FilterFilteredResults => "フィルター結果",
 
         // Developer page
         Key::DeveloperNoGames => "この開発元のゲームが見つかりません",
@@ -539,7 +508,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBusyBanner => {
             "メタデータを更新中です \u{2014} 一部の情報が一時的に表示されない場合があります"
         }
-        Key::MetadataScanningBanner => "ゲームライブラリをスキャン中...",
         Key::MetadataBannerFetchingGameMetadata => "ゲームメタデータを取得中...",
         Key::MetadataBannerAlreadyUpToDate => "すでに最新です",
 
@@ -575,7 +543,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SpotlightCoOp => "協力プレイ",
 
         // Analytics
-        Key::MoreSectionPrivacy => "プライバシー",
         Key::AnalyticsTitle => "匿名の使用統計",
         Key::AnalyticsDescription => "匿名のインストール統計を送信してReplay Controlの改善に貢献",
         Key::AnalyticsSaved => "設定を保存しました",
@@ -589,7 +556,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::AnalyticsNotCollected => {
             "収集されないもの：IPアドレス、ゲームライブラリ、使用パターン、個人情報。"
         }
-        Key::AnalyticsPrivacyLink => "プライバシーポリシー全文を読む",
 
         // Updates
         Key::MoreSectionUpdates => "アップデート",
@@ -599,21 +565,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateNow => "今すぐアップデート",
         Key::UpdateCheckButton => "アップデートを確認",
         Key::UpdateChecking => "確認中...",
-        Key::UpdateCheckFailed => "アップデートの確認に失敗しました",
-        Key::UpdateChannel => "チャンネル",
         Key::UpdateChannelStable => "安定版",
         Key::UpdateChannelBeta => "ベータ版",
         Key::UpdateCurrentVersion => "現在のバージョン: v{0} ({1})",
         Key::UpdateUpToDate => "最新です",
         Key::UpdateDownloading => "アップデートをダウンロード中...",
-        Key::UpdateInstalling => "アップデートをインストール中...",
         Key::UpdateRestarting => "Replay Controlを再起動中...",
         Key::UpdateFailed => "アップデートに失敗しました",
         Key::UpdateDoNotNavigate => "このページを閉じたり移動したりしないでください",
         Key::UpdateReloadingIn => "{0}秒後にリロードします...",
         Key::UpdateWaitingForServer => "サーバーの応答を待っています...",
         Key::UpdateBackToSettings => "設定に戻る",
-        Key::UpdateSystemBusy => "システムがビジーです。現在の操作が完了するまでお待ちください。",
         Key::UpdatePageTitle => "Replay Controlをアップデート中",
 
         // Setup checklist (first-run)
@@ -629,7 +591,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupDismiss => "閉じる",
         Key::SetupComplete => "セットアップ完了！",
         Key::SetupInProgress => "処理中\u{2026}",
-        Key::SetupTaskDone => "完了",
         Key::SetupStart => "開始",
         Key::SetupUpdate => "更新",
     }
