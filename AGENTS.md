@@ -80,9 +80,10 @@ Read task-specific docs as needed:
 - Write readable code that is easy to maintain
 - Prefer small, focused functions and components over large monoliths
 - Extract logic from templates — setup above, structure below
-- Don't over-engineer: solve the current problem, not hypothetical future ones
-- Don't under-engineer either. Prefer a principled fix over the smallest patch that compiles. A 2-line workaround under a misnamed key, a phase that quietly does more than its name says, a constant repurposed without renaming, or a "composite-string trick" smuggling new meaning into an old field — these are hacks even when tests pass. If a fix changes what something *represents*, rename it and centralize the new meaning. Token budget is not the bottleneck; the next person reading the code is.
+- Don't over-engineer: solve the current problem, not hypothetical future ones. If a 200-line version genuinely collapses to 50 honest lines that address the same root cause, prefer the 50.
+- Don't under-engineer either. A 2-line workaround under a misnamed key, a phase that quietly does more than its name says, a constant repurposed without renaming, or a "composite-string trick" smuggling new meaning into an old field — these are hacks even when tests pass. If a fix changes what something *represents*, rename it and centralize the new meaning. Token budget is not the bottleneck; the next person reading the code is — spend tokens on solid, simple fixes, not on verbose complicated ones, and never on a hack just to be shorter.
 - Band-aids are acceptable only when the real fix is genuinely deferred. In that case, label the band-aid as such, name the underlying design issue, and capture the deferred work explicitly — don't let it quietly become the final state.
+- Investigate first, ask if uncertain. Read-only investigation (grep, read the file, run a probe, check memory) is free relative to interrupting the user. Only ask when investigation genuinely can't resolve the question — and then ask specifically ("I found X and Y, which?") rather than vaguely ("what should I do?").
 
 ## Metadata Analysis
 
