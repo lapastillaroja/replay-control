@@ -13,3 +13,24 @@ pub async fn get_initial_now_playing() -> Result<NowPlayingState, ServerFnError>
     let state = expect_context::<AppState>();
     Ok(state.now_playing())
 }
+
+/// Stop the currently loaded game by restarting the RePlayOS frontend service.
+///
+/// RePlayOS does not currently expose a narrower "unload game" command, so a
+/// service restart is the explicit stop path used by the UI.
+#[server(prefix = "/sfn")]
+pub async fn stop_current_game() -> Result<String, ServerFnError> {
+    use crate::api::AppState;
+
+    let state = expect_context::<AppState>();
+
+    if !crate::server_fns::is_replayos() {
+        state.set_now_playing(NowPlayingState::Menu);
+        return Ok("Stop simulated (not running on ReplayOS)".to_string());
+    }
+
+    replay_control_core_server::replay_service::restart()
+        .map_err(|e| ServerFnError::new(format!("Failed to stop game: {e}")))?;
+    state.set_now_playing(NowPlayingState::Menu);
+    Ok("Game stopped".to_string())
+}

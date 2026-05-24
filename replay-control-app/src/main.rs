@@ -490,6 +490,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RenameRom>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomFileGroup>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::LaunchGame>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::StopCurrentGame>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomDetail>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RefreshStorage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetWifiConfig>();

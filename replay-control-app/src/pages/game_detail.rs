@@ -8,6 +8,7 @@ use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
+use crate::components::stop_game_button::StopGameButton;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
@@ -423,7 +424,12 @@ fn GameDetailContent(
 
         // Launch on TV (prominent CTA)
         <section class="game-launch-cta">
-            <GameLaunchAction relative_path=relative_path_sv />
+            <Show
+                when=move || is_now_playing()
+                fallback=move || view! { <GameLaunchAction relative_path=relative_path_sv /> }
+            >
+                <StopGameButton class="game-action-launch game-action-stop" />
+            </Show>
         </section>
 
         // Game Info Card

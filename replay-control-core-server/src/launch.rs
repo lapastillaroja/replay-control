@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::storage::StorageLocation;
@@ -59,20 +59,9 @@ pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()
         .await
         .map_err(|e| Error::io(&autostart_file, e))?;
 
-    // Restart the replay service
-    let output = tokio::process::Command::new("systemctl")
-        .args(["restart", "replay.service"])
-        .output()
-        .await
-        .map_err(|e| Error::io(Path::new("systemctl"), e))?;
-
-    if !output.status.success() {
-        // Clean up on failure
+    if let Err(error) = crate::replay_service::restart_async().await {
         let _ = tokio::fs::remove_file(&autostart_file).await;
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!(
-            "Failed to restart replay service: {stderr}"
-        )));
+        return Err(error);
     }
 
     std::thread::spawn({
@@ -129,20 +118,9 @@ fn watch_launch(autostart_file: PathBuf) {
                 "launch: no replay process after {}s -- restarting to recover",
                 POLL_TIMEOUT.as_secs()
             );
-            match std::process::Command::new("systemctl")
-                .args(["restart", "replay.service"])
-                .output()
-            {
-                Ok(o) if o.status.success() => {
-                    tracing::info!("recovery restart successful");
-                }
-                Ok(o) => {
-                    let stderr = String::from_utf8_lossy(&o.stderr);
-                    tracing::error!("recovery restart failed: {stderr}");
-                }
-                Err(e) => {
-                    tracing::error!("recovery restart error: {e}");
-                }
+            match crate::replay_service::restart() {
+                Ok(()) => tracing::info!("recovery restart successful"),
+                Err(e) => tracing::error!("recovery restart failed: {e}"),
             }
         }
         ReplayState::Playing { .. } => unreachable!("Playing returns early from the poll loop"),

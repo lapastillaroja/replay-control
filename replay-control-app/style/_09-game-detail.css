@@ -263,6 +263,14 @@
     background: #6e7681;
 }
 
+.game-action-stop {
+    background: var(--error);
+}
+
+.game-action-stop:hover:not(:disabled) {
+    opacity: 0.85;
+}
+
 .game-launch-cta {
     display: flex;
     justify-content: center;

@@ -60,7 +60,7 @@ impl SkinInfo {
 
 #[cfg(feature = "ssr")]
 pub fn is_replayos() -> bool {
-    std::path::Path::new("/opt/replay").exists()
+    replay_control_core_server::replay_service::is_replayos()
 }
 
 #[server(prefix = "/sfn")]
@@ -142,10 +142,11 @@ where
         return Ok("Restart skipped (not running on ReplayOS)".to_string());
     }
 
-    systemctl_replay("stop").map_err(|e| ServerFnError::new(format!("Failed to stop: {e}")))?;
+    replay_control_core_server::replay_service::stop()
+        .map_err(|e| ServerFnError::new(format!("Failed to stop: {e}")))?;
 
     if let Err(save_error) = write_config() {
-        let start_result = systemctl_replay("start");
+        let start_result = replay_control_core_server::replay_service::start();
         return match start_result {
             Ok(()) => Err(ServerFnError::new(format!("Failed to save: {save_error}"))),
             Err(start_error) => Err(ServerFnError::new(format!(
@@ -154,22 +155,9 @@ where
         };
     }
 
-    systemctl_replay("start").map_err(|e| ServerFnError::new(format!("Failed to start: {e}")))?;
+    replay_control_core_server::replay_service::start()
+        .map_err(|e| ServerFnError::new(format!("Failed to start: {e}")))?;
     Ok("ReplayOS restarted".to_string())
-}
-
-#[cfg(feature = "ssr")]
-fn systemctl_replay(action: &str) -> Result<(), String> {
-    let output = std::process::Command::new("systemctl")
-        .args([action, "replay.service"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
 }
 
 #[server(prefix = "/sfn")]
@@ -178,17 +166,9 @@ pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
         return Ok("Restart skipped (not running on ReplayOS)".to_string());
     }
 
-    let output = std::process::Command::new("systemctl")
-        .args(["restart", "replay"])
-        .output()
-        .map_err(|e| ServerFnError::new(format!("Failed to restart: {e}")))?;
-
-    if output.status.success() {
-        Ok("ReplayOS restarted".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(ServerFnError::new(format!("Restart failed: {stderr}")))
-    }
+    replay_control_core_server::replay_service::restart()
+        .map_err(|e| ServerFnError::new(format!("Restart failed: {e}")))?;
+    Ok("ReplayOS restarted".to_string())
 }
 
 #[server(prefix = "/sfn")]

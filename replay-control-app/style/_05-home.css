@@ -234,6 +234,20 @@
     background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
 }
 
+.hero-action-stop {
+    color: var(--error);
+}
+
+.hero-action-stop:hover:not(:disabled) {
+    border-color: var(--error);
+    background: color-mix(in srgb, var(--error) 10%, var(--surface-hover));
+}
+
+.hero-action-stop:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+
 .hero-thumb {
     height: 3.5rem;
     width: auto;

@@ -5,6 +5,7 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
+use replay_control_app::types::NowPlayingState;
 use replay_control_core_server::user_data_db::{ManualOrigin, UserDataDb};
 use server_fn::ServerFn;
 use tower::ServiceExt;
@@ -475,6 +476,31 @@ async fn sfn_retroachievements_save_writes_before_restart_result() {
     let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
     assert!(config.contains("rcheevos_username = \"player\""));
     assert!(config.contains("rcheevos_password = \"secret\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_stop_current_game_clears_now_playing_off_replayos() {
+    setup();
+    let env = TestEnv::new().await;
+    env.state.set_now_playing(NowPlayingState::Playing {
+        system: "nintendo_nes".to_string(),
+        system_display: "NES".to_string(),
+        filename: "TestGame.nes".to_string(),
+        display_name: "Test Game".to_string(),
+        box_art_url: None,
+        started_at_unix_secs: 1,
+    });
+    let app = test_router(env.state.clone());
+
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::StopCurrentGame>(app, String::new()).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("Stop simulated") || body.contains("Game stopped"),
+        "stop should return the ReplayOS restart path result"
+    );
+    assert_eq!(env.state.now_playing(), NowPlayingState::Menu);
 }
 
 #[tokio::test(flavor = "multi_thread")]

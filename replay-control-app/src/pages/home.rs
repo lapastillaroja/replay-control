@@ -7,6 +7,7 @@ use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::setup_checklist::SetupChecklist;
 use crate::components::stat_card::StatCard;
+use crate::components::stop_game_button::StopGameButton;
 use crate::components::system_card::SystemCard;
 use crate::hooks::{use_live_elapsed_secs, use_now_playing};
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
@@ -297,6 +298,7 @@ fn NowPlayingHeroCard(
                 <A href=manuals_href attr:class="hero-action-link">
                     {move || t(i18n.locale.get(), Key::GameDetailManual)}
                 </A>
+                <StopGameButton class="hero-action-link hero-action-stop" />
             </div>
         </div>
     }

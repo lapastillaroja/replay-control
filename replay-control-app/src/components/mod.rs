@@ -17,6 +17,7 @@ pub mod rom_list;
 pub mod rom_watcher_banner;
 pub mod setup_checklist;
 pub mod stat_card;
+pub mod stop_game_button;
 pub mod storage_status_banner;
 pub mod system_card;
 pub mod video_section;

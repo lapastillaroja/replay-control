@@ -9,10 +9,12 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Highlights
 
 - **RetroAchievements credentials are configurable from Replay Control.** Settings now includes a RetroAchievements page that writes the RePlayOS username/password keys without ever returning the saved password to the browser. Applying RetroAchievements, Wi-Fi, and NFS config changes now stops the TV frontend, writes `replay.cfg`, then starts the frontend again so the behavior matches how RePlayOS consumes those settings.
+- **Running games can be stopped from Replay Control.** The Now Playing hero and the active game's detail page now expose **Stop Game**, which restarts the RePlayOS frontend service to unload the current game and return the TV frontend to the menu.
 
 ### Added
 
 - Settings now includes a RetroAchievements page for configuring `rcheevos_username` and `rcheevos_password` in the RePlayOS config. Credentials are all-or-nothing, clearing removes both fields, and the stored password is write-only from the UI.
+- The Now Playing hero and active game detail page now include a **Stop Game** action for unloading the current game via a RePlayOS frontend restart.
 - A second "Video index on Shmups Wiki" link appears on the game detail page for games whose wiki page has a curated Video Index sub-page (members of Shmups Wiki's Category:Video Index), such as DoDonPachi DaiOuJou.
 
 ### Changed

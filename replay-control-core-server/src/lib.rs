@@ -12,6 +12,7 @@ pub mod external_metadata;
 pub mod launch;
 #[cfg(target_os = "linux")]
 pub mod replay_proc;
+pub mod replay_service;
 pub mod settings;
 pub mod sqlite;
 pub mod storage_id;
