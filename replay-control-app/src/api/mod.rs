@@ -1018,11 +1018,7 @@ impl AppState {
         hidden: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = if config_path.exists() {
-            SystemConfig::from_file(&config_path)?
-        } else {
-            SystemConfig::parse("")?
-        };
+        let mut config = SystemConfig::from_file(&config_path)?;
         config.set_wifi(ssid, password, country, mode, hidden);
         config.write_to_file(&config_path, &config_path)?;
         *self.config.write().expect("config lock poisoned") = config;
@@ -1037,11 +1033,7 @@ impl AppState {
         version: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = if config_path.exists() {
-            SystemConfig::from_file(&config_path)?
-        } else {
-            SystemConfig::parse("")?
-        };
+        let mut config = SystemConfig::from_file(&config_path)?;
         config.set_nfs(server, share, version);
         config.write_to_file(&config_path, &config_path)?;
         *self.config.write().expect("config lock poisoned") = config;
@@ -1055,11 +1047,7 @@ impl AppState {
         password: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = if config_path.exists() {
-            SystemConfig::from_file(&config_path)?
-        } else {
-            SystemConfig::parse("")?
-        };
+        let mut config = SystemConfig::from_file(&config_path)?;
         config.set_retroachievements_credentials(username, password)?;
         config.write_to_file(&config_path, &config_path)?;
         *self.config.write().expect("config lock poisoned") = config;

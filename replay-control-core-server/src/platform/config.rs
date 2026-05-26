@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
 
 use replay_control_core::error::{Error, Result};
@@ -56,10 +57,14 @@ impl KeyValueFile {
 
     /// Write the config back to a file, preserving comments, blank lines,
     /// and key order from the original file. New keys are appended at the end.
-    pub(crate) fn write_preserving(&self, original_path: &Path, output_path: &Path) -> Result<()> {
+    pub(crate) fn write(&self, original_path: &Path, output_path: &Path) -> Result<()> {
         let original_content =
             std::fs::read_to_string(original_path).map_err(|e| Error::io(original_path, e))?;
+        let output = self.render_preserving(&original_content);
+        write_atomic(output_path, output.as_bytes())
+    }
 
+    fn render_preserving(&self, original_content: &str) -> String {
         let mut written_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut output = String::new();
 
@@ -99,19 +104,7 @@ impl KeyValueFile {
             output.push_str(&format!("{key} = \"{value}\"\n"));
         }
 
-        std::fs::write(output_path, output).map_err(|e| Error::io(output_path, e))
-    }
-
-    /// Write a fresh file with all entries sorted by key (no original to preserve).
-    pub(crate) fn write_fresh(&self, path: &Path) -> Result<()> {
-        let mut keys: Vec<&String> = self.entries.keys().collect();
-        keys.sort();
-        let mut output = String::new();
-        for key in keys {
-            let value = &self.entries[key];
-            output.push_str(&format!("{key} = \"{value}\"\n"));
-        }
-        std::fs::write(path, output).map_err(|e| Error::io(path, e))
+        output
     }
 }
 
@@ -253,9 +246,39 @@ impl SystemConfig {
         }
     }
 
-    /// Write back to disk, preserving comments and key order from the original file.
+    /// Write back to disk, preserving comments and key order from the original
+    /// file.
+    ///
+    /// RePlayOS owns the creation of `replay.cfg`; we never create it. If the
+    /// original is missing we refuse to write and return an error so the caller
+    /// can surface it to the user instead of silently creating a config that
+    /// RePlayOS would not recognize.
     pub fn write_to_file(&self, original_path: &Path, output_path: &Path) -> Result<()> {
-        self.inner.write_preserving(original_path, output_path)
+        if !original_path.exists() {
+            tracing::error!(
+                path = %original_path.display(),
+                "refusing to write config: file does not exist (RePlayOS owns its creation)"
+            );
+            return Err(Error::Other(format!(
+                "config file {} does not exist; it must be created by RePlayOS first",
+                original_path.display()
+            )));
+        }
+        if std::fs::metadata(original_path)
+            .map_err(|e| Error::io(original_path, e))?
+            .len()
+            == 0
+        {
+            tracing::error!(
+                path = %original_path.display(),
+                "refusing to write config: file is empty"
+            );
+            return Err(Error::Other(format!(
+                "config file {} is empty; refusing to rewrite it",
+                original_path.display()
+            )));
+        }
+        self.inner.write(original_path, output_path)
     }
 }
 
@@ -285,11 +308,14 @@ impl AppSettings {
     }
 
     /// Save to disk, preserving comments and order if the file already exists.
+    /// If the app-owned settings file is missing, recreate it from the current
+    /// settings values.
     pub fn save(&self, path: &Path) -> Result<()> {
         if path.exists() {
-            self.inner.write_preserving(path, path)
+            self.inner.write(path, path)
         } else {
-            self.inner.write_fresh(path)
+            let output = self.inner.render_preserving("");
+            write_atomic(path, output.as_bytes())
         }
     }
 
@@ -432,6 +458,40 @@ impl AppSettings {
         self.inner
             .set("setup_dismissed", if dismissed { "true" } else { "false" });
     }
+}
+
+fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        Error::Other(format!(
+            "cannot write config file {}: path has no parent directory",
+            path.display()
+        ))
+    })?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
+
+    #[cfg(unix)]
+    if let Ok(metadata) = std::fs::metadata(path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(
+                metadata.permissions().mode(),
+            ))
+            .map_err(|e| Error::io(path, e))?;
+    }
+
+    tmp.write_all(contents).map_err(|e| Error::io(path, e))?;
+    tmp.as_file().sync_all().map_err(|e| Error::io(path, e))?;
+    tmp.persist(path)
+        .map(|_| ())
+        .map_err(|e| Error::io(path, e.error))?;
+
+    if let Ok(dir) = std::fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -615,6 +675,60 @@ mod tests {
                 .set_retroachievements_credentials("", "secret")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn write_to_file_refuses_to_create_missing_config() {
+        let config = SystemConfig::parse("rcheevos_username = \"player\"\n").unwrap();
+        let missing =
+            std::env::temp_dir().join(format!("replay-missing-cfg-{}.cfg", std::process::id()));
+        let _ = std::fs::remove_file(&missing);
+
+        // RePlayOS owns creating replay.cfg; we must error rather than create it.
+        assert!(config.write_to_file(&missing, &missing).is_err());
+        assert!(
+            !missing.exists(),
+            "must not create a config RePlayOS didn't"
+        );
+    }
+
+    #[test]
+    fn write_to_file_refuses_to_rewrite_empty_config() {
+        let tmp_dir = std::env::temp_dir().join(format!("replay-empty-cfg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let path = tmp_dir.join("replay.cfg");
+        std::fs::write(&path, "").unwrap();
+
+        let mut config = SystemConfig::parse("").unwrap();
+        config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
+
+        assert!(config.write_to_file(&path, &path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+    }
+
+    #[test]
+    fn write_to_file_failure_does_not_truncate_original_config() {
+        use std::io::Write;
+
+        let original = "# RePlayOS config\nwifi_name = \"OldWifi\"\n";
+        let tmp_dir =
+            std::env::temp_dir().join(format!("replay-config-atomic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let original_path = tmp_dir.join("replay.cfg");
+        let output_path = tmp_dir.join("target-dir");
+        std::fs::File::create(&original_path)
+            .unwrap()
+            .write_all(original.as_bytes())
+            .unwrap();
+        std::fs::create_dir(&output_path).unwrap();
+
+        let mut config = SystemConfig::parse(original).unwrap();
+        config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
+
+        assert!(config.write_to_file(&original_path, &output_path).is_err());
+        assert_eq!(std::fs::read_to_string(&original_path).unwrap(), original);
     }
 
     // ── AppSettings tests ────────────────────────────────────────
