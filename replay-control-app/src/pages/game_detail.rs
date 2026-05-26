@@ -1,3 +1,4 @@
+use leptos::form::ActionForm;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_navigate, use_params_map};
@@ -54,7 +55,7 @@ pub fn GameDetailPage() -> impl IntoView {
             .unwrap_or(raw)
     };
 
-    let detail = Resource::new(
+    let detail = Resource::new_blocking(
         move || (system(), filename()),
         |(sys, fname)| server_fns::get_rom_detail(sys, fname),
     );
@@ -127,6 +128,11 @@ fn GameDetailContent(
     let game_name_sv = StoredValue::new(game_name.clone());
     let filename_sv = StoredValue::new(game.rom_filename.clone());
     let relative_path_sv = StoredValue::new(game.rom_path.clone());
+    let return_to_sv = StoredValue::new(format!(
+        "/games/{}/{}",
+        system,
+        urlencoding::encode(&game.rom_filename)
+    ));
     let system_sv = StoredValue::new(system.clone());
     let base_title_sv = StoredValue::new(detail.base_title.clone());
     let system_display = game.system_display.clone();
@@ -426,7 +432,9 @@ fn GameDetailContent(
         <section class="game-launch-cta">
             <Show
                 when=move || is_now_playing()
-                fallback=move || view! { <GameLaunchAction relative_path=relative_path_sv /> }
+                fallback=move || view! {
+                    <GameLaunchAction relative_path=relative_path_sv return_to=return_to_sv />
+                }
             >
                 <StopGameButton class="game-action-launch game-action-stop" />
             </Show>
@@ -697,42 +705,21 @@ fn GameDetailContent(
 
 /// Launch action: "Launch on TV" button with launching/launched/error states.
 #[component]
-fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
+fn GameLaunchAction(
+    relative_path: StoredValue<String>,
+    return_to: StoredValue<String>,
+) -> impl IntoView {
     let i18n = use_i18n();
-    let launching = RwSignal::new(false);
-    let launch_result = RwSignal::new(Option::<Result<String, String>>::None);
+    let launch = ServerAction::<server_fns::LaunchGame>::new();
+    let launching = launch.pending();
+    let launch_result = launch.value();
+    let launch_clicked = RwSignal::new(false);
 
-    // Schedule a 3-second reset timer. Only runs client-side (WASM).
-    let schedule_reset = move || {
-        #[cfg(target_arch = "wasm32")]
-        {
-            gloo_timers::callback::Timeout::new(3_000, move || {
-                launch_result.set(None);
-            })
-            .forget();
+    Effect::new(move |_| {
+        if launch_result.get().is_some() {
+            launch_clicked.set(false);
         }
-    };
-
-    let on_launch = move |_| {
-        launching.set(true);
-        launch_result.set(None);
-
-        let rp = relative_path.get_value();
-        leptos::task::spawn_local(async move {
-            let result = server_fns::launch_game(rp).await;
-            launching.set(false);
-            match result {
-                Ok(msg) => {
-                    launch_result.set(Some(Ok(msg)));
-                    schedule_reset();
-                }
-                Err(e) => {
-                    launch_result.set(Some(Err(e.to_string())));
-                    schedule_reset();
-                }
-            }
-        });
-    };
+    });
 
     let is_launched =
         move || matches!(launch_result.get(), Some(Ok(ref m)) if !m.contains("simulated"));
@@ -740,10 +727,12 @@ fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
         move || matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"));
     let is_error = move || matches!(launch_result.get(), Some(Err(_)));
     let is_disabled = move || launching.get() || is_launched();
+    let is_launching =
+        move || launching.get() || (launch_clicked.get() && launch_result.get().is_none());
 
     let label = move || {
         let locale = i18n.locale.get();
-        if launching.get() {
+        if is_launching() {
             t(locale, Key::GameDetailLaunching)
         } else if is_launched() {
             t(locale, Key::GameDetailLaunched)
@@ -757,16 +746,21 @@ fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
     };
 
     view! {
-        <button
-            class="game-action-launch"
-            class:game-action-launch-success=is_launched
-            class:game-action-launch-simulated=is_simulated
-            prop:disabled=is_disabled
-            on:click=on_launch
-        >
-            <span class="game-action-icon">{"\u{25B6}"}</span>
-            {label}
-        </button>
+        <ActionForm action=launch>
+            <input type="hidden" name="rom_path" value=relative_path.get_value() />
+            <input type="hidden" name="return_to" value=return_to.get_value() />
+            <button
+                type="submit"
+                class="game-action-launch"
+                class:game-action-launch-success=is_launched
+                class:game-action-launch-simulated=is_simulated
+                prop:disabled=is_disabled
+                on:click=move |_| launch_clicked.set(true)
+            >
+                <span class="game-action-icon">{"\u{25B6}"}</span>
+                {label}
+            </button>
+        </ActionForm>
     }
 }
 

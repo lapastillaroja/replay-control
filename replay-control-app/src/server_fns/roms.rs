@@ -781,8 +781,10 @@ fn rename_fav_recursive(
 }
 
 #[server(prefix = "/sfn")]
-pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
+pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, ServerFnError> {
     if !is_replayos() {
+        #[cfg(feature = "ssr")]
+        redirect_after_progressive_form(&return_to);
         return Ok("Launch simulated (not on RePlayOS)".into());
     }
 
@@ -810,7 +812,16 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
         state.cache.invalidate_recommendations().await;
     }
 
+    #[cfg(feature = "ssr")]
+    redirect_after_progressive_form(&return_to);
     Ok("Game launching".into())
+}
+
+#[cfg(feature = "ssr")]
+fn redirect_after_progressive_form(return_to: &str) {
+    if !return_to.is_empty() && return_to.starts_with('/') && !return_to.starts_with("//") {
+        leptos_axum::redirect(return_to);
+    }
 }
 
 /// Extract system folder and ROM filename from a rom_path.
