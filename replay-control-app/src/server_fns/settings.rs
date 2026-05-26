@@ -85,6 +85,7 @@ pub async fn save_wifi_config(
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     apply_replay_config_change(move || state.update_wifi(&ssid, &password, &country, &mode, hidden))
+        .await
 }
 
 #[server(prefix = "/sfn")]
@@ -105,19 +106,42 @@ pub async fn save_nfs_config(
     version: String,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    apply_replay_config_change(move || state.update_nfs(&server, &share, &version))
+    apply_replay_config_change(move || state.update_nfs(&server, &share, &version)).await
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_retroachievements_config() -> Result<RetroAchievementsConfig, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let config = state.config.read().expect("config lock poisoned");
+    let config_path = state.config_file_path();
+
+    // Read fresh from disk so credentials changed out-of-band (e.g. set on the
+    // TV via the RePlayOS UI) are reflected instead of a possibly-stale
+    // in-memory copy. Fall back to the in-memory config when RePlayOS has not
+    // created the file yet.
+    let (username, password_configured) = if config_path.exists() {
+        let config = replay_control_core_server::config::SystemConfig::from_file(&config_path)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        (
+            config
+                .retroachievements_username()
+                .unwrap_or("")
+                .to_string(),
+            config.retroachievements_password_configured(),
+        )
+    } else {
+        let config = state.config.read().expect("config lock poisoned");
+        (
+            config
+                .retroachievements_username()
+                .unwrap_or("")
+                .to_string(),
+            config.retroachievements_password_configured(),
+        )
+    };
+
     Ok(RetroAchievementsConfig {
-        username: config
-            .retroachievements_username()
-            .unwrap_or("")
-            .to_string(),
-        password_configured: config.retroachievements_password_configured(),
+        username,
+        password_configured,
     })
 }
 
@@ -130,10 +154,24 @@ pub async fn save_retroachievements_config_and_restart(
     apply_replay_config_change(move || {
         state.update_retroachievements_credentials(&username, &password)
     })
+    .await
+}
+
+/// Stop the frontend, write the config, then start it again. The `systemctl`
+/// calls and the config file I/O are all blocking, so the whole sequence runs
+/// on a blocking thread to avoid stalling the async runtime.
+#[cfg(feature = "ssr")]
+async fn apply_replay_config_change<F>(write_config: F) -> Result<String, ServerFnError>
+where
+    F: FnOnce() -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || apply_replay_config_change_blocking(write_config))
+        .await
+        .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
 }
 
 #[cfg(feature = "ssr")]
-fn apply_replay_config_change<F>(write_config: F) -> Result<String, ServerFnError>
+fn apply_replay_config_change_blocking<F>(write_config: F) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
 {
@@ -145,19 +183,60 @@ where
     replay_control_core_server::replay_service::stop()
         .map_err(|e| ServerFnError::new(format!("Failed to stop: {e}")))?;
 
-    if let Err(save_error) = write_config() {
-        let start_result = replay_control_core_server::replay_service::start();
-        return match start_result {
-            Ok(()) => Err(ServerFnError::new(format!("Failed to save: {save_error}"))),
-            Err(start_error) => Err(ServerFnError::new(format!(
-                "Failed to save: {save_error}; also failed to start ReplayOS: {start_error}"
-            ))),
-        };
+    // The frontend is now down. We must bring it back up no matter what happens
+    // during the write — including a panic (e.g. a poisoned config lock), which
+    // the guard catches on unwind. The guard is disarmed once we run the
+    // explicit start below so that start's own error reaches the user.
+    let mut restart_guard = StartReplayOnDrop::armed();
+    let save_result = write_config();
+    restart_guard.disarm();
+
+    let start_result = replay_control_core_server::replay_service::start();
+
+    match (save_result, start_result) {
+        (Ok(()), Ok(())) => Ok("ReplayOS restarted".to_string()),
+        (Err(save_error), Ok(())) => {
+            Err(ServerFnError::new(format!("Failed to save: {save_error}")))
+        }
+        (Ok(()), Err(start_error)) => Err(ServerFnError::new(format!(
+            "Saved, but failed to restart ReplayOS: {start_error}"
+        ))),
+        (Err(save_error), Err(start_error)) => Err(ServerFnError::new(format!(
+            "Failed to save: {save_error}; also failed to start ReplayOS: {start_error}"
+        ))),
+    }
+}
+
+/// Restarts `replay.service` on drop unless disarmed. Used to guarantee the TV
+/// frontend is brought back up after `apply_replay_config_change` stops it,
+/// even if the config write panics or returns early.
+#[cfg(feature = "ssr")]
+struct StartReplayOnDrop {
+    armed: bool,
+}
+
+#[cfg(feature = "ssr")]
+impl StartReplayOnDrop {
+    fn armed() -> Self {
+        Self { armed: true }
     }
 
-    replay_control_core_server::replay_service::start()
-        .map_err(|e| ServerFnError::new(format!("Failed to start: {e}")))?;
-    Ok("ReplayOS restarted".to_string())
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl Drop for StartReplayOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Err(e) = replay_control_core_server::replay_service::start() {
+                tracing::error!(
+                    "failed to restart replay.service after aborted config change: {e}"
+                );
+            }
+        }
+    }
 }
 
 #[server(prefix = "/sfn")]
