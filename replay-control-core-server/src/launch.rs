@@ -48,35 +48,58 @@ pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()
     }
 
     // Create the _autostart directory
-    let autostart_dir = storage.roms_dir().join("_autostart");
-    tokio::fs::create_dir_all(&autostart_dir)
+    let autostart_file = autostart_path(storage);
+    let autostart_dir = autostart_file
+        .parent()
+        .expect("autostart path always has a parent");
+    tokio::fs::create_dir_all(autostart_dir)
         .await
-        .map_err(|e| Error::io(&autostart_dir, e))?;
+        .map_err(|e| Error::io(autostart_dir, e))?;
 
     // Write the rom_path to autostart.auto
-    let autostart_file = autostart_dir.join("autostart.auto");
     tokio::fs::write(&autostart_file, format!("{rom_path}\n"))
         .await
         .map_err(|e| Error::io(&autostart_file, e))?;
 
     if let Err(error) = crate::replay_service::restart_async().await {
-        let _ = tokio::fs::remove_file(&autostart_file).await;
+        let _ = clear_autostart(storage);
         return Err(error);
     }
 
     std::thread::spawn({
-        let autostart_file = autostart_file.clone();
-        move || watch_launch(autostart_file)
+        let storage = storage.clone();
+        move || watch_launch(storage)
     });
 
     Ok(())
+}
+
+/// Path to the autostart file RePlayOS reads on `replay.service` start.
+fn autostart_path(storage: &StorageLocation) -> PathBuf {
+    storage.roms_dir().join("_autostart").join("autostart.auto")
+}
+
+/// Remove `_autostart/autostart.auto` so a subsequent `replay.service` restart
+/// returns to the menu instead of relaunching the last game.
+///
+/// Idempotent: a missing file is success, since that already means nothing will
+/// be auto-launched. The stop-game path must call this *before* restarting,
+/// because between a launch and its watcher cleanup the file is still present
+/// and a bare restart would re-read it and relaunch the same game.
+pub fn clear_autostart(storage: &StorageLocation) -> Result<()> {
+    let autostart_file = autostart_path(storage);
+    match std::fs::remove_file(&autostart_file) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(Error::io(&autostart_file, e)),
+    }
 }
 
 /// Background watcher: polls the replay binary's state until it lands in a
 /// terminal one, then cleans up `autostart.auto` and (only if the binary is
 /// hung) triggers a recovery restart.
 #[cfg(target_os = "linux")]
-fn watch_launch(autostart_file: PathBuf) {
+fn watch_launch(storage: StorageLocation) {
     use crate::replay_proc::{ReplayState, current_replay_state};
 
     let start = std::time::Instant::now();
@@ -90,7 +113,7 @@ fn watch_launch(autostart_file: PathBuf) {
                     pid = *pid,
                     "launch: game core mapped, cleaning up autostart"
                 );
-                let _ = std::fs::remove_file(&autostart_file);
+                let _ = clear_autostart(&storage);
                 return;
             }
             ReplayState::Menu { pid } => cached_pid = Some(*pid),
@@ -104,7 +127,7 @@ fn watch_launch(autostart_file: PathBuf) {
 
     // Timed out without seeing a game core. Always clean up so we don't
     // re-launch a stale ROM on the next boot.
-    let _ = std::fs::remove_file(&autostart_file);
+    let _ = clear_autostart(&storage);
 
     match timed_out_state {
         ReplayState::Menu { pid } => {
@@ -128,8 +151,36 @@ fn watch_launch(autostart_file: PathBuf) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn watch_launch(_autostart_file: PathBuf) {
+fn watch_launch(_storage: StorageLocation) {
     // Non-Linux dev hosts: no /proc to poll. The autostart file is left in
     // place since there's no real replay binary to drive cleanup; tests
     // that need a clean tree handle this themselves.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageKind;
+
+    #[test]
+    fn clear_autostart_removes_file_and_is_idempotent() {
+        let root =
+            std::env::temp_dir().join(format!("replay-clear-autostart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let storage = StorageLocation::from_path(root.clone(), StorageKind::Sd);
+
+        let autostart = autostart_path(&storage);
+        std::fs::create_dir_all(autostart.parent().unwrap()).unwrap();
+        std::fs::write(&autostart, "roms/nes/game.nes\n").unwrap();
+
+        // First clear removes the file.
+        clear_autostart(&storage).unwrap();
+        assert!(!autostart.exists());
+
+        // Second clear on a now-missing file still succeeds (idempotent), so a
+        // stop racing the launch watcher never fails on an already-gone file.
+        clear_autostart(&storage).unwrap();
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

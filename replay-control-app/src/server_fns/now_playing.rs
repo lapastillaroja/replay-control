@@ -29,7 +29,13 @@ pub async fn stop_current_game() -> Result<String, ServerFnError> {
         return Ok("Stop simulated (not running on ReplayOS)".to_string());
     }
 
-    replay_control_core_server::replay_service::restart()
+    // Clear the autostart file first, otherwise the restart re-reads a
+    // not-yet-cleaned-up launch and relaunches the same game.
+    replay_control_core_server::launch::clear_autostart(&state.storage())
+        .map_err(|e| ServerFnError::new(format!("Failed to clear autostart: {e}")))?;
+
+    replay_control_core_server::replay_service::restart_async()
+        .await
         .map_err(|e| ServerFnError::new(format!("Failed to stop game: {e}")))?;
     state.set_now_playing(NowPlayingState::Menu);
     Ok("Game stopped".to_string())
