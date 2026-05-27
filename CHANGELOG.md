@@ -11,6 +11,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **RetroAchievements credentials are configurable from Replay Control.** Settings now includes a RetroAchievements page that writes the RePlayOS username/password keys without ever returning the saved password to the browser. Applying RetroAchievements, Wi-Fi, and NFS config changes now stops the TV frontend, writes `replay.cfg`, then starts the frontend again so the behavior matches how RePlayOS consumes those settings.
 - **Running games can be stopped from Replay Control.** The Now Playing hero and the active game's detail page now expose **Stop Game**, which restarts the RePlayOS frontend service to unload the current game and return the TV frontend to the menu.
 - **Search is more consistent across global and system pages.** Global search and per-system game lists now share the same controls, 400 ms debounce, `q` query parameter, and ranked search behavior, with alias matches available in both places and a system-scoped Random Game button on system pages.
+- **Now Playing identifies more games correctly.** Arcade clones now show the exact variant that is running instead of the parent set — *The Simpsons (2 Players)* no longer appears as the 4-player parent — MAME games no longer surface a stray "roms" entry, ScummVM games show the real game instead of one of their internal data files, and Neo Geo games (which run on the FBNeo core) are detected instead of being shown as the menu.
 
 ### Added
 
@@ -29,6 +30,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - Fixed Shmups Wiki linking missing arcade dual-name base titles. Lookups now also try the parts on each side of ` - ` (subtitle, e.g. `darius gaiden - silver hawk`) and ` / ` (dual-region name, e.g. `soukyugurentai / terra diver`) after a direct miss, so MAME/FBNeo entries like Darius Gaiden and Soukyugurentai resolve to their wiki pages. Real titles with hyphens (`R-Type`) are preserved because only space-wrapped separators trigger the fallback.
 - Fixed whitespace-only global searches returning the full library instead of the empty search state.
+- Fixed Now Playing reporting the wrong game in several cases. Arcade clones could resolve to their parent set — a different game (e.g. `simpsons2p` shown as `simpsons`); MAME's combined search-path string was mistaken for a ROM and shown as "roms"; ScummVM games showed an internal data file (e.g. `SPEECH2.CLU`) or the raw folder; and Neo Geo games were not detected at all (shown as the menu). The detector now drops the bare parent short-name, ignores the search-path string, picks the ScummVM content file and matches it to the library title, and recognises Neo Geo on the FBNeo core.
+- Fixed Launch on TV failing when it was triggered before the page finished loading.
+- Fixed Stop Game leaving the boot autostart trigger in place; stopping a game now clears it so the game does not relaunch on the next reboot.
+- Fixed config saves so a failed write can no longer truncate or recreate `replay.cfg`: the file is written atomically, and an unexpectedly empty or missing config is refused rather than overwritten.
 
 ---
 
