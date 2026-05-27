@@ -229,12 +229,10 @@ impl StartReplayOnDrop {
 #[cfg(feature = "ssr")]
 impl Drop for StartReplayOnDrop {
     fn drop(&mut self) {
-        if self.armed {
-            if let Err(e) = replay_control_core_server::replay_service::start() {
-                tracing::error!(
-                    "failed to restart replay.service after aborted config change: {e}"
-                );
-            }
+        if self.armed
+            && let Err(e) = replay_control_core_server::replay_service::start()
+        {
+            tracing::error!("failed to restart replay.service after aborted config change: {e}");
         }
     }
 }
