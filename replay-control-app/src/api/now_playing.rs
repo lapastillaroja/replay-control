@@ -250,17 +250,20 @@ mod linux {
         cached_pid: Option<u32>,
         previous: Option<(String, String)>,
     ) -> (Option<u32>, Option<Observation>) {
+        // `/proc` is authoritative for *whether* a game is running: a mapped
+        // non-menu libretro core ⇒ Playing, only the menu core ⇒ Menu, no
+        // process ⇒ NotRunning.
         let (pid, maps) = match current_replay_state(cached_pid) {
             ReplayState::NotRunning => return (None, None),
             ReplayState::Menu { pid } => return (Some(pid), Some(Observation::Menu { pid })),
             ReplayState::Playing { pid, maps } => (pid, maps),
         };
-
-        // Game core is mapped but the heap walk may miss the ROM path during
-        // a fresh launch or a partial read mid-allocation. Hold the user at
-        // Menu rather than dropping to NotRunning so the UI doesn't flap.
-        let candidates = scan_heap_for_rom_paths(pid, &maps);
         let allowed_systems = loaded_core_systems(&maps);
+
+        // Heap scan for *which* game is running. The walk may miss the ROM path
+        // during a fresh launch or a partial read mid-allocation. Hold the user
+        // at Menu rather than dropping to NotRunning so the UI doesn't flap.
+        let candidates = scan_heap_for_rom_paths(pid, &maps);
         let Some(rom_path) = select_rom_path(
             candidates,
             allowed_systems,
@@ -335,8 +338,106 @@ mod linux {
             });
         }
 
+        // 2b. Reject joined search-path strings. MAME stores its rompath as one
+        // `;`-separated string (e.g. "…/01 Clones;/media/nfs/bios/mame/roms");
+        // the heap walk captures it whole and `parse_system_and_filename` would
+        // yield a bogus filename ("roms"). A real ROM path never contains `;`.
+        candidates.retain(|(p, _)| !p.contains(';'));
+
+        // 2c. Drop bare extensionless "noise" — a clone's *parent* romset short
+        // name ("simpsons" while running "simpsons2p.zip"), or a path fragment.
+        // A real ROM file has an extension. An extensionless candidate that is a
+        // *game directory* — one other candidates live under, e.g. a ScummVM
+        // game folder — is legitimate and is KEPT; dropping it would let an
+        // internal file win and degrade ScummVM. Never empty the set. This is a
+        // heuristic tiebreak only: it fixes the wrong-variant case but does not
+        // resolve multi-disc or ScummVM — the library-aware resolver is the
+        // authority for which candidate is the launched game.
+        fn has_real_extension(filename: &str) -> bool {
+            // Strict: a `.`-suffix of 1..=8 alphanumerics over a non-empty stem,
+            // so "Mr. Do" / "v1.000"-style names aren't treated as files.
+            filename.rsplit_once('.').is_some_and(|(stem, ext)| {
+                !stem.is_empty()
+                    && (1..=8).contains(&ext.len())
+                    && ext.bytes().all(|b| b.is_ascii_alphanumeric())
+            })
+        }
+        let keep: Vec<bool> = candidates
+            .iter()
+            .map(|(p, _)| {
+                if parse_system_and_filename(p).is_some_and(|(_, f)| has_real_extension(&f)) {
+                    return true; // real file → keep
+                }
+                // extensionless → keep only if it is a directory other
+                // candidates live under (a game folder), else it is bare noise.
+                let prefix = format!("{p}/");
+                candidates
+                    .iter()
+                    .any(|(o, _)| o != p && o.starts_with(&prefix))
+            })
+            .collect();
+        if keep.iter().any(|&k| k) {
+            let mut idx = 0;
+            candidates.retain(|_| {
+                let k = keep[idx];
+                idx += 1;
+                k
+            });
+        }
+
         if candidates.is_empty() {
             return None;
+        }
+
+        // 2d. ScummVM: the heap is dominated by the game's internal data files
+        // (SPEECH/*.CLU, MUSIC/*.WAV, …), which vastly outnumber the launched
+        // content — so a plain count pick lands on noise (e.g. SPEECH2.CLU). The
+        // game is identified by its `.svm`/`.scummvm` content file (whose stem
+        // matches the library `.m3u`) or, failing that, the game folder. Prefer
+        // those and drop the internal-file noise, so the resolver (which
+        // stem-matches ScummVM rows) can name the game. This is a per-system
+        // rule; the generic library-aware resolver remains the ideal but needs
+        // the async DB path. Other systems are untouched (no ScummVM candidate).
+        let is_scummvm =
+            |p: &str| parse_system_and_filename(p).is_some_and(|(s, _)| s == "scummvm");
+        if candidates.iter().any(|(p, _)| is_scummvm(p)) {
+            let is_svm = |p: &str| {
+                parse_system_and_filename(p).is_some_and(|(_, f)| {
+                    matches!(
+                        f.rsplit_once('.')
+                            .map(|(_, e)| e.to_ascii_lowercase())
+                            .as_deref(),
+                        Some("svm") | Some("scummvm")
+                    )
+                })
+            };
+            let prefer_svm = candidates.iter().any(|(p, _)| is_svm(p));
+            let keep: Vec<bool> = candidates
+                .iter()
+                .map(|(p, _)| {
+                    if !is_scummvm(p) {
+                        return true; // leave non-ScummVM candidates alone
+                    }
+                    if prefer_svm {
+                        is_svm(p)
+                    } else {
+                        // no `.svm` in the heap → prefer the game folder (a
+                        // directory the other candidates live under).
+                        let prefix = format!("{p}/");
+                        candidates
+                            .iter()
+                            .any(|(o, _)| o != p && o.starts_with(&prefix))
+                    }
+                })
+                .collect();
+            if keep.iter().any(|&k| k) {
+                let mut idx = 0;
+                candidates.retain(|_| {
+                    let k = keep[idx];
+                    idx += 1;
+                    k
+                });
+            }
         }
 
         // 3. Sticky previous target.
@@ -382,6 +483,36 @@ mod linux {
                     .unwrap_or_else(|| row.rom_filename.clone()),
                 box_art_url: row.box_art_url.clone(),
             });
+        }
+
+        // ScummVM stem fallback. `select_rom_path` step 2d selects one of two
+        // shapes for ScummVM, and the exact `(scummvm, <name>)` lookup above
+        // misses the `.m3u` row for both:
+        //   - the `.scummvm`/`.svm` content file (when it is in the heap) —
+        //     strip the extension to get the stem.
+        //   - the game *folder* (no-`.svm` path), which has no extension — the
+        //     folder name already equals the stem.
+        // Its basename stem matches the library `.m3u` stem even when the folder
+        // tag differs, so resolve by extension-insensitive stem. `filename_stem`
+        // returns `None` on the dot-less folder, so fall back to the name as-is.
+        if system == "scummvm" {
+            let stem = filename_stem(filename).unwrap_or(filename).to_string();
+            let row = state
+                .library_reader
+                .read(move |conn| LibraryDb::lookup_scummvm_by_stem(conn, &stem))
+                .await
+                .and_then(|r| r.ok())
+                .flatten();
+            if let Some(row) = row {
+                return Some(ResolvedGameInfo {
+                    filename: row.rom_filename.clone(),
+                    display_name: row
+                        .display_name
+                        .clone()
+                        .unwrap_or_else(|| row.rom_filename.clone()),
+                    box_art_url: row.box_art_url,
+                });
+            }
         }
 
         // Fallback: the heap-walk filename can carry trailing bytes from a
@@ -541,6 +672,15 @@ mod linux {
         Some(format!("/roms/{rest}"))
     }
 
+    /// The basename stem of a filename: everything before the last `.`.
+    /// Returns `None` when there is no extension to strip (no dot), so callers
+    /// only attempt extension-insensitive matching on files that actually have
+    /// an extension. e.g. `"Bargon Attack (CD Spanish).svm"` → `"Bargon Attack
+    /// (CD Spanish)"`.
+    fn filename_stem(filename: &str) -> Option<&str> {
+        filename.rsplit_once('.').map(|(stem, _)| stem)
+    }
+
     fn now_unix_secs() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -566,6 +706,24 @@ mod linux {
         fn parse_system_and_filename_rejects_invalid_path() {
             assert_eq!(parse_system_and_filename("/media/usb/nope"), None);
             assert_eq!(parse_system_and_filename("/media/usb/roms/snes"), None);
+        }
+
+        #[test]
+        fn filename_stem_strips_last_extension() {
+            // ScummVM content files are `.svm`/`.scummvm`; the stem must match
+            // the library `.m3u` stem.
+            assert_eq!(
+                filename_stem("Bargon Attack (CD Spanish).svm"),
+                Some("Bargon Attack (CD Spanish)")
+            );
+            assert_eq!(
+                filename_stem("Beneath a Steel Sky (CD DOS Spanish).scummvm"),
+                Some("Beneath a Steel Sky (CD DOS Spanish)")
+            );
+            // Multiple dots: only the last extension is stripped.
+            assert_eq!(filename_stem("game.v1.2.svm"), Some("game.v1.2"));
+            // No extension: nothing to strip → None.
+            assert_eq!(filename_stem("NoExtension"), None);
         }
 
         #[test]
@@ -720,6 +878,101 @@ mod linux {
             let candidates = vec![("/media/nfs/roms/sega_dc/Shenmue.m3u".to_string(), 1)];
             let picked = select_rom_path(candidates, Some(SMD_SYSTEMS), None);
             assert_eq!(picked, None);
+        }
+
+        #[test]
+        fn select_drops_bare_parent_romset_name() {
+            // FBNeo running the clone simpsons2p.zip also leaks the parent
+            // romset short name "simpsons" (no extension) and a truncation
+            // "simpsons2p". Dedup folds the truncation; the extension
+            // preference drops the bare parent so we never report the wrong
+            // variant (2P vs the 4P parent family). Regression for the bug
+            // that motivated this work.
+            const FBNEO: &[&str] = &["arcade_fbneo"];
+            let base = "/media/nfs/roms/arcade_fbneo/Horizontal/00 Clean Romset";
+            let candidates = vec![
+                (format!("{base}/simpsons2p.zip"), 1),
+                (format!("{base}/simpsons"), 1),
+                (format!("{base}/simpsons2p"), 1),
+            ];
+            let picked = select_rom_path(candidates, Some(FBNEO), None);
+            assert_eq!(picked, Some(format!("{base}/simpsons2p.zip")));
+        }
+
+        #[test]
+        fn select_rejects_mame_joined_rompath_string() {
+            // MAME stores its rompath as one ;-joined string; the heap walk
+            // grabs it whole and parse would yield a bogus "roms".
+            const MAME: &[&str] = &["arcade_mame"];
+            let candidates = vec![
+                (
+                    "/media/nfs/roms/arcade_mame/Vertical/01 Clones/pacmanblb.zip".to_string(),
+                    2,
+                ),
+                (
+                    "/media/nfs/roms/arcade_mame/Vertical/01 Clones;/media/nfs/bios/mame/bios;/media/nfs/bios/mame/roms".to_string(),
+                    2,
+                ),
+            ];
+            let picked = select_rom_path(candidates, Some(MAME), None);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/arcade_mame/Vertical/01 Clones/pacmanblb.zip")
+            );
+        }
+
+        #[test]
+        fn select_keeps_extensionless_when_no_extensioned_candidate() {
+            // ScummVM-style game folder with no sibling extensioned candidate:
+            // the extension preference must not strip the only candidate.
+            const SCUMMVM: &[&str] = &["scummvm"];
+            let candidates = vec![(
+                "/media/nfs/roms/scummvm/Beneath a Steel Sky (CD Spanish)".to_string(),
+                2,
+            )];
+            let picked = select_rom_path(candidates, Some(SCUMMVM), None);
+            assert_eq!(
+                picked.as_deref(),
+                Some("/media/nfs/roms/scummvm/Beneath a Steel Sky (CD Spanish)")
+            );
+        }
+
+        #[test]
+        fn select_prefers_scummvm_svm_over_internal_files() {
+            // The Broken Sword case: a real ScummVM heap is dominated by the
+            // game's internal data files (SPEECH2.CLU, *.WAV, …) at HIGH counts,
+            // plus the game folder and the `.svm` content file at low counts. A
+            // plain count pick lands on an internal (e.g. SPEECH2.CLU); the
+            // detector must instead pick the `.svm`, which the resolver
+            // stem-matches to the library `.m3u`.
+            const SCUMMVM: &[&str] = &["scummvm"];
+            let base = "/media/nfs/roms/scummvm/Broken Sword 1 - La Leyenda de los Templarios (CD Spanish)";
+            let svm =
+                format!("{base}/Broken Sword 1 - La Leyenda de los Templarios (CD Spanish).svm");
+            let candidates = vec![
+                (format!("{base}/SPEECH/SPEECH2.CLU"), 5),
+                (format!("{base}/MUSIC/11M2.WAV"), 4),
+                (base.to_string(), 2),
+                (svm.clone(), 2),
+            ];
+            let picked = select_rom_path(candidates, Some(SCUMMVM), None);
+            assert_eq!(picked.as_deref(), Some(svm.as_str()));
+        }
+
+        #[test]
+        fn select_scummvm_falls_back_to_game_folder_without_svm() {
+            // No `.svm` captured in the heap (partial read): prefer the game
+            // folder (a directory the others live under) over the internal
+            // files, so the resolver can stem-match the folder.
+            const SCUMMVM: &[&str] = &["scummvm"];
+            let base = "/media/nfs/roms/scummvm/Flight of the Amazon Queen (CD Spanish)";
+            let candidates = vec![
+                (format!("{base}/QUEEN.1"), 5),
+                (format!("{base}/DATA/THING.DAT"), 4),
+                (base.to_string(), 2),
+            ];
+            let picked = select_rom_path(candidates, Some(SCUMMVM), None);
+            assert_eq!(picked.as_deref(), Some(base));
         }
     }
 }
