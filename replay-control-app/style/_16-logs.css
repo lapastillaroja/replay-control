@@ -44,3 +44,13 @@
     color: var(--text-secondary);
     margin: 0;
 }
+.logs-empty {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin: 0;
+}

@@ -192,7 +192,9 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
             let rc = read_log_file_tail("/var/log/replay-control.log", lines).await;
             let rp = read_log_file_tail("/var/log/replay.log", lines).await;
             if rc.is_empty() && rp.is_empty() {
-                Ok("No logs available.".to_string())
+                // Emptiness is signalled as an empty string; the page renders the
+                // localized empty-state message (LogsEmpty / LogsReplayUnavailable).
+                Ok(String::new())
             } else if rc.is_empty() {
                 Ok(rp)
             } else if rp.is_empty() {

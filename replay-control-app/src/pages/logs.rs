@@ -1,3 +1,4 @@
+use leptos::either::Either;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
@@ -27,6 +28,18 @@ pub fn LogsPage() -> impl IntoView {
         move || (source.get(), version.get()),
         |(src, _)| server_fns::get_system_logs(src, LOG_LINES),
     );
+
+    // Shown when a source has no logs. The "replay" source is empty whenever
+    // RePlayOS isn't writing its frontend logs to a readable location on this
+    // device, so it gets a more specific explanation than the generic case.
+    let empty_msg = move || {
+        let key = if source.get() == "replay" {
+            Key::LogsReplayUnavailable
+        } else {
+            Key::LogsEmpty
+        };
+        t(i18n.locale.get(), key)
+    };
 
     let on_refresh = move |_| version.update(|v| *v += 1);
     let on_copy = move |_| {
@@ -92,8 +105,10 @@ pub fn LogsPage() -> impl IntoView {
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let text = logs.await?;
-                    Ok::<_, ServerFnError>(view! {
-                        <pre id="logs-output" class="logs-output">{text}</pre>
+                    Ok::<_, ServerFnError>(if text.trim().is_empty() {
+                        Either::Left(view! { <p class="logs-empty">{empty_msg}</p> })
+                    } else {
+                        Either::Right(view! { <pre id="logs-output" class="logs-output">{text}</pre> })
                     })
                 })}
             </Suspense>

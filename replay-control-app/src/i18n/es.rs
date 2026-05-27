@@ -481,6 +481,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsSourceAll => "Todos los servicios",
         Key::LogsSourceCompanion => "Replay Control",
         Key::LogsSourceReplay => "RePlayOS UI",
+        Key::LogsEmpty => "No hay registros disponibles para esta fuente.",
+        Key::LogsReplayUnavailable => {
+            "RePlayOS no guarda sus registros en este dispositivo, por lo que no se pueden mostrar aquí."
+        }
         Key::LogsLevelTitle => "Nivel de registro de Replay Control",
         Key::LogsLevelInfo => "Info",
         Key::LogsLevelDebug => "Debug",

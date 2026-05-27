@@ -440,6 +440,8 @@ pub enum Key {
     LogsSourceAll,
     LogsSourceCompanion,
     LogsSourceReplay,
+    LogsEmpty,
+    LogsReplayUnavailable,
     LogsLevelTitle,
     LogsLevelInfo,
     LogsLevelDebug,
