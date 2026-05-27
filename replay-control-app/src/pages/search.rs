@@ -4,8 +4,9 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_query_map;
 
-use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::filter_chips::FilterState;
 use crate::components::game_list_item::GameListItem;
+use crate::components::search_controls::{RandomGameButton, SearchControls};
 use crate::hooks::use_debounced;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
@@ -218,29 +219,30 @@ pub fn SearchPage() -> impl IntoView {
         }
     };
 
-    // Focus the search input on mount (autofocus only works on full page load,
-    // not on client-side router navigation).
-    let input_ref = NodeRef::<leptos::html::Input>::new();
-    #[cfg(feature = "hydrate")]
-    Effect::new(move || {
-        if let Some(el) = input_ref.get() {
-            let _ = el.focus();
-        }
-    });
+    let genre_dropdown = view! {
+        <Suspense>
+            {move || Suspend::new(async move {
+                let genre_list = genres_resource.await?;
+                Ok::<_, server_fn::ServerFnError>(if genre_list.is_empty() {
+                    None
+                } else {
+                    Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
+                })
+            })}
+        </Suspense>
+    }
+    .into_any();
 
     view! {
         <div class="page search-page">
-            <div class="search-page-bar">
-                <input
-                    type="text"
-                    class="search-page-input"
-                    node_ref=input_ref
-                    placeholder=move || t(i18n.locale.get(), Key::SearchPlaceholder)
-                    prop:value=move || search_input.get()
-                    on:input=move |ev| search_input.set(event_target_value(&ev))
-                    autofocus=true
-                />
-            </div>
+            <SearchControls
+                query=search_input
+                filters
+                placeholder=Signal::derive(move || t(i18n.locale.get(), Key::SearchPlaceholder))
+                show_clones=Signal::derive(|| true)
+                autofocus=true
+                genre_dropdown=genre_dropdown
+            />
 
             // Empty state panel: recent searches + random game.
             <Show when=show_empty_panel>
@@ -250,38 +252,9 @@ pub fn SearchPage() -> impl IntoView {
                         on_click=on_recent_click
                         on_remove=on_recent_remove
                     />
-                    <button
-                        class="random-game-btn"
-                        on:click=on_random_game
-                        disabled=move || random_loading.get()
-                    >
-                        <span class="random-game-icon">{"\u{1F3B2}"}</span>
-                        " "
-                        {move || if random_loading.get() {
-                            t(i18n.locale.get(), Key::CommonLoading)
-                        } else {
-                            t(i18n.locale.get(), Key::SearchRandomGame)
-                        }}
-                    </button>
+                    <RandomGameButton loading=random_loading on_click=on_random_game />
                 </div>
             </Show>
-
-            <div class="search-filters">
-                <FilterChips
-                    filters
-                    show_clones=Signal::derive(|| true)
-                />
-                <Suspense>
-                    {move || Suspend::new(async move {
-                        let genre_list = genres_resource.await?;
-                        Ok::<_, server_fn::ServerFnError>(if genre_list.is_empty() {
-                            None
-                        } else {
-                            Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
-                        })
-                    })}
-                </Suspense>
-            </div>
 
             // Developer match block (horizontal scroll, shown above regular results).
             <Suspense fallback=|| ()>
@@ -422,7 +395,7 @@ fn SearchResults(
     let filter_qs = StoredValue::new({
         let mut params = Vec::new();
         if !query.is_empty() {
-            params.push(format!("search={}", urlencoding::encode(&query)));
+            params.push(format!("q={}", urlencoding::encode(&query)));
         }
         if hide_hacks {
             params.push("hide_hacks=true".to_string());

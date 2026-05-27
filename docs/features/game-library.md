@@ -16,6 +16,7 @@ Each system page shows its ROMs with:
 
 - **Box art thumbnails** for every game that has images available
 - **Search** within the system (debounced so it doesn't lag while typing)
+- **Random Game** within the current system
 - **Infinite scroll** with fast pagination (100 games per page)
 - **ROM details** -- filename, file size (Mbit/Kbit for cartridge systems, MB/GB for disc-based), file format badge
 - **Consistent game cards** -- the same card layout (box art, badges, favorite toggle) is used across all views: ROM lists, search results, developer pages, series siblings, and recommendations

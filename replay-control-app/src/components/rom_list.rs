@@ -1,10 +1,13 @@
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
 use leptos_router::components::A;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
-use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::filter_chips::FilterState;
 use crate::components::game_list_item::GameListItem;
+use crate::components::search_controls::{RandomGameButton, SearchControls};
 use crate::hooks::{use_debounced, use_infinite_scroll};
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
@@ -14,6 +17,8 @@ use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 pub fn RomList(system: String) -> impl IntoView {
     let i18n = use_i18n();
     let sys = StoredValue::new(system.clone());
+    #[cfg(feature = "hydrate")]
+    let navigate = StoredValue::new(use_navigate());
 
     // Read filter params from URL query (passed from global search "See all" links).
     let query_map = use_query_map();
@@ -30,10 +35,10 @@ pub fn RomList(system: String) -> impl IntoView {
         server_fns::get_system_genres,
     );
 
-    // Search: synced with URL query param `?search=...`.
+    // Search: synced with URL query param `?q=...`.
     // Use replace mode so each keystroke doesn't add a history entry.
     let (search_query, set_search_query) = query_signal_with_options::<String>(
-        "search",
+        "q",
         NavigateOptions {
             replace: true,
             scroll: false,
@@ -46,7 +51,8 @@ pub fn RomList(system: String) -> impl IntoView {
     // Local input signal tracks what the user is typing (immediate), while
     // debounced_search drives the Resource (delayed).
     let search_input = RwSignal::new(search_query.get_untracked().unwrap_or_default());
-    let debounced_search = use_debounced(search_input, 300);
+    let debounced_search = use_debounced(search_input, 400);
+    let random_loading = RwSignal::new(false);
 
     #[cfg(feature = "hydrate")]
     {
@@ -102,7 +108,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 min_rating: mr,
                 min_year: miny,
                 max_year: maxy,
-                search: &debounced_search.get_untracked(),
+                query: &debounced_search.get_untracked(),
             });
         });
     }
@@ -198,35 +204,59 @@ pub fn RomList(system: String) -> impl IntoView {
     let sentinel_ref = NodeRef::<leptos::html::Div>::new();
     use_infinite_scroll(sentinel_ref, load_more);
 
+    let on_random_game = move |_| {
+        random_loading.set(true);
+        #[cfg(feature = "hydrate")]
+        {
+            let navigate = navigate.get_value();
+            let system = sys.get_value();
+            leptos::task::spawn_local(async move {
+                match server_fns::random_game_for_system(system).await {
+                    Ok((system, rom_filename)) => {
+                        let href =
+                            format!("/games/{}/{}", system, urlencoding::encode(&rom_filename));
+                        navigate(&href, Default::default());
+                    }
+                    Err(_) => {
+                        random_loading.set(false);
+                    }
+                }
+            });
+        }
+    };
+
+    let genre_dropdown = view! {
+        <Suspense>
+            {move || Suspend::new(async move {
+                match genres_resource.await {
+                    Ok(genre_list) if !genre_list.is_empty() => {
+                        Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
+                    }
+                    _ => None,
+                }
+            })}
+        </Suspense>
+    }
+    .into_any();
+
+    let random_action = view! {
+        <RandomGameButton loading=random_loading on_click=on_random_game />
+    }
+    .into_any();
+
     // The search bar and filter bar are rendered outside the Suspense/Transition block
     // so that the input element is never recreated when search results update, which
     // preserves keyboard focus while typing.
     view! {
-        <div class="search-bar">
-            <input
-                type="text"
-                placeholder=move || t(i18n.locale.get(), Key::GamesSearchPlaceholder)
-                class="search-input"
-                prop:value=move || search_input.get()
-                on:input=move |ev| search_input.set(event_target_value(&ev))
-            />
-        </div>
-        <div class="search-filters rom-list-filters">
-            <FilterChips
-                filters
-                show_clones=Signal::derive(move || is_arcade.get())
-            />
-            <Suspense>
-                {move || Suspend::new(async move {
-                    match genres_resource.await {
-                        Ok(genre_list) if !genre_list.is_empty() => {
-                            Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
-                        }
-                        _ => None,
-                    }
-                })}
-            </Suspense>
-        </div>
+        <SearchControls
+            query=search_input
+            filters
+            placeholder=Signal::derive(move || t(i18n.locale.get(), Key::GamesSearchPlaceholder))
+            show_clones=Signal::derive(move || is_arcade.get())
+            filters_class="rom-list-filters".to_string()
+            genre_dropdown=genre_dropdown
+            extra_action=random_action
+        />
         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::GamesLoadingRoms)}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
@@ -349,7 +379,7 @@ struct FilterUrlParams<'a> {
     min_rating: Option<f32>,
     min_year: Option<u16>,
     max_year: Option<u16>,
-    search: &'a str,
+    query: &'a str,
 }
 
 /// Update the URL query params for the ROM list page (replace, no navigation).
@@ -358,8 +388,8 @@ struct FilterUrlParams<'a> {
 fn update_filter_url(p: FilterUrlParams<'_>) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
-        if !p.search.is_empty() {
-            params.push(format!("search={}", urlencoding::encode(p.search)));
+        if !p.query.is_empty() {
+            params.push(format!("q={}", urlencoding::encode(p.query)));
         }
         if p.hide_hacks {
             params.push("hide_hacks=true".to_string());

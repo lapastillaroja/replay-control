@@ -148,6 +148,60 @@ async fn sfn_get_roms_page_returns_roms() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn sfn_random_game_for_system_returns_requested_system() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::RandomGameForSystem>(
+        app,
+        form_body(&[("system", "nintendo_nes")]),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "RandomGameForSystem should return 200"
+    );
+    assert!(
+        body.contains("nintendo_nes"),
+        "response should include the requested system, got: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_global_search_whitespace_query_returns_empty_results() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::GlobalSearch>(
+        app,
+        form_body(&[
+            ("query", "   "),
+            ("hide_hacks", "false"),
+            ("hide_translations", "false"),
+            ("hide_betas", "false"),
+            ("hide_clones", "false"),
+            ("genre", ""),
+            ("per_system_limit", "3"),
+        ]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("total_results") && body.contains('0'),
+        "response should report zero results, got: {body}"
+    );
+    assert!(
+        !body.contains("TestGame") && !body.contains("AnotherGame") && !body.contains("Sonic"),
+        "whitespace-only global search must not return library rows, got: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_info_returns_system_info() {
     setup();
     let env = TestEnv::new().await;

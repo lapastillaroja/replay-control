@@ -35,11 +35,6 @@ pub struct GlobalSearchResults {
     pub total_systems: usize,
 }
 
-// Search scoring logic lives in replay-control-core::search_scoring.
-// Re-export for use within this crate.
-#[cfg(feature = "ssr")]
-pub(crate) use replay_control_core::search_scoring::{search_score, split_into_words};
-
 /// Look up the normalized genre for a ROM on a given system.
 #[cfg(feature = "ssr")]
 pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
@@ -117,18 +112,19 @@ pub async fn global_search(
     let state = expect_context::<crate::api::AppState>();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
-    let q = query.to_lowercase();
+    let q = query.trim().to_lowercase();
     let per_system_limit = if per_system_limit == 0 {
         3
     } else {
         per_system_limit
     };
 
-    // Empty query with no genre/multiplayer/coop/year filter: no results.
+    // Empty query with no positive content filter: no results.
     if q.is_empty()
         && genre.is_empty()
         && !multiplayer_only
         && !coop_only
+        && min_rating.is_none()
         && min_year.is_none()
         && max_year.is_none()
     {
@@ -139,40 +135,9 @@ pub async fn global_search(
         });
     }
 
-    // Split query into words for search_text LIKE matching.
-    let query_words: Vec<String> = split_into_words(&q)
-        .into_iter()
-        .map(|w| w.to_string())
-        .collect();
-
-    // Search aliases for cross-name expansion (e.g., "Bare Knuckle" -> "Streets of Rage").
-    let alias_base_titles: std::collections::HashMap<String, std::collections::HashSet<String>> =
-        if !q.is_empty() {
-            let q_owned = q.clone();
-            let alias_hits: std::collections::HashSet<(String, String)> = state
-                .library_reader
-                .read(move |conn| {
-                    LibraryDb::search_aliases(conn, &q_owned)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect()
-                })
-                .await
-                .unwrap_or_default();
-            let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =
-                std::collections::HashMap::new();
-            for (sys, bt) in alias_hits {
-                map.entry(sys).or_default().insert(bt);
-            }
-            map
-        } else {
-            std::collections::HashMap::new()
-        };
-
-    // Single DB query: SQL-level pre-filtering on search_text + content filters.
     let min_rating_f64 = min_rating.map(|r| r as f64);
     let genre_owned = genre.clone();
-    let candidates: Vec<GameEntry> = state
+    let candidates = state
         .library_reader
         .read(move |conn| {
             let filter = replay_control_core_server::library_db::SearchFilter {
@@ -187,61 +152,30 @@ pub async fn global_search(
                 min_year,
                 max_year,
             };
-            LibraryDb::search_game_library(conn, None, None, &query_words, &filter, 0, usize::MAX)
-                .map(|(entries, _total)| entries)
-                .unwrap_or_default()
+            LibraryDb::search_game_library_ranked(
+                conn,
+                None,
+                &q,
+                &filter,
+                0,
+                usize::MAX,
+                region_pref,
+                region_secondary,
+            )
+            .map(|(entries, _total)| entries)
+            .unwrap_or_default()
         })
         .await
         .unwrap_or_default();
 
-    // Score the pre-filtered candidates using the existing ranking logic.
-    let mut scored: Vec<(u32, GameEntry)> = candidates
-        .into_iter()
-        .filter_map(|entry| {
-            let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
-
-            if q.is_empty() {
-                // Filter-only mode (genre/multiplayer with no text query).
-                let score = 1000u32.saturating_sub(display.len() as u32);
-                return Some((score, entry));
-            }
-
-            let mut score = search_score(
-                &q,
-                display,
-                &entry.rom_filename,
-                region_pref,
-                region_secondary,
-            );
-
-            // Alias expansion: if this ROM's base_title was found via alias search,
-            // give it a minimum score so it appears in results.
-            if score == 0
-                && let Some(system_aliases) = alias_base_titles.get(&entry.system)
-                && !entry.base_title.is_empty()
-                && system_aliases.contains(&entry.base_title)
-            {
-                score = 350;
-            }
-
-            if score > 0 {
-                Some((score, entry))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    scored.sort_by_key(|s| std::cmp::Reverse(s.0));
-
-    // Group scored results by system.
-    let mut system_groups: std::collections::HashMap<String, Vec<(u32, GameEntry)>> =
+    // Group ranked results by system while preserving ranked order within each group.
+    let mut system_groups: std::collections::HashMap<String, Vec<_>> =
         std::collections::HashMap::new();
-    for (score, entry) in scored {
+    for entry in candidates {
         system_groups
             .entry(entry.system.clone())
             .or_default()
-            .push((score, entry));
+            .push(entry);
     }
 
     // Collect top entries per system and their metadata for batch enrichment.
@@ -249,19 +183,17 @@ pub async fn global_search(
     let mut all_top_entries: Vec<GameEntry> = Vec::new();
     let mut total_results = 0usize;
 
-    for (system, mut system_scored) in system_groups {
-        system_scored.sort_by_key(|s| std::cmp::Reverse(s.0));
-        let match_count = system_scored.len();
+    for (system, system_entries) in system_groups {
+        let match_count = system_entries.len();
         total_results += match_count;
 
         let system_display = sys_db::system_display_name(&system);
 
         // Take top N entries for this system.
-        let top: Vec<GameEntry> = system_scored
+        let top = system_entries
             .into_iter()
             .take(per_system_limit)
-            .map(|(_, entry)| entry)
-            .collect();
+            .collect::<Vec<_>>();
 
         system_meta.push((system, system_display, match_count));
         all_top_entries.extend(top);
@@ -571,5 +503,23 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
     match random {
         Some((system, filename)) => Ok((system, filename)),
         None => Err(ServerFnError::new("No games available")),
+    }
+}
+
+/// Pick a random game from one system.
+#[server(prefix = "/sfn")]
+pub async fn random_game_for_system(system: String) -> Result<(String, String), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let random = state
+        .library_reader
+        .read(move |conn| LibraryDb::random_library_rom_for_system(conn, &system))
+        .await
+        .transpose()
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .flatten();
+
+    match random {
+        Some((system, filename)) => Ok((system, filename)),
+        None => Err(ServerFnError::new("No games available for this system")),
     }
 }

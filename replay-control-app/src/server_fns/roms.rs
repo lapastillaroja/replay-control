@@ -143,19 +143,10 @@ pub async fn get_roms_page(
     // and favorites overlay).
     use replay_control_core_server::library_db::SearchFilter;
 
-    let q = search.to_lowercase();
-    let query_words: Vec<String> = if q.is_empty() {
-        Vec::new()
-    } else {
-        super::search::split_into_words(&q)
-            .into_iter()
-            .map(|w| w.to_string())
-            .collect()
-    };
-
     let min_rating_f64 = min_rating.map(|r| r as f64);
     let genre_owned = genre.clone();
     let sys_owned = system.clone();
+    let search_owned = search.clone();
 
     let db_result = state
         .library_reader
@@ -172,55 +163,21 @@ pub async fn get_roms_page(
                 min_year,
                 max_year,
             };
-            LibraryDb::search_game_library(
+            LibraryDb::search_game_library_ranked(
                 conn,
                 Some(&sys_owned),
-                None,
-                &query_words,
+                &search_owned,
                 &filter,
                 offset,
                 limit,
+                region_pref,
+                region_secondary,
             )
         })
         .await;
 
-    let (entries, total) = db_result.and_then(|r| r.ok()).unwrap_or((Vec::new(), 0));
-
-    // When text search is active, score and paginate in Rust (SQL returned all
-    // matching rows without LIMIT/OFFSET so we can sort by relevance).
-    let (page_entries, total, has_more) = if !search.is_empty() {
-        let mut scored: Vec<(u32, replay_control_core_server::library_db::GameEntry)> = entries
-            .into_iter()
-            .filter_map(|entry| {
-                let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
-                let score = search_score(
-                    &q,
-                    display,
-                    &entry.rom_filename,
-                    region_pref,
-                    region_secondary,
-                );
-                if score > 0 {
-                    Some((score, entry))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        scored.sort_by_key(|s| std::cmp::Reverse(s.0));
-        let scored_total = scored.len();
-        let page: Vec<_> = scored
-            .into_iter()
-            .skip(offset)
-            .take(limit)
-            .map(|(_, e)| e)
-            .collect();
-        let hm = offset + page.len() < scored_total;
-        (page, scored_total, hm)
-    } else {
-        let hm = offset + entries.len() < total;
-        (entries, total, hm)
-    };
+    let (page_entries, total) = db_result.and_then(|r| r.ok()).unwrap_or((Vec::new(), 0));
+    let has_more = offset + page_entries.len() < total;
 
     // Enrich page entries: box art, favorites, genre (shared with developer page).
     let list_entries = super::enrich_game_entries(&state, page_entries).await;

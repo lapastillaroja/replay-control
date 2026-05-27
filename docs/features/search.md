@@ -40,6 +40,7 @@ Your last search queries are stored and displayed as quick-access chips on the s
 ### Random Game
 
 A "Random Game" button picks a random ROM from the library and navigates to its detail page.
+System game lists use the same action scoped to the current system.
 
 ## Developer Search
 

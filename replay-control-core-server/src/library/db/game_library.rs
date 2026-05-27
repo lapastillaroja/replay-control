@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use replay_control_core::error::{Error, Result};
+use replay_control_core::rom_tags::RegionPreference;
+use replay_control_core::search_scoring::{search_score, split_into_words};
 
 use super::{
     DpSql, GameEntry, LibraryDb, PhaseState, SystemMeta, ThumbnailDownloadJob, ThumbnailJobState,
@@ -904,6 +906,24 @@ impl LibraryDb {
         )
         .optional()
         .map_err(|e| Error::Other(format!("Query random_library_rom: {e}")))
+    }
+
+    /// Pick one random non-special ROM from a specific system.
+    pub fn random_library_rom_for_system(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<Option<(String, String)>> {
+        conn.query_row(
+            "SELECT system, rom_filename
+             FROM game_library
+             WHERE system = ?1 AND is_special = 0
+             ORDER BY RANDOM()
+             LIMIT 1",
+            params![system],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Query random_library_rom_for_system: {e}")))
     }
 
     /// Load cached hash data for all ROMs of a system from the game_library table.
@@ -2630,6 +2650,210 @@ impl LibraryDb {
         Ok((result, total))
     }
 
+    /// Ranked game search shared by global search and per-system ROM lists.
+    ///
+    /// Empty text queries preserve the existing SQL-ordered pagination path.
+    /// Non-empty text queries gather normal `search_text` matches plus alias
+    /// candidates, dedupe them, score with the shared search scorer, then
+    /// paginate the ranked results.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_game_library_ranked(
+        conn: &Connection,
+        system: Option<&str>,
+        query: &str,
+        filter: &SearchFilter<'_>,
+        offset: usize,
+        limit: usize,
+        region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
+    ) -> Result<(Vec<GameEntry>, usize)> {
+        let normalized_query = query.trim().to_lowercase();
+        if normalized_query.is_empty() {
+            return Self::search_game_library(conn, system, None, &[], filter, offset, limit);
+        }
+
+        let query_words: Vec<String> = split_into_words(&normalized_query)
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let (normal_candidates, _) =
+            Self::search_game_library(conn, system, None, &query_words, filter, 0, usize::MAX)?;
+        let alias_base_titles =
+            Self::search_alias_base_titles_for_query(conn, system, &normalized_query)?;
+        let alias_candidates =
+            Self::search_alias_candidate_entries(conn, system, &alias_base_titles, filter)?;
+
+        let mut candidates: HashMap<(String, String), GameEntry> = HashMap::new();
+        for entry in normal_candidates.into_iter().chain(alias_candidates) {
+            candidates.insert((entry.system.clone(), entry.rom_filename.clone()), entry);
+        }
+
+        let mut scored: Vec<(u32, GameEntry)> = candidates
+            .into_values()
+            .filter_map(|entry| {
+                let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
+                let mut score = search_score(
+                    &normalized_query,
+                    display,
+                    &entry.rom_filename,
+                    region_pref,
+                    region_secondary,
+                );
+
+                if score == 0
+                    && !entry.base_title.is_empty()
+                    && alias_base_titles
+                        .get(&entry.system)
+                        .is_some_and(|titles| titles.contains(&entry.base_title))
+                {
+                    score = 350;
+                }
+
+                (score > 0).then_some((score, entry))
+            })
+            .collect();
+
+        scored.sort_by(|(score_a, entry_a), (score_b, entry_b)| {
+            score_b
+                .cmp(score_a)
+                .then_with(|| {
+                    let name_a = entry_a
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&entry_a.rom_filename)
+                        .to_lowercase();
+                    let name_b = entry_b
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&entry_b.rom_filename)
+                        .to_lowercase();
+                    name_a.cmp(&name_b)
+                })
+                .then_with(|| entry_a.system.cmp(&entry_b.system))
+                .then_with(|| entry_a.rom_filename.cmp(&entry_b.rom_filename))
+        });
+
+        let total = scored.len();
+        let entries = scored
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|(_, entry)| entry)
+            .collect();
+
+        Ok((entries, total))
+    }
+
+    fn search_alias_base_titles_for_query(
+        conn: &Connection,
+        system: Option<&str>,
+        query: &str,
+    ) -> Result<HashMap<String, HashSet<String>>> {
+        if query.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let escaped = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let like_pattern = format!("%{escaped}%");
+        let sql = if system.is_some() {
+            "SELECT DISTINCT system, base_title
+             FROM game_alias
+             WHERE system = ?1 AND alias_name LIKE ?2 ESCAPE '\\' COLLATE NOCASE"
+        } else {
+            "SELECT DISTINCT system, base_title
+             FROM game_alias
+             WHERE alias_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE"
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| {
+            Error::Other(format!("Prepare search_alias_base_titles_for_query: {e}"))
+        })?;
+
+        let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut read_rows = |params: &[&dyn rusqlite::types::ToSql]| -> Result<()> {
+            let rows = stmt
+                .query_map(params, |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| {
+                    Error::Other(format!("Query search_alias_base_titles_for_query: {e}"))
+                })?;
+
+            for row in rows {
+                let (system, base_title) =
+                    row.map_err(|e| Error::Other(format!("Read alias search row: {e}")))?;
+                out.entry(system).or_default().insert(base_title);
+            }
+            Ok(())
+        };
+
+        if let Some(system) = system {
+            read_rows(&[&system, &like_pattern])?;
+        } else {
+            read_rows(&[&like_pattern])?;
+        }
+
+        Ok(out)
+    }
+
+    fn search_alias_candidate_entries(
+        conn: &Connection,
+        system: Option<&str>,
+        alias_base_titles: &HashMap<String, HashSet<String>>,
+        filter: &SearchFilter<'_>,
+    ) -> Result<Vec<GameEntry>> {
+        let mut entries = Vec::new();
+        for (alias_system, titles) in alias_base_titles {
+            if titles.is_empty() || system.is_some_and(|requested| requested != alias_system) {
+                continue;
+            }
+
+            let (mut where_clauses, mut param_values) =
+                Self::build_filter_clauses(Some(alias_system), None, &[], filter);
+
+            let title_placeholders: Vec<String> = titles
+                .iter()
+                .map(|title| {
+                    param_values.push(title.clone());
+                    format!("?{}", param_values.len())
+                })
+                .collect();
+            where_clauses.push(format!(
+                "base_title COLLATE NOCASE IN ({})",
+                title_placeholders.join(",")
+            ));
+
+            let sql = format!(
+                "SELECT {GAME_ENTRY_COLUMNS} \
+                 FROM game_library \
+                 {}",
+                Self::build_where_sql(&where_clauses)
+            );
+            let params: Vec<Box<dyn rusqlite::types::ToSql>> = param_values
+                .into_iter()
+                .map(|v| Box::new(v) as Box<dyn rusqlite::types::ToSql>)
+                .collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|v| v.as_ref()).collect();
+
+            let mut stmt = conn.prepare(&sql).map_err(|e| {
+                Error::Other(format!("Prepare search_alias_candidate_entries: {e}"))
+            })?;
+            let rows = stmt
+                .query_map(param_refs.as_slice(), Self::row_to_game_entry)
+                .map_err(|e| Error::Other(format!("Query search_alias_candidate_entries: {e}")))?;
+            for row in rows {
+                entries
+                    .push(row.map_err(|e| Error::Other(format!("Read alias candidate row: {e}")))?);
+            }
+        }
+
+        Ok(entries)
+    }
+
     /// Thin wrapper: paginated game list for a developer.
     ///
     /// Delegates to `search_game_library` with the developer parameter.
@@ -2651,6 +2875,7 @@ mod tests {
     use super::super::{IdentityState, LibraryDb, LibraryGameResource, PhaseState, library_meta};
     use super::SearchFilter;
     use replay_control_core::resource_kind;
+    use replay_control_core::rom_tags::RegionPreference;
 
     // Removed: `genre_enrichment_fills_empty_genre_from_launchbox` — exercised
     // LibraryDb::bulk_upsert + the legacy game_metadata table. The
@@ -3977,6 +4202,28 @@ mod tests {
     }
 
     #[test]
+    fn random_library_rom_for_system_is_scoped_and_skips_specials() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut snes_special = make_game_entry("snes", "Bios.sfc", false);
+        snes_special.is_special = true;
+        let snes_game = make_game_entry("snes", "Mario.sfc", false);
+        let genesis_game = make_game_entry("sega_smd", "Sonic.md", false);
+        LibraryDb::save_system_entries(&mut conn, "snes", &[snes_special, snes_game], None)
+            .unwrap();
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[genesis_game], None).unwrap();
+
+        assert_eq!(
+            LibraryDb::random_library_rom_for_system(&conn, "snes").unwrap(),
+            Some(("snes".to_string(), "Mario.sfc".to_string()))
+        );
+        assert_eq!(
+            LibraryDb::random_library_rom_for_system(&conn, "pcengine").unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn load_system_entries_page_returns_correct_page() {
         let (mut conn, _dir) = open_temp_db();
 
@@ -4417,6 +4664,104 @@ mod tests {
         )
         .unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn ranked_search_includes_alias_only_candidates() {
+        let (mut conn, _dir) = open_temp_db();
+        let entry = super::super::GameEntry {
+            display_name: Some("Streets of Rage".to_string()),
+            base_title: "Streets of Rage".to_string(),
+            ..make_game_entry("sega_smd", "Streets of Rage (USA).md", false)
+        };
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
+        LibraryDb::upsert_alias(
+            &conn,
+            "sega_smd",
+            "Streets of Rage",
+            "Bare Knuckle",
+            "jp",
+            "test",
+        )
+        .unwrap();
+
+        let (results, total) = LibraryDb::search_game_library_ranked(
+            &conn,
+            None,
+            "bare knuckle",
+            &SearchFilter::default(),
+            0,
+            10,
+            RegionPreference::World,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(results[0].rom_filename, "Streets of Rage (USA).md");
+    }
+
+    #[test]
+    fn ranked_search_alias_candidates_respect_system_scope() {
+        let (mut conn, _dir) = open_temp_db();
+        let smd_entry = super::super::GameEntry {
+            display_name: Some("Streets of Rage".to_string()),
+            base_title: "Streets of Rage".to_string(),
+            ..make_game_entry("sega_smd", "Streets of Rage (USA).md", false)
+        };
+        let snes_entry = super::super::GameEntry {
+            display_name: Some("River City Ransom".to_string()),
+            base_title: "River City Ransom".to_string(),
+            ..make_game_entry("snes", "River City Ransom.sfc", false)
+        };
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[smd_entry], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[snes_entry], None).unwrap();
+        LibraryDb::upsert_alias(
+            &conn,
+            "sega_smd",
+            "Streets of Rage",
+            "Bare Knuckle",
+            "jp",
+            "test",
+        )
+        .unwrap();
+
+        let (results, total) = LibraryDb::search_game_library_ranked(
+            &conn,
+            Some("snes"),
+            "bare knuckle",
+            &SearchFilter::default(),
+            0,
+            10,
+            RegionPreference::World,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(total, 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn ranked_search_paginates_scored_results() {
+        let (mut conn, _dir) = open_temp_db();
+        insert_test_library(&mut conn);
+
+        let (results, total) = LibraryDb::search_game_library_ranked(
+            &conn,
+            Some("snes"),
+            "super mario",
+            &SearchFilter::default(),
+            1,
+            1,
+            RegionPreference::World,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].rom_filename.contains("Super Mario"));
     }
 
     // ── top_genre_for_filenames ──────────────────────────────────────

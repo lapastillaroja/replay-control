@@ -38,6 +38,11 @@
     flex-wrap: wrap;
 }
 
+.search-controls-action {
+    display: flex;
+    margin-left: auto;
+}
+
 .filter-chip {
     display: inline-flex;
     align-items: center;

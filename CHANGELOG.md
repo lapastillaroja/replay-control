@@ -10,21 +10,25 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - **RetroAchievements credentials are configurable from Replay Control.** Settings now includes a RetroAchievements page that writes the RePlayOS username/password keys without ever returning the saved password to the browser. Applying RetroAchievements, Wi-Fi, and NFS config changes now stops the TV frontend, writes `replay.cfg`, then starts the frontend again so the behavior matches how RePlayOS consumes those settings.
 - **Running games can be stopped from Replay Control.** The Now Playing hero and the active game's detail page now expose **Stop Game**, which restarts the RePlayOS frontend service to unload the current game and return the TV frontend to the menu.
+- **Search is more consistent across global and system pages.** Global search and per-system game lists now share the same controls, 400 ms debounce, `q` query parameter, and ranked search behavior, with alias matches available in both places and a system-scoped Random Game button on system pages.
 
 ### Added
 
 - Settings now includes a RetroAchievements page for configuring `rcheevos_username` and `rcheevos_password` in the RePlayOS config. Credentials are all-or-nothing, clearing removes both fields, and the stored password is write-only from the UI.
 - The Now Playing hero and active game detail page now include a **Stop Game** action for unloading the current game via a RePlayOS frontend restart.
+- Per-system game lists now include a Random Game button that jumps to a random playable game from that system.
 - A second "Video index on Shmups Wiki" link appears on the game detail page for games whose wiki page has a curated Video Index sub-page (members of Shmups Wiki's Category:Video Index), such as DoDonPachi DaiOuJou.
 
 ### Changed
 
 - Wi-Fi, NFS, and RetroAchievements config saves now apply by stopping `replay.service`, writing `replay.cfg`, and starting `replay.service` instead of leaving the user to perform a separate reboot/restart step.
+- Global search and per-system game lists now share the same search UI, 400 ms debounce, `q` query parameter, and core ranked search path. The old per-system `search` query parameter is no longer supported.
 - The startup reconcile that re-runs per-system enrichment when bundled inputs change is now a single composite stamp covering every bundled enrichment input (the catalog database hash and the Shmups Wiki page index + matcher version). Any input changing invalidates the per-storage stamp, so upgrades pick up new manual links, new Video Index entries, and matcher improvements automatically without a manual rescan.
 
 ### Fixed
 
 - Fixed Shmups Wiki linking missing arcade dual-name base titles. Lookups now also try the parts on each side of ` - ` (subtitle, e.g. `darius gaiden - silver hawk`) and ` / ` (dual-region name, e.g. `soukyugurentai / terra diver`) after a direct miss, so MAME/FBNeo entries like Darius Gaiden and Soukyugurentai resolve to their wiki pages. Real titles with hyphens (`R-Type`) are preserved because only space-wrapped separators trigger the fallback.
+- Fixed whitespace-only global searches returning the full library instead of the empty search state.
 
 ---
 
