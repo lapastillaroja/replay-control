@@ -72,7 +72,7 @@ fn maps_have_active_game_core(maps: &str) -> bool {
 /// unmapped core means "don't filter", which keeps the detector working but
 /// loses the cross-system protection for that core.
 const CORE_TO_SYSTEMS: &[(&str, &[&str])] = &[
-    ("fbneo", &["arcade_fbneo"]),
+    ("fbneo", &["arcade_fbneo", "snk_ng", "snk_ngcd"]),
     ("mame", &["arcade_mame"]),
     ("mame2003_plus", &["arcade_mame_2k3p"]),
     ("flycast", &["arcade_dc", "sega_dc"]),
