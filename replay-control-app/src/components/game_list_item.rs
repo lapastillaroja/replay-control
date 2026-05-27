@@ -1,3 +1,4 @@
+use leptos::either::Either;
 use leptos::prelude::*;
 use leptos_router::components::A;
 
@@ -81,7 +82,7 @@ pub fn GameListItem(
 
             <A href=game_href.get_value() attr:class="rom-thumb-link">
                 {if has_box_art {
-                    view! {
+                    Either::Left(view! {
                         <img
                             class="rom-thumb"
                             src=box_art_url.get_value()
@@ -89,13 +90,13 @@ pub fn GameListItem(
                             width="56"
                             height="40"
                         />
-                    }.into_any()
+                    })
                 } else {
-                    view! {
+                    Either::Right(view! {
                         <div class="rom-thumb-placeholder">
                             <BoxArtPlaceholder system=placeholder_system.get_value() name=placeholder_name.get_value() size="list".to_string() />
                         </div>
-                    }.into_any()
+                    })
                 }}
             </A>
 
