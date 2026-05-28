@@ -148,6 +148,12 @@ select.form-input option {
     font-size: 0.85rem;
     margin-bottom: 12px;
 }
+/* When the status message follows the action button (e.g. the reboot result),
+   it needs separation from the button above it — the default only has bottom
+   margin, leaving it flush against the button. */
+.apply-section .form-btn + .status-msg {
+    margin-top: 12px;
+}
 
 .status-ok {
     background: color-mix(in srgb, var(--success) 10%, transparent);

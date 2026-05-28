@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::config::SystemConfig;
+use crate::config::ReplayConfig;
 use replay_control_core::error::{Error, Result};
 
 /// Represents the resolved storage location where ROMs, saves, and config live.
@@ -21,6 +21,9 @@ pub enum StorageKind {
     Usb,
     Nvme,
     Nfs,
+    /// A plain local directory — used when running off-device with
+    /// `--storage-path` and no RePlayOS storage type configured.
+    Folder,
 }
 
 impl StorageKind {
@@ -28,16 +31,17 @@ impl StorageKind {
     /// NFS is excluded because inotify does not detect changes made by
     /// other NFS clients (only local VFS operations generate events).
     pub fn is_local(self) -> bool {
-        matches!(self, Self::Sd | Self::Usb | Self::Nvme)
+        matches!(self, Self::Sd | Self::Usb | Self::Nvme | Self::Folder)
     }
 
-    /// Lowercase string tag (`"sd"`, `"usb"`, `"nvme"`, `"nfs"`).
+    /// Lowercase string tag (`"sd"`, `"usb"`, `"nvme"`, `"nfs"`, `"folder"`).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Sd => "sd",
             Self::Usb => "usb",
             Self::Nvme => "nvme",
             Self::Nfs => "nfs",
+            Self::Folder => "folder",
         }
     }
 }
@@ -106,7 +110,7 @@ const MANUALS_DIR: &str = "manuals";
 
 impl StorageLocation {
     /// Detect the active storage location based on the RePlayOS config.
-    pub fn detect(config: &SystemConfig) -> Result<Self> {
+    pub fn detect(config: &ReplayConfig) -> Result<Self> {
         let (root, kind) = match config.storage_mode() {
             "usb" => {
                 let path = find_usb_storage()?;
@@ -579,6 +583,12 @@ mod tests {
     #[test]
     fn is_local_returns_false_for_nfs() {
         assert!(!StorageKind::Nfs.is_local());
+    }
+
+    #[test]
+    fn folder_is_local_and_tagged_folder() {
+        assert!(StorageKind::Folder.is_local());
+        assert_eq!(StorageKind::Folder.as_str(), "folder");
     }
 
     #[test]

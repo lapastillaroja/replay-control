@@ -75,7 +75,16 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         total_favorites,
         ethernet_ip,
         wifi_ip,
+        mode: state.mode.clone(),
     })
+}
+
+/// Lightweight mode probe for pages that need to gate device-only features
+/// but don't load full `SystemInfo`. No DB/disk access.
+#[server(prefix = "/sfn")]
+pub async fn get_mode() -> Result<Mode, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.mode.clone())
 }
 
 #[cfg(feature = "ssr")]
@@ -359,7 +368,7 @@ async fn read_log_file_tail(path: &str, lines: usize) -> String {
 pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let changed = state
-        .refresh_storage()
+        .reload_config_and_redetect_storage()
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let storage = state.storage();

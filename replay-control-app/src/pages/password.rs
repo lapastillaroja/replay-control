@@ -1,12 +1,15 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use server_fn::ServerFnError;
 
+use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]
 pub fn PasswordPage() -> impl IntoView {
     let i18n = use_i18n();
+    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
 
     view! {
         <div class="page settings-page">
@@ -17,7 +20,14 @@ pub fn PasswordPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), Key::PasswordTitle)}</h2>
             </div>
 
-            <PasswordForm />
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                {move || Suspend::new(async move {
+                    if !mode.await.map(|p| p.is_device()).unwrap_or(false) {
+                        return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
+                    }
+                    Ok::<_, ServerFnError>(view! { <PasswordForm /> }.into_any())
+                })}
+            </Suspense>
         </div>
     }
 }

@@ -341,11 +341,20 @@ async fn sfn_dismiss_setup_returns_200() {
     );
 }
 
+/// In Standalone mode (TestEnv runs with `--storage-path`), system-mutation
+/// server fns must skip the write entirely — there's no `replay.service` to
+/// restart and the OS doesn't own `replay.cfg` off-device. The response is
+/// the dedicated "Save skipped (standalone mode)" string; the file on disk
+/// must remain unchanged. (The form param is `auth_mode` post-rename; the
+/// previous `mode` collided lexically with `state.mode: Mode`.)
 #[tokio::test(flavor = "multi_thread")]
-async fn sfn_wifi_save_writes_config_and_returns_restart_result() {
+async fn sfn_wifi_save_in_standalone_skips_write_and_restart() {
     setup();
     let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
+
+    let cfg_path = env.tmp.join("config/replay.cfg");
+    let pre = std::fs::read_to_string(&cfg_path).unwrap();
 
     let (status, body) = invoke_server_fn_response::<server_fns::SaveWifiConfig>(
         app,
@@ -353,7 +362,7 @@ async fn sfn_wifi_save_writes_config_and_returns_restart_result() {
             ("ssid", "ReplayNet"),
             ("password", "wifi-secret"),
             ("country", "US"),
-            ("mode", "wpa2"),
+            ("auth_mode", "wpa2"),
             ("hidden", "false"),
         ]),
     )
@@ -361,21 +370,28 @@ async fn sfn_wifi_save_writes_config_and_returns_restart_result() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
-        "save should return the RePlayOS restart path result"
+        body.contains("Save skipped (standalone mode)"),
+        "Standalone save must short-circuit before write_config; got: {body}"
     );
-    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
-    assert!(config.contains("wifi_name = \"ReplayNet\""));
-    assert!(config.contains("wifi_pwd = \"wifi-secret\""));
-    assert!(config.contains("wifi_country = \"US\""));
-    assert!(config.contains("wifi_mode = \"wpa2\""));
+    let post = std::fs::read_to_string(&cfg_path).unwrap();
+    assert_eq!(
+        pre, post,
+        "Standalone must not mutate replay.cfg — the OS owns that file"
+    );
+    assert!(
+        !post.contains("ReplayNet") && !post.contains("wifi-secret"),
+        "Standalone wifi save must not write any credentials to replay.cfg"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn sfn_nfs_save_writes_config_and_returns_restart_result() {
+async fn sfn_nfs_save_in_standalone_skips_write_and_restart() {
     setup();
     let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
+
+    let cfg_path = env.tmp.join("config/replay.cfg");
+    let pre = std::fs::read_to_string(&cfg_path).unwrap();
 
     let (status, body) = invoke_server_fn_response::<server_fns::SaveNfsConfig>(
         app,
@@ -389,13 +405,49 @@ async fn sfn_nfs_save_writes_config_and_returns_restart_result() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
-        "save should return the RePlayOS restart path result"
+        body.contains("Save skipped (standalone mode)"),
+        "Standalone save must short-circuit before write_config; got: {body}"
     );
-    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
-    assert!(config.contains("nfs_server = \"192.168.1.10\""));
-    assert!(config.contains("nfs_share = \"/exports/roms\""));
-    assert!(config.contains("nfs_version = \"4\""));
+    let post = std::fs::read_to_string(&cfg_path).unwrap();
+    assert_eq!(pre, post, "Standalone must not mutate replay.cfg");
+    assert!(
+        !post.contains("192.168.1.10") && !post.contains("/exports/roms"),
+        "Standalone NFS save must not write any values to replay.cfg"
+    );
+}
+
+/// Regression: `get_retroachievements_config` reads fresh from disk so
+/// out-of-band changes (RePlayOS UI on the TV, manual edits) reflect
+/// immediately. The empty-file reject in `ReplayConfig::from_file` means a
+/// transient zero-byte window mid-atomic-rewrite would have surfaced as an
+/// error to the user — instead the GET path falls back to the in-memory
+/// last-known-good config so the settings page never blanks mid-save.
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_retroachievements_read_falls_back_to_lkg_when_disk_unreadable() {
+    setup();
+    let env = TestEnv::new().await;
+    env.state
+        .update_retroachievements_credentials("player", "supersecret")
+        .unwrap();
+
+    // Simulate the mid-atomic-rewrite window: replay.cfg is briefly empty.
+    let cfg_path = env.tmp.join("config/replay.cfg");
+    std::fs::write(&cfg_path, b"").unwrap();
+
+    let app = test_router(env.state.clone());
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::GetRetroachievementsConfig>(app, String::new())
+            .await;
+
+    assert_eq!(status, StatusCode::OK, "transient empty file must not 500");
+    assert!(
+        body.contains("player"),
+        "must fall back to in-memory last-known-good username; got: {body}"
+    );
+    assert!(
+        body.contains("true"),
+        "in-memory LKG still reports a password is configured"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -488,32 +540,36 @@ async fn sfn_retroachievements_username_change_requires_password() {
     assert!(!config.contains("player2"));
 }
 
+/// The server-fn path is gated off in Standalone (covered by
+/// `sfn_retroachievements_save_in_standalone_skips_write_and_restart`), so
+/// this test exercises the lower-level write path directly to confirm the
+/// "clear → empty pair on disk" semantics still hold. This is the logic the
+/// device-mode server fn calls through to.
 #[tokio::test(flavor = "multi_thread")]
-async fn sfn_retroachievements_clear_writes_empty_values() {
+async fn retroachievements_credentials_clear_writes_empty_values() {
     setup();
     let env = TestEnv::new().await;
     env.state
         .update_retroachievements_credentials("player", "secret")
         .unwrap();
-    let app = test_router(env.state.clone());
 
-    let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
-        app,
-        form_body(&[("username", ""), ("password", "")]),
-    )
-    .await;
+    env.state
+        .update_retroachievements_credentials("", "")
+        .unwrap();
 
-    assert_eq!(status, StatusCode::OK);
     let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
     assert!(config.contains("rcheevos_username = \"\""));
     assert!(config.contains("rcheevos_password = \"\""));
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn sfn_retroachievements_save_writes_before_restart_result() {
+async fn sfn_retroachievements_save_in_standalone_skips_write_and_restart() {
     setup();
     let env = TestEnv::new().await;
     let app = test_router(env.state.clone());
+
+    let cfg_path = env.tmp.join("config/replay.cfg");
+    let pre = std::fs::read_to_string(&cfg_path).unwrap();
 
     let (status, body) =
         invoke_server_fn_response::<server_fns::SaveRetroachievementsConfigAndRestart>(
@@ -524,12 +580,15 @@ async fn sfn_retroachievements_save_writes_before_restart_result() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body.contains("Restart skipped") || body.contains("ReplayOS restarted"),
-        "save should return the restart path result"
+        body.contains("Save skipped (standalone mode)"),
+        "Standalone save must short-circuit before write_config; got: {body}"
     );
-    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
-    assert!(config.contains("rcheevos_username = \"player\""));
-    assert!(config.contains("rcheevos_password = \"secret\""));
+    let post = std::fs::read_to_string(&cfg_path).unwrap();
+    assert_eq!(pre, post, "Standalone must not mutate replay.cfg");
+    assert!(
+        !post.contains("rcheevos_username") && !post.contains("rcheevos_password"),
+        "Standalone RA save must not write any credentials to replay.cfg"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

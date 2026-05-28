@@ -94,7 +94,16 @@ When analyzing metadata source coverage or quality across a ROM set (release dat
 - Use `clippy` conventions — no unnecessary `clone()`, prefer references where possible
 - Prefer `Result` propagation over manual error matching when the caller handles errors
 - Use descriptive variable names; avoid single-letter names outside short closures
-- Prefer local `use` imports over long inline crate/module paths when the longer path makes code harder to read. Keep fully qualified paths only when they materially improve clarity or avoid ambiguity.
+- **Never inline long crate paths.** Add a `use` at the top of the file and reference the short name in the body. Bodies must not contain `crate_a::mod_b::Thing::method(...)`; the import goes above, the call below.
+  - Bad: `replay_control_core_server::config::ReplayConfig::from_file(&path)`
+  - Good: `use replay_control_core_server::config::ReplayConfig;` at the top, then `ReplayConfig::from_file(&path)` in the body.
+  - **Dual-target files** (a module that compiles for both `ssr` and `hydrate`/`wasm32`) gate SSR-only imports with `#[cfg(feature = "ssr")]`. Existing convention in `replay-control-app/src/server_fns/mod.rs`:
+    ```rust
+    #[cfg(feature = "ssr")]
+    use replay_control_core_server::library_db::LibraryDb;
+    ```
+    There is **no** "wasm makes me write the full path inline" exception — the cfg-gated `use` works everywhere the path was reachable from inside a `#[cfg(feature = "ssr")]` or `#[server]` body.
+  - **Sweep edited files before declaring done** — a fix that ships with a fresh long inline reference is not done. `grep -nE 'replay_control_core(_server)?::[a-z_]+::[A-Za-z]' <files you touched>` and clean any new hits.
 
 ### Crate boundary: `replay-control-core` vs `replay-control-core-server`
 

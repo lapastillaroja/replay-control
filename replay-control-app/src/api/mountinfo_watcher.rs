@@ -49,11 +49,17 @@ fn spawn_linux(state: AppState) {
                 }
             }
 
-            tracing::debug!("mountinfo: change detected, refreshing storage");
-            match state.refresh_storage().await {
-                Ok(true) => tracing::info!("Storage updated after mount-table change"),
-                Ok(false) => tracing::debug!("mountinfo event but storage unchanged"),
-                Err(e) => tracing::warn!("refresh_storage after mount event failed: {e}"),
+            tracing::debug!("mountinfo: change detected, reloading config + storage");
+            // Mount events also cover the boot-recovery case (booted
+            // `ConfigUnavailable`, then the SD appears) — at that moment the
+            // mount AND `replay.cfg` both surface together, so the watcher
+            // does the full reload, not just storage re-detection.
+            match state.reload_config_and_redetect_storage().await {
+                Ok(true) => tracing::info!("Storage/config updated after mount-table change"),
+                Ok(false) => tracing::debug!("mountinfo event but storage/config unchanged"),
+                Err(e) => tracing::warn!(
+                    "reload_config_and_redetect_storage after mount event failed: {e}"
+                ),
             }
         }
     });

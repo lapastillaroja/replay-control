@@ -24,9 +24,9 @@ pub async fn stop_current_game() -> Result<String, ServerFnError> {
 
     let state = expect_context::<AppState>();
 
-    if !crate::server_fns::is_replayos() {
+    if !state.mode.is_device() {
         state.set_now_playing(NowPlayingState::Menu);
-        return Ok("Stop simulated (not running on ReplayOS)".to_string());
+        return Ok("Stop simulated (standalone mode)".to_string());
     }
 
     // Clear the autostart file first, otherwise the restart re-reads a

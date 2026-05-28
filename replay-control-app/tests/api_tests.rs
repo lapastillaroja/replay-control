@@ -108,7 +108,9 @@ async fn api_info_returns_system_info() {
 
     let json = assert_json_ok(resp).await;
 
-    assert_eq!(json["storage_kind"].as_str().unwrap(), "sd");
+    // Standalone mode (--storage-path was given) always reports "folder";
+    // sd/usb/nvme/nfs are RePlayOS-only kinds resolved from the device's mount table.
+    assert_eq!(json["storage_kind"].as_str().unwrap(), "folder");
     assert!(
         json["storage_root"]
             .as_str()

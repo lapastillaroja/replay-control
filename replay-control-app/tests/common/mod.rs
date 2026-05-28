@@ -91,7 +91,7 @@ fn create_test_storage() -> PathBuf {
 }
 
 fn test_app_state(tmp: &std::path::Path) -> AppState {
-    AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None, None).unwrap()
+    AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap()
 }
 
 /// Build the full application router (API + server functions + SSR fallback).
@@ -133,6 +133,7 @@ pub fn register_server_fns() {
     use replay_control_app::server_fns;
 
     server_fn::axum::register_explicit::<server_fns::GetInfo>();
+    server_fn::axum::register_explicit::<server_fns::GetMode>();
     server_fn::axum::register_explicit::<server_fns::GetSystems>();
     server_fn::axum::register_explicit::<server_fns::GetFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRecents>();

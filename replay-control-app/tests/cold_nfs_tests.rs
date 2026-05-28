@@ -51,7 +51,6 @@ fn unpopulated_state() -> (replay_control_app::api::AppState, std::path::PathBuf
         Some(tmp.to_string_lossy().into_owned()),
         None,
         None,
-        None,
     )
     .unwrap();
     (state, tmp)

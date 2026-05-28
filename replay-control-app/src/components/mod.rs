@@ -3,6 +3,7 @@ pub mod boxart_picker;
 pub mod boxart_placeholder;
 pub mod captures;
 pub mod corruption_banner;
+pub mod device_only_notice;
 pub mod filter_chips;
 pub mod game_list_item;
 pub mod game_section_row;

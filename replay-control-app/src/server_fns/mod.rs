@@ -1,3 +1,4 @@
+use replay_control_core::runtime_env::Mode;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
@@ -269,6 +270,9 @@ pub struct SystemInfo {
     pub total_favorites: usize,
     pub ethernet_ip: Option<String>,
     pub wifi_ip: Option<String>,
+    /// Whether the app is running on the RePlayOS device or in standalone mode.
+    /// Drives gating of device-only settings (Wi-Fi, NFS, reboot, …).
+    pub mode: Mode,
 }
 
 // Re-export types for use in components.

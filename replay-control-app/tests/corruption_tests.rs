@@ -92,13 +92,7 @@ impl StandaloneStorage {
     }
 
     fn build_state(&self) -> AppState {
-        AppState::new(
-            Some(self.path.to_string_lossy().into_owned()),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
+        AppState::new(Some(self.path.to_string_lossy().into_owned()), None, None).unwrap()
     }
 }
 

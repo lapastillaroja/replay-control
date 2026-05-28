@@ -29,10 +29,6 @@ mod ssr {
         #[arg(long)]
         storage_path: Option<String>,
 
-        /// Path to replay.cfg (auto-detected if not set)
-        #[arg(long)]
-        config_path: Option<String>,
-
         /// Override the settings directory (default: /etc/replay-control on Pi,
         /// <storage>/.replay-control with --storage-path)
         #[arg(long)]
@@ -448,12 +444,8 @@ mod ssr {
         }
         tracing::info!("catalog loaded from {}", catalog_path.display());
 
-        let app_state = match api::AppState::new(
-            cli.storage_path,
-            cli.config_path,
-            cli.settings_path,
-            cli.data_dir,
-        ) {
+        let app_state = match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir)
+        {
             Ok(state) => state,
             Err(e) => {
                 tracing::error!("Failed to initialize: {e}");
@@ -466,8 +458,9 @@ mod ssr {
         // (alongside library_pool / user_data_pool); no extra wiring here.
 
         // Start background pipeline only if storage is available.
-        // When no storage, the storage watcher polls every 10s and starts
-        // the pipeline on None->Some transition via refresh_storage().
+        // When no storage, the mount/config watchers (and the fallback poll)
+        // start the pipeline on the None->Some transition via
+        // reload_config_and_redetect_storage().
         if app_state.has_storage() {
             api::BackgroundManager::start(app_state.clone());
         } else {
@@ -477,6 +470,7 @@ mod ssr {
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetInfo>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMode>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecents>();

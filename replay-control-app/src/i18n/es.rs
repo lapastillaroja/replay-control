@@ -213,6 +213,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SettingsReboot => "Reiniciar sistema",
         Key::SettingsRebooting => "Reiniciando...",
+        Key::SettingsDeviceOnlyDisabled => "Disponible solo en el dispositivo RePlayOS.",
         Key::SettingsPasswordEnter => "Introduce la contraseña",
 
         // Game detail page

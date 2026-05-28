@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "ssr")]
+use replay_control_core_server::config::ReplayConfig;
+
 /// WiFi configuration (password is never sent to the client).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WifiConfig {
@@ -58,15 +61,24 @@ impl SkinInfo {
     }
 }
 
+/// Error for config-reading server fns when there is no readable `replay.cfg`
+/// — off-device, or on-device in the `ConfigUnavailable` state. We return this
+/// rather than fabricating an empty config object (the read-side equivalent of
+/// the deleted `ReplayConfig::empty()`). The UI gates these pages off-device,
+/// so reaching here means the config genuinely isn't available.
 #[cfg(feature = "ssr")]
-pub fn is_replayos() -> bool {
-    replay_control_core_server::replay_service::is_replayos()
+fn config_unavailable() -> ServerFnError {
+    ServerFnError::new("System configuration is unavailable")
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let config = state.config.read().expect("config lock poisoned");
+    let guard = state
+        .replay_config
+        .read()
+        .expect("replay_config lock poisoned");
+    let config = guard.as_ref().ok_or_else(config_unavailable)?;
     Ok(WifiConfig {
         ssid: config.wifi_name().unwrap_or("").to_string(),
         country: config.wifi_country().unwrap_or("").to_string(),
@@ -80,18 +92,25 @@ pub async fn save_wifi_config(
     ssid: String,
     password: String,
     country: String,
-    mode: String,
+    auth_mode: String,
     hidden: bool,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    apply_replay_config_change(move || state.update_wifi(&ssid, &password, &country, &mode, hidden))
-        .await
+    let is_device = state.mode.is_device();
+    apply_replay_config_change(is_device, move || {
+        state.update_wifi(&ssid, &password, &country, &auth_mode, hidden)
+    })
+    .await
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_nfs_config() -> Result<NfsConfig, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let config = state.config.read().expect("config lock poisoned");
+    let guard = state
+        .replay_config
+        .read()
+        .expect("replay_config lock poisoned");
+    let config = guard.as_ref().ok_or_else(config_unavailable)?;
     Ok(NfsConfig {
         server: config.nfs_server().unwrap_or("").to_string(),
         share: config.nfs_share().unwrap_or("").to_string(),
@@ -106,7 +125,11 @@ pub async fn save_nfs_config(
     version: String,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    apply_replay_config_change(move || state.update_nfs(&server, &share, &version)).await
+    let is_device = state.mode.is_device();
+    apply_replay_config_change(is_device, move || {
+        state.update_nfs(&server, &share, &version)
+    })
+    .await
 }
 
 #[server(prefix = "/sfn")]
@@ -114,29 +137,35 @@ pub async fn get_retroachievements_config() -> Result<RetroAchievementsConfig, S
     let state = expect_context::<crate::api::AppState>();
     let config_path = state.config_file_path();
 
-    // Read fresh from disk so credentials changed out-of-band (e.g. set on the
-    // TV via the RePlayOS UI) are reflected instead of a possibly-stale
-    // in-memory copy. Fall back to the in-memory config when RePlayOS has not
-    // created the file yet.
-    let (username, password_configured) = if config_path.exists() {
-        let config = replay_control_core_server::config::SystemConfig::from_file(&config_path)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-        (
+    // Prefer reading fresh from disk so credentials changed out-of-band
+    // (e.g. set on the TV via the RePlayOS UI) are reflected immediately.
+    // Any read/parse failure — missing file, transient empty file during an
+    // atomic-rename window, malformed bytes — falls back to the in-memory
+    // last-known-good config rather than surfacing an error: the GET path
+    // should never blank or fail just because we caught the file mid-rewrite.
+    let fresh = ReplayConfig::from_file(&config_path).ok();
+    let (username, password_configured) = match fresh {
+        Some(config) => (
             config
                 .retroachievements_username()
                 .unwrap_or("")
                 .to_string(),
             config.retroachievements_password_configured(),
-        )
-    } else {
-        let config = state.config.read().expect("config lock poisoned");
-        (
-            config
-                .retroachievements_username()
-                .unwrap_or("")
-                .to_string(),
-            config.retroachievements_password_configured(),
-        )
+        ),
+        None => {
+            let guard = state
+                .replay_config
+                .read()
+                .expect("replay_config lock poisoned");
+            let config = guard.as_ref().ok_or_else(config_unavailable)?;
+            (
+                config
+                    .retroachievements_username()
+                    .unwrap_or("")
+                    .to_string(),
+                config.retroachievements_password_configured(),
+            )
+        }
     };
 
     Ok(RetroAchievementsConfig {
@@ -150,8 +179,19 @@ pub async fn save_retroachievements_config_and_restart(
     username: String,
     password: String,
 ) -> Result<String, ServerFnError> {
+    // All-or-nothing: both empty clears the credentials; otherwise both must
+    // be provided. Validated at the server-fn entry so the rule applies in
+    // both Device (which writes) and Standalone (which skips) — a malformed
+    // input is a malformed input regardless of mode, not something the
+    // Standalone skip-path should silently accept.
+    if username.trim().is_empty() != password.trim().is_empty() {
+        return Err(ServerFnError::new(
+            "RetroAchievements username and password must be provided together",
+        ));
+    }
     let state = expect_context::<crate::api::AppState>();
-    apply_replay_config_change(move || {
+    let is_device = state.mode.is_device();
+    apply_replay_config_change(is_device, move || {
         state.update_retroachievements_credentials(&username, &password)
     })
     .await
@@ -160,24 +200,43 @@ pub async fn save_retroachievements_config_and_restart(
 /// Stop the frontend, write the config, then start it again. The `systemctl`
 /// calls and the config file I/O are all blocking, so the whole sequence runs
 /// on a blocking thread to avoid stalling the async runtime.
+///
+/// `is_device` is a bool, not the full `Mode`, because this function only
+/// branches on "does the OS own this config?" — pre-resolving it at the call
+/// site (`state.mode.is_device()`) keeps the signature honest about what it
+/// actually needs.
 #[cfg(feature = "ssr")]
-async fn apply_replay_config_change<F>(write_config: F) -> Result<String, ServerFnError>
+async fn apply_replay_config_change<F>(
+    is_device: bool,
+    write_config: F,
+) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || apply_replay_config_change_blocking(write_config))
-        .await
-        .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
+    tokio::task::spawn_blocking(move || {
+        apply_replay_config_change_blocking(is_device, write_config)
+    })
+    .await
+    .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
 }
 
 #[cfg(feature = "ssr")]
-fn apply_replay_config_change_blocking<F>(write_config: F) -> Result<String, ServerFnError>
+fn apply_replay_config_change_blocking<F>(
+    is_device: bool,
+    write_config: F,
+) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
 {
-    if !is_replayos() {
-        write_config().map_err(|e| ServerFnError::new(e.to_string()))?;
-        return Ok("Restart skipped (not running on ReplayOS)".to_string());
+    if !is_device {
+        // Standalone is documented as having system-mutation features disabled —
+        // no `replay.service` to restart, no `replay.cfg` we're meant to own, no
+        // surrounding RePlayOS state to keep in sync. Refuse the write entirely
+        // (don't silently mutate the user's storage folder) and return the same
+        // skipped result the device path would have for an inert call. The UI
+        // hides these pages off-device; a direct /sfn POST hits this guard.
+        let _ = write_config;
+        return Ok("Save skipped (standalone mode)".to_string());
     }
 
     replay_control_core_server::replay_service::stop()
@@ -239,8 +298,8 @@ impl Drop for StartReplayOnDrop {
 
 #[server(prefix = "/sfn")]
 pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
-    if !is_replayos() {
-        return Ok("Restart skipped (not running on ReplayOS)".to_string());
+    if !expect_context::<crate::api::AppState>().mode.is_device() {
+        return Ok("Restart skipped (standalone mode)".to_string());
     }
 
     replay_control_core_server::replay_service::restart()
@@ -250,12 +309,17 @@ pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn reboot_system() -> Result<String, ServerFnError> {
-    if !is_replayos() {
-        return Ok("Reboot skipped (not running on ReplayOS)".to_string());
+    if !expect_context::<crate::api::AppState>().mode.is_device() {
+        return Ok("Reboot skipped (standalone mode)".to_string());
     }
 
-    // Sync filesystem before reboot (as recommended by ReplayOS docs).
-    let _ = std::process::Command::new("sync").output();
+    // Best-effort flush before reboot, but never *wait* on it: the network share
+    // is mounted `hard`, so `sync` blocks indefinitely whenever the NFS server is
+    // unreachable — e.g. right after a Wi-Fi change drops the network. Waiting on
+    // it (the previous `.output()`) hung this handler so the reboot was never
+    // issued. systemd's shutdown sequence syncs and unmounts filesystems anyway,
+    // so a fire-and-forget flush is enough.
+    let _ = std::process::Command::new("sync").spawn();
 
     let output = std::process::Command::new("reboot")
         .output()
@@ -278,8 +342,8 @@ pub async fn get_hostname() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
-    if !is_replayos() {
-        return Ok("Hostname change skipped (not running on ReplayOS)".to_string());
+    if !expect_context::<crate::api::AppState>().mode.is_device() {
+        return Ok("Hostname change skipped (standalone mode)".to_string());
     }
 
     let hostname = hostname.trim().to_lowercase();
@@ -343,10 +407,12 @@ pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
     let skin_pref = state.prefs.read().expect("prefs lock poisoned").skin;
     let current = skin_pref.unwrap_or_else(|| {
         state
-            .config
+            .replay_config
             .read()
-            .expect("config lock poisoned")
-            .system_skin()
+            .expect("replay_config lock poisoned")
+            .as_ref()
+            .map(|c| c.system_skin())
+            .unwrap_or(0)
     });
     let sync = skin_pref.is_none();
 
@@ -596,8 +662,8 @@ pub async fn change_root_password(
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    if !is_replayos() {
-        return Ok("Password change skipped (not running on RePlayOS)".to_string());
+    if !expect_context::<crate::api::AppState>().mode.is_device() {
+        return Ok("Password change skipped (standalone mode)".to_string());
     }
 
     if new_password.is_empty() {

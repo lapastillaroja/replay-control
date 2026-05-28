@@ -160,9 +160,6 @@ where
     }
 }
 
-/// How often the background task re-checks storage (in seconds).
-const STORAGE_CHECK_INTERVAL: u64 = 60;
-
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
 /// Pipeline phases (sequential, async):
@@ -2623,42 +2620,31 @@ impl AppState {
         });
     }
 
-    /// Spawn the storage-detection watchers: a `notify` watcher on
-    /// `replay.cfg` (config changes), a `/proc/self/mountinfo` POLLPRI
-    /// watcher (mount-table changes — Linux only), and a 60 s
-    /// belt-and-suspenders poll for missed events on flaky NFS / dev hosts.
+    /// Spawn the device-side storage-detection watchers: a `notify` watcher
+    /// on `replay.cfg` (config-file edits) and a `/proc/self/mountinfo`
+    /// POLLPRI watcher (mount-table changes — Linux only). Standalone has
+    /// nothing to watch: replay.cfg is RePlayOS-owned and irrelevant
+    /// off-device, and the `--storage-path` folder's liveness surfaces at
+    /// request time via IO errors. The mountinfo watcher does a full
+    /// `reload_config_and_redetect_storage` so the boot-recovery case
+    /// (booted `ConfigUnavailable`, then the SD appears) adopts the new
+    /// `replay.cfg` along with the storage change.
     pub fn spawn_storage_watcher(self) {
-        let config_path = self.config_file_path();
-        let state = self.clone();
+        if !self.mode.is_device() {
+            return;
+        }
 
-        let watcher_state = self.clone();
-        let watcher_config_path = config_path.clone();
-
-        // Spawn the kernel-driven mount-table watcher. Replaces the old
-        // 10 s "waiting for storage" busy-loop: refresh_storage now runs
-        // when the kernel signals a real mount change, not on a timer.
         super::mountinfo_watcher::spawn(self.clone());
 
+        let config_path = self.config_file_path();
         tokio::spawn(async move {
-            let watcher_active =
-                Self::try_start_config_watcher(watcher_state, watcher_config_path).await;
-
-            if watcher_active {
-                tracing::info!("Config file watcher active; 60s poll runs as fallback");
+            if Self::try_start_config_watcher(self, config_path).await {
+                tracing::info!("Config file watcher active");
             } else {
-                tracing::info!("Config file watcher unavailable; using 60s poll only");
-            }
-
-            // Belt-and-suspenders poll. Catches mount events the kernel
-            // forgot to signal (rare) and is the only signal source on
-            // non-Linux dev hosts where the mountinfo watcher is a no-op.
-            loop {
-                tokio::time::sleep(Duration::from_secs(STORAGE_CHECK_INTERVAL)).await;
-                match state.refresh_storage().await {
-                    Ok(true) => tracing::info!("Background storage re-detection: storage changed"),
-                    Ok(false) => {}
-                    Err(e) => tracing::warn!("Background storage re-detection failed: {e}"),
-                }
+                tracing::warn!(
+                    "Config file watcher unavailable; replay.cfg edits will only \
+                     be picked up via mount-table events or user-triggered refresh"
+                );
             }
         });
     }
@@ -2764,8 +2750,8 @@ impl AppState {
                     }
                 }
 
-                tracing::info!("Config file changed, refreshing storage");
-                match state.refresh_storage().await {
+                tracing::info!("Config file changed; reloading config and re-detecting storage");
+                match state.reload_config_and_redetect_storage().await {
                     Ok(true) => tracing::info!("Storage updated after config change"),
                     Ok(false) => tracing::debug!("Config changed but storage unchanged"),
                     Err(e) => tracing::warn!("Failed to refresh storage after config change: {e}"),

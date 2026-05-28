@@ -46,7 +46,13 @@ fn banner_message(status: &StorageStatus) -> Option<String> {
         StorageStatus::Error { message } => Some(format!(
             "Storage problem: {message}. Replay Control is still using the last active storage if one is available."
         )),
-        StorageStatus::WaitingForMount | StorageStatus::Activating | StorageStatus::Ready => None,
+        // ConfigUnavailable is handled by the storage guard redirecting to
+        // `/waiting` before any normal page (and thus this banner) mounts —
+        // the banner branch is unreachable, so we don't render one here.
+        StorageStatus::ConfigUnavailable { .. }
+        | StorageStatus::WaitingForMount
+        | StorageStatus::Activating
+        | StorageStatus::Ready => None,
     }
 }
 

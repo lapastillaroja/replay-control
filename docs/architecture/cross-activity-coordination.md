@@ -7,7 +7,7 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 ## Coordination primitives
 
 - **Activity mutex** — `AppState::try_start_activity` (`replay-control-app/src/api/activity.rs`). At most one `Activity != Idle` at a time. The returned `ActivityGuard` resets to `Idle` on drop, so a panic still releases the slot.
-- **`storage_generation: AtomicU64`** on `AppState`. Bumped inside `refresh_storage` (and the deferred-storage paths in `cancel_storage_scans_if_ready`). Long scans capture the generation at start, thread it through `ScanInputs`/`ScanCancellation`, and call `state.ensure_storage_generation(expected)` at every system boundary plus before each writer transaction.
+- **`storage_generation: AtomicU64`** on `AppState`. Bumped inside `redetect_storage` (and the deferred-storage paths in `cancel_storage_scans_if_ready`). Long scans capture the generation at start, thread it through `ScanInputs`/`ScanCancellation`, and call `state.ensure_storage_generation(expected)` at every system boundary plus before each writer transaction.
 - **`rom_watcher_generation: AtomicU64`** on `AppState`. Bumped by `restart_rom_watcher`; the watcher loop self-terminates on mismatch. Independent of `storage_generation`.
 - **`is_idle()` gate** on `AppState`. Used by the ROM watcher to suppress its own work during any non-`Idle` activity.
 - **`identity_can_run()` gate** on `AppState`. Identity workers are allowed while `Activity::Identity` owns the activity slot, but stop when any foreground activity or storage-generation change appears.
@@ -34,7 +34,7 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 | L12 | `save_region_preference` / `_secondary` (writes settings, invalidates L1, then runs `resolve_release_date_for_library`) | **none** | none | mutation guard not present |
 | L13 | `rebuild_corrupt_library` (`reset_to_empty`) | none | none | mutation guard + corruption flag |
 | L14 | `phase_title_norm_reconcile` (idempotent rebuild of `normalized_title`) | runs ahead of Startup guard | none | n/a |
-| L15 | Storage-swap reopen (`library_writer.reopen`) | none — runs synchronously inside `refresh_storage` | drives generation bumps itself | storage RwLock + pool drain |
+| L15 | Storage-swap reopen (`library_writer.reopen`) | none — runs synchronously inside `redetect_storage` | drives generation bumps itself | storage RwLock + pool drain |
 
 ### 1.2 `external_metadata.db` writers
 
@@ -59,7 +59,7 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 | U4 | `rename_rom_cascade` | none, mutation guard |
 | U5 | `repair_corrupt_user_data` (`reset_to_empty`) | none |
 | U6 | `restore_user_data_backup` (`replace_with_file`, fallback `reset_to_empty`) | none |
-| U7 | Storage-swap (`reopen_user_data_or_mark_corrupt`) | none — inside `refresh_storage` |
+| U7 | Storage-swap (`reopen_user_data_or_mark_corrupt`) | none — inside `redetect_storage` |
 
 `user_data.db` runs in DELETE mode on most storages (exFAT/NFS-friendly). Per-`try_write` `WriteGate` activation serializes readers vs the single-slot writer, so concurrency between U1–U4 is harmless serialization at the pool layer.
 
@@ -82,7 +82,7 @@ Pairs with non-trivial overlap. "OK" means existing guards prevent the bad outco
 | `regenerate_metadata` clear (E7) ↔ concurrent `Activity::Rebuild` reading enrichment (L5) | Yes — E7 clears provider metadata without claiming activity, then *tries* to claim `RefreshExternalMetadata` | If the spawn-claim fails (busy), provider tables are gone and re-enrichment silently runs against an empty source | **Gap F-2** |
 | `rebuild_corrupt_library` (L13) ↔ in-flight Rebuild | Yes — L13 calls `reset_to_empty` without claiming `Rebuild` | Pool drain blocks until rebuild's writer connection releases; on timeout, L13 aborts cleanly | OK (drain semantics) |
 | `repair_corrupt_user_data` / `restore_user_data_backup` ↔ user mutations | Yes — none claim activity | Pool drain blocks; on timeout aborts cleanly | OK |
-| Concurrent `refresh_storage` invocations (config watcher + mountinfo watcher + 60 s poll + mutation gate) | Yes — `refresh_storage` is not protected by a serializing mutex | Two callers can both bump `storage_generation`, both `reopen` pools, both emit `StorageChanged`. Storage status oscillates `Activating → Ready → Activating → Ready`. Correctness preserved (each bump invalidates its predecessor's scans) but pool warmup cost doubles. | **Gap F-4** |
+| Concurrent `reload_config_and_redetect_storage` invocations (config-file watcher + mountinfo watcher + mutation gate + HTTP refresh_storage) | Yes — `redetect_storage` is not protected by a serializing mutex | Two callers can both bump `storage_generation`, both `reopen` pools, both emit `StorageChanged`. Storage status oscillates `Activating → Ready → Activating → Ready`. Correctness preserved (each bump invalidates its predecessor's scans) but pool warmup cost doubles. | **Gap F-4** |
 | L1 cache invalidation during Rebuild (favorites/recents inotify cache wipes) ↔ Rebuild populating L2 | Yes — favorites/recents L1 invalidations are deliberately ungated | Rebuild does not own those caches; next request rebuilds them | OK |
 
 ## 3. Findings
@@ -95,8 +95,8 @@ Severity-ordered. F-3 is kept under [Resolved findings](#6-resolved-findings) be
 
 Sequence on a storage swap while `Activity::Rebuild` is held:
 
-1. `refresh_storage` calls `bump_storage_generation()`. In-flight rebuild scans see `Err(StorageChanged)` at their next gate and start unwinding.
-2. `refresh_storage` then calls `BackgroundManager::spawn_pipeline(self.clone())`.
+1. `redetect_storage` calls `bump_storage_generation()`. In-flight rebuild scans see `Err(StorageChanged)` at their next gate and start unwinding.
+2. `redetect_storage` then calls `BackgroundManager::spawn_pipeline(self.clone())`.
 3. `spawn_pipeline` runs `run_pipeline`, which calls `try_start_activity(Activity::Startup{...})`.
 4. **Race window**: the cancelled rebuild task hasn't dropped its `Activity::Rebuild` guard yet (still unwinding). `try_start_activity` returns `Err("Another operation is already running")`, the new pipeline aborts with a `warn!` log, and there is no retry.
 
@@ -114,15 +114,24 @@ The retry helper exists for the inverse case (`claim_startup_activity` retries o
 
 **Fix**: move the `clear_launchbox` call inside `phase_auto_import_inner` (after the guard is claimed), guarded by a `force_clear: bool` flag that `regenerate_metadata` passes through. The user-visible operation becomes "claim slot or fail loudly", and the clear+refresh stays atomic relative to other activities.
 
-### F-4: `refresh_storage` is not single-flight
+### F-4: `redetect_storage` is not single-flight
 
 **Severity: low (UI flicker + duplicated pool warmup).**
 
-Three independent watchers (`config_watcher` debounce, `mountinfo_watcher` debounce, the 60 s `spawn_storage_watcher` poll) plus every mutation handler can invoke `refresh_storage` concurrently. The function reads `self.storage` under a short read-lock, awaits `probe_storage_ready` (NFS-bound, can take seconds), then takes the write-lock. Two callers that both observe a real change run the full reopen sequence in sequence, double-warming the pools and double-emitting `ConfigEvent::StorageChanged`. On a flapping mount the storage status oscillates publicly visible to clients.
+After the watcher simplification, four sources call `reload_config_and_redetect_storage` (which calls `redetect_storage`) without a serializing mutex:
+
+- the `notify` config-file watcher (debounced)
+- `mountinfo_watcher` (debounced)
+- every user mutation entry, via `require_configured_storage_ready_for_mutation`
+- the user-triggered HTTP `refresh_storage` server fn
+
+`redetect_storage` reads `self.storage` under a short read-lock, awaits `probe_storage_ready` (NFS-bound, can take seconds), then takes the write-lock. Two callers that both observe a real change run the full reopen sequence in sequence, double-warming the pools and double-emitting `ConfigEvent::StorageChanged`. On a flapping mount the storage status oscillates `Activating → Ready → Activating → Ready` publicly visible to clients.
+
+(The previous 10 s / 60 s poll was removed; that takes one chronic source off the table but does not close the race between the remaining four.)
 
 Correctness is preserved (each `bump_storage_generation` invalidates its own predecessor's scans), but the duplicated pool reopens are observable as longer "Activating" windows on the UI banner, and any background pipeline that wedged into the gap between two reopens is operating against a pool that will be yanked.
 
-**Fix**: add a `tokio::sync::Mutex<()>` (e.g. `refresh_storage_lock` on `AppState`) and acquire it at the top of `refresh_storage`. Concurrent callers serialize and the second one re-reads the now-current state, almost always returning `Ok(false)` immediately. Every existing call site (watchers, polls, mutation gates) keeps working without changes.
+**Fix**: add a `tokio::sync::Mutex<()>` (e.g. `redetect_storage_lock` on `AppState`) and acquire it at the top of `redetect_storage`. Concurrent callers serialize and the second one re-reads the now-current state, almost always returning `Ok(false)` immediately. Every existing call site keeps working without changes.
 
 ## 4. Recommended action order
 

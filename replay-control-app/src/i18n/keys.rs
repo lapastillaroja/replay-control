@@ -197,6 +197,7 @@ pub enum Key {
     SettingsReplayRestartWarning,
     SettingsReboot,
     SettingsRebooting,
+    SettingsDeviceOnlyDisabled,
     SettingsPasswordEnter,
 
     // Game detail page

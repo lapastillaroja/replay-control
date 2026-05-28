@@ -12,7 +12,7 @@ BackgroundManager::start(state)
   -> tokio::spawn(update_check_loop)
 ```
 
-If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `refresh_storage()`), the full pipeline starts.
+If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `reload_config_and_redetect_storage()`), the full pipeline starts.
 
 ## Phase 0.5: First-Run Source Fetch
 
@@ -97,7 +97,7 @@ CRC identity work runs after the per-system scan/enrichment write, not inside th
 
 `populate_all_systems` no longer pre-walks the filesystem to count systems; it iterates `visible_systems()` directly and lets each per-system call decide what to write (strict reconcile rule). Empty walks on local storage reconcile to empty meta; on NFS they return `Err` and preserve cached state. See `replay-control-app/src/api/library/mod.rs` and the per-system reconcile tests there.
 
-Long startup, rescan, rebuild, and watcher scans capture a storage generation token before they start. If `refresh_storage()` swaps storage, closes/reopens DB pools, or moves into a configured-storage error state, the generation changes. In-flight scans stop at the next system boundary or before the per-system DB write/enrichment step, so stale results cannot land in the wrong active storage DB. Cancellation preserves already-completed systems and leaves untouched systems' existing L2 rows in place.
+Long startup, rescan, rebuild, and watcher scans capture a storage generation token before they start. If `redetect_storage()` swaps storage, closes/reopens DB pools, or moves into a configured-storage error state, the generation changes. In-flight scans stop at the next system boundary or before the per-system DB write/enrichment step, so stale results cannot land in the wrong active storage DB. Cancellation preserves already-completed systems and leaves untouched systems' existing L2 rows in place.
 
 ROM file changes made by the user while a scan, rebuild, or identity pass is already running are not treated as a consistency guarantee for that same pass. The supported recovery is a later manual rescan after file changes settle.
 
@@ -118,13 +118,18 @@ Skips entirely when both tables are empty (first-time setup).
 
 ## Storage Watcher
 
-**Method**: `spawn_storage_watcher()`
+**Method**: `spawn_storage_watcher()` (Device mode only — Standalone has nothing to watch off-device)
 
-Dual mechanism:
-1. **notify watcher** (inotify on Linux): watches `replay.cfg` for immediate config change detection (skin changes, storage mode changes).
-2. **Poll loop**: 10-second interval while waiting for storage, 60-second interval once connected. Calls `refresh_storage()` which detects storage appearance/disappearance.
+Two event sources, both kernel-driven, no periodic poll:
+
+1. **`notify` watcher** (inotify on Linux): watches `replay.cfg` for immediate config change detection (skin changes, storage mode changes, wifi/NFS/RetroAchievements writes triggered from the TV UI). Calls `reload_config_and_redetect_storage()` on change.
+2. **`mountinfo_watcher`** (`POLLPRI` on `/proc/self/mountinfo`, Linux only): wakes on every mount-table change. Also calls `reload_config_and_redetect_storage()` — this covers the boot-recovery case where the app started in `ConfigUnavailable` and the SD mount arrives carrying a fresh `replay.cfg`, so both the storage *and* the config need re-detection together.
+
+The previous 10s / 60s belt-and-suspenders poll was removed: on RePlayOS the kernel watchers cover all real events, and on dev hosts where mountinfo is a no-op, storage issues surface at request time via IO errors. User-triggered `refresh_storage` server fn (`reload_config_and_redetect_storage`) is also available for explicit re-detection.
 
 On storage transition (None -> Some), opens DB pools and starts the full background pipeline. On disappearance (Some -> None), closes pools.
+
+In **Standalone mode** (`--storage-path`), the watcher is a no-op: `replay.cfg` is RePlayOS-owned and not under the supplied folder, mount changes on the host are not meaningful for an off-device ROM manager, and folder-disappearance surfaces at the next ROM-read. The user-triggered `refresh_storage` server fn still runs and performs a liveness check on the standalone root.
 
 ## ROM Watcher
 

@@ -213,6 +213,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SettingsReboot => "Reboot System",
         Key::SettingsRebooting => "Rebooting...",
+        Key::SettingsDeviceOnlyDisabled => "Available only on the RePlayOS device.",
         Key::SettingsPasswordEnter => "Enter password",
 
         // Game detail page

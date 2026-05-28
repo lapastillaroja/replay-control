@@ -213,6 +213,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SettingsReboot => "システムを再起動",
         Key::SettingsRebooting => "再起動中...",
+        Key::SettingsDeviceOnlyDisabled => "RePlayOSデバイスでのみ利用できます。",
         Key::SettingsPasswordEnter => "パスワードを入力",
 
         // Game detail page

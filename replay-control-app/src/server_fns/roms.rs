@@ -739,13 +739,13 @@ fn rename_fav_recursive(
 
 #[server(prefix = "/sfn")]
 pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, ServerFnError> {
-    if !is_replayos() {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.mode.is_device() {
         #[cfg(feature = "ssr")]
         redirect_after_progressive_form(&return_to);
-        return Ok("Launch simulated (not on RePlayOS)".into());
+        return Ok("Launch simulated (standalone mode)".into());
     }
 
-    let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "launch games").await?;
     let storage = state.storage();
 

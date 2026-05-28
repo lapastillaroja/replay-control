@@ -27,6 +27,10 @@ const SECTION_SYSTEM: &str = SECTIONS[4].0;
 pub fn SettingsPage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new(|| (), |_| server_fns::get_info());
+    // Device-only settings (Wi-Fi, NFS, hostname, password, RetroAchievements,
+    // reboot) are disabled off-device. Blocking so the gating is resolved in the
+    // SSR HTML rather than flashing enabled then disabling after hydration.
+    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
     let locale_res = Resource::new(|| (), |_| server_fns::get_locale());
     let region = Resource::new(|| (), |_| server_fns::get_region_preference());
     let region_secondary = Resource::new(|| (), |_| server_fns::get_region_preference_secondary());
@@ -80,10 +84,23 @@ pub fn SettingsPage() -> impl IntoView {
                         <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
 
                         <div class="settings-section-body">
-                            <div class="menu-list">
-                                <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
-                                <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=Some("/settings/retroachievements") />
-                            </div>
+                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                {move || Suspend::new(async move {
+                                    // Metadata works off-device; RetroAchievements writes to
+                                    // replay.cfg and restarts RePlayOS, so it's device-only.
+                                    let locale = i18n.locale.get();
+                                    let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
+                                    Ok::<_, ServerFnError>(view! {
+                                        <div class="menu-list">
+                                            <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                                            <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=on_device.then_some("/settings/retroachievements") />
+                                        </div>
+                                        {(!on_device).then(|| view! {
+                                            <p class="form-hint">{t(locale, Key::SettingsDeviceOnlyDisabled)}</p>
+                                        })}
+                                    })
+                                })}
+                            </Transition>
 
                             <div class="settings-inline-setting">
                                 <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
@@ -115,12 +132,24 @@ pub fn SettingsPage() -> impl IntoView {
                         <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionNetwork)}</h3>
 
                         <div class="settings-section-body">
-                            <div class="menu-list">
-                                <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=Some("/settings/wifi") />
-                                <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=Some("/settings/nfs") />
-                                <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=Some("/settings/hostname") />
-                                <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=Some("/settings/password") />
-                            </div>
+                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                {move || Suspend::new(async move {
+                                    let locale = i18n.locale.get();
+                                    let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
+                                    let href = |h: &'static str| on_device.then_some(h);
+                                    Ok::<_, ServerFnError>(view! {
+                                        <div class="menu-list">
+                                            <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=href("/settings/wifi") />
+                                            <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=href("/settings/nfs") />
+                                            <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=href("/settings/hostname") />
+                                            <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=href("/settings/password") />
+                                        </div>
+                                        {(!on_device).then(|| view! {
+                                            <p class="form-hint">{t(locale, Key::SettingsDeviceOnlyDisabled)}</p>
+                                        })}
+                                    })
+                                })}
+                            </Transition>
                         </div>
                     </section>
 
@@ -158,7 +187,12 @@ pub fn SettingsPage() -> impl IntoView {
                             <AnalyticsInline />
 
                             <div class="settings-reboot">
-                                <RebootButton />
+                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                    {move || Suspend::new(async move {
+                                        let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
+                                        Ok::<_, ServerFnError>(view! { <RebootButton disabled=!on_device /> })
+                                    })}
+                                </Transition>
                             </div>
                         </div>
                     </section>

@@ -6,9 +6,25 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.4.0-beta.13]
 
+### Highlights
+
+- **Running Replay Control off the Pi is now a first-class deployment.** Pointing the app at a ROM folder with `--storage-path /path/to/roms` is a supported standalone mode for managing a library from a desktop or laptop, distinct from running on the RePlayOS device. Library browsing, favorites, search, metadata, and recommendations work the same in both modes; device-only features (Wi-Fi, NFS, hostname, password change, frontend restart, system reboot, launch on TV, RetroAchievements) are hidden or marked as unavailable when running off-device, and direct API calls to those features return a clear "Save skipped (standalone mode)" response instead of silently writing to a folder the OS does not own.
+
+### Added
+
+- A user-triggered storage refresh in standalone mode now detects when the `--storage-path` folder has gone missing (USB unplug, network share dropping) and surfaces it through the same waiting/banner UI the device uses for storage problems, instead of letting subsequent ROM reads fail with raw filesystem errors.
+- The RetroAchievements menu entry on the Settings page now shows the same "Available only on the RePlayOS device" hint that Wi-Fi, NFS, Hostname, and Change Password already show in standalone mode, so the disabled state is no longer silent.
+
+### Changed
+
+- Empty or whitespace-only `replay.cfg` files are now refused at every read site — including the config-file watcher, save-side read-modify-write paths, and the RetroAchievements settings page read — instead of being adopted as a blank config that silently defaulted storage to SD and cleared Wi-Fi/NFS/RetroAchievements fields. Closes a remaining window in the [0.4.0-beta.12] fix where the empty-file check lived on only one read path.
+- Background storage detection has been simplified to rely entirely on kernel-driven events (`replay.cfg` file watcher + mount-table watcher). The 10-second/60-second belt-and-suspenders poll has been removed; mount-table events now do a full config + storage reload so the boot-recovery case (booted with no `replay.cfg`, then the SD appears) still works without the poll fallback.
+
 ### Fixed
 
 - Fixed the Shmups Wiki Video Index link being missing on game detail pages for arcade ROMs whose wiki page is a release variant of a parent that hosts the shared videos. For example, `ddpdfk` (DoDonPachi Dai-Fukkatsu Ver 1.5) now links to the same `/Video Index` as `dfkbl` (Black Label), instead of showing only a strategy guide. The bundled wiki index now records when a variant inherits its Video Index from a parent page, covering `Ver X.Y`, `vX.Y`, `Arrange [A]`, `exA Label`, `Black Label`, and `… Edition` suffixes. Sequels and series-overview pages are intentionally excluded so unrelated games' videos are never linked.
+- Fixed partial RetroAchievements credentials being accepted in standalone mode. The all-or-nothing rule (both username and password, or both empty to clear) now applies at the API entry point in both modes, instead of only being enforced inside the device-only write path that standalone mode skips.
+- Fixed the RetroAchievements settings page erroring out when opened during a `replay.cfg` rewrite window. The page now falls back to the in-memory last-known-good values whenever the on-disk file is missing, empty, or mid-rewrite, instead of surfacing a raw read error.
 
 ---
 

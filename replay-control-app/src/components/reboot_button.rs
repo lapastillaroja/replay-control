@@ -4,7 +4,13 @@ use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]
-pub fn RebootButton(#[prop(optional)] hint: Option<Key>) -> impl IntoView {
+pub fn RebootButton(
+    #[prop(optional)] hint: Option<Key>,
+    /// Disable the button (off-device, where rebooting RePlayOS is meaningless)
+    /// and show a short device-only note in its place.
+    #[prop(optional)]
+    disabled: bool,
+) -> impl IntoView {
     let i18n = use_i18n();
     let rebooting = RwSignal::new(false);
     let result = RwSignal::new(Option::<(bool, String)>::None);
@@ -27,13 +33,16 @@ pub fn RebootButton(#[prop(optional)] hint: Option<Key>) -> impl IntoView {
             <button
                 class="form-btn form-btn-secondary"
                 on:click=on_reboot
-                disabled=move || rebooting.get()
+                disabled=move || rebooting.get() || disabled
             >
                 {move || {
                     let locale = i18n.locale.get();
                     if rebooting.get() { t(locale, Key::SettingsRebooting) } else { t(locale, Key::SettingsReboot) }
                 }}
             </button>
+            {disabled.then(|| view! {
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsDeviceOnlyDisabled)}</p>
+            })}
             {move || result.get().map(|(ok, msg)| {
                 let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
                 view! { <div class=class>{msg}</div> }

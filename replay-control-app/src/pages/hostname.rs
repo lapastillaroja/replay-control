@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
+use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
@@ -9,6 +10,7 @@ use crate::server_fns;
 pub fn HostnamePage() -> impl IntoView {
     let i18n = use_i18n();
     let hostname = Resource::new_blocking(|| (), |_| server_fns::get_hostname());
+    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
 
     view! {
         <div class="page settings-page">
@@ -21,8 +23,11 @@ pub fn HostnamePage() -> impl IntoView {
 
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
+                    if !mode.await.map(|p| p.is_device()).unwrap_or(false) {
+                        return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
+                    }
                     let current = hostname.await?;
-                    Ok::<_, ServerFnError>(view! { <HostnameForm current /> })
+                    Ok::<_, ServerFnError>(view! { <HostnameForm current /> }.into_any())
                 })}
             </Suspense>
         </div>

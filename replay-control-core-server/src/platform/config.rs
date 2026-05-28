@@ -1,12 +1,33 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use replay_control_core::error::{Error, Result};
 
+/// Default location of `replay.cfg` on the RePlayOS device.
+pub const DEFAULT_REPLAY_CFG: &str = "/media/sd/config/replay.cfg";
+
+/// Path to `replay.cfg` relative to a storage root (used off-device with
+/// `--storage-path`).
+const CONFIG_SUBPATH: &str = "config/replay.cfg";
+
+/// Resolve where `replay.cfg` lives. On the RePlayOS device it has exactly one
+/// home — the SD card (`DEFAULT_REPLAY_CFG`). Off-device (a `--storage-path`
+/// override, i.e. local/dev) the exact location is immaterial, so we just keep
+/// it under that storage root. The RePlayOS file layout is owned here in
+/// core-server, not decided by the app. Pure path manipulation; no disk access.
+pub fn replay_config_path(storage_override: Option<&Path>) -> PathBuf {
+    match storage_override {
+        Some(storage) => storage.join(CONFIG_SUBPATH),
+        None => PathBuf::from(DEFAULT_REPLAY_CFG),
+    }
+}
+
 /// Internal key=value file parser with comment-preserving write.
-/// Not exposed publicly — only used by `SystemConfig` and `AppSettings`.
-#[derive(Debug, Clone)]
+/// Not exposed publicly — only used by `ReplayConfig` and `AppSettings`.
+/// `Default` is an empty file (no entries) — the honest way to build an empty
+/// config without round-tripping through the string parser.
+#[derive(Debug, Clone, Default)]
 pub(crate) struct KeyValueFile {
     entries: HashMap<String, String>,
 }
@@ -108,26 +129,45 @@ impl KeyValueFile {
     }
 }
 
-// ── SystemConfig: typed access to replay.cfg ─────────────────────
+// ── ReplayConfig: typed access to replay.cfg ─────────────────────
 
 /// Parsed RePlayOS system configuration from `replay.cfg`.
 ///
 /// This is an external file owned by the OS. The app may read all keys
 /// but may only write wifi and NFS settings.
 #[derive(Debug, Clone)]
-pub struct SystemConfig {
+pub struct ReplayConfig {
     inner: KeyValueFile,
 }
 
-impl SystemConfig {
+impl ReplayConfig {
     /// Parse a `replay.cfg` file from the given path.
+    ///
+    /// Rejects empty / whitespace-only files with an explicit `ConfigEmpty`
+    /// error: callers that adopt an empty config would silently default
+    /// `storage_mode` to "sd" and blank wifi/NFS/RA — exactly the regression
+    /// the read-side stat-then-parse race used to allow when the file was
+    /// truncated mid-rewrite. Centralising the check here means every
+    /// production load path (boot, watcher reload, save-side read-modify-write)
+    /// shares the same protection, not just the one with the stat guard.
     pub fn from_file(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+        if content.trim().is_empty() {
+            return Err(Error::Other(format!(
+                "replay.cfg at {} is empty",
+                path.display()
+            )));
+        }
         Ok(Self {
-            inner: KeyValueFile::from_file(path)?,
+            inner: KeyValueFile::parse(&content)?,
         })
     }
 
-    /// Parse config from a string.
+    /// Parse config from a string. Test-only: production always loads from a
+    /// file via [`Self::from_file`]. Synthesizing a config from a string in
+    /// request/boot paths (notably `parse("")`) is what blanked live settings,
+    /// so it is not available outside tests.
+    #[cfg(test)]
     pub fn parse(content: &str) -> Result<Self> {
         Ok(Self {
             inner: KeyValueFile::parse(content)?,
@@ -303,7 +343,7 @@ impl AppSettings {
     /// Create empty settings (when the file doesn't exist yet).
     pub fn empty() -> Self {
         Self {
-            inner: KeyValueFile::parse("").unwrap(),
+            inner: KeyValueFile::default(),
         }
     }
 
@@ -499,6 +539,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn replay_config_path_resolves_storage_override() {
+        // Off-device (--storage-path) → <storage>/config/replay.cfg.
+        assert_eq!(
+            replay_config_path(Some(Path::new("/media/usb"))),
+            PathBuf::from("/media/usb/config/replay.cfg")
+        );
+        // On-device default — the SD card is replay.cfg's only home.
+        assert_eq!(replay_config_path(None), PathBuf::from(DEFAULT_REPLAY_CFG));
+    }
+
+    #[test]
     fn parse_basic_config() {
         let content = r#"
             system_storage = "usb"
@@ -507,7 +558,7 @@ mod tests {
             video_mode = "5"
         "#;
 
-        let config = SystemConfig::parse(content).unwrap();
+        let config = ReplayConfig::parse(content).unwrap();
         assert_eq!(config.storage_mode(), "usb");
         assert_eq!(config.wifi_name(), Some("MyWifi"));
         assert_eq!(config.video_mode(), Some("5"));
@@ -516,13 +567,13 @@ mod tests {
     #[test]
     fn parse_with_comments_and_blanks() {
         let content = "# comment\n\nsystem_storage = \"sd\"\n";
-        let config = SystemConfig::parse(content).unwrap();
+        let config = ReplayConfig::parse(content).unwrap();
         assert_eq!(config.storage_mode(), "sd");
     }
 
     #[test]
     fn set_wifi_updates_values() {
-        let mut config = SystemConfig::parse("wifi_name = \"old\"").unwrap();
+        let mut config = ReplayConfig::parse("wifi_name = \"old\"").unwrap();
         config.set_wifi("new", "pass", "US", "wpa2", false);
         assert_eq!(config.wifi_name(), Some("new"));
         assert_eq!(config.wifi_country(), Some("US"));
@@ -532,7 +583,7 @@ mod tests {
 
     #[test]
     fn default_storage_mode() {
-        let config = SystemConfig::parse("").unwrap();
+        let config = ReplayConfig::parse("").unwrap();
         assert_eq!(config.storage_mode(), "sd");
     }
 
@@ -552,7 +603,7 @@ mod tests {
             .write_all(original.as_bytes())
             .unwrap();
 
-        let mut config = SystemConfig::parse(original).unwrap();
+        let mut config = ReplayConfig::parse(original).unwrap();
         config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
         config.set_nfs("new-server", "/share", "4");
         config.write_to_file(&original_path, &output_path).unwrap();
@@ -568,38 +619,38 @@ mod tests {
 
     #[test]
     fn parse_error_on_malformed_line() {
-        let result = SystemConfig::parse("no_equals_sign");
+        let result = ReplayConfig::parse("no_equals_sign");
         assert!(result.is_err());
     }
 
     #[test]
     fn wifi_hidden_defaults_to_false() {
-        let config = SystemConfig::parse("").unwrap();
+        let config = ReplayConfig::parse("").unwrap();
         assert!(!config.wifi_hidden());
     }
 
     #[test]
     fn wifi_hidden_true() {
-        let config = SystemConfig::parse("wifi_hidden = \"true\"").unwrap();
+        let config = ReplayConfig::parse("wifi_hidden = \"true\"").unwrap();
         assert!(config.wifi_hidden());
     }
 
     #[test]
     fn system_skin_default() {
-        let config = SystemConfig::parse("").unwrap();
+        let config = ReplayConfig::parse("").unwrap();
         assert_eq!(config.system_skin(), 0);
     }
 
     #[test]
     fn system_skin_parsed() {
-        let config = SystemConfig::parse("system_skin = \"5\"").unwrap();
+        let config = ReplayConfig::parse("system_skin = \"5\"").unwrap();
         assert_eq!(config.system_skin(), 5);
     }
 
     #[test]
     fn retroachievements_reads_username_and_password_state() {
         let config =
-            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
+            ReplayConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
                 .unwrap();
         assert_eq!(config.retroachievements_username(), Some("player"));
         assert!(config.retroachievements_password_configured());
@@ -608,7 +659,7 @@ mod tests {
     #[test]
     fn retroachievements_empty_password_is_not_configured() {
         let config =
-            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"\"\n")
+            ReplayConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"\"\n")
                 .unwrap();
         assert_eq!(config.retroachievements_username(), Some("player"));
         assert!(!config.retroachievements_password_configured());
@@ -630,7 +681,7 @@ mod tests {
             .write_all(original.as_bytes())
             .unwrap();
 
-        let mut config = SystemConfig::parse(original).unwrap();
+        let mut config = ReplayConfig::parse(original).unwrap();
         config
             .set_retroachievements_credentials("new-player", "new-pass")
             .unwrap();
@@ -655,7 +706,7 @@ mod tests {
     #[test]
     fn retroachievements_empty_pair_clears_both_fields() {
         let mut config =
-            SystemConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
+            ReplayConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
                 .unwrap();
         config.set_retroachievements_credentials("", "").unwrap();
         assert_eq!(config.retroachievements_username(), None);
@@ -664,7 +715,7 @@ mod tests {
 
     #[test]
     fn retroachievements_rejects_partial_credentials() {
-        let mut config = SystemConfig::parse("").unwrap();
+        let mut config = ReplayConfig::parse("").unwrap();
         assert!(
             config
                 .set_retroachievements_credentials("player", "")
@@ -679,7 +730,7 @@ mod tests {
 
     #[test]
     fn write_to_file_refuses_to_create_missing_config() {
-        let config = SystemConfig::parse("rcheevos_username = \"player\"\n").unwrap();
+        let config = ReplayConfig::parse("rcheevos_username = \"player\"\n").unwrap();
         let missing =
             std::env::temp_dir().join(format!("replay-missing-cfg-{}.cfg", std::process::id()));
         let _ = std::fs::remove_file(&missing);
@@ -700,7 +751,7 @@ mod tests {
         let path = tmp_dir.join("replay.cfg");
         std::fs::write(&path, "").unwrap();
 
-        let mut config = SystemConfig::parse("").unwrap();
+        let mut config = ReplayConfig::parse("").unwrap();
         config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
 
         assert!(config.write_to_file(&path, &path).is_err());
@@ -724,7 +775,7 @@ mod tests {
             .unwrap();
         std::fs::create_dir(&output_path).unwrap();
 
-        let mut config = SystemConfig::parse(original).unwrap();
+        let mut config = ReplayConfig::parse(original).unwrap();
         config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
 
         assert!(config.write_to_file(&original_path, &output_path).is_err());

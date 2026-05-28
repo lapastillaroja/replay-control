@@ -33,6 +33,13 @@ pub enum StorageStatus {
         current_kind: Option<String>,
         reason: String,
     },
+    /// On the RePlayOS device, `replay.cfg` is missing or unreadable. Distinct
+    /// from `Error` (DB open failed) and `Misconfigured` (configured target not
+    /// mountable) — both of those presuppose a readable config. Here there is no
+    /// config at all, so we cannot determine or activate storage.
+    ConfigUnavailable {
+        reason: String,
+    },
 }
 
 pub fn storage_kind_label(kind: &str) -> &'static str {
@@ -40,6 +47,7 @@ pub fn storage_kind_label(kind: &str) -> &'static str {
         "usb" => "USB",
         "nvme" => "NVMe",
         "nfs" => "NFS",
+        "folder" => "Folder",
         _ => "SD",
     }
 }

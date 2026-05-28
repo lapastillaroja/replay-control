@@ -101,8 +101,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use replay_control_core_server::config::SystemConfig;
+use replay_control_core::runtime_env::Mode;
+use replay_control_core_server::config::{ReplayConfig, replay_config_path};
 use replay_control_core_server::data_dir::DataDir;
+use replay_control_core_server::replay_service::detect_mode;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
 pub use crate::types::{RomWatcherStatus, StorageStatus, storage_kind_label};
@@ -143,13 +145,21 @@ pub struct AppState {
     pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
     pub storage_status: Arc<std::sync::RwLock<StorageStatus>>,
     pub rom_watcher_status: Arc<std::sync::RwLock<RomWatcherStatus>>,
-    pub config: Arc<std::sync::RwLock<SystemConfig>>,
-    pub config_path: Option<PathBuf>,
+    /// Last-known-good parsed `replay.cfg`. `None` means no readable config:
+    /// on the device that is the `ConfigUnavailable` state; off-device it is
+    /// normal (config-dependent features are disabled). Never an empty
+    /// fabrication.
+    pub replay_config: Arc<std::sync::RwLock<Option<ReplayConfig>>>,
     pub cache: Arc<LibraryService>,
     /// Response-level cache for assembled recommendation payloads.
     pub response_cache: Arc<response_cache::ResponseCache>,
-    /// When set, --storage-path was given on the CLI and auto-detection is skipped.
-    pub storage_path_override: Option<PathBuf>,
+    /// How the app is deployed (`Device` on RePlayOS, `Standalone` off-device).
+    /// Fixed at startup. The single source of truth for system-mutation gating,
+    /// storage auto-detection, and where `replay.cfg` lives. `Standalone`
+    /// carries the storage root as part of the variant, so the "where is
+    /// replay.cfg?" question is answered by pattern-matching on this field —
+    /// no parallel `Option<PathBuf>` to keep in sync, no panicking invariant.
+    pub mode: Mode,
     /// Resolved settings store (owns the directory path for settings.cfg).
     pub settings: replay_control_core_server::settings::SettingsStore,
     /// Resolved data directory (per-host root for storage-id-keyed library DBs).
@@ -269,7 +279,7 @@ struct ResolvedDbPaths {
 }
 
 /// Run the pre-attach pipeline shared by `AppState::new` and
-/// `refresh_storage`: wait for the FS to surface (production only),
+/// `redetect_storage`: wait for the FS to surface (production only),
 /// assign/read the storage id, migrate any per-storage `library.db`
 /// into the central data dir, and resolve both DB paths.
 ///
@@ -279,7 +289,6 @@ struct ResolvedDbPaths {
 fn prepare_storage_dbs(
     storage: &replay_control_core_server::storage::StorageLocation,
     data_dir: &replay_control_core_server::data_dir::DataDir,
-    _is_production: bool,
 ) -> Result<ResolvedDbPaths, String> {
     // Caller is responsible for the readiness gate (`StorageLocation::is_ready`)
     // — when the FS isn't a real mount yet (rootfs-stub race on slow NFS),
@@ -435,85 +444,104 @@ fn resolve_data_dir(data_dir: Option<&str>, storage_path: Option<&str>) -> DataD
 impl AppState {
     pub fn new(
         storage_path: Option<String>,
-        config_path: Option<String>,
         settings_path: Option<String>,
         data_dir: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let config_path = config_path.map(PathBuf::from);
         let storage_path_override = storage_path.as_ref().map(PathBuf::from);
+
+        // Decide the deployment mode once, from the marker + CLI override.
+        // Off-device with no `--storage-path` is an unrecoverable startup error
+        // (the app has no ROM library to point at).
+        let mode = detect_mode(storage_path_override.clone())?;
 
         let data_dir = resolve_data_dir(data_dir.as_deref(), storage_path.as_deref());
         tracing::info!("Data dir: {}", data_dir.root().display());
 
-        let (storage, config, initial_storage_status) = if let Some(path) = storage_path {
+        let (storage, config, initial_storage_status): (
+            Option<StorageLocation>,
+            Option<ReplayConfig>,
+            StorageStatus,
+        ) = if let Some(path) = storage_path {
+            // Standalone mode: the user pointed us at a folder. `storage_mode`
+            // in replay.cfg is a RePlayOS-only concept (sd/usb/nvme/nfs control
+            // device-side mount detection); off-device the folder is just a
+            // folder. A replay.cfg may still exist alongside it (typical for
+            // test fixtures), so we read it for general settings but ignore
+            // its storage_mode.
             let storage_root = PathBuf::from(&path);
             if !storage_root.exists() {
                 return Err(format!("Storage path does not exist: {path}").into());
             }
 
-            let config = config_path
-                .as_ref()
-                .and_then(|p| SystemConfig::from_file(p).ok())
-                .or_else(|| SystemConfig::from_file(&storage_root.join("config/replay.cfg")).ok())
-                .unwrap_or_else(|| SystemConfig::parse("").unwrap());
-
-            let kind = match config.storage_mode() {
-                "usb" => StorageKind::Usb,
-                "nvme" => StorageKind::Nvme,
-                "nfs" => StorageKind::Nfs,
-                _ => StorageKind::Sd,
-            };
+            let config_file = replay_config_path(Some(&storage_root));
+            let config: Option<ReplayConfig> = ReplayConfig::from_file(&config_file).ok();
 
             (
-                Some(StorageLocation::from_path(storage_root, kind)),
+                Some(StorageLocation::from_path(
+                    storage_root,
+                    StorageKind::Folder,
+                )),
                 config,
                 StorageStatus::Ready,
             )
         } else {
-            // Auto-detect: try to read config from default location (SD card, always available)
-            let default_config = PathBuf::from("/media/sd/config/replay.cfg");
-            let config = if default_config.exists() {
-                SystemConfig::from_file(&default_config)?
+            // On the device: RePlayOS owns replay.cfg. A missing or unreadable
+            // file is an error — we never fabricate an empty config and never
+            // guess storage from a default. Surface the waiting page via
+            // ConfigUnavailable; the watcher adopts the file once it appears.
+            let config_file = replay_config_path(None);
+            let config_result: Result<ReplayConfig, String> = if config_file.exists() {
+                ReplayConfig::from_file(&config_file).map_err(|e| e.to_string())
             } else {
-                SystemConfig::parse("")?
+                Err(format!("{} not found", config_file.display()))
             };
-            let wanted = config.storage_mode().to_string();
 
-            match StorageLocation::detect(&config) {
-                Ok(storage) if storage.is_ready() => (Some(storage), config, StorageStatus::Ready),
-                Ok(storage) => {
-                    // Path exists but the kernel hasn't finished mounting on
-                    // top of the rootfs stub yet (slow NFS first-mount, etc).
-                    // Route to the no-storage path; background re-detection
-                    // will pick the mount up when it appears.
-                    tracing::warn!(
-                        "Storage path {} not yet a mount point — starting in no-storage mode, will retry",
-                        storage.root.display()
-                    );
-                    (
-                        None,
-                        config,
-                        StorageStatus::Misconfigured {
-                            wanted,
-                            current_kind: None,
-                            reason: format!(
-                                "{} exists but is not a mounted storage device yet",
-                                storage.root.display()
-                            ),
-                        },
-                    )
+            match config_result {
+                Err(reason) => {
+                    tracing::error!("replay.cfg unavailable at startup: {reason}");
+                    (None, None, StorageStatus::ConfigUnavailable { reason })
                 }
-                Err(e) => {
-                    tracing::warn!("Storage unavailable at startup: {e}");
-                    (
-                        None,
-                        config,
-                        StorageStatus::Misconfigured {
-                            wanted,
-                            current_kind: None,
-                            reason: e.to_string(),
-                        },
-                    )
+                Ok(config) => {
+                    let wanted = config.storage_mode().to_string();
+                    match StorageLocation::detect(&config) {
+                        Ok(storage) if storage.is_ready() => {
+                            (Some(storage), Some(config), StorageStatus::Ready)
+                        }
+                        Ok(storage) => {
+                            // Path exists but the kernel hasn't finished mounting
+                            // on top of the rootfs stub yet (slow NFS first-mount,
+                            // etc). Route to the no-storage path; background
+                            // re-detection picks the mount up when it appears.
+                            tracing::warn!(
+                                "Storage path {} not yet a mount point — starting in no-storage mode, will retry",
+                                storage.root.display()
+                            );
+                            (
+                                None,
+                                Some(config),
+                                StorageStatus::Misconfigured {
+                                    wanted,
+                                    current_kind: None,
+                                    reason: format!(
+                                        "{} exists but is not a mounted storage device yet",
+                                        storage.root.display()
+                                    ),
+                                },
+                            )
+                        }
+                        Err(e) => {
+                            tracing::warn!("Storage unavailable at startup: {e}");
+                            (
+                                None,
+                                Some(config),
+                                StorageStatus::Misconfigured {
+                                    wanted,
+                                    current_kind: None,
+                                    reason: e.to_string(),
+                                },
+                            )
+                        }
+                    }
                 }
             }
         };
@@ -554,7 +582,7 @@ impl AppState {
         let (library_pool, user_data_pool) = if let Some(ref storage) = storage {
             tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
-            let paths = prepare_storage_dbs(storage, &data_dir, storage_path_override.is_none())?;
+            let paths = prepare_storage_dbs(storage, &data_dir)?;
 
             replay_control_core_server::library_db::LibraryDb::open_at(&paths.library)
                 .map_err(|e| format!("Failed to open library DB: {e}"))?;
@@ -692,14 +720,13 @@ impl AppState {
             db_pools::ExternalMetadataWritePool::from_pool(external_metadata_pool);
 
         let state = Self {
+            mode,
             storage: Arc::new(std::sync::RwLock::new(storage)),
             storage_status,
             rom_watcher_status,
-            config: Arc::new(std::sync::RwLock::new(config)),
-            config_path,
+            replay_config: Arc::new(std::sync::RwLock::new(config)),
             cache: Arc::new(LibraryService::new()),
             response_cache: Arc::new(response_cache::ResponseCache::new()),
-            storage_path_override,
             settings,
             data_dir,
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
@@ -746,6 +773,18 @@ impl AppState {
             .read()
             .expect("storage lock poisoned")
             .is_some()
+    }
+
+    /// Whether the app can serve its normal UI, or must show the waiting page.
+    /// Requires storage AND a readable config: on the device, `replay.cfg` can
+    /// go missing while the mount is still present (`has_storage()` true), and
+    /// in that `ConfigUnavailable` state we must route to `/waiting` too.
+    pub fn is_serviceable(&self) -> bool {
+        self.has_storage()
+            && !matches!(
+                self.storage_status(),
+                StorageStatus::ConfigUnavailable { .. }
+            )
     }
 
     pub fn storage_status(&self) -> StorageStatus {
@@ -842,7 +881,7 @@ impl AppState {
         &self,
         action: &str,
     ) -> Result<(), String> {
-        self.refresh_storage()
+        self.reload_config_and_redetect_storage()
             .await
             .map_err(|e| format!("Cannot {action}: failed to refresh storage status: {e}"))?;
 
@@ -871,6 +910,9 @@ impl AppState {
             StorageStatus::WaitingForMount => {
                 Err(format!("Cannot {action}: storage is not mounted yet."))
             }
+            StorageStatus::ConfigUnavailable { reason } => Err(format!(
+                "Cannot {action}: the system configuration is unavailable. ({reason})"
+            )),
         }
     }
 
@@ -1001,10 +1043,12 @@ impl AppState {
         if let Some(index) = self.prefs.read().expect("prefs lock poisoned").skin {
             index
         } else {
-            self.config
+            self.replay_config
                 .read()
-                .expect("config lock poisoned")
-                .system_skin()
+                .expect("replay_config lock poisoned")
+                .as_ref()
+                .map(|c| c.system_skin())
+                .unwrap_or(0)
         }
     }
 
@@ -1018,10 +1062,13 @@ impl AppState {
         hidden: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = SystemConfig::from_file(&config_path)?;
+        let mut config = ReplayConfig::from_file(&config_path)?;
         config.set_wifi(ssid, password, country, mode, hidden);
         config.write_to_file(&config_path, &config_path)?;
-        *self.config.write().expect("config lock poisoned") = config;
+        *self
+            .replay_config
+            .write()
+            .expect("replay_config lock poisoned") = Some(config);
         Ok(())
     }
 
@@ -1033,10 +1080,13 @@ impl AppState {
         version: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = SystemConfig::from_file(&config_path)?;
+        let mut config = ReplayConfig::from_file(&config_path)?;
         config.set_nfs(server, share, version);
         config.write_to_file(&config_path, &config_path)?;
-        *self.config.write().expect("config lock poisoned") = config;
+        *self
+            .replay_config
+            .write()
+            .expect("replay_config lock poisoned") = Some(config);
         Ok(())
     }
 
@@ -1047,31 +1097,55 @@ impl AppState {
         password: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
-        let mut config = SystemConfig::from_file(&config_path)?;
+        let mut config = ReplayConfig::from_file(&config_path)?;
         config.set_retroachievements_credentials(username, password)?;
         config.write_to_file(&config_path, &config_path)?;
-        *self.config.write().expect("config lock poisoned") = config;
+        *self
+            .replay_config
+            .write()
+            .expect("replay_config lock poisoned") = Some(config);
         Ok(())
     }
 
-    /// Re-detect storage from config (unless a CLI override was given).
-    /// Returns `true` if the storage location actually changed.
-    /// Handles None->Some transitions (storage appearing after startup).
-    pub async fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
-        // Re-read config from disk so system-level settings (wifi, NFS,
-        // system_skin for sync mode, etc.) are picked up on next SSR render.
+    /// Re-read `replay.cfg` into the in-memory config (the source SSR and the
+    /// UI read). RePlayOS owns the file and rewrites it atomically; the app
+    /// only mirrors it. A freshly read config is adopted ONLY when the file is
+    /// present, non-empty, and parses:
+    ///
+    ///   - missing / empty → expected transient (mid atomic-rename, or storage
+    ///     briefly unmounted during the frontend restart a wifi/NFS save
+    ///     triggers); logged at debug,
+    ///   - unparseable → unexpected (corruption, or a non-atomic external
+    ///     rewrite caught mid-write); logged at warn.
+    ///
+    /// In every failure case we keep the last-known-good config rather than
+    /// blanking live settings — the mirror of the write path, which likewise
+    /// refuses to act on a missing/empty `replay.cfg`. Returns whether a fresh
+    /// config was adopted.
+    pub fn reload_replay_config(&self) -> bool {
         let config_path = self.config_file_path();
-        let config = if config_path.exists() {
-            SystemConfig::from_file(&config_path)?
-        } else {
-            SystemConfig::parse("")?
+        // `ReplayConfig::from_file` itself rejects empty/whitespace-only files,
+        // so we don't need a separate stat-then-read window — any failure here
+        // (missing, empty, corrupt, mid-rewrite) is treated the same: keep the
+        // last-known-good config in memory and let the next tick try again.
+        let fresh_config = match ReplayConfig::from_file(&config_path) {
+            Ok(config) => config,
+            Err(e) => {
+                tracing::debug!(
+                    path = %config_path.display(),
+                    "replay.cfg unreadable; keeping last-known-good config: {e}"
+                );
+                return false;
+            }
         };
 
-        // Check if the effective skin changed after config re-read.
         let old_skin = self.effective_skin();
         {
-            let mut guard = self.config.write().expect("config lock poisoned");
-            *guard = config.clone();
+            let mut guard = self
+                .replay_config
+                .write()
+                .expect("replay_config lock poisoned");
+            *guard = Some(fresh_config);
         }
         let new_skin = self.effective_skin();
         if old_skin != new_skin {
@@ -1081,18 +1155,90 @@ impl AppState {
                 skin_css,
             });
         }
+        true
+    }
 
-        // Skip storage re-detection when an explicit path was given.
-        if self.storage_path_override.is_some() {
+    /// Reload `replay.cfg` and then re-detect storage from it. Used by the
+    /// config-file watcher, the fallback poll, and user-triggered refreshes —
+    /// any path where the on-disk config may have changed. Returns whether the
+    /// active storage location changed.
+    pub async fn reload_config_and_redetect_storage(
+        &self,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let config_adopted = self.reload_replay_config();
+        let storage_changed = self.redetect_storage().await?;
+        // Report change when either the in-memory config rolled forward or the
+        // storage location moved. Without the OR, a watcher tick that adopted a
+        // fresh config but kept the same mount would return Ok(false), and any
+        // user-triggered refresh would falsely report 'no change' even though
+        // the wifi/RA/NFS values just changed under it.
+        Ok(config_adopted || storage_changed)
+    }
+
+    /// Re-detect the active storage location from the current in-memory config
+    /// (unless a CLI override was given). Does NOT re-read `replay.cfg` — call
+    /// [`Self::reload_replay_config`] first if the file may have changed. Used
+    /// directly by the mount-table watcher, where the mounts changed but the
+    /// config did not. Returns `true` if the storage location actually changed;
+    /// handles None->Some transitions (storage appearing after startup).
+    pub async fn redetect_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        if let Some(root) = self.mode.standalone_root() {
+            // Standalone: the storage root is fixed at startup; no auto-detection
+            // to run, but we still owe the user a liveness check — an external
+            // mount (USB, NFS, SMB) can disappear out-of-band. Surface a missing
+            // root as `Misconfigured` so the existing waiting-page / banner flow
+            // takes over, instead of letting downstream ROM reads fail with raw
+            // IO errors. `Folder` is the only kind in Standalone (mod.rs:480).
+            let alive = tokio::task::spawn_blocking({
+                let root = root.to_path_buf();
+                move || root.is_dir()
+            })
+            .await
+            .unwrap_or(false);
+            // `wanted = "folder"` is the marker for "Standalone liveness check
+            // wrote this" — we only clear that exact shape on recovery, so we
+            // never overwrite a Misconfigured set by tests or some future
+            // Standalone-specific path.
+            const LIVENESS_WANTED: &str = "folder";
+            if !alive {
+                self.cancel_storage_scans_if_ready();
+                self.set_storage_status(StorageStatus::Misconfigured {
+                    wanted: LIVENESS_WANTED.to_string(),
+                    current_kind: Some(LIVENESS_WANTED.to_string()),
+                    reason: format!("Storage path {} is not accessible", root.display()),
+                });
+            } else {
+                let owned_by_liveness = matches!(
+                    &*self
+                        .storage_status
+                        .read()
+                        .expect("storage_status lock poisoned"),
+                    StorageStatus::Misconfigured { wanted, .. } if wanted == LIVENESS_WANTED
+                );
+                if owned_by_liveness {
+                    self.set_storage_status(StorageStatus::Ready);
+                }
+            }
             return Ok(false);
         }
 
+        // No readable config ⇒ we can't determine the storage mode. Refuse to
+        // detect against a default (that would silently pick "sd"); the device
+        // is in the ConfigUnavailable state until the file is restored.
+        let Some(config) = self
+            .replay_config
+            .read()
+            .expect("replay_config lock poisoned")
+            .clone()
+        else {
+            return Ok(false);
+        };
         let wanted = config.storage_mode().to_string();
         let current_kind = self.active_storage_kind();
         let new_storage = match StorageLocation::detect(&config) {
             Ok(storage) => storage,
             Err(e) => {
-                tracing::warn!("refresh_storage: configured storage unavailable: {e}");
+                tracing::warn!("redetect_storage: configured storage unavailable: {e}");
                 self.cancel_storage_scans_if_ready();
                 self.set_storage_status(StorageStatus::Misconfigured {
                     wanted,
@@ -1108,7 +1254,7 @@ impl AppState {
             // will retry; treating as no-change avoids tearing down a
             // working storage state for a transient mount-not-ready blip.
             tracing::debug!(
-                "refresh_storage: {} not yet a mount point; deferring",
+                "redetect_storage: {} not yet a mount point; deferring",
                 new_storage.root.display()
             );
             self.cancel_storage_scans_if_ready();
@@ -1151,7 +1297,7 @@ impl AppState {
                 StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => {}
                 StorageProbe::NotReady => {
                     tracing::debug!(
-                        "refresh_storage: probe at {} not yet ready; deferring",
+                        "redetect_storage: probe at {} not yet ready; deferring",
                         new_storage.root.display()
                     );
                     self.cancel_storage_scans_if_ready();
@@ -1175,11 +1321,7 @@ impl AppState {
             self.bump_storage_generation();
             self.set_storage_status(StorageStatus::Activating);
 
-            let paths = match prepare_storage_dbs(
-                &new_storage,
-                &self.data_dir,
-                self.storage_path_override.is_none(),
-            ) {
+            let paths = match prepare_storage_dbs(&new_storage, &self.data_dir) {
                 Ok(paths) => paths,
                 Err(e) => {
                     let message = format!("Could not prepare storage databases: {e}");
@@ -1257,15 +1399,14 @@ impl AppState {
         Ok(true)
     }
 
-    /// Resolve the path to `replay.cfg` that `refresh_storage()` will read.
+    /// Resolve the path to `replay.cfg`. Device mode → the SD card's fixed
+    /// location (`DEFAULT_REPLAY_CFG`). Standalone mode → `<storage_root>/
+    /// config/replay.cfg`, where `storage_root` is owned by `Mode::Standalone`
+    /// itself (captured from `--storage-path` at startup, immutable). No
+    /// optional fields, no panicking invariant — `Mode::standalone_root()` is
+    /// `Some` iff we're in Standalone, by construction.
     pub(crate) fn config_file_path(&self) -> PathBuf {
-        if let Some(ref p) = self.config_path {
-            p.clone()
-        } else if let Some(ref p) = self.storage_path_override {
-            p.join("config/replay.cfg")
-        } else {
-            PathBuf::from("/media/sd/config/replay.cfg")
-        }
+        replay_config_path(self.mode.standalone_root())
     }
 }
 
@@ -1406,21 +1547,28 @@ pub fn is_allowed_without_storage(path: &str) -> bool {
 pub fn waiting_page_response(state: AppState) -> axum::response::Response {
     use axum::response::{IntoResponse, Redirect};
 
-    if state.has_storage() {
+    if state.is_serviceable() {
         return Redirect::temporary("/").into_response();
     }
     axum::response::Html(waiting_page_html(&state)).into_response()
 }
 
 /// Handle the reboot action exposed only on waiting-page storage errors.
-pub fn waiting_reboot_response() -> axum::response::Response {
+/// `reboot_allowed` is captured from `AppState.mode.is_device()` when the
+/// route is wired (see `with_storage_guard`); the handler itself stays
+/// state-less.
+pub fn waiting_reboot_response(reboot_allowed: bool) -> axum::response::Response {
     use axum::response::{IntoResponse, Redirect};
 
-    if !crate::server_fns::is_replayos() {
+    if !reboot_allowed {
         return Redirect::temporary("/waiting").into_response();
     }
 
-    let _ = std::process::Command::new("sync").output();
+    // Fire-and-forget flush — never wait on it. A hard NFS mount can wedge
+    // `sync` indefinitely when the network is down, and this reboot path runs
+    // precisely when storage/config is broken (often alongside a network drop).
+    // systemd syncs during the clean shutdown anyway.
+    let _ = std::process::Command::new("sync").spawn();
     match std::process::Command::new("reboot").output() {
         Ok(_) => axum::response::Html(
             r#"<!DOCTYPE html><html><head><meta http-equiv="refresh" content="10;url=/waiting"><title>Rebooting</title></head><body>Rebooting...</body></html>"#,
@@ -1444,7 +1592,10 @@ pub fn with_storage_guard(app: axum::Router, app_state: AppState) -> axum::Route
         let state = waiting_state.clone();
         async move { waiting_page_response(state) }
     });
-    let waiting_reboot_handler = axum::routing::post(|| async { waiting_reboot_response() });
+    // Captured once at route-build time; reboot is only available on Device.
+    let reboot_allowed = app_state.mode.is_device();
+    let waiting_reboot_handler =
+        axum::routing::post(move || async move { waiting_reboot_response(reboot_allowed) });
     let guard_state = app_state.clone();
 
     app.route("/waiting", waiting_handler)
@@ -1453,7 +1604,7 @@ pub fn with_storage_guard(app: axum::Router, app_state: AppState) -> axum::Route
             move |request: axum::http::Request<axum::body::Body>, next: Next| {
                 let state = guard_state.clone();
                 async move {
-                    if state.has_storage() {
+                    if state.is_serviceable() {
                         return next.run(request).await;
                     }
 
@@ -1469,9 +1620,13 @@ pub fn with_storage_guard(app: axum::Router, app_state: AppState) -> axum::Route
 }
 
 pub fn waiting_page_html(state: &AppState) -> String {
-    let config = state.config.read().expect("config lock poisoned");
-    let storage_mode = config.storage_mode().to_string();
-    drop(config);
+    let storage_mode = state
+        .replay_config
+        .read()
+        .expect("replay_config lock poisoned")
+        .as_ref()
+        .map(|c| c.storage_mode().to_string())
+        .unwrap_or_default();
 
     let storage_label = storage_kind_label(&storage_mode);
 
@@ -1479,6 +1634,12 @@ pub fn waiting_page_html(state: &AppState) -> String {
     let skin_css = replay_control_core::skins::theme_css(skin_index).unwrap_or_default();
     let theme_color = replay_control_core::skins::theme_color(skin_index);
     let status = state.storage_status();
+    // ConfigUnavailable isn't about a storage *type* (we have no config to know
+    // it), so don't claim "Waiting for SD storage…" — give it its own title.
+    let title = match &status {
+        StorageStatus::ConfigUnavailable { .. } => "Configuration unavailable".to_string(),
+        _ => format!("Waiting for {storage_label} storage..."),
+    };
     let (subtitle, error_html) = match status {
         StorageStatus::Error { message } => (
             "Storage was detected, but Replay Control could not open its database.",
@@ -1529,6 +1690,20 @@ pub fn waiting_page_html(state: &AppState) -> String {
                 ),
             )
         }
+        StorageStatus::ConfigUnavailable { reason } => (
+            "Replay Control could not read the system configuration.",
+            format!(
+                r#"<div class="waiting-error">
+                    <p>The RePlayOS configuration file is missing or unreadable.</p>
+                    <p>Replay Control will keep retrying automatically.</p>
+                    <p class="waiting-error-detail">{}</p>
+                    <form method="post" action="/waiting/reboot">
+                        <button class="btn btn-danger" type="submit">Reboot System</button>
+                    </form>
+                </div>"#,
+                escape_html(&reason)
+            ),
+        ),
         StorageStatus::WaitingForMount | StorageStatus::Ready => (
             "The configured storage device is not available yet.",
             String::new(),
@@ -1608,7 +1783,7 @@ pub fn waiting_page_html(state: &AppState) -> String {
         <main class="content">
             <div class="waiting-page">
                 <div class="waiting-icon">&#x1F4E1;</div>
-                <h2 class="waiting-title">Waiting for {storage_label} storage...</h2>
+                <h2 class="waiting-title">{title}</h2>
                 <p class="waiting-subtitle">{subtitle}</p>
                 {error_html}
 
@@ -1655,12 +1830,11 @@ mod tests {
             Some(storage_root.to_string_lossy().into_owned()),
             None,
             None,
-            None,
         )
         .unwrap()
     }
 
-    /// `refresh_storage`'s symmetric pre-flight: when the re-attached
+    /// `redetect_storage`'s symmetric pre-flight: when the re-attached
     /// storage has a clobbered user_data.db magic header, the helper
     /// flags the pool corrupt instead of leaving `reopen` to fail
     /// silently. This is the §A2 fix from the WAL-unlink investigation;

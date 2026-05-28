@@ -2,6 +2,17 @@
 
 The core technical stack and infrastructure that powers Replay Control. For performance-specific design decisions, see [Design Decisions](design-decisions.md).
 
+## Deployment Mode
+
+The app supports two first-class deployment shapes, captured in a single `Mode` enum (`replay-control-core/src/runtime_env.rs`) that is fixed at startup by `detect_mode`:
+
+- **`Mode::Device`** — running on the RePlayOS device. The `/opt/replay` marker is present, `replay.cfg` lives at `/media/sd/config/replay.cfg`, system-mutation features (Wi-Fi, NFS, RetroAchievements, hostname, password, reboot, frontend restart) are enabled, the `replay.cfg` file watcher and `mountinfo` POLLPRI watcher are spawned.
+- **`Mode::Standalone { storage_root }`** — running off-device as a standalone ROM manager (`--storage-path /path/to/roms`). The variant carries the storage root the user supplied, so "where does `replay.cfg` live?" is answered by pattern-matching on `Mode` itself — no parallel `Option<PathBuf>` to drift. System-mutation features are disabled (the closure that would have written `replay.cfg` is never invoked); the storage watcher is a no-op because the folder isn't OS-owned. Storage is always `StorageKind::Folder`; the device-only kinds (`Sd`, `Usb`, `Nvme`, `Nfs`) only mean something with `/proc/mounts` + `replay.cfg` in scope.
+
+`Mode::standalone_root()` returns `Some(&Path)` iff `Standalone`, by construction — every site that previously checked "is there a `--storage-path` override?" now reads the variant directly. The wire shape exposed to the client is just the tag string (`"device"` / `"standalone"`); the storage path is a server-side concern and never leaves the host.
+
+Off-device with no `--storage-path` is an unrecoverable startup error: `AppState::new` returns `Err` because there's no library to point at.
+
 ## Crates
 
 The codebase is split into four crates inside a Cargo workspace.
