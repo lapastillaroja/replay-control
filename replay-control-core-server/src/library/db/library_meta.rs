@@ -28,9 +28,9 @@ pub mod keys {
     /// storage was computed against. Produced by
     /// [`crate::library::enrichment::enrichment_inputs_version`] from
     /// `catalog.sqlite.db_meta.catalog_enrichment_inputs_version`, which covers
-    /// manual links, Shmups Wiki links, catalog-backed descriptions, and future
-    /// catalog-bundled resources. Any input changing invalidates the stamp and
-    /// forces per-system re-enrichment on next boot.
+    /// manual links, Shmups Wiki links, catalog-backed detail metadata, and
+    /// future catalog-bundled resources. Any input changing invalidates the
+    /// stamp and forces per-system re-enrichment on next boot.
     pub const ENRICHMENT_INPUTS_VERSION: &str = "enrichment_inputs_version";
 
     /// Per-system recursive ROM scan fingerprint used by startup verification

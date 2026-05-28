@@ -29,8 +29,8 @@ pub fn insert_community_entries(conn: &Connection, sources_dir: &Path) -> rusqli
     };
 
     // Sort by path so the build is reproducible across machines — fs::read_dir
-    // yields entries in filesystem order, which makes catalog_resource_version
-    // and the eprintln! log differ between hosts otherwise.
+    // yields entries in filesystem order, which makes the enrichment-input
+    // version and the eprintln! log differ between hosts otherwise.
     let mut json_paths: Vec<std::path::PathBuf> = entries
         .flatten()
         .map(|e| e.path())
@@ -451,15 +451,23 @@ mod tests {
         let inserted = insert_community_entries(&conn, &dir).unwrap();
         assert_eq!(inserted, 1);
 
-        let (display, description, source): (String, String, String) = conn
+        let (display, description, developer, publisher, source): (
+            String,
+            String,
+            String,
+            String,
+            String,
+        ) = conn
             .query_row(
-                "SELECT display_name, description, source FROM canonical_game WHERE system = 'commodore_ami'",
+                "SELECT display_name, description, developer, publisher, source FROM canonical_game WHERE system = 'commodore_ami'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .unwrap();
         assert_eq!(display, "AmigaVision");
         assert_eq!(description, "A curated collection.");
+        assert_eq!(developer, "AmigaVision Project");
+        assert_eq!(publisher, "AmigaVision Project");
         assert_eq!(source, "community");
 
         let rom_count: i64 = conn

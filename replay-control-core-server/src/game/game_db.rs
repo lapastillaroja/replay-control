@@ -18,6 +18,12 @@ pub struct CanonicalGame {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CatalogDetailMetadata {
+    pub description: Option<String>,
+    pub publisher: Option<String>,
+}
+
 /// Metadata for a specific ROM file variant.
 #[derive(Debug, Clone)]
 pub struct GameEntry {
@@ -444,41 +450,48 @@ pub async fn system_games(system: &str) -> Vec<CanonicalGame> {
     }
 }
 
-/// Per-system canonical descriptions keyed by the enrichment normalized title.
+/// Per-system catalog detail metadata keyed by the enrichment normalized title.
 ///
-/// Used by the enrichment pipeline as a fallback when LaunchBox has no
-/// description for a ROM but the catalog does (e.g. community-curated
-/// entries). Empty descriptions are filtered out at the SQL level so the
-/// map only contains entries that have something to contribute.
+/// Used by the enrichment pipeline as a fallback when LaunchBox has no detail
+/// row for a ROM but the catalog does (e.g. community-curated entries). Empty
+/// descriptions and publishers are filtered out at the SQL level so the map
+/// only contains entries that have something to contribute.
 ///
 /// Performance: drives the join from `canonical_game` (filtered via
-/// `idx_cg_system` and `description != ''`) rather than scanning every
+/// `idx_cg_system` and non-empty detail fields) rather than scanning every
 /// `rom_entry` for the system. For typical systems (NES ~9K rom_entries,
-/// today zero non-empty descriptions), this short-circuits after the index
-/// seek with no rows returned and no `rom_entry` rows touched.
-pub async fn descriptions(system: &str) -> HashMap<String, String> {
+/// today zero non-empty catalog detail rows), this short-circuits after the
+/// index seek with no rows returned and no `rom_entry` rows touched.
+pub async fn detail_metadata(system: &str) -> HashMap<String, CatalogDetailMetadata> {
     {
         let system = system.to_string();
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
-                "SELECT re.filename_stem, cg.description \
+                "SELECT re.filename_stem, cg.description, cg.publisher \
                  FROM canonical_game cg \
                  JOIN rom_entry re ON re.canonical_game_id = cg.id \
-                 WHERE cg.system = ?1 AND cg.description != ''",
+                 WHERE cg.system = ?1 AND (cg.description != '' OR cg.publisher != '')",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })?;
             // Library enrichment looks up descriptions with
             // game_library.normalized_title, populated via
             // normalize_title_for_metadata(filename_stem). Key this map the
             // same way so multi-word titles don't miss the catalog fallback.
-            let mut out: HashMap<String, String> = HashMap::new();
+            let mut out: HashMap<String, CatalogDetailMetadata> = HashMap::new();
             for row in rows {
-                let (filename_stem, description) = row?;
+                let (filename_stem, description, publisher) = row?;
                 let key = catalog_description_key(&filename_stem);
                 if !key.is_empty() {
-                    out.entry(key).or_insert(description);
+                    out.entry(key).or_insert_with(|| CatalogDetailMetadata {
+                        description: (!description.is_empty()).then_some(description),
+                        publisher: (!publisher.is_empty()).then_some(publisher),
+                    });
                 }
             }
             Ok(out)
@@ -486,6 +499,14 @@ pub async fn descriptions(system: &str) -> HashMap<String, String> {
         .await
         .unwrap_or_default();
     }
+}
+
+pub async fn descriptions(system: &str) -> HashMap<String, String> {
+    detail_metadata(system)
+        .await
+        .into_iter()
+        .filter_map(|(key, metadata)| metadata.description.map(|description| (key, description)))
+        .collect()
 }
 
 /// Get canonical games for a system keyed by their catalog `canonical_game.id`.

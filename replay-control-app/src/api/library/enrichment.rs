@@ -4,11 +4,13 @@ use std::time::Instant;
 use replay_control_core::error::{Error, Result};
 use replay_control_core::resource_kind;
 use replay_control_core::rom_tags::RegionPreference;
+use replay_control_core::systems::system_thumbnail_repos;
 use replay_control_core_server::db_pool::rusqlite::Connection;
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
 use replay_control_core_server::external_metadata::{
     self, LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow, ThumbnailManifestEntry,
 };
+use replay_control_core_server::game_db;
 use replay_control_core_server::library_db::{
     BoxArtGenreRating, LibraryDb, LibraryGameResource, PhaseState, ReleaseDateRow,
     ThumbnailDownloadJob, ThumbnailPhaseState,
@@ -162,7 +164,7 @@ impl LibraryService {
             provider_resources,
             catalog_resources,
             arcade_lookup,
-            descriptions,
+            catalog_detail_metadata,
         ) = tokio::join!(
             build_image_index(state, &system),
             load_launchbox_rows(&state.external_metadata_reader, &system),
@@ -170,7 +172,7 @@ impl LibraryService {
             load_launchbox_resources(&state.external_metadata_reader, &system),
             load_catalog_resources(&system),
             ArcadeInfoLookup::build(&system, &rom_filenames),
-            replay_control_core_server::game_db::descriptions(&system),
+            game_db::detail_metadata(&system),
         );
         let setup_ms = setup_started.elapsed().as_millis();
 
@@ -194,7 +196,7 @@ impl LibraryService {
                         alt_to_primary: &alt_to_primary,
                         provider_resources: &provider_resources,
                         catalog_resources: &catalog_resources,
-                        descriptions: &descriptions,
+                        catalog_detail_metadata: &catalog_detail_metadata,
                     },
                 )
             })
@@ -742,8 +744,7 @@ async fn load_libretro_repo_data(
     system: &str,
     kind: ThumbnailKind,
 ) -> Vec<(String, String, Vec<ThumbnailManifestEntry>)> {
-    let Some(repo_names) = replay_control_core_server::thumbnails::thumbnail_repo_names(system)
-    else {
+    let Some(repo_names) = system_thumbnail_repos(system) else {
         return Vec::new();
     };
     let display_names: Vec<String> = repo_names.iter().map(|s| (*s).to_string()).collect();

@@ -11,11 +11,13 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommunityFile {
     pub entries: Vec<CommunityEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommunityEntry {
     pub filename_stem: String,
     pub display_name: String,
@@ -83,6 +85,7 @@ impl LocalizedText {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManualResource {
     pub url: String,
     #[serde(default)]
@@ -94,6 +97,7 @@ pub struct ManualResource {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VideoResource {
     pub url: String,
     #[serde(default)]
@@ -101,6 +105,7 @@ pub struct VideoResource {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinkResource {
     pub url: String,
     #[serde(default)]
@@ -164,5 +169,26 @@ mod tests {
         assert!(e.video_indexes.is_empty());
         assert!(e.screenshot_urls.is_empty());
         assert!(e.tags.is_empty());
+    }
+
+    #[test]
+    fn unknown_entry_field_is_rejected() {
+        let json = r#"{"entries":[{"filename_stem":"x","display_name":"X","publiser":"typo"}]}"#;
+        let err = serde_json::from_str::<CommunityFile>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected unknown field error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn unknown_resource_field_is_rejected() {
+        let json = r#"{"entries":[{"filename_stem":"x","display_name":"X",
+            "manuals":[{"url":"https://example.invalid/manual.pdf","lang":"en"}]}]}"#;
+        let err = serde_json::from_str::<CommunityFile>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected unknown field error, got: {err}"
+        );
     }
 }

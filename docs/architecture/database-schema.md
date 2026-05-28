@@ -70,6 +70,8 @@ One row per canonical console game identity. ROM filename variants in `rom_entry
 | coop | INTEGER | Co-op support flag, nullable when unknown |
 | rating | TEXT | Source rating text |
 | normalized_genre | TEXT | Canonical genre group |
+| description | TEXT | Catalog-backed long-form description, currently from community metadata |
+| source | TEXT | Source tag for the canonical row, e.g. `"no-intro"` or `"community"` |
 
 **PRIMARY KEY**: `id`
 
@@ -98,6 +100,7 @@ One row per known No-Intro/libretro ROM filename stem. Maps concrete filenames a
 | `idx_re_stem` | `(system, filename_stem)` | Exact filename-stem lookup |
 | `idx_re_crc` | `(system, crc32)` | Hash-based ROM identification |
 | `idx_re_norm` | `(system, normalized_title)` | Normalized-title fallback lookup |
+| `idx_re_cgid` | `(canonical_game_id)` | Joins from canonical games to their ROM entries |
 
 ### rom_alternate
 
@@ -196,7 +199,7 @@ Build metadata for the bundled catalog.
 
 **PRIMARY KEY**: `key`
 
-Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_enrichment_inputs_version` (a content hash over bundled resource rows and catalog-backed descriptions; startup compares it with `library_meta.enrichment_inputs_version` to decide whether existing libraries need re-enrichment).
+Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_enrichment_inputs_version` (a content hash over bundled resource rows and catalog-backed detail metadata; startup compares it with `library_meta.enrichment_inputs_version` to decide whether existing libraries need re-enrichment).
 
 ## library.db
 

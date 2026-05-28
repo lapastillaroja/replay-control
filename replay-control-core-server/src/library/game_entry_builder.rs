@@ -390,7 +390,7 @@ fn build_console_metadata(
                 if g.players > 0 { Some(g.players) } else { None },
                 false,
                 bt,
-                String::new(),
+                developer::normalize_developer(&g.developer),
                 year,
                 cooperative,
             ))
@@ -601,5 +601,73 @@ fn disambiguate_by_format(entries: &mut [GameEntry]) {
                 .to_string();
             entries[idx].display_name = Some(format!("{current} [{ext}]"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use replay_control_core::game_ref::GameRef;
+
+    fn rom_entry(system: &str, filename: &str, display_name: Option<&str>) -> RomEntry {
+        RomEntry {
+            game: GameRef::from_parts(
+                system,
+                filename.to_string(),
+                filename.to_string(),
+                display_name.map(str::to_string),
+            ),
+            size_bytes: 1,
+            mtime_nanos: None,
+            is_m3u: false,
+            is_favorite: false,
+            box_art_url: None,
+            driver_status: None,
+            rating: None,
+            players: None,
+        }
+    }
+
+    fn canonical_game(developer: &str) -> CanonicalGame {
+        CanonicalGame {
+            display_name: "AmigaVision".to_string(),
+            year: 2024,
+            genre: "Compilation".to_string(),
+            developer: developer.to_string(),
+            publisher: "AmigaVision Project".to_string(),
+            players: 1,
+            coop: Some(false),
+            rating: String::new(),
+            normalized_genre: "Action".to_string(),
+            description: "Curated collection".to_string(),
+            source: "community".to_string(),
+        }
+    }
+
+    #[test]
+    fn console_metadata_uses_catalog_developer() {
+        let mut batch = CatalogLookup::default();
+        batch.by_stem.insert(
+            "AmigaVision".to_string(),
+            CatalogGameEntry {
+                canonical_name: "AmigaVision".to_string(),
+                region: String::new(),
+                crc32: 0,
+                game: canonical_game("AmigaVision Project"),
+            },
+        );
+        let rom = rom_entry("commodore_ami", "AmigaVision.hdf", Some("AmigaVision"));
+        let hash_results = HashMap::new();
+
+        let (_, _, _, _, _, developer, _, _) = build_console_metadata(
+            &rom,
+            "AmigaVision.hdf",
+            "AmigaVision",
+            &hash_results,
+            &batch,
+        )
+        .expect("metadata should resolve");
+
+        assert_eq!(developer, "AmigaVision Project");
     }
 }

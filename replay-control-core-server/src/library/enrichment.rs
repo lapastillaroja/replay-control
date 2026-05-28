@@ -11,6 +11,7 @@ use rusqlite::Connection;
 
 use crate::catalog_pool::CatalogGameResourceRow;
 use crate::external_metadata::{LAUNCHBOX_PROVIDER, ProviderGameRow, ProviderResourceRow};
+use crate::game_db::CatalogDetailMetadata;
 use crate::library_db::{BoxArtGenreRating, LibraryDb, LibraryGameResource, ReleaseDateRow};
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::DatePrecision;
@@ -33,7 +34,7 @@ pub use crate::image_resolution::{
 ///
 /// Inputs composed today:
 /// - `catalog.sqlite.db_meta.catalog_enrichment_inputs_version` — SHA over
-///   `catalog_game_resource` rows plus catalog-backed canonical descriptions.
+///   `catalog_game_resource` rows plus catalog-backed detail metadata.
 ///
 /// Returns `None` only if the catalog DB has no version stamp (treated
 /// as "skip reconcile this boot").
@@ -292,10 +293,10 @@ pub struct EnrichSystemInput<'a> {
     pub alt_to_primary: &'a HashMap<String, String>,
     pub provider_resources: &'a HashMap<String, Vec<ProviderResourceRow>>,
     pub catalog_resources: &'a HashMap<String, Vec<CatalogGameResourceRow>>,
-    /// `game_library.normalized_title → canonical_game.description` for the
+    /// `game_library.normalized_title → catalog detail metadata` for the
     /// system. Used as a fallback for ROMs that LaunchBox has no row for
-    /// (community-curated entries, future TGDB descriptions, etc.).
-    pub descriptions: &'a HashMap<String, String>,
+    /// (community-curated entries, future TGDB descriptions/publishers, etc.).
+    pub catalog_detail_metadata: &'a HashMap<String, CatalogDetailMetadata>,
 }
 
 pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
@@ -308,7 +309,7 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         alt_to_primary,
         provider_resources,
         catalog_resources,
-        descriptions,
+        catalog_detail_metadata,
     } = input;
 
     // Load existing game_library values to know which are already set.
@@ -554,9 +555,15 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
                 row,
                 &norm_by_rom,
                 &hash_matched_names,
-                descriptions,
+                catalog_detail_metadata,
             );
-            let publisher = row.and_then(|r| r.publisher.clone());
+            let publisher = resolve_publisher(
+                filename,
+                row,
+                &norm_by_rom,
+                &hash_matched_names,
+                catalog_detail_metadata,
+            );
             (filename.clone(), description, publisher)
         })
         .collect();
@@ -595,35 +602,77 @@ fn resolve_description(
     lb_row: Option<&ProviderGameRow>,
     norm_by_rom: &HashMap<String, (String, String)>,
     hash_matched_names: &HashMap<String, String>,
-    descriptions: &HashMap<String, String>,
+    catalog_detail_metadata: &HashMap<String, CatalogDetailMetadata>,
 ) -> Option<String> {
     if let Some(d) = lb_row.and_then(|r| r.description.clone())
         && !d.is_empty()
     {
         return Some(d);
     }
+    resolve_catalog_detail_field(
+        filename,
+        norm_by_rom,
+        hash_matched_names,
+        catalog_detail_metadata,
+        |metadata| metadata.description.as_deref(),
+    )
+}
+
+fn resolve_publisher(
+    filename: &str,
+    lb_row: Option<&ProviderGameRow>,
+    norm_by_rom: &HashMap<String, (String, String)>,
+    hash_matched_names: &HashMap<String, String>,
+    catalog_detail_metadata: &HashMap<String, CatalogDetailMetadata>,
+) -> Option<String> {
+    if let Some(publisher) = lb_row.and_then(|r| r.publisher.clone())
+        && !publisher.is_empty()
+    {
+        return Some(publisher);
+    }
+    resolve_catalog_detail_field(
+        filename,
+        norm_by_rom,
+        hash_matched_names,
+        catalog_detail_metadata,
+        |metadata| metadata.publisher.as_deref(),
+    )
+}
+
+fn resolve_catalog_detail_field(
+    filename: &str,
+    norm_by_rom: &HashMap<String, (String, String)>,
+    hash_matched_names: &HashMap<String, String>,
+    catalog_detail_metadata: &HashMap<String, CatalogDetailMetadata>,
+    field: impl for<'a> Fn(&'a CatalogDetailMetadata) -> Option<&'a str>,
+) -> Option<String> {
     let (norm, norm_alt) = norm_by_rom.get(filename)?;
-    for key in [norm.as_str(), norm_alt.as_str()] {
-        if key.is_empty() {
-            continue;
-        }
-        if let Some(d) = descriptions.get(key)
-            && !d.is_empty()
-        {
-            return Some(d.clone());
+    catalog_detail_candidate_keys(filename, norm, norm_alt, hash_matched_names)
+        .into_iter()
+        .filter_map(|key| catalog_detail_metadata.get(&key))
+        .find_map(|metadata| field(metadata).filter(|value| !value.is_empty()))
+        .map(str::to_string)
+}
+
+fn catalog_detail_candidate_keys(
+    filename: &str,
+    norm: &str,
+    norm_alt: &str,
+    hash_matched_names: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut keys = Vec::with_capacity(3);
+    for key in [norm, norm_alt] {
+        if !key.is_empty() && !keys.iter().any(|existing| existing == key) {
+            keys.push(key.to_string());
         }
     }
     if let Some(hash_name) = hash_matched_names.get(filename) {
         let key = normalize_title_for_metadata(filename_stem(hash_name));
-        if !key.is_empty()
-            && key != norm.as_str()
-            && let Some(d) = descriptions.get(&key)
-            && !d.is_empty()
-        {
-            return Some(d.clone());
+        if !key.is_empty() && !keys.iter().any(|existing| existing == &key) {
+            keys.push(key);
         }
     }
-    None
+    keys
 }
 
 /// Drop duplicate `(system, base_title, region)` keys, keeping the
@@ -1267,6 +1316,13 @@ mod tests {
         }
     }
 
+    fn catalog_detail(description: Option<&str>, publisher: Option<&str>) -> CatalogDetailMetadata {
+        CatalogDetailMetadata {
+            description: description.map(str::to_string),
+            publisher: publisher.map(str::to_string),
+        }
+    }
+
     #[test]
     fn description_uses_launchbox_when_present() {
         let row = lb_row_with_description("from launchbox");
@@ -1276,7 +1332,10 @@ mod tests {
             ("normtitle".to_string(), String::new()),
         );
         let mut canonical = HashMap::new();
-        canonical.insert("normtitle".to_string(), "from catalog".to_string());
+        canonical.insert(
+            "normtitle".to_string(),
+            catalog_detail(Some("from catalog"), None),
+        );
         let hashes = HashMap::new();
 
         let got = resolve_description("rom.hdf", Some(&row), &norm, &hashes, &canonical);
@@ -1291,7 +1350,10 @@ mod tests {
             ("amigavision".to_string(), String::new()),
         );
         let mut canonical = HashMap::new();
-        canonical.insert("amigavision".to_string(), "curated description".to_string());
+        canonical.insert(
+            "amigavision".to_string(),
+            catalog_detail(Some("curated description"), None),
+        );
         let hashes = HashMap::new();
 
         let got = resolve_description("AmigaVision.hdf", None, &norm, &hashes, &canonical);
@@ -1315,7 +1377,7 @@ mod tests {
         let mut norm = HashMap::new();
         norm.insert("x".to_string(), ("xn".to_string(), String::new()));
         let mut canonical = HashMap::new();
-        canonical.insert("xn".to_string(), "fallback".to_string());
+        canonical.insert("xn".to_string(), catalog_detail(Some("fallback"), None));
         let hashes = HashMap::new();
 
         let got = resolve_description("x", Some(&row), &norm, &hashes, &canonical);
@@ -1342,7 +1404,10 @@ mod tests {
             ("clone".to_string(), "parent".to_string()),
         );
         let mut canonical = HashMap::new();
-        canonical.insert("parent".to_string(), "parent's description".to_string());
+        canonical.insert(
+            "parent".to_string(),
+            catalog_detail(Some("parent's description"), None),
+        );
         let hashes = HashMap::new();
 
         let got = resolve_description("clone.zip", None, &norm, &hashes, &canonical);
@@ -1360,9 +1425,60 @@ mod tests {
         let mut hashes = HashMap::new();
         hashes.insert("foo.sfc".to_string(), "Super Mario World (USA)".to_string());
         let mut canonical = HashMap::new();
-        canonical.insert("supermarioworld".to_string(), "from catalog".to_string());
+        canonical.insert(
+            "supermarioworld".to_string(),
+            catalog_detail(Some("from catalog"), None),
+        );
 
         let got = resolve_description("foo.sfc", None, &norm, &hashes, &canonical);
         assert_eq!(got.as_deref(), Some("from catalog"));
+    }
+
+    #[test]
+    fn publisher_uses_launchbox_when_present() {
+        let row = ProviderGameRow {
+            description: None,
+            genre: None,
+            developer: None,
+            publisher: Some("LaunchBox Publisher".to_string()),
+            release_date: None,
+            release_precision: None,
+            rating: None,
+            rating_count: None,
+            cooperative: false,
+            players: None,
+        };
+        let mut norm = HashMap::new();
+        norm.insert(
+            "rom.hdf".to_string(),
+            ("normtitle".to_string(), String::new()),
+        );
+        let mut canonical = HashMap::new();
+        canonical.insert(
+            "normtitle".to_string(),
+            catalog_detail(None, Some("Catalog Publisher")),
+        );
+        let hashes = HashMap::new();
+
+        let got = resolve_publisher("rom.hdf", Some(&row), &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("LaunchBox Publisher"));
+    }
+
+    #[test]
+    fn publisher_falls_back_to_catalog() {
+        let mut norm = HashMap::new();
+        norm.insert(
+            "AmigaVision.hdf".to_string(),
+            ("amigavision".to_string(), String::new()),
+        );
+        let mut canonical = HashMap::new();
+        canonical.insert(
+            "amigavision".to_string(),
+            catalog_detail(None, Some("AmigaVision Project")),
+        );
+        let hashes = HashMap::new();
+
+        let got = resolve_publisher("AmigaVision.hdf", None, &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("AmigaVision Project"));
     }
 }

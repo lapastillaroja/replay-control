@@ -2302,6 +2302,7 @@ const RETROKIT_MANUAL_FOLDERS: &[(&str, &[&str])] = &[
             "arcade_fbneo",
             "arcade_mame_2k3p",
             "arcade_dc",
+            "arcade_stv",
         ],
     ),
     ("atari2600", &["atari_2600"]),
@@ -2688,17 +2689,17 @@ fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<Stri
         context.update(b"\n");
     }
 
-    context.update(b"canonical_game_description\n");
+    context.update(b"canonical_game_detail_metadata\n");
     let mut stmt = conn.prepare(
-        "SELECT cg.system, re.filename_stem, cg.description
+        "SELECT cg.system, re.filename_stem, cg.description, cg.publisher
          FROM canonical_game cg
          JOIN rom_entry re ON re.canonical_game_id = cg.id
-         WHERE cg.description != ''
+         WHERE cg.description != '' OR cg.publisher != ''
          ORDER BY cg.system, re.filename_stem, cg.id",
     )?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
-        for idx in 0..3 {
+        for idx in 0..4 {
             let value: String = row.get(idx)?;
             context.update(value.as_bytes());
             context.update(b"\0");
@@ -2992,8 +2993,8 @@ mod tests {
         create_schema(&conn).unwrap();
         conn.execute(
             "INSERT INTO canonical_game \
-             (system, display_name, description) \
-             VALUES ('nintendo_snes', 'Super Mario World', 'old description')",
+             (system, display_name, description, publisher) \
+             VALUES ('nintendo_snes', 'Super Mario World', 'old description', 'old publisher')",
             [],
         )
         .unwrap();
@@ -3012,6 +3013,34 @@ mod tests {
             [],
         )
         .unwrap();
+        let after = catalog_enrichment_inputs_version(&conn).unwrap();
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn catalog_enrichment_inputs_version_changes_when_publisher_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO canonical_game \
+             (system, display_name, publisher) \
+             VALUES ('commodore_ami', 'AmigaVision', 'old publisher')",
+            [],
+        )
+        .unwrap();
+        let canonical_game_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO rom_entry \
+             (system, filename_stem, canonical_game_id, normalized_title) \
+             VALUES ('commodore_ami', 'AmigaVision', ?1, 'amigavision')",
+            [canonical_game_id],
+        )
+        .unwrap();
+
+        let before = catalog_enrichment_inputs_version(&conn).unwrap();
+        conn.execute("UPDATE canonical_game SET publisher = 'new publisher'", [])
+            .unwrap();
         let after = catalog_enrichment_inputs_version(&conn).unwrap();
 
         assert_ne!(before, after);
