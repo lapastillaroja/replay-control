@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/replay-control/replay-control/schemas/community-metadata.schema.json",
+  "title": "Community Metadata Entry File",
+  "description": "Schema for data/community/<system>.json files. Each file holds curated metadata for ROMs on one system that are not covered by upstream sources like No-Intro, TheGamesDB, MAME, or LaunchBox. The file stem is the system folder name (e.g. commodity_ami, nintendo_snes).",
+  "type": "object",
+  "required": ["entries"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Entry" }
+    }
+  },
+  "$defs": {
+    "Entry": {
+      "type": "object",
+      "required": ["filename_stem", "display_name"],
+      "additionalProperties": false,
+      "properties": {
+        "filename_stem": {
+          "type": "string",
+          "description": "ROM filename without extension (e.g. \"AmigaVision\" for AmigaVision.hdf). Matches game_entry_builder filename-stem lookup at scan time.",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Title shown in the UI.",
+          "minLength": 1
+        },
+        "year": { "type": "integer", "minimum": 1970, "maximum": 2100 },
+        "developer": { "type": "string" },
+        "publisher": { "type": "string" },
+        "genre": { "type": "string" },
+        "players": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "coop": { "type": "boolean" },
+        "description": {
+          "description": "Long-form description. Bare string is treated as English. Polyglot form requires the \"en\" key.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["en"],
+              "properties": {
+                "en": { "type": "string" }
+              },
+              "additionalProperties": { "type": "string" }
+            }
+          ]
+        },
+        "boxart_url": { "type": "string", "format": "uri" },
+        "title_image_url": { "type": "string", "format": "uri" },
+        "screenshot_urls": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "manuals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string", "format": "uri" },
+              "title": { "type": "string" },
+              "language": { "type": "string" },
+              "mime_type": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "videos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string", "format": "uri" },
+              "title": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "strategy_guides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string", "format": "uri" },
+              "title": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "video_indexes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string", "format": "uri" },
+              "title": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "crc32": {
+          "type": "string",
+          "description": "Optional secondary match key (exactly 8 hex chars, with optional 0x prefix). Used for cartridge-system aftermarket coverage where filenames vary.",
+          "pattern": "^(0[xX])?[0-9a-fA-F]{8}$"
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Opt-in flag required when (system, filename_stem) collides with an existing rom_entry from another source. The build aborts otherwise."
+        }
+      }
+    }
+  }
+}

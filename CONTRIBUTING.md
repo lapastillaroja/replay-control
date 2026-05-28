@@ -174,6 +174,8 @@ See [README.md](README.md) for a full overview. The key crates:
 
 Pull requests are welcome for bug fixes, documentation improvements, and small enhancements. For larger features, please open an issue first — the maintainer may have different plans or may prefer a different approach.
 
+For pure metadata contributions (descriptions, box art links, manuals for games not covered by upstream sources like No-Intro / TheGamesDB / MAME / LaunchBox — e.g. AmigaVision, aftermarket ROMs, homebrew compilations), no Rust changes are needed. See [Contributing community metadata](docs/contributing/community-metadata.md) for the JSON schema and submission flow.
+
 - Describe what changed and why
 - Test on Pi if possible (or note if you haven't)
 - Follow [Conventional Commits](https://www.conventionalcommits.org/):

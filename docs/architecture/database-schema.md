@@ -196,7 +196,7 @@ Build metadata for the bundled catalog.
 
 **PRIMARY KEY**: `key`
 
-Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_resource_version` (a content hash over bundled catalog resources; startup compares it with `library_meta.enrichment_inputs_version` to decide whether existing libraries need resource re-enrichment).
+Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_enrichment_inputs_version` (a content hash over bundled resource rows and catalog-backed descriptions; startup compares it with `library_meta.enrichment_inputs_version` to decide whether existing libraries need re-enrichment).
 
 ## library.db
 
@@ -521,7 +521,7 @@ Known keys include:
 | Key | Purpose |
 |-----|---------|
 | `title_norm_version` | `replay_control_core::title_utils::TITLE_NORM_VERSION` used when `game_library.normalized_title` / `normalized_title_alt` were last reconciled |
-| `enrichment_inputs_version` | Bundled `catalog_game_resource` content hash that was last flushed into `library_game_resource` |
+| `enrichment_inputs_version` | Bundled catalog enrichment-input hash that was last flushed into `library_game_resource` and `game_detail_metadata` |
 | `discovery_fingerprint:<system>` | Last clean recursive startup-scan fingerprint for one system; startup uses it to skip unchanged systems after a full file walk |
 
 ### schema_version

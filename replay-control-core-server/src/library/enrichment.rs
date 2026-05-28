@@ -32,14 +32,13 @@ pub use crate::image_resolution::{
 /// improvements without a manual rescan.
 ///
 /// Inputs composed today:
-/// - `catalog.sqlite.db_meta.catalog_resource_version` — SHA over
-///   `catalog_game_resource` rows (manual links, Shmups Wiki links, and
-///   future catalog-bundled resources built by `build-catalog`).
+/// - `catalog.sqlite.db_meta.catalog_enrichment_inputs_version` — SHA over
+///   `catalog_game_resource` rows plus catalog-backed canonical descriptions.
 ///
 /// Returns `None` only if the catalog DB has no version stamp (treated
 /// as "skip reconcile this boot").
 pub async fn enrichment_inputs_version() -> Option<String> {
-    crate::catalog_pool::catalog_resource_version().await
+    crate::catalog_pool::catalog_enrichment_inputs_version().await
 }
 
 /// All enrichment updates produced for a single system.
@@ -293,6 +292,10 @@ pub struct EnrichSystemInput<'a> {
     pub alt_to_primary: &'a HashMap<String, String>,
     pub provider_resources: &'a HashMap<String, Vec<ProviderResourceRow>>,
     pub catalog_resources: &'a HashMap<String, Vec<CatalogGameResourceRow>>,
+    /// `game_library.normalized_title → canonical_game.description` for the
+    /// system. Used as a fallback for ROMs that LaunchBox has no row for
+    /// (community-curated entries, future TGDB descriptions, etc.).
+    pub descriptions: &'a HashMap<String, String>,
 }
 
 pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
@@ -305,6 +308,7 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         alt_to_primary,
         provider_resources,
         catalog_resources,
+        descriptions,
     } = input;
 
     // Load existing game_library values to know which are already set.
@@ -545,7 +549,13 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         .iter()
         .map(|filename| {
             let row = lb_by_rom.get(filename).copied();
-            let description = row.and_then(|r| r.description.clone());
+            let description = resolve_description(
+                filename,
+                row,
+                &norm_by_rom,
+                &hash_matched_names,
+                descriptions,
+            );
             let publisher = row.and_then(|r| r.publisher.clone());
             (filename.clone(), description, publisher)
         })
@@ -560,6 +570,60 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         resource_rows,
         manifest_downloads,
     }
+}
+
+/// Resolve the per-ROM description. LaunchBox provider rows win when they
+/// have a non-empty description; otherwise fall back to the catalog-backed
+/// description keyed by:
+///
+/// 1. the ROM's `normalized_title` (from `game_library`),
+/// 2. its `normalized_title_alt` (arcade-clone parent's normalized title), so
+///    a clone with no own entry can still inherit the parent's catalog
+///    description, and
+/// 3. the normalized form of the No-Intro `hash_matched_name` (when CRC
+///    matching identified the ROM but its filename differs from canonical),
+///    so a hash-renamed file picks up the same description as its canonical
+///    sibling.
+///
+/// Empty strings are treated as "no description" so a catalog row with an
+/// empty `description` column doesn't shadow a LaunchBox value or null out
+/// the cell. Mirrors the lookup chain in `match_for_rom`/LaunchBox matching
+/// so the description fallback fires in the same situations the rest of
+/// enrichment does.
+fn resolve_description(
+    filename: &str,
+    lb_row: Option<&ProviderGameRow>,
+    norm_by_rom: &HashMap<String, (String, String)>,
+    hash_matched_names: &HashMap<String, String>,
+    descriptions: &HashMap<String, String>,
+) -> Option<String> {
+    if let Some(d) = lb_row.and_then(|r| r.description.clone())
+        && !d.is_empty()
+    {
+        return Some(d);
+    }
+    let (norm, norm_alt) = norm_by_rom.get(filename)?;
+    for key in [norm.as_str(), norm_alt.as_str()] {
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(d) = descriptions.get(key)
+            && !d.is_empty()
+        {
+            return Some(d.clone());
+        }
+    }
+    if let Some(hash_name) = hash_matched_names.get(filename) {
+        let key = normalize_title_for_metadata(filename_stem(hash_name));
+        if !key.is_empty()
+            && key != norm.as_str()
+            && let Some(d) = descriptions.get(&key)
+            && !d.is_empty()
+        {
+            return Some(d.clone());
+        }
+    }
+    None
 }
 
 /// Drop duplicate `(system, base_title, region)` keys, keeping the
@@ -669,6 +733,7 @@ fn apply_base_title_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use replay_control_core::genre::normalize_genre;
     use replay_control_core::library::resource_kind;
 
     // ── match_for_rom tests (Phase 3 chain) ──────────────────────────
@@ -1082,8 +1147,7 @@ mod tests {
         let mut entry_with_genre =
             make_entry_with_base_title("sega_smd", "Sonic (USA).md", "sonic");
         entry_with_genre.genre = Some("Action".into());
-        entry_with_genre.genre_group =
-            replay_control_core::genre::normalize_genre("Action").to_string();
+        entry_with_genre.genre_group = normalize_genre("Action").to_string();
 
         // Game with no genre.
         let entry_no_genre = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
@@ -1186,5 +1250,119 @@ mod tests {
             Some("/media/snes/boxart/Zelda.png"),
             "Japan should get USA's art via base_title fallback (new entry)"
         );
+    }
+
+    fn lb_row_with_description(desc: &str) -> ProviderGameRow {
+        ProviderGameRow {
+            description: Some(desc.to_string()),
+            genre: None,
+            developer: None,
+            publisher: None,
+            release_date: None,
+            release_precision: None,
+            rating: None,
+            rating_count: None,
+            cooperative: false,
+            players: None,
+        }
+    }
+
+    #[test]
+    fn description_uses_launchbox_when_present() {
+        let row = lb_row_with_description("from launchbox");
+        let mut norm = HashMap::new();
+        norm.insert(
+            "rom.hdf".to_string(),
+            ("normtitle".to_string(), String::new()),
+        );
+        let mut canonical = HashMap::new();
+        canonical.insert("normtitle".to_string(), "from catalog".to_string());
+        let hashes = HashMap::new();
+
+        let got = resolve_description("rom.hdf", Some(&row), &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("from launchbox"));
+    }
+
+    #[test]
+    fn description_falls_back_to_canonical_when_launchbox_missing() {
+        let mut norm = HashMap::new();
+        norm.insert(
+            "AmigaVision.hdf".to_string(),
+            ("amigavision".to_string(), String::new()),
+        );
+        let mut canonical = HashMap::new();
+        canonical.insert("amigavision".to_string(), "curated description".to_string());
+        let hashes = HashMap::new();
+
+        let got = resolve_description("AmigaVision.hdf", None, &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("curated description"));
+    }
+
+    #[test]
+    fn description_falls_back_to_canonical_when_launchbox_has_no_description() {
+        let row = ProviderGameRow {
+            description: None,
+            genre: None,
+            developer: Some("dev".to_string()),
+            publisher: None,
+            release_date: None,
+            release_precision: None,
+            rating: None,
+            rating_count: None,
+            cooperative: false,
+            players: None,
+        };
+        let mut norm = HashMap::new();
+        norm.insert("x".to_string(), ("xn".to_string(), String::new()));
+        let mut canonical = HashMap::new();
+        canonical.insert("xn".to_string(), "fallback".to_string());
+        let hashes = HashMap::new();
+
+        let got = resolve_description("x", Some(&row), &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("fallback"));
+    }
+
+    #[test]
+    fn description_empty_when_nothing_matches() {
+        let norm = HashMap::new();
+        let canonical = HashMap::new();
+        let hashes = HashMap::new();
+        let got = resolve_description("missing.bin", None, &norm, &hashes, &canonical);
+        assert!(got.is_none());
+    }
+
+    #[test]
+    fn description_falls_back_via_normalized_title_alt() {
+        // Arcade clone: primary norm has no catalog description, but norm_alt
+        // (the parent's normalized title) does. resolve_description should
+        // pick the parent's description rather than returning None.
+        let mut norm = HashMap::new();
+        norm.insert(
+            "clone.zip".to_string(),
+            ("clone".to_string(), "parent".to_string()),
+        );
+        let mut canonical = HashMap::new();
+        canonical.insert("parent".to_string(), "parent's description".to_string());
+        let hashes = HashMap::new();
+
+        let got = resolve_description("clone.zip", None, &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("parent's description"));
+    }
+
+    #[test]
+    fn description_falls_back_via_hash_matched_name() {
+        // ROM file "foo.sfc" was CRC-matched to "Super Mario World (USA)" —
+        // hash_matched_names carries the canonical filename. The ROM's own
+        // normalized title ("foo") doesn't match the catalog description key
+        // ("supermarioworld"), but the hash-name fallback should.
+        let mut norm = HashMap::new();
+        norm.insert("foo.sfc".to_string(), ("foo".to_string(), String::new()));
+        let mut hashes = HashMap::new();
+        hashes.insert("foo.sfc".to_string(), "Super Mario World (USA)".to_string());
+        let mut canonical = HashMap::new();
+        canonical.insert("supermarioworld".to_string(), "from catalog".to_string());
+
+        let got = resolve_description("foo.sfc", None, &norm, &hashes, &canonical);
+        assert_eq!(got.as_deref(), Some("from catalog"));
     }
 }

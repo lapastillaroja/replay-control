@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schemas/community-metadata.schema.json",
+  "entries": [
+    {
+      "filename_stem": "AmigaVision",
+      "display_name": "AmigaVision",
+      "year": 2024,
+      "developer": "AmigaVision Project",
+      "publisher": "AmigaVision Project",
+      "genre": "Compilation",
+      "players": 1,
+      "coop": false,
+      "description": {
+        "en": "AmigaVision is a curated collection of pre-installed Amiga games, demoscene productions, and applications, packaged as a single bootable disk image. It ships configured with appropriate Kickstart ROMs and per-game Amiga model settings so titles run correctly out of the box without manual setup."
+      },
+      "tags": ["compilation", "curated"]
+    }
+  ]
+}

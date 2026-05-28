@@ -1,3 +1,4 @@
+use replay_control_core::title_utils::{filename_stem, normalize_title_for_metadata};
 use rusqlite::OptionalExtension;
 use std::collections::HashMap;
 
@@ -13,6 +14,8 @@ pub struct CanonicalGame {
     pub coop: Option<bool>,
     pub rating: String,
     pub normalized_genre: String,
+    pub description: String,
+    pub source: String,
 }
 
 /// Metadata for a specific ROM file variant.
@@ -36,11 +39,13 @@ fn row_to_canonical_game(row: &rusqlite::Row<'_>) -> rusqlite::Result<CanonicalG
         coop: coop_val.map(|v| v != 0),
         rating: row.get(7)?,
         normalized_genre: row.get(8)?,
+        description: row.get(9)?,
+        source: row.get(10)?,
     })
 }
 
 // Columns: re.filename_stem(0), re.region(1), re.crc32(2),
-//          cg.display_name(3)…cg.normalized_genre(11)
+//          cg.display_name(3)…cg.source(13)
 fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
     let coop_val: Option<i64> = row.get(9)?;
     Ok(GameEntry {
@@ -57,16 +62,18 @@ fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
             coop: coop_val.map(|v| v != 0),
             rating: row.get(10)?,
             normalized_genre: row.get(11)?,
+            description: row.get(12)?,
+            source: row.get(13)?,
         },
     })
 }
 
 const ENTRY_COLS: &str = "re.filename_stem, re.region, re.crc32, \
      cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
-     cg.players, cg.coop, cg.rating, cg.normalized_genre";
+     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
 
 const CANONICAL_COLS: &str = "cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
-     cg.players, cg.coop, cg.rating, cg.normalized_genre";
+     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
 
 /// Look up game metadata by filename stem (without extension) for a system.
 pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry> {
@@ -220,6 +227,8 @@ pub async fn lookup_by_normalized_titles_batch(
                     coop: coop_val.map(|v| v != 0),
                     rating: row.get(8)?,
                     normalized_genre: row.get(9)?,
+                    description: row.get(10)?,
+                    source: row.get(11)?,
                 };
                 Ok((norm, cg))
             })?;
@@ -255,9 +264,13 @@ pub fn normalize_filename(stem: &str) -> String {
     parts.join(" ")
 }
 
+fn catalog_description_key(filename_stem: &str) -> String {
+    normalize_title_for_metadata(filename_stem)
+}
+
 /// Get the display name for a ROM file on a given system.
 pub async fn game_display_name(system: &str, filename: &str) -> Option<String> {
-    let stem = replay_control_core::title_utils::filename_stem(filename);
+    let stem = filename_stem(filename);
 
     if let Some(entry) = lookup_game(system, stem).await {
         return Some(entry.game.display_name);
@@ -294,10 +307,7 @@ pub async fn display_names_batch(system: &str, filenames: &[&str]) -> HashMap<St
             return HashMap::new();
         }
 
-        let stems: Vec<(&str, &str)> = filenames
-            .iter()
-            .map(|f| (*f, replay_control_core::title_utils::filename_stem(f)))
-            .collect();
+        let stems: Vec<(&str, &str)> = filenames.iter().map(|f| (*f, filename_stem(f))).collect();
 
         let stems_for_exact: Vec<&str> = stems.iter().map(|(_, s)| *s).collect();
         let mut exact = lookup_games_batch(system, &stems_for_exact).await;
@@ -424,10 +434,54 @@ pub async fn system_games(system: &str) -> Vec<CanonicalGame> {
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre FROM canonical_game WHERE system = ?1 ORDER BY id",
+                 normalized_genre, description, source FROM canonical_game WHERE system = ?1 ORDER BY id",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], row_to_canonical_game)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+}
+
+/// Per-system canonical descriptions keyed by the enrichment normalized title.
+///
+/// Used by the enrichment pipeline as a fallback when LaunchBox has no
+/// description for a ROM but the catalog does (e.g. community-curated
+/// entries). Empty descriptions are filtered out at the SQL level so the
+/// map only contains entries that have something to contribute.
+///
+/// Performance: drives the join from `canonical_game` (filtered via
+/// `idx_cg_system` and `description != ''`) rather than scanning every
+/// `rom_entry` for the system. For typical systems (NES ~9K rom_entries,
+/// today zero non-empty descriptions), this short-circuits after the index
+/// seek with no rows returned and no `rom_entry` rows touched.
+pub async fn descriptions(system: &str) -> HashMap<String, String> {
+    {
+        let system = system.to_string();
+        return crate::catalog_pool::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT re.filename_stem, cg.description \
+                 FROM canonical_game cg \
+                 JOIN rom_entry re ON re.canonical_game_id = cg.id \
+                 WHERE cg.system = ?1 AND cg.description != ''",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            // Library enrichment looks up descriptions with
+            // game_library.normalized_title, populated via
+            // normalize_title_for_metadata(filename_stem). Key this map the
+            // same way so multi-word titles don't miss the catalog fallback.
+            let mut out: HashMap<String, String> = HashMap::new();
+            for row in rows {
+                let (filename_stem, description) = row?;
+                let key = catalog_description_key(&filename_stem);
+                if !key.is_empty() {
+                    out.entry(key).or_insert(description);
+                }
+            }
+            Ok(out)
         })
         .await
         .unwrap_or_default();
@@ -441,7 +495,7 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre FROM canonical_game WHERE system = ?1",
+                 normalized_genre, description, source FROM canonical_game WHERE system = ?1",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], |row| {
                 let id = row.get::<_, i64>(0)? as u32;
@@ -456,6 +510,8 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
                     coop: coop_val.map(|v| v != 0),
                     rating: row.get(8)?,
                     normalized_genre: row.get(9)?,
+                    description: row.get(10)?,
+                    source: row.get(11)?,
                 };
                 Ok((id, game))
             })?;
@@ -787,6 +843,18 @@ mod tests {
     #[test]
     fn normalize_filename_collapses_whitespace() {
         assert_eq!(normalize_filename("  Game   Name  (USA)  "), "game name");
+    }
+
+    #[test]
+    fn catalog_description_key_matches_enrichment_normalization() {
+        assert_eq!(
+            catalog_description_key("Super Mario World"),
+            "supermarioworld"
+        );
+        assert_eq!(
+            catalog_description_key("Legend of Zelda, The (USA)"),
+            "thelegendofzelda"
+        );
     }
 
     #[tokio::test]

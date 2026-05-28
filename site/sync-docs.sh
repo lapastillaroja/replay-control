@@ -77,4 +77,36 @@ EOF
     echo "  architecture/$base.md (weight $weight)"
 done
 
+# Contributing docs
+CONTRIB_DIR="$CONTENT/contributing"
+if [[ -d "$REPO_ROOT/docs/contributing" ]]; then
+    mkdir -p "$CONTRIB_DIR"
+
+    declare -A CONTRIB_WEIGHTS=(
+        ["community-metadata"]=201
+    )
+
+    for f in "$REPO_ROOT/docs/contributing/"*.md; do
+        base=$(basename "$f" .md)
+        [[ "$base" == "index" ]] && continue
+        weight="${CONTRIB_WEIGHTS[$base]:-250}"
+        title=$(head -1 "$f" | sed 's/^# //')
+
+        target="$CONTRIB_DIR/$base.md"
+        cat > "$target" << EOF
+---
+title: "$title"
+date: 2025-01-01T00:00:00+00:00
+lastmod: 2025-01-01T00:00:00+00:00
+draft: false
+weight: $weight
+toc: true
+---
+
+EOF
+        tail -n +2 "$f" >> "$target"
+        echo "  contributing/$base.md (weight $weight)"
+    done
+fi
+
 echo "Done!"

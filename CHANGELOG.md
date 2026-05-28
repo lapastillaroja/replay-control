@@ -9,11 +9,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Highlights
 
 - **Running Replay Control off the Pi is now a first-class deployment.** Pointing the app at a ROM folder with `--storage-path /path/to/roms` is a supported standalone mode for managing a library from a desktop or laptop, distinct from running on the RePlayOS device. Library browsing, favorites, search, metadata, and recommendations work the same in both modes; device-only features (Wi-Fi, NFS, hostname, password change, frontend restart, system reboot, launch on TV, RetroAchievements) are hidden or marked as unavailable when running off-device, and direct API calls to those features return a clear "Save skipped (standalone mode)" response instead of silently writing to a folder the OS does not own.
+- **Community-curated metadata is a new bundled catalog source.** Per-system JSON files under `data/community/` ship descriptions, box art, screenshots, manuals, videos, and strategy-guide links for games no upstream source covers — for example the **AmigaVision** Amiga distribution now shows a real description, year, developer, publisher, and genre on its detail page. Adding metadata for new entries is a JSON edit and a PR; no Rust changes are required. The catalog version stamp covers these entries, so existing installs pick them up automatically on the next boot after upgrading.
 
 ### Added
 
 - A user-triggered storage refresh in standalone mode now detects when the `--storage-path` folder has gone missing (USB unplug, network share dropping) and surfaces it through the same waiting/banner UI the device uses for storage problems, instead of letting subsequent ROM reads fail with raw filesystem errors.
 - The RetroAchievements menu entry on the Settings page now shows the same "Available only on the RePlayOS device" hint that Wi-Fi, NFS, Hostname, and Change Password already show in standalone mode, so the disabled state is no longer silent.
+- AmigaVision now has a curated description, year, developer, publisher, and genre on its detail page when its boot file (`AmigaVision.hdf` / `AmigaVision.adf`) is present in the Amiga ROM folder.
+- Anyone can contribute metadata for ROMs not covered by the bundled sources (No-Intro / TheGamesDB / MAME / LaunchBox). One JSON file per system lives under `data/community/`, with per-entry support for title, description (optionally polyglot with `en` required), year, developer, publisher, genre, players, cooperative flag, box art / title / screenshot URLs, manuals, videos, strategy guides, and video indexes. Submission flow and schema are documented in [docs/contributing/community-metadata.md](docs/contributing/community-metadata.md).
 
 ### Changed
 

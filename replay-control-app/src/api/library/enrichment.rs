@@ -162,6 +162,7 @@ impl LibraryService {
             provider_resources,
             catalog_resources,
             arcade_lookup,
+            descriptions,
         ) = tokio::join!(
             build_image_index(state, &system),
             load_launchbox_rows(&state.external_metadata_reader, &system),
@@ -169,6 +170,7 @@ impl LibraryService {
             load_launchbox_resources(&state.external_metadata_reader, &system),
             load_catalog_resources(&system),
             ArcadeInfoLookup::build(&system, &rom_filenames),
+            replay_control_core_server::game_db::descriptions(&system),
         );
         let setup_ms = setup_started.elapsed().as_millis();
 
@@ -192,6 +194,7 @@ impl LibraryService {
                         alt_to_primary: &alt_to_primary,
                         provider_resources: &provider_resources,
                         catalog_resources: &catalog_resources,
+                        descriptions: &descriptions,
                     },
                 )
             })

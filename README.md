@@ -188,6 +188,7 @@ replay-control/
 
 - [Features](docs/features/) — what the app does
 - [Architecture](docs/architecture/) — how it works under the hood
+- [Contributing community metadata](docs/contributing/community-metadata.md) — add box art, descriptions, and links for games not covered by upstream sources (e.g. AmigaVision, aftermarket ROMs)
 
 ## Third-Party Resources
 

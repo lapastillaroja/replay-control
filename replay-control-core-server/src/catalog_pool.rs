@@ -252,13 +252,22 @@ pub async fn catalog_resource_stats() -> CatalogResourceStats {
     .unwrap_or_default()
 }
 
-pub async fn catalog_resource_version() -> Option<String> {
+pub async fn catalog_enrichment_inputs_version() -> Option<String> {
     with_catalog(|conn| {
-        conn.query_row(
-            "SELECT value FROM db_meta WHERE key = 'catalog_resource_version'",
+        let version = conn.query_row(
+            "SELECT value FROM db_meta WHERE key = 'catalog_enrichment_inputs_version'",
             [],
             |row| row.get::<_, String>(0),
-        )
+        );
+        match version {
+            Ok(version) => Ok(version),
+            Err(rusqlite::Error::QueryReturnedNoRows) => conn.query_row(
+                "SELECT value FROM db_meta WHERE key = 'catalog_resource_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            ),
+            Err(err) => Err(err),
+        }
     })
     .await
 }

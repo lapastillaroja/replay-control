@@ -75,6 +75,14 @@ python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
 This snapshot is checked into git so release builds do not depend on the wiki during CI.
 
+### Community-curated metadata
+
+| Directory | Description |
+|-----------|-------------|
+| `community/<system>.json` | Curated metadata entries for ROMs not covered by upstream sources (AmigaVision, aftermarket/homebrew releases, etc.). Committed to git; no download script. |
+
+Anyone can open a PR adding new entries — schema and submission flow are documented in [docs/contributing/community-metadata.md](../docs/contributing/community-metadata.md).
+
 ## When to refresh
 
 Re-download when upstream data changes (e.g., a genre fix gets merged):

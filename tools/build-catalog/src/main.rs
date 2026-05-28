@@ -16,6 +16,8 @@ use rusqlite::{Connection, params};
 #[path = "../../../replay-control-core/src/game/title_utils.rs"]
 mod title_utils;
 
+mod community;
+
 // =============================================================================
 // CLI
 // =============================================================================
@@ -85,7 +87,9 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             players INTEGER NOT NULL DEFAULT 0,
             coop INTEGER,
             rating TEXT NOT NULL DEFAULT '',
-            normalized_genre TEXT NOT NULL DEFAULT ''
+            normalized_genre TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX idx_cg_system ON canonical_game(system);
 
@@ -101,6 +105,10 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX idx_re_stem ON rom_entry(system, filename_stem);
         CREATE INDEX idx_re_crc  ON rom_entry(system, crc32);
         CREATE INDEX idx_re_norm ON rom_entry(system, normalized_title);
+        -- Drives the canonical_game → rom_entry join in game_db::descriptions
+        -- (and any future cg-side query that enumerates rom entries without a
+        -- full scan).
+        CREATE INDEX idx_re_cgid ON rom_entry(canonical_game_id);
 
         CREATE TABLE rom_alternate (
             canonical_game_id INTEGER NOT NULL,
@@ -1764,7 +1772,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         Vec::new();
 
     let mut stmt_cg = conn.prepare(
-        "INSERT INTO canonical_game (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        "INSERT INTO canonical_game (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre, description, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '', ?11)"
     )?;
     let mut stmt_re = conn.prepare(
         "INSERT OR IGNORE INTO rom_entry (system, filename_stem, region, crc32, canonical_game_id, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
@@ -2033,6 +2041,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                 coop_val,
                 game.rating,
                 norm_genre,
+                resource_kind::NOINTRO_SOURCE,
             ])?;
             let canonical_game_id = conn.last_insert_rowid();
             canonical_game_ids.push(canonical_game_id);
@@ -2661,8 +2670,9 @@ fn is_mediawiki_path_safe(byte: u8) -> bool {
         )
 }
 
-fn catalog_resource_version(conn: &Connection) -> rusqlite::Result<String> {
+fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<String> {
     let mut context = ring::digest::Context::new(&ring::digest::SHA256);
+    context.update(b"catalog_game_resource\n");
     let mut stmt = conn.prepare(
         "SELECT system, normalized_title, resource_type, source, resource_id, url, title, languages, mime_type
          FROM catalog_game_resource
@@ -2677,6 +2687,25 @@ fn catalog_resource_version(conn: &Connection) -> rusqlite::Result<String> {
         }
         context.update(b"\n");
     }
+
+    context.update(b"canonical_game_description\n");
+    let mut stmt = conn.prepare(
+        "SELECT cg.system, re.filename_stem, cg.description
+         FROM canonical_game cg
+         JOIN rom_entry re ON re.canonical_game_id = cg.id
+         WHERE cg.description != ''
+         ORDER BY cg.system, re.filename_stem, cg.id",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        for idx in 0..3 {
+            let value: String = row.get(idx)?;
+            context.update(value.as_bytes());
+            context.update(b"\0");
+        }
+        context.update(b"\n");
+    }
+
     let digest = context.finish();
     let mut out = String::new();
     for byte in digest.as_ref() {
@@ -2780,6 +2809,8 @@ fn main() {
 
     insert_arcade_games(&conn, &sources_dir).expect("Failed to insert arcade games");
     insert_console_games(&conn, &sources_dir).expect("Failed to insert console games");
+    community::insert_community_entries(&conn, &sources_dir)
+        .expect("Failed to insert community entries");
     insert_series(&conn, &sources_dir).expect("Failed to insert series");
     insert_catalog_resources(&conn, &sources_dir).expect("Failed to insert catalog resources");
 
@@ -2804,13 +2835,13 @@ fn main() {
         params![is_stub],
     )
     .expect("Failed to insert is_stub");
-    let resource_version =
-        catalog_resource_version(&conn).expect("Failed to compute catalog_resource_version");
+    let enrichment_inputs_version = catalog_enrichment_inputs_version(&conn)
+        .expect("Failed to compute catalog_enrichment_inputs_version");
     conn.execute(
-        "INSERT INTO db_meta (key, value) VALUES ('catalog_resource_version', ?1)",
-        params![resource_version],
+        "INSERT INTO db_meta (key, value) VALUES ('catalog_enrichment_inputs_version', ?1)",
+        params![enrichment_inputs_version],
     )
-    .expect("Failed to insert catalog_resource_version");
+    .expect("Failed to insert catalog_enrichment_inputs_version");
 
     // Final stats
     let arcade_count: i64 = conn
@@ -2953,5 +2984,36 @@ mod tests {
         );
 
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn catalog_enrichment_inputs_version_changes_when_description_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO canonical_game \
+             (system, display_name, description) \
+             VALUES ('nintendo_snes', 'Super Mario World', 'old description')",
+            [],
+        )
+        .unwrap();
+        let canonical_game_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO rom_entry \
+             (system, filename_stem, canonical_game_id, normalized_title) \
+             VALUES ('nintendo_snes', 'Super Mario World', ?1, 'super mario world')",
+            [canonical_game_id],
+        )
+        .unwrap();
+
+        let before = catalog_enrichment_inputs_version(&conn).unwrap();
+        conn.execute(
+            "UPDATE canonical_game SET description = 'new description'",
+            [],
+        )
+        .unwrap();
+        let after = catalog_enrichment_inputs_version(&conn).unwrap();
+
+        assert_ne!(before, after);
     }
 }

@@ -30,6 +30,10 @@ Both console and arcade databases map to a shared set of ~18 normalized genres: 
 
 ~5,345 game series entries across 194+ franchises from [Wikidata](https://www.wikidata.org/) (CC0), with sequel/prequel chains and ordinals. The repository carries a generated `data/wikidata/series.json` snapshot so release builds do not depend on live Wikidata SPARQL availability. See [Game Series](game-series.md) for details.
 
+### Community Metadata
+
+Curated entries for ROMs not covered by upstream sources — for example **AmigaVision** (a single boot file that bundles ~3,000 Amiga games), aftermarket cartridges, and homebrew compilations. Stored as JSON in `data/community/<system>.json` and baked into `catalog.sqlite` at build time. Anyone can submit a PR adding new entries; no Rust code changes are required. See [Contributing community metadata](../contributing/community-metadata.md) for the schema and submission flow.
+
 ## External Metadata (Optional)
 
 ### LaunchBox Refresh
