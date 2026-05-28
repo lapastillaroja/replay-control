@@ -375,15 +375,18 @@
   },
   {
     "normalized_title": "dodonpachidaifukkatsu15",
-    "page_title": "DoDonPachi DaiFukkatsu Ver 1.5"
+    "page_title": "DoDonPachi DaiFukkatsu Ver 1.5",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuarrangea",
-    "page_title": "DoDonPachi DaiFukkatsu Arrange A"
+    "page_title": "DoDonPachi DaiFukkatsu Arrange A",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuarrangeb",
-    "page_title": "DoDonPachi DaiFukkatsu Arrange B"
+    "page_title": "DoDonPachi DaiFukkatsu Arrange B",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaifukkatsublacklabel",
@@ -392,19 +395,23 @@
   },
   {
     "normalized_title": "dodonpachidaifukkatsublacklabelarrange",
-    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange"
+    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu Black Label"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuver10",
-    "page_title": "DoDonPachi DaiFukkatsu Ver 1.0"
+    "page_title": "DoDonPachi DaiFukkatsu Ver 1.0",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuver15",
-    "page_title": "DoDonPachi DaiFukkatsu Ver 1.5"
+    "page_title": "DoDonPachi DaiFukkatsu Ver 1.5",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuver151",
-    "page_title": "DoDonPachi DaiFukkatsu Ver 1.51"
+    "page_title": "DoDonPachi DaiFukkatsu Ver 1.51",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
   },
   {
     "normalized_title": "dodonpachidaioujou",
@@ -457,7 +464,8 @@
   },
   {
     "normalized_title": "dodonpachisaidaioujouexalabel",
-    "page_title": "DoDonPachi SaiDaiOuJou exA Label"
+    "page_title": "DoDonPachi SaiDaiOuJou exA Label",
+    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou"
   },
   {
     "normalized_title": "dodonpachitruedeath",
@@ -466,7 +474,8 @@
   },
   {
     "normalized_title": "dodonpachitruedeathexalabel",
-    "page_title": "DoDonPachi SaiDaiOuJou exA Label"
+    "page_title": "DoDonPachi SaiDaiOuJou exA Label",
+    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou"
   },
   {
     "normalized_title": "dodopachiiii",
@@ -944,11 +953,13 @@
   },
   {
     "normalized_title": "ketsuipachi",
-    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange"
+    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu Black Label"
   },
   {
     "normalized_title": "ketsupachi",
-    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange"
+    "page_title": "DoDonPachi DaiFukkatsu Black Label Arrange",
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu Black Label"
   },
   {
     "normalized_title": "kingdomgrandprix",
@@ -1029,6 +1040,10 @@
   {
     "normalized_title": "melancholyofdynasttwilightrefrainsoundtrack",
     "page_title": "MELancholy Of DYnast -TWilight refrAIN SOUNDTRACK-"
+  },
+  {
+    "normalized_title": "merkavathesacredarmourofmeirav",
+    "page_title": "Merkava: The Sacred Armour of Meirav"
   },
   {
     "normalized_title": "metalblack",
@@ -1335,7 +1350,8 @@
   },
   {
     "normalized_title": "rednegallstarsswingbyedition",
-    "page_title": "Redneg All Stars Swing-by Edition"
+    "page_title": "Redneg All Stars Swing-by Edition",
+    "video_index_inherits_from": "Redneg All Stars"
   },
   {
     "normalized_title": "rednegw",

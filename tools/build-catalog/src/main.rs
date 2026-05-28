@@ -2566,6 +2566,8 @@ struct ShmupsWikiBuildEntry {
     page_title: String,
     #[serde(default)]
     video_index: bool,
+    #[serde(default)]
+    video_index_inherits_from: Option<String>,
 }
 
 fn load_shmups_wiki_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
@@ -2610,6 +2612,19 @@ fn load_shmups_wiki_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
                 resource_id: entry.page_title.clone(),
                 url: format!("{page_url}/Video_Index"),
                 title: entry.page_title,
+                languages: String::new(),
+                mime_type: "text/html",
+            });
+        } else if let Some(parent) = entry.video_index_inherits_from {
+            let parent_url = shmups_wiki_page_url(&parent);
+            out.push(CatalogResourceBuild {
+                system: resource_kind::GLOBAL_SYSTEM.to_string(),
+                normalized_title: entry.normalized_title,
+                resource_type: resource_kind::VIDEO_INDEX,
+                source: resource_kind::SHMUPS_WIKI_SOURCE,
+                resource_id: parent.clone(),
+                url: format!("{parent_url}/Video_Index"),
+                title: parent,
                 languages: String::new(),
                 mime_type: "text/html",
             });

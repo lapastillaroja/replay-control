@@ -4,6 +4,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.13]
+
+### Fixed
+
+- Fixed the Shmups Wiki Video Index link being missing on game detail pages for arcade ROMs whose wiki page is a release variant of a parent that hosts the shared videos. For example, `ddpdfk` (DoDonPachi Dai-Fukkatsu Ver 1.5) now links to the same `/Video Index` as `dfkbl` (Black Label), instead of showing only a strategy guide. The bundled wiki index now records when a variant inherits its Video Index from a parent page, covering `Ver X.Y`, `vX.Y`, `Arrange [A]`, `exA Label`, `Black Label`, and `… Edition` suffixes. Sequels and series-overview pages are intentionally excluded so unrelated games' videos are never linked.
+
+---
+
 ## [0.4.0-beta.12]
 
 ### Highlights

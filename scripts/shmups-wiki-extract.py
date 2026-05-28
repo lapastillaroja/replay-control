@@ -16,6 +16,14 @@ Output: JSON to stdout, one object per page:
       ...
     ]
 
+Entries whose page has its own `/Video Index` sub-page (enumerated from
+`Category:Video Index`) get a `"video_index": true` flag. Entries
+without one whose `page_title` is a word-boundary prefix of another
+entry that does have one (e.g. "DoDonPachi DaiFukkatsu Ver 1.5"
+inheriting from "DoDonPachi DaiFukkatsu") get a
+`"video_index_inherits_from": "<parent page title>"` field, so the
+runtime can link them to the parent's `/Video Index`.
+
 The Rust side embeds this JSON at compile time and uses it to render a
 "Strategy guide on Shmups Wiki" deep link on the game-detail page.
 
@@ -436,6 +444,57 @@ def main() -> int:
     print(
         f"shmups-wiki-extract: flagged {flagged} row(s) as having a video index "
         f"({len(video_index_parents)} parent pages in Category:Video Index)",
+        file=sys.stderr,
+    )
+
+    # Inherited video index: variant pages (e.g. "DoDonPachi DaiFukkatsu
+    # Ver 1.5", "… Arrange A") typically don't have their own /Video Index
+    # sub-page — the videos live at the parent's /Video Index. The wiki
+    # doesn't structurally express the variant-to-parent link, so we infer
+    # it from the title: strip a known *variant suffix* and see if the
+    # result is another page that does have a video index.
+    #
+    # Suffix list is intentionally narrow. A blanket "longest prefix that
+    # also exists" rule pulls in sequels and series-overview pages
+    # ("Deathsmiles II" → "Deathsmiles", "Gradius series" → "Gradius",
+    # "Darius Force" → "Darius") whose videos belong to a different game.
+    # Pattern-matched suffixes catch the cases the user actually means
+    # (release versions, arrangements, label/edition reissues) and skip
+    # the rest. Add new patterns when a real variant turns up uncovered.
+    #
+    # Patterns are tried in order; the first one that strips down to a
+    # known-video-index page wins. List shorter strips first so e.g.
+    # "DaiFukkatsu Black Label Arrange" inherits from "Black Label" (its
+    # own video index) rather than skipping all the way to "DaiFukkatsu".
+    variant_suffix_patterns = [
+        re.compile(p, re.IGNORECASE)
+        for p in [
+            r"\s+Arrange(?:\s+[A-Z])?\s*$",  # Arrange, Arrange A
+            r"\s+Ver\.?\s*\d+(?:\.\d+)*\s*$",  # Ver 1.5, Ver.1.5
+            r"\s+v\d+(?:\.\d+)*\s*$",  # v1.5
+            r"\s+exA\s+Label\s*$",  # exA Label
+            r"\s+\S+\s+Edition\s*$",  # Special Edition, Swing-by Edition
+            r"\s+Black\s+Label\s*$",  # Black Label
+        ]
+    ]
+    video_index_titles = {row["page_title"] for row in rows if row.get("video_index")}
+    inferred = 0
+    for row in rows:
+        if row.get("video_index"):
+            continue
+        title = row["page_title"]
+        for pattern in variant_suffix_patterns:
+            m = pattern.search(title)
+            if not m:
+                continue
+            candidate = title[: m.start()].rstrip()
+            if candidate in video_index_titles:
+                row["video_index_inherits_from"] = candidate
+                inferred += 1
+                break
+    print(
+        f"shmups-wiki-extract: inferred video_index_inherits_from "
+        f"for {inferred} variant row(s)",
         file=sys.stderr,
     )
 
