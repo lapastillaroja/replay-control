@@ -31,7 +31,15 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
-USER_AGENT = "ReplayControl-SeriesExtract/1.0"
+# User-Agent format per WDQS policy
+# (https://meta.wikimedia.org/wiki/User-Agent_policy):
+# "Tool/Version (contact)". The contact URL lets WDQS operators reach the
+# project if this script ever misbehaves, and identifies us as a polite
+# repeat client (compliant UAs are subject to a higher rate-limit tier).
+USER_AGENT = (
+    "ReplayControl-SeriesExtract/1.1 "
+    "(+https://github.com/lapastillaroja/replay-control)"
+)
 
 # Wikidata QID -> RePlayOS system folder name
 PLATFORM_MAP = {
@@ -87,7 +95,7 @@ PLATFORM_MAP = {
     "Q843916": "arcade_fbneo",      # Sega NAOMI 2
     "Q4386178": "arcade_fbneo",     # Sega Model 2
     "Q3142301": "arcade_fbneo",     # Sega Model 3
-    "Q1067380": "arcade_fbneo",     # Sega Titan Video (ST-V)
+    "Q1067380": "arcade_stv",       # Sega Titan Video (ST-V)
 }
 
 
@@ -98,14 +106,45 @@ def qid_from_uri(uri):
     return uri
 
 
+def _parse_retry_after(value):
+    """Parse a Retry-After header value into seconds.
+
+    WDQS sends `Retry-After` on 429 (delta-seconds form, per RFC 7231 §7.1.3).
+    Returns `None` if the header is missing or unparseable so the caller can
+    fall back to exponential backoff.
+    """
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    # HTTP-date form: rare from WDQS but allowed by the spec.
+    try:
+        import email.utils
+        parsed = email.utils.parsedate_to_datetime(value)
+        if parsed is None:
+            return None
+        import datetime
+        delta = (parsed - datetime.datetime.now(parsed.tzinfo)).total_seconds()
+        return max(0, int(delta))
+    except (TypeError, ValueError):
+        return None
+
+
 def sparql_query(query, retries=5, backoff=10):
     """Execute a SPARQL query against the Wikidata endpoint with retry logic.
+
+    On 429, prefers the server-supplied `Retry-After` header (WDQS sends one
+    with the canonical wait window) over the exponential-backoff fallback —
+    waiting longer than the server asks wastes time; waiting less guarantees
+    another 429.
 
     A JSONDecodeError on the response body usually means WDQS hit its 60 s
     server-side timeout and silently truncated the body — same retry path as a
     5xx, since a less-loaded shard often completes the next attempt. The
     caller is still responsible for keeping individual queries under the
-    per-query timeout (see chunking in `fetch_series_data`)."""
+    per-query timeout (see chunking in `fetch_series_data`).
+    """
     params = urllib.parse.urlencode({
         "query": query,
         "format": "json",
@@ -123,8 +162,13 @@ def sparql_query(query, retries=5, backoff=10):
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 429 or e.code >= 500:
-                wait = backoff * (2 ** attempt)
-                print(f"SPARQL error {e.code}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
+                retry_after = _parse_retry_after(e.headers.get("Retry-After")) if e.code == 429 else None
+                wait = retry_after if retry_after is not None else backoff * (2 ** attempt)
+                source = "Retry-After" if retry_after is not None else "backoff"
+                print(
+                    f"SPARQL error {e.code}, retrying in {wait}s ({source}, attempt {attempt + 1}/{retries})...",
+                    file=sys.stderr,
+                )
                 time.sleep(wait)
             else:
                 raise

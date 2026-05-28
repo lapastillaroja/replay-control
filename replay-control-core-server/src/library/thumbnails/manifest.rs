@@ -74,15 +74,13 @@ pub fn collect_all_repos() -> Vec<RepoInfo> {
     let mut seen = std::collections::HashSet::new();
 
     for system in systems::visible_systems() {
-        if let Some(repo_names) = thumbnails::thumbnail_repo_names(system.folder_name) {
-            for display_name in repo_names {
-                let url_name = thumbnails::repo_url_name(display_name);
-                if seen.insert(url_name.clone()) {
-                    repos.push(RepoInfo {
-                        display_name: display_name.to_string(),
-                        url_name,
-                    });
-                }
+        for display_name in system.thumbnail_repos {
+            let url_name = thumbnails::repo_url_name(display_name);
+            if seen.insert(url_name.clone()) {
+                repos.push(RepoInfo {
+                    display_name: display_name.to_string(),
+                    url_name,
+                });
             }
         }
     }
@@ -1060,6 +1058,7 @@ pub fn find_boxart_variants(
     active_box_art_url: Option<&str>,
 ) -> Vec<BoxArtVariant> {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
+    use replay_control_core::systems;
     use std::collections::HashSet;
 
     let stem = replay_control_core::title_utils::filename_stem(rom_filename);
@@ -1130,7 +1129,7 @@ pub fn find_boxart_variants(
     }
 
     // ── Layer 2: Manifest index (undownloaded libretro variants) ─────
-    if let Some(repo_names) = thumbnails::thumbnail_repo_names(system) {
+    if let Some(repo_names) = systems::system_thumbnail_repos(system) {
         for repo_display in repo_names {
             let url_name = thumbnails::repo_url_name(repo_display);
             let source_name = thumbnails::libretro_source_name(repo_display);
@@ -1207,11 +1206,11 @@ pub fn count_boxart_variants(
     arcade_display: Option<&str>,
 ) -> usize {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
+    use replay_control_core::systems;
     use std::collections::HashSet;
 
-    let repo_names = match thumbnails::thumbnail_repo_names(system) {
-        Some(names) => names,
-        None => return 0,
+    let Some(repo_names) = systems::system_thumbnail_repos(system) else {
+        return 0;
     };
 
     let stem = replay_control_core::title_utils::filename_stem(rom_filename);
