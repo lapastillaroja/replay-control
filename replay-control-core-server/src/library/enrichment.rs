@@ -240,11 +240,20 @@ fn append_catalog_resources_for_candidates(
             continue;
         };
         for row in rows {
+            // Dedup on the same identity `library_game_resource` is keyed by
+            // (source, resource_type, resource_id) — deliberately WITHOUT the
+            // url. Candidates are own-title first, then the arcade-clone
+            // parent (`normalized_title_alt`), so the game's OWN resource wins
+            // and the parent is only a fallback. Including the url here would
+            // let a clone keep both its own and the parent's row for the same
+            // resource_id (e.g. a shmups Video Index whose resource_id is the
+            // shared parent page but whose anchor differs per version), and the
+            // `INSERT OR REPLACE` write would then let the parent overwrite the
+            // clone's own. Matching the storage key keeps own-first precedence.
             let key = (
                 row.source.as_str(),
                 row.resource_type.as_str(),
                 row.resource_id.as_str(),
-                row.url.as_str(),
             );
             if !seen.insert(key) {
                 continue;
@@ -872,6 +881,49 @@ mod tests {
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].resource_id, "same-guide");
+    }
+
+    #[test]
+    fn catalog_resources_own_video_index_wins_over_clone_parent() {
+        // A clone (own normalized title) and its arcade parent
+        // (normalized_title_alt) can both carry a Video Index whose resource_id
+        // is the shared parent page but whose anchor differs per version. The
+        // clone's OWN row must win and the parent must not overwrite it.
+        // Regression: ddpdfk10 (Ver 1.0) showed the parent's #Version_1.5.
+        let mut own = catalog_resource_row(
+            resource_kind::SHMUPS_WIKI_SOURCE,
+            resource_kind::VIDEO_INDEX,
+            "DoDonPachi DaiFukkatsu",
+        );
+        own.url = "https://shmups.wiki/library/DoDonPachi_DaiFukkatsu/Video_Index#Version_1.0"
+            .to_string();
+        let mut parent = catalog_resource_row(
+            resource_kind::SHMUPS_WIKI_SOURCE,
+            resource_kind::VIDEO_INDEX,
+            "DoDonPachi DaiFukkatsu",
+        );
+        parent.url = "https://shmups.wiki/library/DoDonPachi_DaiFukkatsu/Video_Index#Version_1.5"
+            .to_string();
+
+        let mut catalog_resources = HashMap::new();
+        catalog_resources.insert("ver10".to_string(), vec![own]);
+        catalog_resources.insert("ver15".to_string(), vec![parent]);
+
+        let mut rows = Vec::new();
+        append_catalog_resources_for_candidates(
+            &mut rows,
+            "ddpdfk10.zip",
+            // own normalized title first, then the clone-parent alt
+            &["ver10".to_string(), "ver15".to_string()],
+            &catalog_resources,
+        );
+
+        assert_eq!(rows.len(), 1, "clone must keep exactly one Video Index");
+        assert!(
+            rows[0].url.ends_with("#Version_1.0"),
+            "clone must keep its OWN anchor, got {}",
+            rows[0].url
+        );
     }
 
     #[test]
