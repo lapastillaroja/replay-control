@@ -697,14 +697,18 @@ def main():
         else:
             stats["console_matches"] += 1
 
-    # Sort for deterministic output. series_order is now always present but may
-    # be None (no ordinal); coerce None to a high sentinel so unordered entries
-    # sort to the end of their series group and None never compares against int.
+    # Sort by stable identity (game_title, system) rather than the mutable
+    # series fields. A Wikidata edit to series_name / series_order then updates
+    # a row *in place* instead of moving it, which keeps monthly refresh diffs
+    # small and reviewable. series_name + series_order remain as deterministic
+    # tiebreakers for the rare game that appears in more than one series (None
+    # ordinal coerced to a high sentinel so it never compares against an int).
+    # Order is irrelevant to the consumer (build-catalog reads every row).
     entries.sort(key=lambda e: (
-        e["series_name"],
-        e["series_order"] if e["series_order"] is not None else 999999,
         e["game_title"],
         e["system"],
+        e["series_name"],
+        e["series_order"] if e["series_order"] is not None else 999999,
     ))
 
     # Log statistics to stderr
