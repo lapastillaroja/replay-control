@@ -34,55 +34,7 @@ jobs:
           python3 scripts/shmups-wiki-extract.py > data/shmups-wiki/games.json
 
       - name: Validate snapshot
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("data/shmups-wiki/games.json")
-          rows = json.loads(path.read_text(encoding="utf-8"))
-          # normalized_title + page_title are required; video_index (bool flag)
-          # and video_index_inherits_from (parent page title) are optional and
-          # mutually exclusive — a page either has its own Video Index or
-          # inherits a parent's, never both. Mirrors ShmupsWikiBuildEntry and
-          # the if/else-if in build-catalog's load_shmups_wiki_resources.
-          required = {"normalized_title", "page_title"}
-          optional = {"video_index", "video_index_inherits_from"}
-          allowed = required | optional
-          if not isinstance(rows, list):
-              raise SystemExit("snapshot must be a JSON array")
-          if rows:
-              bad_shape = [
-                  idx for idx, row in enumerate(rows)
-                  if not isinstance(row, dict)
-                  or not required <= set(row)
-                  or not set(row) <= allowed
-              ]
-              if bad_shape:
-                  raise SystemExit(f"rows with unexpected shape: {bad_shape[:10]}")
-              empty_keys = [
-                  idx for idx, row in enumerate(rows)
-                  if not row["normalized_title"] or not row["page_title"]
-              ]
-              if empty_keys:
-                  raise SystemExit(f"rows with empty keys: {empty_keys[:10]}")
-              bad_optional = [
-                  idx for idx, row in enumerate(rows)
-                  if ("video_index" in row and not isinstance(row["video_index"], bool))
-                  or ("video_index_inherits_from" in row
-                      and not (isinstance(row["video_index_inherits_from"], str)
-                               and row["video_index_inherits_from"]))
-                  or (row.get("video_index") and "video_index_inherits_from" in row)
-              ]
-              if bad_optional:
-                  raise SystemExit(f"rows with invalid video-index fields: {bad_optional[:10]}")
-              keys = [row["normalized_title"] for row in rows]
-              if len(keys) != len(set(keys)):
-                  raise SystemExit("snapshot contains duplicate normalized_title keys")
-              if keys != sorted(keys):
-                  raise SystemExit("snapshot must be sorted by normalized_title")
-          print(f"validated {len(rows)} Shmups Wiki rows")
-          PY
+        run: python3 scripts/validate-shmups-wiki.py data/shmups-wiki/games.json
 
       - name: Build replay-control-core with refreshed snapshot
         # The snapshot is embedded at compile time via include_str!; this
