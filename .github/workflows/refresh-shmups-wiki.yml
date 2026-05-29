@@ -21,6 +21,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Required: .cargo/config.toml forces `-fuse-ld=mold` for
+      # x86_64-unknown-linux-gnu, and the cargo test step below links a binary.
+      # Without mold the link fails with "cannot find 'ld'" (the flag does not
+      # fall back to the system linker). Mirrors the CI workflow.
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
       - name: Refresh Shmups Wiki index
         run: |
           mkdir -p data/shmups-wiki
@@ -34,13 +41,22 @@ jobs:
 
           path = Path("data/shmups-wiki/games.json")
           rows = json.loads(path.read_text(encoding="utf-8"))
+          # normalized_title + page_title are required; video_index (bool flag)
+          # and video_index_inherits_from (parent page title) are optional and
+          # mutually exclusive — a page either has its own Video Index or
+          # inherits a parent's, never both. Mirrors ShmupsWikiBuildEntry and
+          # the if/else-if in build-catalog's load_shmups_wiki_resources.
           required = {"normalized_title", "page_title"}
+          optional = {"video_index", "video_index_inherits_from"}
+          allowed = required | optional
           if not isinstance(rows, list):
               raise SystemExit("snapshot must be a JSON array")
           if rows:
               bad_shape = [
                   idx for idx, row in enumerate(rows)
-                  if not isinstance(row, dict) or set(row) != required
+                  if not isinstance(row, dict)
+                  or not required <= set(row)
+                  or not set(row) <= allowed
               ]
               if bad_shape:
                   raise SystemExit(f"rows with unexpected shape: {bad_shape[:10]}")
@@ -50,6 +66,16 @@ jobs:
               ]
               if empty_keys:
                   raise SystemExit(f"rows with empty keys: {empty_keys[:10]}")
+              bad_optional = [
+                  idx for idx, row in enumerate(rows)
+                  if ("video_index" in row and not isinstance(row["video_index"], bool))
+                  or ("video_index_inherits_from" in row
+                      and not (isinstance(row["video_index_inherits_from"], str)
+                               and row["video_index_inherits_from"]))
+                  or (row.get("video_index") and "video_index_inherits_from" in row)
+              ]
+              if bad_optional:
+                  raise SystemExit(f"rows with invalid video-index fields: {bad_optional[:10]}")
               keys = [row["normalized_title"] for row in rows]
               if len(keys) != len(set(keys)):
                   raise SystemExit("snapshot contains duplicate normalized_title keys")

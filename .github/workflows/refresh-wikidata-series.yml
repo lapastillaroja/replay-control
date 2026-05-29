@@ -26,7 +26,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+        # mold: .cargo/config.toml forces `-fuse-ld=mold` for
+        # x86_64-unknown-linux-gnu, and the "Build catalog" step below links the
+        # build-catalog binary. Without mold the link fails with
+        # "cannot find 'ld'" (the flag does not fall back to the system linker).
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full mold
 
       - name: Cache catalog source data
         uses: actions/cache@v5

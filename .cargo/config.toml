@@ -2,7 +2,10 @@
 # Limit parallelism to avoid freezing the machine during compilation.
 jobs = 10
 
-# Use mold linker for faster linking (if available). Falls back to default ld if not installed.
+# Use mold linker for faster linking. NOTE: `-fuse-ld=mold` does NOT fall back to
+# the system linker — if mold is not installed the link fails with
+# "cannot find 'ld'". Every environment that links (local dev, CI, and the
+# data-refresh GitHub workflows) must install mold first.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
