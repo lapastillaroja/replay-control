@@ -1442,7 +1442,7 @@
   {
     "game_title": "DecAthlete",
     "series_name": "DecAthlete",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -1866,7 +1866,7 @@
   {
     "game_title": "Final Fight Revenge",
     "series_name": "Final Fight",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -2138,7 +2138,7 @@
   {
     "game_title": "Golden Axe",
     "series_name": "Golden Axe",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -3602,7 +3602,7 @@
   {
     "game_title": "Puyo Puyo Sun",
     "series_name": "Puyo Puyo",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "Puyo Puyo Tsu",
     "followed_by": "Puyo Puyo~n"
@@ -4026,7 +4026,7 @@
   {
     "game_title": "Sea Bass Fishing",
     "series_name": "Sea Bass Fishing",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "SeaBass Fishing 2",
     "followed_by": "SeaBass Fishing 2"
@@ -4130,7 +4130,7 @@
   {
     "game_title": "Shienryu",
     "series_name": "Simple 2000 Series",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": 37,
     "follows": "",
     "followed_by": ""
@@ -5802,7 +5802,7 @@
   {
     "game_title": "Virtua Fighter Kids",
     "series_name": "Virtua Fighter",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -5810,7 +5810,7 @@
   {
     "game_title": "Virtua Fighter Remix",
     "series_name": "Virtua Fighter",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -5962,7 +5962,7 @@
   {
     "game_title": "Winter Heat",
     "series_name": "DecAthlete",
-    "system": "arcade_fbneo",
+    "system": "arcade_stv",
     "series_order": null,
     "follows": "",
     "followed_by": ""

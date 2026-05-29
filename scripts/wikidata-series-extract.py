@@ -37,9 +37,35 @@ SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 # project if this script ever misbehaves, and identifies us as a polite
 # repeat client (compliant UAs are subject to a higher rate-limit tier).
 USER_AGENT = (
-    "ReplayControl-SeriesExtract/1.1 "
+    "ReplayControl-SeriesExtract/1.2 "
     "(+https://github.com/lapastillaroja/replay-control)"
 )
+
+# WDQS public-endpoint limits, from the official User Manual
+# (https://www.mediawiki.org/wiki/Wikidata_Query_Service/User_Manual#Query_limits):
+#   - "One client is allowed 60 seconds of processing time each 60 seconds"
+#     (a token bucket bucketed by User-Agent + IP).
+#   - "One client is allowed 30 error queries per minute."
+#   - Per-query server-side timeout is 60 seconds.
+#   - Exceeding either budget returns HTTP 429 with a Retry-After header;
+#     ignoring 429 escalates to a longer ban, then to HTTP 403.
+# We respect the processing budget with an adaptive courtesy delay (see
+# `_courtesy_pause`): after each query we idle for as long as that query
+# took, keeping the duty cycle at ~=50% so cumulative processing can never
+# overrun the 60s-per-60s bucket. This is far more important than the
+# request *count* — the budget is processing-seconds, not requests.
+WDQS_QUERY_TIMEOUT_SECS = 60
+# A Retry-After above this means WDQS has dropped us into the escalated ban
+# tier (penalty windows of ~1000s observed). Waiting it out would burn the
+# whole CI job for nothing, so we fail fast and let the IP cool down instead;
+# the monthly schedule (and manual re-trigger) picks it up on a clean window.
+MAX_HONORED_RETRY_AFTER_SECS = 180
+
+# Wall-clock seconds the previous successful query took, used by
+# `_courtesy_pause` to size the next inter-query idle. Module-global so pacing
+# is enforced centrally in `sparql_query` for *every* caller, not sprinkled at
+# call sites.
+_last_query_secs = 0.0
 
 # Wikidata QID -> RePlayOS system folder name
 PLATFORM_MAP = {
@@ -106,6 +132,18 @@ def qid_from_uri(uri):
     return uri
 
 
+class WdqsThrottled(Exception):
+    """WDQS returned a Retry-After above `MAX_HONORED_RETRY_AFTER_SECS`,
+    meaning the client is in the escalated ban tier. Not worth waiting out
+    in-process; the caller should abort and let the IP cool down."""
+
+
+class WdqsTimeout(Exception):
+    """A query repeatedly hit the 60 s server-side timeout (manifesting as a
+    truncated/HTML body that won't JSON-parse). Signals the query is too heavy
+    and should be split, not blindly retried — see `fetch_series_data`."""
+
+
 def _parse_retry_after(value):
     """Parse a Retry-After header value into seconds.
 
@@ -131,20 +169,46 @@ def _parse_retry_after(value):
         return None
 
 
+def _courtesy_pause():
+    """Idle for as long as the previous successful query spent processing.
+
+    WDQS grants "60 seconds of processing time each 60 seconds". Sleeping for
+    the previous query's wall-clock keeps the duty cycle at ~=50% (one part
+    work, one part idle), so cumulative processing can never overrun the
+    bucket no matter how many chunks we issue. Wall-clock over-estimates true
+    server processing time (it includes network), which only makes this more
+    conservative — the safe direction. The first query pauses for nothing
+    (`_last_query_secs` starts at 0)."""
+    if _last_query_secs <= 0:
+        return
+    pause = min(_last_query_secs, WDQS_QUERY_TIMEOUT_SECS)
+    print(f"  (courtesy pause {pause:.1f}s — staying under WDQS 60s/60s budget)", file=sys.stderr)
+    time.sleep(pause)
+
+
 def sparql_query(query, retries=5, backoff=10):
-    """Execute a SPARQL query against the Wikidata endpoint with retry logic.
+    """Execute a SPARQL query against the Wikidata endpoint.
 
-    On 429, prefers the server-supplied `Retry-After` header (WDQS sends one
-    with the canonical wait window) over the exponential-backoff fallback —
-    waiting longer than the server asks wastes time; waiting less guarantees
-    another 429.
+    Enforces the WDQS processing budget centrally: every call first idles via
+    `_courtesy_pause`, then issues the request, then records its wall-clock so
+    the *next* call paces itself. Because all queries route through here, no
+    caller has to remember to throttle.
 
-    A JSONDecodeError on the response body usually means WDQS hit its 60 s
-    server-side timeout and silently truncated the body — same retry path as a
-    5xx, since a less-loaded shard often completes the next attempt. The
-    caller is still responsible for keeping individual queries under the
-    per-query timeout (see chunking in `fetch_series_data`).
+    Error handling:
+      - 429: honor the server's `Retry-After` header (the canonical wait
+        window). If that wait exceeds `MAX_HONORED_RETRY_AFTER_SECS` we're in
+        the escalated ban tier — raise `WdqsThrottled` immediately rather than
+        burn the CI budget sleeping. Without a header, fall back to
+        exponential backoff.
+      - 5xx: transient; exponential backoff and retry.
+      - Truncated/non-JSON body: usually the 60 s server timeout silently
+        cutting the response. Retried a couple of times (a less-loaded shard
+        may complete it), then raised as `WdqsTimeout` so the caller can split
+        the query instead of hammering an oversized one against the error-rate
+        budget (30 error queries/min).
     """
+    global _last_query_secs
+
     params = urllib.parse.urlencode({
         "query": query,
         "format": "json",
@@ -156,19 +220,40 @@ def sparql_query(query, retries=5, backoff=10):
     }
     req = urllib.request.Request(url, headers=headers)
 
+    _courtesy_pause()
+
+    # Truncated responses rarely self-heal for an oversized query, so cap their
+    # retries low to conserve the 30-errors/minute budget before giving up to
+    # the caller's split logic.
+    max_truncation_retries = min(2, retries)
+    truncation_attempts = 0
+
     for attempt in range(retries):
+        start = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                data = json.loads(resp.read().decode("utf-8"))
+                _last_query_secs = time.monotonic() - start
+                return data
         except urllib.error.HTTPError as e:
-            if e.code == 429 or e.code >= 500:
-                retry_after = _parse_retry_after(e.headers.get("Retry-After")) if e.code == 429 else None
+            if e.code == 429:
+                retry_after = _parse_retry_after(e.headers.get("Retry-After"))
+                if retry_after is not None and retry_after > MAX_HONORED_RETRY_AFTER_SECS:
+                    raise WdqsThrottled(
+                        f"WDQS returned Retry-After={retry_after}s "
+                        f"(> {MAX_HONORED_RETRY_AFTER_SECS}s cap) — escalated ban tier. "
+                        f"Aborting so the IP can cool down; re-run later."
+                    )
                 wait = retry_after if retry_after is not None else backoff * (2 ** attempt)
                 source = "Retry-After" if retry_after is not None else "backoff"
                 print(
-                    f"SPARQL error {e.code}, retrying in {wait}s ({source}, attempt {attempt + 1}/{retries})...",
+                    f"SPARQL 429, retrying in {wait}s ({source}, attempt {attempt + 1}/{retries})...",
                     file=sys.stderr,
                 )
+                time.sleep(wait)
+            elif e.code >= 500:
+                wait = backoff * (2 ** attempt)
+                print(f"SPARQL error {e.code}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
                 time.sleep(wait)
             else:
                 raise
@@ -177,8 +262,13 @@ def sparql_query(query, retries=5, backoff=10):
             print(f"Network error: {e}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
             time.sleep(wait)
         except json.JSONDecodeError as e:
+            truncation_attempts += 1
+            if truncation_attempts > max_truncation_retries:
+                raise WdqsTimeout(
+                    f"Query body truncated {truncation_attempts}x (likely WDQS 60s timeout): {e}"
+                )
             wait = backoff * (2 ** attempt)
-            print(f"Truncated SPARQL response (likely WDQS timeout): {e}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
+            print(f"Truncated SPARQL response (likely WDQS timeout): {e}, retrying in {wait}s (attempt {truncation_attempts}/{max_truncation_retries})...", file=sys.stderr)
             time.sleep(wait)
 
     raise RuntimeError(f"SPARQL query failed after {retries} retries")
@@ -290,28 +380,12 @@ SELECT DISTINCT ?series WHERE {
     return [qid_from_uri(b["series"]["value"]) for b in result["results"]["bindings"]]
 
 
-def fetch_series_data(chunk_size=100):
-    """Fetch P179 series data with P1545 ordinals for video games, chunked by
-    series QID.
-
-    The naive "all video games with P179, no platform filter" query exceeds
-    WDQS's 60 s per-query timeout when the result set crosses ~500k rows
-    (which it does: ~1k series × multiple games × multiple platform rows).
-    We instead enumerate distinct series QIDs once (fast, single query) and
-    then issue one bounded query per chunk of `chunk_size` series. Each
-    chunk's result is small enough to fit comfortably under the per-query
-    timeout, and the script-level aggregation in `main()` is order-
-    independent (output is sorted at the end)."""
-
-    series_qids = fetch_distinct_series_qids()
-    total = len(series_qids)
-    print(f"  {total} distinct series; fetching games in chunks of {chunk_size}...", file=sys.stderr)
-
-    all_rows = []
-    chunks = [series_qids[i:i + chunk_size] for i in range(0, total, chunk_size)]
-    for idx, chunk in enumerate(chunks, start=1):
-        values_block = " ".join(f"wd:{qid}" for qid in chunk)
-        query = f"""
+def _series_chunk_query(qids):
+    """SPARQL for all video games in the given series QIDs, with platform and
+    P1545 ordinal. `VALUES ?series` bounds the query so it stays under WDQS's
+    60 s per-query timeout."""
+    values_block = " ".join(f"wd:{qid}" for qid in qids)
+    return f"""
 SELECT DISTINCT
   ?game
   ?gameLabel
@@ -337,12 +411,53 @@ WHERE {{
   }}
 }}
 """
+
+
+def _fetch_series_qids(qids):
+    """Fetch one batch of series QIDs, halving and recursing if the batch is
+    too heavy for the 60 s server timeout (`WdqsTimeout`). This lets the
+    caller start with a large `chunk_size` for fewer round-trips while staying
+    safe: an oversized chunk self-tunes down instead of repeatedly timing out
+    and burning the error-query budget."""
+    try:
+        result = sparql_query(_series_chunk_query(qids))
+        return result["results"]["bindings"]
+    except WdqsTimeout:
+        if len(qids) <= 1:
+            # A single series shouldn't time out; if it does, skip it rather
+            # than fail the whole extract.
+            print(f"  WARN: series {qids} timed out even alone — skipping", file=sys.stderr)
+            return []
+        mid = len(qids) // 2
+        print(f"  Chunk of {len(qids)} timed out; splitting into {mid} + {len(qids) - mid}", file=sys.stderr)
+        return _fetch_series_qids(qids[:mid]) + _fetch_series_qids(qids[mid:])
+
+
+def fetch_series_data(chunk_size=600):
+    """Fetch P179 series data with P1545 ordinals for video games, chunked by
+    series QID.
+
+    The naive "all video games with P179, no platform filter" query exceeds
+    WDQS's 60 s per-query timeout when the result set crosses ~500k rows
+    (which it does: ~1k series × multiple games × multiple platform rows).
+    We instead enumerate distinct series QIDs once (fast, single query) and
+    then issue one bounded query per chunk of `chunk_size` series.
+
+    `chunk_size` is the *starting* batch size: `_fetch_series_qids` halves any
+    batch that hits the server timeout, so a generous default keeps the
+    round-trip count low (each round-trip pays a courtesy pause) while still
+    self-tuning down for unusually dense series. Inter-query pacing is handled
+    centrally in `sparql_query`, so there is no manual sleep here."""
+
+    series_qids = fetch_distinct_series_qids()
+    total = len(series_qids)
+    print(f"  {total} distinct series; fetching games in chunks of {chunk_size}...", file=sys.stderr)
+
+    all_rows = []
+    chunks = [series_qids[i:i + chunk_size] for i in range(0, total, chunk_size)]
+    for idx, chunk in enumerate(chunks, start=1):
         print(f"  Series chunk {idx}/{len(chunks)} ({len(chunk)} series)...", file=sys.stderr)
-        result = sparql_query(query)
-        all_rows.extend(result["results"]["bindings"])
-        # Polite throttle between WDQS calls — keeps us under the public
-        # endpoint's per-IP rate limit even on slow CI runners.
-        time.sleep(1)
+        all_rows.extend(_fetch_series_qids(chunk))
 
     print(f"  Series total: {len(all_rows)} rows across {len(chunks)} chunks", file=sys.stderr)
     return all_rows
@@ -350,7 +465,13 @@ WHERE {{
 
 def fetch_sequel_data():
     """Fetch P155/P156 sequel/prequel chain data for ALL video games.
-    Platform is fetched optionally but not used as a filter."""
+    Platform is fetched optionally but not used as a filter.
+
+    Only games that actually carry a P155/P156 statement match, so the result
+    set is far smaller than "all video games" and fits under the 60 s timeout
+    as a single query. No `ORDER BY` — server-side sorting forces full
+    materialization and burns processing time; `main()` sorts the final output
+    deterministically anyway."""
 
     query = """
 SELECT DISTINCT
@@ -380,7 +501,6 @@ WHERE {
     bd:serviceParam wikibase:language "en,mul" .
   }
 }
-ORDER BY ?gameLabel
 """
     print("Fetching sequel/prequel data (P155/P156, all platforms)...", file=sys.stderr)
     result = sparql_query(query)
@@ -427,11 +547,9 @@ def main():
     print("Loading arcade game names...", file=sys.stderr)
     arcade_names = load_arcade_names(script_dir)
 
-    # Fetch series data (chunked by series QID — see fetch_series_data docstring)
+    # Fetch series data (chunked by series QID — see fetch_series_data docstring).
+    # Inter-query pacing is centralized in `sparql_query`, so no manual sleeps.
     series_rows = fetch_series_data()
-
-    # Small delay to be polite to the endpoint
-    time.sleep(3)
 
     # Fetch sequel/prequel data
     sequel_rows = fetch_sequel_data()
@@ -577,4 +695,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except WdqsThrottled as e:
+        # Escalated ban tier — waiting it out would burn the CI job. Exit
+        # non-zero with a clear message; the IP recovers on its own and the
+        # next scheduled/manual run picks up on a clean window.
+        print(f"\nAborting: {e}", file=sys.stderr)
+        sys.exit(2)
+    except WdqsTimeout as e:
+        # A non-chunked query (e.g. the sequel pass) kept hitting the 60 s
+        # server timeout. Surface it loudly rather than emit a partial snapshot.
+        print(f"\nAborting: persistent WDQS timeout: {e}", file=sys.stderr)
+        sys.exit(3)
