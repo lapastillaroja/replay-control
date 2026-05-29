@@ -17,25 +17,25 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-url = "2"
-crc32fast = "1"
-ring = "0.17"
-semver = "1"
-rusqlite = { version = "0.38", features = ["bundled"] }
-deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
-deadpool = "0.13"
-deadpool-sync = "0.2"
+url = "2.5.8"
+crc32fast = "1.5.0"
+ring = "0.17.14"
+semver = "1.0.28"
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+deadpool-sqlite = { version = "0.13.0", features = ["rt_tokio_1"] }
+deadpool = "0.13.0"
+deadpool-sync = "0.2.0"
 tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process", "io-util"] }
-tokio-stream = { version = "0.1", optional = true }
-quick-xml = { version = "0.40", optional = true }
+tokio-stream = { version = "0.1.18", optional = true }
+quick-xml = { version = "0.40.1", optional = true }
 reqwest = { workspace = true, features = ["stream"], optional = true }
-tempfile = "3"
-getrandom = "0.4"
+tempfile = "3.27.0"
+getrandom = "0.4.2"
 
 [[bin]]
 name = "library_report"
 required-features = ["library"]
 
 [dev-dependencies]
-mockito = "1"
+mockito = "1.7.2"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
