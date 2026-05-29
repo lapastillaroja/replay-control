@@ -1,5 +1,10 @@
 [
   {
+    "normalized_title": "0stranger",
+    "page_title": "0stRanger",
+    "video_index": true
+  },
+  {
     "normalized_title": "1941counterattack",
     "page_title": "1941: Counter Attack"
   },
@@ -11,6 +16,11 @@
   {
     "normalized_title": "1943thebattleofmidway",
     "page_title": "1943: The Battle of Midway"
+  },
+  {
+    "normalized_title": "19xxthewaragainstdestiny",
+    "page_title": "19XX: The War Against Destiny",
+    "video_index": true
   },
   {
     "normalized_title": "aeonzenith",
@@ -120,7 +130,17 @@
     "video_index": true
   },
   {
+    "normalized_title": "battlebakraidunlimitedversion",
+    "page_title": "Battle Bakraid",
+    "video_index": true
+  },
+  {
     "normalized_title": "battlegaregga",
+    "page_title": "Battle Garegga",
+    "video_index": true
+  },
+  {
+    "normalized_title": "battlegareggatype2",
     "page_title": "Battle Garegga",
     "video_index": true
   },
@@ -159,6 +179,11 @@
   {
     "normalized_title": "bluewishresurrectionplus",
     "page_title": "Blue Wish Resurrection Plus"
+  },
+  {
+    "normalized_title": "bookofstarmythology",
+    "page_title": "Book of Star Mythology",
+    "video_index": true
   },
   {
     "normalized_title": "borderdown",
@@ -202,6 +227,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "choujikuuyousaimacross",
+    "page_title": "Choujikuu Yousai Macross",
+    "video_index": true
+  },
+  {
     "normalized_title": "choujikuuyousaimacrossii",
     "page_title": "Choujikuu Yousai Macross II",
     "video_index": true
@@ -226,6 +256,11 @@
   {
     "normalized_title": "cottonfantasticnightdreams",
     "page_title": "Cotton: Fantastic Night Dreams"
+  },
+  {
+    "normalized_title": "cottonrocknroll",
+    "page_title": "Cotton Rock 'n' Roll",
+    "video_index": true
   },
   {
     "normalized_title": "counterattack",
@@ -376,12 +411,14 @@
   {
     "normalized_title": "dodonpachidaifukkatsu15",
     "page_title": "DoDonPachi DaiFukkatsu Ver 1.5",
-    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu",
+    "video_index_anchor": "Version_1.5"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuarrangea",
     "page_title": "DoDonPachi DaiFukkatsu Arrange A",
-    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu",
+    "video_index_anchor": "Arrange_A"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuarrangeb",
@@ -401,17 +438,20 @@
   {
     "normalized_title": "dodonpachidaifukkatsuver10",
     "page_title": "DoDonPachi DaiFukkatsu Ver 1.0",
-    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu",
+    "video_index_anchor": "Version_1.0"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuver15",
     "page_title": "DoDonPachi DaiFukkatsu Ver 1.5",
-    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu",
+    "video_index_anchor": "Version_1.5"
   },
   {
     "normalized_title": "dodonpachidaifukkatsuver151",
     "page_title": "DoDonPachi DaiFukkatsu Ver 1.51",
-    "video_index_inherits_from": "DoDonPachi DaiFukkatsu"
+    "video_index_inherits_from": "DoDonPachi DaiFukkatsu",
+    "video_index_anchor": "Version_1.51"
   },
   {
     "normalized_title": "dodonpachidaioujou",
@@ -430,6 +470,11 @@
   },
   {
     "normalized_title": "dodonpachidaioujourinnetensei",
+    "page_title": "DoDonPachi DaiOuJou",
+    "video_index": true
+  },
+  {
+    "normalized_title": "dodonpachidaioujoutamashii",
     "page_title": "DoDonPachi DaiOuJou",
     "video_index": true
   },
@@ -465,7 +510,8 @@
   {
     "normalized_title": "dodonpachisaidaioujouexalabel",
     "page_title": "DoDonPachi SaiDaiOuJou exA Label",
-    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou"
+    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou",
+    "video_index_anchor": "exA_Label"
   },
   {
     "normalized_title": "dodonpachitruedeath",
@@ -475,7 +521,8 @@
   {
     "normalized_title": "dodonpachitruedeathexalabel",
     "page_title": "DoDonPachi SaiDaiOuJou exA Label",
-    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou"
+    "video_index_inherits_from": "DoDonPachi SaiDaiOuJou",
+    "video_index_anchor": "exA_Label"
   },
   {
     "normalized_title": "dodopachiiii",
@@ -568,6 +615,11 @@
     "page_title": "EX -Extra-"
   },
   {
+    "normalized_title": "fa",
+    "page_title": "F/A",
+    "video_index": true
+  },
+  {
     "normalized_title": "faststriker",
     "page_title": "Fast Striker"
   },
@@ -587,6 +639,11 @@
   {
     "normalized_title": "fireshark",
     "page_title": "Same! Same! Same!",
+    "video_index": true
+  },
+  {
+    "normalized_title": "flamezapperkotsujin",
+    "page_title": "Flame Zapper Kotsujin",
     "video_index": true
   },
   {
@@ -770,6 +827,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "gunnail",
+    "page_title": "Gunnail",
+    "video_index": true
+  },
+  {
     "normalized_title": "gunroar",
     "page_title": "Gunroar"
   },
@@ -852,6 +914,11 @@
     "page_title": "Hollow Song of Birds"
   },
   {
+    "normalized_title": "hyperduel",
+    "page_title": "Hyper Duel",
+    "video_index": true
+  },
+  {
     "normalized_title": "hyperdynesidearms",
     "page_title": "Hyper Dyne Side Arms"
   },
@@ -861,6 +928,11 @@
   },
   {
     "normalized_title": "ibara",
+    "page_title": "Ibara",
+    "video_index": true
+  },
+  {
+    "normalized_title": "ibarakuroblacklabel",
     "page_title": "Ibara",
     "video_index": true
   },
@@ -922,6 +994,11 @@
   {
     "normalized_title": "kaikan",
     "page_title": "Kaikan",
+    "video_index": true
+  },
+  {
+    "normalized_title": "kamui",
+    "page_title": "Kamui",
     "video_index": true
   },
   {
@@ -1030,6 +1107,11 @@
     "page_title": "Mecha Ritz: Steel Rondo"
   },
   {
+    "normalized_title": "mecharitz2015",
+    "page_title": "Mecha Ritz 2015",
+    "video_index": true
+  },
+  {
     "normalized_title": "mecharitzsteelrondo",
     "page_title": "Mecha Ritz: Steel Rondo"
   },
@@ -1103,6 +1185,16 @@
     "video_index": true
   },
   {
+    "normalized_title": "mushihimesamafutariblacklabelanotherversion",
+    "page_title": "Mushihimesama Futari",
+    "video_index": true
+  },
+  {
+    "normalized_title": "mushihimesamafutariver15",
+    "page_title": "Mushihimesama Futari",
+    "video_index": true
+  },
+  {
     "normalized_title": "mylittlepegasuskizunadoponypachi",
     "page_title": "My Little Pegasus: Kizuna DoPonyPachi"
   },
@@ -1117,6 +1209,11 @@
   {
     "normalized_title": "nehonobasa",
     "page_title": "Nehonobasa",
+    "video_index": true
+  },
+  {
+    "normalized_title": "nemesis",
+    "page_title": "Gradius",
     "video_index": true
   },
   {
@@ -1135,6 +1232,11 @@
   {
     "normalized_title": "noisz",
     "page_title": "Noisz"
+  },
+  {
+    "normalized_title": "operationragnarok",
+    "page_title": "Operation Ragnarok",
+    "video_index": true
   },
   {
     "normalized_title": "operationsteel",
@@ -1215,6 +1317,26 @@
   {
     "normalized_title": "psyvariar2",
     "page_title": "Psyvariar 2",
+    "video_index": true
+  },
+  {
+    "normalized_title": "psyvariar2thewilltofabricate",
+    "page_title": "Psyvariar 2",
+    "video_index": true
+  },
+  {
+    "normalized_title": "psyvariardelta",
+    "page_title": "Psyvariar: Delta",
+    "video_index": true
+  },
+  {
+    "normalized_title": "psyvariarrevision",
+    "page_title": "Psyvariar: Revision",
+    "video_index": true
+  },
+  {
+    "normalized_title": "pulstar",
+    "page_title": "Pulstar",
     "video_index": true
   },
   {
@@ -1432,6 +1554,11 @@
     "page_title": "Schildmaid MX"
   },
   {
+    "normalized_title": "scramble",
+    "page_title": "Scramble",
+    "video_index": true
+  },
+  {
     "normalized_title": "sengokuace",
     "page_title": "Sengoku Ace",
     "video_index": true
@@ -1452,6 +1579,11 @@
   {
     "normalized_title": "sexyparodius",
     "page_title": "Sexy Parodius",
+    "video_index": true
+  },
+  {
+    "normalized_title": "shikigaminoshiro",
+    "page_title": "Shikigami no Shiro",
     "video_index": true
   },
   {
@@ -1637,6 +1769,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "summercarnival92recca",
+    "page_title": "Summer Carnival 92' Recca",
+    "video_index": true
+  },
+  {
     "normalized_title": "superstarsoldier",
     "page_title": "Super Star Soldier"
   },
@@ -1720,6 +1857,11 @@
   {
     "normalized_title": "thundercrossii",
     "page_title": "Thunder Cross II",
+    "video_index": true
+  },
+  {
+    "normalized_title": "thunderdragon2",
+    "page_title": "Thunder Dragon 2",
     "video_index": true
   },
   {
@@ -1866,6 +2008,11 @@
     "page_title": "Video System"
   },
   {
+    "normalized_title": "viperphase1",
+    "page_title": "Viper Phase 1",
+    "video_index": true
+  },
+  {
     "normalized_title": "visco",
     "page_title": "Visco"
   },
@@ -1939,6 +2086,11 @@
   {
     "normalized_title": "zenohell",
     "page_title": "Zenohell"
+  },
+  {
+    "normalized_title": "zerogunner2",
+    "page_title": "Zero Gunner 2",
+    "video_index": true
   },
   {
     "normalized_title": "zeroranger",
