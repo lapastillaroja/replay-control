@@ -740,6 +740,12 @@ pub fn launchbox_platform_map_fingerprint() -> String {
             (s.folder_name, platforms)
         })
         .collect();
+    // Sort folders and each system's platform tags so the fingerprint is
+    // insensitive to *cosmetic* reordering of SYSTEMS (or of a system's
+    // launchbox_platforms slice): reordering doesn't change the map's meaning,
+    // so it must not trigger a spurious full LaunchBox re-import. The sort is
+    // deliberately load-bearing for that stability, not for correctness of any
+    // single fingerprint (SYSTEMS already has a fixed declaration order).
     entries.sort_unstable_by_key(|(folder, _)| *folder);
     let mut hasher = crc32fast::Hasher::new();
     for (folder, platforms) in &entries {
@@ -1020,6 +1026,28 @@ mod tests {
                 ArcadeSource::Fbneo
             ]
         );
+    }
+
+    #[test]
+    fn every_arcade_system_has_explicit_source_priority() {
+        // `arcade_source_priority` is a match keyed by folder name, parallel to
+        // the `thumbnail_repos` field. Adding an Arcade system without a match
+        // arm silently falls back to `ArcadeSource::ALL` order instead of an
+        // intentional per-system priority. Catch that here so a new arcade
+        // system must choose its source order explicitly (mirrors the
+        // `thumbnail_repos_set_for_non_utility_systems` guard).
+        for sys in SYSTEMS {
+            if sys.category != SystemCategory::Arcade {
+                continue;
+            }
+            assert!(
+                !arcade_source_priority(sys.folder_name).is_empty(),
+                "Arcade system '{}' has no arcade_source_priority arm. \
+                 Add one in arcade_source_priority() so its metadata merge \
+                 uses an intentional source order, not the ALL fallback.",
+                sys.folder_name
+            );
+        }
     }
 
     #[test]

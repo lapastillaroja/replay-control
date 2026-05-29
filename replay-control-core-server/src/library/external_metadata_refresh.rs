@@ -89,6 +89,12 @@ fn merge_in_place(dst: &mut LaunchboxGameRow, src: LaunchboxGameRow) {
         dst.release_date = src.release_date;
         dst.release_precision = src.release_precision;
     }
+    // rating and rating_count move as a unit, gated on the rating: a vote
+    // count belongs to its own rating value, so we never staple src's count
+    // onto a different dst rating. When dst already has a rating we keep both
+    // of dst's fields (count may legitimately be None — a rating with no
+    // recorded vote count). For the dual-listed same-game case both rows carry
+    // identical rating fields, so the pairing is a no-op there.
     if dst.rating.is_none() {
         dst.rating = src.rating;
         dst.rating_count = src.rating_count;
