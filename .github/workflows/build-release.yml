@@ -54,7 +54,7 @@ jobs:
           sudo ln -sf /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.116
+        run: cargo install wasm-bindgen-cli@0.2.122
 
       - name: Download TGDB lookup tables
         env:

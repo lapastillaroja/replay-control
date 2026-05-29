@@ -57,7 +57,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.116
+        run: cargo install wasm-bindgen-cli@0.2.122
 
       - name: Install binaryen (wasm-opt)
         run: sudo apt-get install -y binaryen
