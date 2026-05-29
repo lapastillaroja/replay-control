@@ -55,11 +55,23 @@ USER_AGENT = (
 # overrun the 60s-per-60s bucket. This is far more important than the
 # request *count* — the budget is processing-seconds, not requests.
 WDQS_QUERY_TIMEOUT_SECS = 60
-# A Retry-After above this means WDQS has dropped us into the escalated ban
-# tier (penalty windows of ~1000s observed). Waiting it out would burn the
-# whole CI job for nothing, so we fail fast and let the IP cool down instead;
-# the monthly schedule (and manual re-trigger) picks it up on a clean window.
-MAX_HONORED_RETRY_AFTER_SECS = 180
+# Cumulative wall-clock the run will spend honoring `Retry-After` before
+# giving up. A *single* 429 Retry-After can be ~1000s on a busy/shared IP;
+# honoring one is usually enough for the processing budget to refill, so we
+# wait it out rather than fail (the earlier per-response cap was too eager and
+# bailed on exactly that recoverable case). What we must NOT do is wait out
+# an unbounded *series* of 1000s windows on a collectively-throttled IP — so
+# the limit is on the running total, not any one response. Once the total
+# would be exceeded we raise `WdqsThrottled` and let the IP cool down.
+#
+# Override via env (the CI job sets it to match its own timeout-minutes):
+# default 1500s (25 min) comfortably rides out one ~1000s window while still
+# fitting a 45-minute job with room for the fetch itself.
+MAX_TOTAL_RETRY_WAIT_SECS = int(os.environ.get("WDQS_MAX_TOTAL_WAIT_SECS", "1500"))
+
+# Running total of seconds slept on Retry-After across this whole run, checked
+# against MAX_TOTAL_RETRY_WAIT_SECS before each honored wait.
+_total_retry_wait_secs = 0.0
 
 # Wall-clock seconds the previous successful query took, used by
 # `_courtesy_pause` to size the next inter-query idle. Module-global so pacing
@@ -196,10 +208,11 @@ def sparql_query(query, retries=5, backoff=10):
 
     Error handling:
       - 429: honor the server's `Retry-After` header (the canonical wait
-        window). If that wait exceeds `MAX_HONORED_RETRY_AFTER_SECS` we're in
-        the escalated ban tier — raise `WdqsThrottled` immediately rather than
-        burn the CI budget sleeping. Without a header, fall back to
-        exponential backoff.
+        window), even when it's large (~1000s) — one such wait usually lets
+        the processing budget refill. We only give up once the *cumulative*
+        Retry-After wait this run would exceed `MAX_TOTAL_RETRY_WAIT_SECS`,
+        which means the IP is stuck (repeating long windows); then raise
+        `WdqsThrottled`. Without a header, fall back to exponential backoff.
       - 5xx: transient; exponential backoff and retry.
       - Truncated/non-JSON body: usually the 60 s server timeout silently
         cutting the response. Retried a couple of times (a less-loaded shard
@@ -207,7 +220,7 @@ def sparql_query(query, retries=5, backoff=10):
         the query instead of hammering an oversized one against the error-rate
         budget (30 error queries/min).
     """
-    global _last_query_secs
+    global _last_query_secs, _total_retry_wait_secs
 
     params = urllib.parse.urlencode({
         "query": query,
@@ -238,16 +251,21 @@ def sparql_query(query, retries=5, backoff=10):
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 retry_after = _parse_retry_after(e.headers.get("Retry-After"))
-                if retry_after is not None and retry_after > MAX_HONORED_RETRY_AFTER_SECS:
-                    raise WdqsThrottled(
-                        f"WDQS returned Retry-After={retry_after}s "
-                        f"(> {MAX_HONORED_RETRY_AFTER_SECS}s cap) — escalated ban tier. "
-                        f"Aborting so the IP can cool down; re-run later."
-                    )
                 wait = retry_after if retry_after is not None else backoff * (2 ** attempt)
                 source = "Retry-After" if retry_after is not None else "backoff"
+                if _total_retry_wait_secs + wait > MAX_TOTAL_RETRY_WAIT_SECS:
+                    raise WdqsThrottled(
+                        f"WDQS 429: honoring this {wait}s wait would push the "
+                        f"cumulative Retry-After wait to "
+                        f"{_total_retry_wait_secs + wait:.0f}s, over the "
+                        f"{MAX_TOTAL_RETRY_WAIT_SECS}s budget. The IP is stuck in "
+                        f"a repeating throttle window; aborting to let it cool down. "
+                        f"Re-run later (or raise WDQS_MAX_TOTAL_WAIT_SECS)."
+                    )
+                _total_retry_wait_secs += wait
                 print(
-                    f"SPARQL 429, retrying in {wait}s ({source}, attempt {attempt + 1}/{retries})...",
+                    f"SPARQL 429, retrying in {wait}s ({source}, attempt {attempt + 1}/{retries}; "
+                    f"cumulative wait {_total_retry_wait_secs:.0f}/{MAX_TOTAL_RETRY_WAIT_SECS}s)...",
                     file=sys.stderr,
                 )
                 time.sleep(wait)

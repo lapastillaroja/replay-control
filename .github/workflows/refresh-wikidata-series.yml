@@ -13,7 +13,11 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Generous cap: WDQS may hand out ~1000s Retry-After windows on a busy
+    # shared CI egress IP. The extract honors them up to its cumulative-wait
+    # budget (WDQS_MAX_TOTAL_WAIT_SECS below), so the job needs headroom to
+    # ride out a window or two and still run the catalog build afterwards.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
@@ -48,9 +52,19 @@ jobs:
           ./scripts/download-metadata.sh
 
       - name: Refresh Wikidata series snapshot
+        env:
+          # Cumulative Retry-After wait the extract may absorb before giving
+          # up. ~75 min leaves ~45 min of the 120-min job for the catalog
+          # build and PR steps, while letting it ride out several ~1000s
+          # WDQS throttle windows on the shared CI egress IP.
+          WDQS_MAX_TOTAL_WAIT_SECS: "4500"
         run: |
           mkdir -p data/wikidata
-          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+          # Write to a temp file and promote only on success: a non-zero exit
+          # (e.g. WdqsThrottled) then leaves the committed snapshot untouched,
+          # and `>` truncation can't blank it mid-run.
+          python3 scripts/wikidata-series-extract.py > /tmp/series.json.new
+          mv /tmp/series.json.new data/wikidata/series.json
 
       - name: Validate snapshot
         run: |
