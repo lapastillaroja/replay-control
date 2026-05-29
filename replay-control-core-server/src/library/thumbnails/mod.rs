@@ -130,67 +130,6 @@ pub fn scan_system_images(
     entries
 }
 
-/// Map RePlayOS system folder names to libretro-thumbnails repo names.
-/// Returns one or more repo names (primary first). Multiple repos are tried
-/// in order during import, so ROMs not found in the primary repo can be
-/// matched against fallback repos.
-pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
-    match system {
-        "atari_2600" => Some(&["Atari - 2600"]),
-        "atari_5200" => Some(&["Atari - 5200"]),
-        // Slug renamed upstream from "Atari - 7800 ProSystem"; revisit
-        // when catalog-build-time slug resolution lands.
-        "atari_7800" => Some(&["Atari - 7800"]),
-        "atari_jaguar" => Some(&["Atari - Jaguar"]),
-        "atari_lynx" => Some(&["Atari - Lynx"]),
-        "amstrad_cpc" => Some(&["Amstrad - CPC"]),
-        "commodore_ami" => Some(&["Commodore - Amiga"]),
-        // commodore_amicd covers CD32 + CDTV hardware
-        "commodore_amicd" => Some(&["Commodore - CD32", "Commodore - CDTV"]),
-        "commodore_c64" => Some(&["Commodore - 64"]),
-        "ibm_pc" => Some(&["DOS"]),
-        "microsoft_msx" => Some(&["Microsoft - MSX", "Microsoft - MSX2"]),
-        "nec_pce" => Some(&["NEC - PC Engine - TurboGrafx 16"]),
-        "nec_pcecd" => Some(&["NEC - PC Engine CD - TurboGrafx-CD"]),
-        "nintendo_ds" => Some(&["Nintendo - Nintendo DS"]),
-        "nintendo_gb" => Some(&["Nintendo - Game Boy"]),
-        "nintendo_gba" => Some(&["Nintendo - Game Boy Advance"]),
-        "nintendo_gbc" => Some(&["Nintendo - Game Boy Color"]),
-        "nintendo_n64" => Some(&["Nintendo - Nintendo 64"]),
-        "nintendo_nes" => Some(&["Nintendo - Nintendo Entertainment System"]),
-        "nintendo_snes" => Some(&["Nintendo - Super Nintendo Entertainment System"]),
-        "panasonic_3do" => Some(&["The 3DO Company - 3DO"]),
-        // Slug renamed upstream from "Philips - CDi"; revisit when
-        // catalog-build-time slug resolution lands.
-        "philips_cdi" => Some(&["Philips - CD-i"]),
-        "sega_32x" => Some(&["Sega - 32X", "Sega - Mega-CD - Sega CD"]),
-        "sega_cd" => Some(&["Sega - Mega-CD - Sega CD"]),
-        "sega_dc" => Some(&["Sega - Dreamcast"]),
-        "sega_gg" => Some(&["Sega - Game Gear"]),
-        "sega_sg" => Some(&["Sega - SG-1000"]),
-        "sega_smd" => Some(&["Sega - Mega Drive - Genesis"]),
-        "sega_sms" => Some(&["Sega - Master System - Mark III"]),
-        "sega_st" => Some(&["Sega - Saturn"]),
-        "scummvm" => Some(&["ScummVM"]),
-        "sharp_x68k" => Some(&["Sharp - X68000"]),
-        "sinclair_zx" => Some(&["Sinclair - ZX Spectrum"]),
-        "snk_ng" => Some(&["SNK - Neo Geo"]),
-        "snk_ngcd" => Some(&["SNK - Neo Geo CD"]),
-        "snk_ngp" => Some(&["SNK - Neo Geo Pocket"]),
-        "sony_psx" => Some(&["Sony - PlayStation"]),
-        // Arcade systems — libretro-thumbnails uses display names as filenames,
-        // so the manifest builder translates MAME codenames via arcade_db.
-        // MAME primary, FBNeo fallback (each repo has some boxarts the other lacks)
-        "arcade_mame" => Some(&["MAME", "FBNeo - Arcade Games"]),
-        // FBNeo primary, MAME fallback (FBNeo repo is missing some boxarts that MAME has)
-        "arcade_fbneo" => Some(&["FBNeo - Arcade Games", "MAME"]),
-        "arcade_mame_2k3p" => Some(&["MAME"]),
-        // arcade_dc covers Atomiswave + Naomi + Naomi 2 hardware
-        "arcade_dc" => Some(&["Atomiswave", "Sega - Naomi", "Sega - Naomi 2"]),
-        _ => None,
-    }
-}
-
 /// Normalize a ROM filename stem to match libretro-thumbnails naming.
 ///
 /// libretro-thumbnails replaces `&*/:`\<>?\\|` with `_` in filenames.
@@ -860,54 +799,6 @@ mod tests {
     #[test]
     fn base_title_does_not_false_match_article_suffix() {
         assert_eq!(base_title("America"), "america");
-    }
-
-    // --- thumbnail_repo_names ---
-
-    #[test]
-    fn repo_names_known_systems() {
-        assert_eq!(
-            thumbnail_repo_names("nintendo_snes"),
-            Some(["Nintendo - Super Nintendo Entertainment System"].as_slice())
-        );
-        assert_eq!(
-            thumbnail_repo_names("sega_smd"),
-            Some(["Sega - Mega Drive - Genesis"].as_slice())
-        );
-        assert_eq!(
-            thumbnail_repo_names("nintendo_nes"),
-            Some(["Nintendo - Nintendo Entertainment System"].as_slice())
-        );
-    }
-
-    #[test]
-    fn repo_names_unknown_system() {
-        assert_eq!(thumbnail_repo_names("nonexistent_system"), None);
-    }
-
-    #[test]
-    fn repo_names_multi_repo_arcade_dc() {
-        let repos = thumbnail_repo_names("arcade_dc").unwrap();
-        assert_eq!(repos.len(), 3);
-        assert!(repos.contains(&"Atomiswave"));
-        assert!(repos.contains(&"Sega - Naomi"));
-        assert!(repos.contains(&"Sega - Naomi 2"));
-    }
-
-    #[test]
-    fn repo_names_multi_repo_commodore_amicd() {
-        let repos = thumbnail_repo_names("commodore_amicd").unwrap();
-        assert_eq!(repos.len(), 2);
-        assert!(repos.contains(&"Commodore - CD32"));
-        assert!(repos.contains(&"Commodore - CDTV"));
-    }
-
-    #[test]
-    fn repo_names_multi_repo_microsoft_msx() {
-        let repos = thumbnail_repo_names("microsoft_msx").unwrap();
-        assert_eq!(repos.len(), 2);
-        assert!(repos.contains(&"Microsoft - MSX"));
-        assert!(repos.contains(&"Microsoft - MSX2"));
     }
 
     // --- ThumbnailKind ---

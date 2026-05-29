@@ -81,7 +81,9 @@ const CORE_TO_SYSTEMS: &[(&str, &[&str])] = &[
         &["sega_smd", "sega_sms", "sega_gg", "sega_sg", "sega_cd"],
     ),
     ("picodrive", &["sega_32x"]),
-    ("mednafen_saturn", &["sega_st"]),
+    // RePlayOS 1.7.1 routes arcade_stv to the Saturn core (mednafen_saturn)
+    // because ST-V is Saturn-derived arcade hardware — see /opt/replay/cores/cores.cfg.
+    ("mednafen_saturn", &["sega_st", "arcade_stv"]),
     ("pcsx_rearmed", &["sony_psx"]),
     ("snes9x", &["nintendo_snes"]),
     ("fceumm", &["nintendo_nes"]),

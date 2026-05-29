@@ -17,6 +17,33 @@ pub struct System {
     /// Empty slice means no LaunchBox mapping (system won't get LaunchBox metadata).
     #[serde(skip)]
     pub launchbox_platforms: &'static [&'static str],
+    /// Hidden from UI-facing lists.
+    ///
+    /// True for utility cores (e.g., Alpha Player video player) whose "ROMs" are
+    /// media files rather than games and don't fit the game-centric UI (metadata,
+    /// box art, "games" labels).
+    #[serde(skip)]
+    pub hidden: bool,
+    /// Display ROM sizes in Megabit (Mbit/Kbit) rather than the default KB/MB/GB.
+    ///
+    /// True for cartridge-based and arcade ROM-chip systems whose original
+    /// packaging and marketing used Megabit units:
+    /// - Nintendo carts: "8 MEGABIT" on Super Mario World, "64 Mbit" on Mario 64
+    /// - Sega carts: "16 MEGA" on Sonic 3, "24 MEGA" on Phantasy Star IV
+    /// - SNK Neo Geo: "330 MEGA" on KOF labels (largest cartridges ever made)
+    /// - Arcade ROM-chip boards: "CPS2: 160 Mbit"
+    ///
+    /// False for disc-based (PSX, Saturn, DC, CD), flash/GD-ROM-based arcade
+    /// hardware (Naomi/Atomiswave), and modern handhelds (DS uses MB).
+    #[serde(skip)]
+    pub uses_megabit: bool,
+    /// libretro-thumbnails repository names (primary first).
+    ///
+    /// Multiple repos are tried in order during import, so ROMs not found in
+    /// the primary repo can be matched against fallback repos. Empty slice means
+    /// no thumbnail source is known for this system.
+    #[serde(skip)]
+    pub thumbnail_repos: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -41,6 +68,11 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
+        hidden: false,
+        uses_megabit: true,
+        // FBNeo primary, MAME fallback — each libretro-thumbnails repo has
+        // some box arts the other lacks, so two-repo lookup is intentional.
+        thumbnail_repos: &["FBNeo - Arcade Games", "MAME"],
     },
     System {
         folder_name: "arcade_mame",
@@ -51,6 +83,12 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
+        hidden: false,
+        uses_megabit: true,
+        // MAME primary, FBNeo fallback — inverse of arcade_fbneo, same reason.
+        // libretro-thumbnails uses display names as filenames, so the manifest
+        // builder translates MAME codenames via arcade_db.
+        thumbnail_repos: &["MAME", "FBNeo - Arcade Games"],
     },
     System {
         folder_name: "arcade_mame_2k3p",
@@ -61,6 +99,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["MAME"],
     },
     System {
         folder_name: "arcade_dc",
@@ -71,6 +112,29 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#1a1a2e",
         extensions: &["zip", "chd"],
         launchbox_platforms: &["Sammy Atomiswave", "Sega Naomi", "Sega Naomi 2"],
+        hidden: false,
+        // GD-ROM / flash-based, not ROM chips.
+        uses_megabit: false,
+        thumbnail_repos: &["Atomiswave", "Sega - Naomi", "Sega - Naomi 2"],
+    },
+    System {
+        folder_name: "arcade_stv",
+        display_name: "Sega Titan Video (ST-V)",
+        manufacturer: "Sega",
+        category: SystemCategory::Arcade,
+        abbreviation: "STV",
+        placeholder_color: "#1a1a2e",
+        extensions: &["zip"],
+        // LaunchBox dual-lists most ST-V titles: a sparse `Sega ST-V` entry
+        // (often name-only) plus a richer `Arcade` entry that carries the
+        // VideoURL, Overview, Wikipedia link, etc. Importing both — combined
+        // with the field-level richer-wins merge in `prepare_launchbox_refresh`
+        // — fills in the gaps without losing the canonical ST-V tag.
+        launchbox_platforms: &["Sega ST-V", "Arcade"],
+        hidden: false,
+        // Cartridge-based Saturn-derived arcade hardware.
+        uses_megabit: true,
+        thumbnail_repos: &["MAME"],
     },
     System {
         folder_name: "atari_2600",
@@ -81,6 +145,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b4513",
         extensions: &["a26", "bin"],
         launchbox_platforms: &["Atari 2600"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Atari - 2600"],
     },
     System {
         folder_name: "atari_5200",
@@ -91,6 +158,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b4513",
         extensions: &["a52", "bin"],
         launchbox_platforms: &["Atari 5200"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Atari - 5200"],
     },
     System {
         folder_name: "atari_7800",
@@ -101,6 +171,11 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b4513",
         extensions: &["a78", "bin", "cdf"],
         launchbox_platforms: &["Atari 7800"],
+        hidden: false,
+        uses_megabit: true,
+        // Slug renamed upstream from "Atari - 7800 ProSystem"; revisit when
+        // catalog-build-time slug resolution lands.
+        thumbnail_repos: &["Atari - 7800"],
     },
     System {
         folder_name: "atari_jaguar",
@@ -111,6 +186,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b4513",
         extensions: &["j64", "jag", "rom", "abs"],
         launchbox_platforms: &["Atari Jaguar"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Atari - Jaguar"],
     },
     System {
         folder_name: "atari_lynx",
@@ -121,6 +199,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b4513",
         extensions: &["lnx"],
         launchbox_platforms: &["Atari Lynx"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Atari - Lynx"],
     },
     System {
         folder_name: "amstrad_cpc",
@@ -131,6 +212,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#2a4858",
         extensions: &["dsk", "sna", "tap", "cdt", "voc", "cpr", "m3u"],
         launchbox_platforms: &["Amstrad CPC"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Amstrad - CPC"],
     },
     System {
         folder_name: "commodore_ami",
@@ -144,6 +228,9 @@ pub static SYSTEMS: &[System] = &[
             "m3u",
         ],
         launchbox_platforms: &["Commodore Amiga"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Commodore - Amiga"],
     },
     System {
         folder_name: "commodore_amicd",
@@ -154,6 +241,10 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#4a3728",
         extensions: &["iso", "cue", "chd", "ccd", "nrg", "mds", "m3u"],
         launchbox_platforms: &["Commodore Amiga CD32"],
+        hidden: false,
+        uses_megabit: false,
+        // commodore_amicd covers CD32 + CDTV hardware
+        thumbnail_repos: &["Commodore - CD32", "Commodore - CDTV"],
     },
     System {
         folder_name: "commodore_c64",
@@ -167,6 +258,9 @@ pub static SYSTEMS: &[System] = &[
             "p00", "bin", "gz", "d6z", "d8z", "g6z", "g4z", "x6z", "cmd", "m3u", "vfl", "vs",
         ],
         launchbox_platforms: &["Commodore 64"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Commodore - 64"],
     },
     System {
         folder_name: "ibm_pc",
@@ -179,6 +273,9 @@ pub static SYSTEMS: &[System] = &[
             "zip", "exe", "com", "bat", "dosz", "iso", "cue", "img", "m3u", "m3u8",
         ],
         launchbox_platforms: &["MS-DOS"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["DOS"],
     },
     System {
         folder_name: "microsoft_msx",
@@ -191,6 +288,9 @@ pub static SYSTEMS: &[System] = &[
             "rom", "mx1", "mx2", "dsk", "ri", "col", "sg", "sc", "sf", "cas", "m3u",
         ],
         launchbox_platforms: &["Microsoft MSX", "Microsoft MSX2"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Microsoft - MSX", "Microsoft - MSX2"],
     },
     System {
         folder_name: "nec_pce",
@@ -201,6 +301,10 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#cc3300",
         extensions: &["pce", "sgx", "toc"],
         launchbox_platforms: &["NEC TurboGrafx-16", "NEC PC Engine"],
+        hidden: false,
+        // HuCards were credit-card-format cartridges with ROM chips, 2-20 Mbit.
+        uses_megabit: true,
+        thumbnail_repos: &["NEC - PC Engine - TurboGrafx 16"],
     },
     System {
         folder_name: "nec_pcecd",
@@ -211,6 +315,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#cc3300",
         extensions: &["cue", "chd", "ccd", "m3u"],
         launchbox_platforms: &["NEC TurboGrafx-CD", "NEC PC Engine CD-ROM"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["NEC - PC Engine CD - TurboGrafx-CD"],
     },
     System {
         folder_name: "nintendo_ds",
@@ -221,6 +328,10 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#888888",
         extensions: &["nds"],
         launchbox_platforms: &["Nintendo DS"],
+        hidden: false,
+        // DS era used MB sizing, not Mbit.
+        uses_megabit: false,
+        thumbnail_repos: &["Nintendo - Nintendo DS"],
     },
     System {
         folder_name: "nintendo_gb",
@@ -231,6 +342,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#8b9c37",
         extensions: &["gb", "sgb"],
         launchbox_platforms: &["Nintendo Game Boy"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Game Boy"],
     },
     System {
         folder_name: "nintendo_gba",
@@ -241,6 +355,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#4b0082",
         extensions: &["gba"],
         launchbox_platforms: &["Nintendo Game Boy Advance"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Game Boy Advance"],
     },
     System {
         folder_name: "nintendo_gbc",
@@ -251,6 +368,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#6a0dad",
         extensions: &["gbc", "sgbc"],
         launchbox_platforms: &["Nintendo Game Boy Color"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Game Boy Color"],
     },
     System {
         folder_name: "nintendo_n64",
@@ -261,6 +381,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#009e60",
         extensions: &["z64", "n64", "v64", "bin", "u1"],
         launchbox_platforms: &["Nintendo 64"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Nintendo 64"],
     },
     System {
         folder_name: "nintendo_nes",
@@ -271,6 +394,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#c41230",
         extensions: &["nes", "unif", "unf", "fds"],
         launchbox_platforms: &["Nintendo Entertainment System"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Nintendo Entertainment System"],
     },
     System {
         folder_name: "nintendo_snes",
@@ -281,6 +407,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#6b238e",
         extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
         launchbox_platforms: &["Super Nintendo Entertainment System"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Super Nintendo Entertainment System"],
     },
     System {
         folder_name: "panasonic_3do",
@@ -291,6 +420,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#2a4858",
         extensions: &["iso", "chd", "cue"],
         launchbox_platforms: &["3DO Interactive Multiplayer"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["The 3DO Company - 3DO"],
     },
     System {
         folder_name: "philips_cdi",
@@ -301,6 +433,11 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#2a4858",
         extensions: &["chd", "iso", "cue"],
         launchbox_platforms: &["Philips CD-i"],
+        hidden: false,
+        uses_megabit: false,
+        // Slug renamed upstream from "Philips - CDi"; revisit when
+        // catalog-build-time slug resolution lands.
+        thumbnail_repos: &["Philips - CD-i"],
     },
     System {
         folder_name: "scummvm",
@@ -311,6 +448,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#2a4858",
         extensions: &["scummvm", "svm"],
         launchbox_platforms: &["ScummVM"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["ScummVM"],
     },
     System {
         folder_name: "sega_32x",
@@ -321,6 +461,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#0060a8",
         extensions: &["32x", "bin", "chd", "cue", "iso", "m3u"],
         launchbox_platforms: &["Sega 32X", "Sega CD 32X"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Sega - 32X", "Sega - Mega-CD - Sega CD"],
     },
     System {
         folder_name: "sega_cd",
@@ -331,6 +474,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#333355",
         extensions: &["chd", "cue", "iso", "m3u"],
         launchbox_platforms: &["Sega CD"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sega - Mega-CD - Sega CD"],
     },
     System {
         folder_name: "sega_dc",
@@ -341,6 +487,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#ff6600",
         extensions: &["gdi", "chd", "cdi", "elf", "cue", "lst", "dat", "m3u"],
         launchbox_platforms: &["Sega Dreamcast"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sega - Dreamcast"],
     },
     System {
         folder_name: "sega_gg",
@@ -351,6 +500,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#1a1a2e",
         extensions: &["gg"],
         launchbox_platforms: &["Sega Game Gear"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Sega - Game Gear"],
     },
     System {
         folder_name: "sega_sg",
@@ -361,6 +513,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#0060a8",
         extensions: &["sg"],
         launchbox_platforms: &["Sega SG-1000"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Sega - SG-1000"],
     },
     System {
         folder_name: "sega_smd",
@@ -371,6 +526,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#0060a8",
         extensions: &["md", "bin", "gen", "smd"],
         launchbox_platforms: &["Sega Genesis", "Sega Mega Drive"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Sega - Mega Drive - Genesis"],
     },
     System {
         folder_name: "sega_sms",
@@ -381,6 +539,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#cc0000",
         extensions: &["sms"],
         launchbox_platforms: &["Sega Master System"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Sega - Master System - Mark III"],
     },
     System {
         folder_name: "sega_st",
@@ -391,6 +552,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#222244",
         extensions: &["chd", "cue", "iso", "ccd", "toc", "m3u"],
         launchbox_platforms: &["Sega Saturn"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sega - Saturn"],
     },
     System {
         folder_name: "sharp_x68k",
@@ -403,6 +567,9 @@ pub static SYSTEMS: &[System] = &[
             "dim", "hdf", "m3u", "img", "d88", "88d", "hdm", "dup", "2hd", "xdf", "cmd",
         ],
         launchbox_platforms: &["Sharp X68000"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sharp - X68000"],
     },
     System {
         folder_name: "sinclair_zx",
@@ -415,6 +582,9 @@ pub static SYSTEMS: &[System] = &[
             "tzx", "tap", "z80", "sna", "rzx", "scl", "trd", "dsk", "dck", "szx",
         ],
         launchbox_platforms: &["Sinclair ZX Spectrum"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sinclair - ZX Spectrum"],
     },
     System {
         folder_name: "snk_ng",
@@ -425,6 +595,10 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#b8860b",
         extensions: &["zip"],
         launchbox_platforms: &["SNK Neo Geo AES", "SNK Neo Geo MVS"],
+        hidden: false,
+        // "330 MEGA" on KOF labels — largest cartridges ever made.
+        uses_megabit: true,
+        thumbnail_repos: &["SNK - Neo Geo"],
     },
     System {
         folder_name: "snk_ngcd",
@@ -435,6 +609,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#b8860b",
         extensions: &["chd", "cue"],
         launchbox_platforms: &["SNK Neo Geo CD"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["SNK - Neo Geo CD"],
     },
     System {
         folder_name: "snk_ngp",
@@ -445,6 +622,9 @@ pub static SYSTEMS: &[System] = &[
         placeholder_color: "#b8860b",
         extensions: &["ngp", "ngc", "ngpc", "npc"],
         launchbox_platforms: &["SNK Neo Geo Pocket", "SNK Neo Geo Pocket Color"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["SNK - Neo Geo Pocket"],
     },
     System {
         folder_name: "sony_psx",
@@ -457,6 +637,9 @@ pub static SYSTEMS: &[System] = &[
             "chd", "cue", "bin", "img", "pbp", "m3u", "exe", "psexe", "iso", "ecm", "mds", "psf",
         ],
         launchbox_platforms: &["Sony Playstation"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sony - PlayStation"],
     },
     System {
         folder_name: "alpha_player",
@@ -472,65 +655,19 @@ pub static SYSTEMS: &[System] = &[
             "nsf", "nsfe", "sap", "spc", "vgm", "vgz",
         ],
         launchbox_platforms: &[],
+        // Hidden until a dedicated media section exists — Alpha Player's "ROMs"
+        // are video files (mkv, avi, mp4, …), not games, so the game-centric UI
+        // (metadata, box art, "games" labels) doesn't fit.
+        hidden: true,
+        uses_megabit: false,
+        thumbnail_repos: &[],
     },
-];
-
-/// Systems hidden from the UI.
-///
-/// Alpha Player is a libretro video player core — its "ROMs" are video files
-/// (mkv, avi, mp4, etc.), not games.  The current game-centric UI (metadata,
-/// box art, "games" labels) doesn't fit, so we hide it until a dedicated
-/// media section is built.
-const HIDDEN_SYSTEMS: &[&str] = &["alpha_player"];
-
-/// Systems whose ROM sizes should be displayed in Megabit (Mbit/Kbit).
-///
-/// Cartridge-based and arcade ROM-chip systems used ROM chips whose capacity
-/// was measured and marketed in Megabits. Displaying sizes in Mbit matches the
-/// original packaging, box art, and enthusiast conventions for these platforms.
-const MEGABIT_SYSTEMS: &[&str] = &[
-    // --- Atari cartridge systems ---
-    // All used ROM cartridges; sizes printed on packaging in Kbit/Mbit.
-    "atari_2600",   // 2-64 Kbit ROMs
-    "atari_5200",   // 8-128 Kbit ROMs
-    "atari_7800",   // 16-1024 Kbit ROMs
-    "atari_jaguar", // 8-48 Mbit cartridges
-    "atari_lynx",   // 1-4 Mbit cartridge handheld
-    // --- Nintendo cartridge systems ---
-    // ROM chip sizes on labels: "PRG-ROM: 256 Kbit", "8 Mbit", "64 Mbit", etc.
-    // Excludes nintendo_ds: DS era used MB, not Mbit.
-    "nintendo_nes",  // 128 Kbit - 4 Mbit, chip sizes on PCB labels
-    "nintendo_snes", // 2-48 Mbit, "8 MEGABIT" on Super Mario World box
-    "nintendo_n64",  // 32-512 Mbit, "64 Mbit" on Super Mario 64
-    "nintendo_gb",   // 256 Kbit - 8 Mbit, "4 Mbit" on Pokemon Red
-    "nintendo_gbc",  // 256 Kbit - 16 Mbit, same tradition as GB
-    "nintendo_gba",  // 4-256 Mbit, "64 Mbit" standard size
-    // --- Sega cartridge systems ---
-    // All cart-based; "16 MEGA" on Sonic 3 box, "24 MEGA" on Phantasy Star IV.
-    "sega_sg",  // 8-256 Kbit, SG-1000 cartridges
-    "sega_sms", // 128 Kbit - 4 Mbit, Master System cartridges
-    "sega_smd", // 4-40 Mbit, "16 MEGA" labels on Genesis/MD carts
-    "sega_32x", // 8-32 Mbit, cart add-on for Mega Drive
-    "sega_gg",  // 256 Kbit - 4 Mbit, same tech as SMS
-    // --- NEC ---
-    // HuCards were credit-card-format cartridges with ROM chips.
-    "nec_pce", // 2-20 Mbit HuCards
-    // --- SNK ---
-    // Neo Geo AES/MVS had massive cartridges; "330 MEGA" printed on KOF labels.
-    "snk_ng",  // 8-688 Mbit, largest cartridges ever made
-    "snk_ngp", // 4-16 Mbit, Neo Geo Pocket cartridges
-    // --- Arcade (ROM-chip boards) ---
-    // Classic arcade boards used ROM chips; board specs stated in Megabits.
-    // "CPS2: 160 Mbit", etc. Excludes arcade_dc (GD-ROM/flash = MB).
-    "arcade_fbneo",
-    "arcade_mame",
-    "arcade_mame_2k3p",
 ];
 
 impl System {
     /// Whether this system should be excluded from UI-facing lists.
     pub fn is_hidden(&self) -> bool {
-        HIDDEN_SYSTEMS.contains(&self.folder_name)
+        self.hidden
     }
 
     /// Whether this system is arcade-class according to the system registry.
@@ -540,11 +677,8 @@ impl System {
 
     /// Whether this system's ROM sizes should be displayed in Megabit (Mbit/Kbit)
     /// rather than the default KB/MB/GB.
-    ///
-    /// Returns `true` for cartridge-based and arcade ROM-chip systems whose
-    /// original packaging and marketing used Megabit units.
     pub fn uses_megabit(&self) -> bool {
-        MEGABIT_SYSTEMS.contains(&self.folder_name)
+        self.uses_megabit
     }
 
     /// GameFAQs title-search URL for `title`, or `None` for utility systems
@@ -569,7 +703,7 @@ impl System {
 /// Convenience function for use from the app crate when only a folder name
 /// string is available (e.g., from `RomEntry.game.system`).
 pub fn find_system_uses_megabit(folder_name: &str) -> bool {
-    MEGABIT_SYSTEMS.contains(&folder_name)
+    find_system(folder_name).is_some_and(|s| s.uses_megabit)
 }
 
 /// All systems that should be shown in the UI (excludes hidden ones).
@@ -590,6 +724,36 @@ pub fn launchbox_platform_map() -> std::collections::HashMap<&'static str, Vec<&
     m
 }
 
+/// Deterministic CRC32 fingerprint of the current LaunchBox platform map.
+///
+/// Bumps whenever a system is added/removed or its `launchbox_platforms` field
+/// changes — gates the LaunchBox auto-import so a fresh deploy that added a
+/// new system (e.g. `arcade_stv`) triggers a re-parse even when the upstream
+/// XML hash is unchanged.
+pub fn launchbox_platform_map_fingerprint() -> String {
+    let mut entries: Vec<(&'static str, Vec<&'static str>)> = SYSTEMS
+        .iter()
+        .filter(|s| !s.launchbox_platforms.is_empty())
+        .map(|s| {
+            let mut platforms: Vec<&'static str> = s.launchbox_platforms.to_vec();
+            platforms.sort_unstable();
+            (s.folder_name, platforms)
+        })
+        .collect();
+    entries.sort_unstable_by_key(|(folder, _)| *folder);
+    let mut hasher = crc32fast::Hasher::new();
+    for (folder, platforms) in &entries {
+        hasher.update(folder.as_bytes());
+        hasher.update(b"\0");
+        for p in platforms {
+            hasher.update(p.as_bytes());
+            hasher.update(b"\x01");
+        }
+        hasher.update(b"\n");
+    }
+    format!("{:08x}", hasher.finalize())
+}
+
 /// Look up a system by its folder name.
 pub fn find_system(folder_name: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.folder_name == folder_name)
@@ -601,6 +765,16 @@ pub fn system_display_name(folder_name: &str) -> String {
     find_system(folder_name)
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| folder_name.to_string())
+}
+
+/// libretro-thumbnails repo names for a system folder, or `None` when the
+/// system is unknown or has no configured repos. Convenience over
+/// `find_system(name).map(|s| s.thumbnail_repos).filter(|r| !r.is_empty())`
+/// for callers that only have a `&str` folder name.
+pub fn system_thumbnail_repos(folder_name: &str) -> Option<&'static [&'static str]> {
+    find_system(folder_name)
+        .map(|s| s.thumbnail_repos)
+        .filter(|r| !r.is_empty())
 }
 
 /// Check whether a system folder name refers to an arcade system.
@@ -664,8 +838,8 @@ impl ArcadeSource {
 /// Ordered upstream priority for an arcade system. Highest-priority first;
 /// later entries are field-by-field fallbacks during merge.
 ///
-/// Mirrors the per-system fallback shape used by `thumbnail_repo_names` in
-/// `replay_control_core_server::thumbnails`.
+/// Mirrors the per-system fallback shape used by the `thumbnail_repos` field
+/// on [`System`].
 ///
 /// Returns an empty slice for non-arcade systems.
 pub fn arcade_source_priority(folder_name: &str) -> &'static [ArcadeSource] {
@@ -675,6 +849,7 @@ pub fn arcade_source_priority(folder_name: &str) -> &'static [ArcadeSource] {
         "arcade_mame" => &[Mame, Mame2k3p, Fbneo],
         "arcade_mame_2k3p" => &[Mame2k3p, Mame, Fbneo],
         "arcade_dc" => &[Naomi, Mame, Mame2k3p, Fbneo],
+        "arcade_stv" => &[Mame, Mame2k3p, Fbneo],
         "snk_ng" => &[Mame, Mame2k3p, Fbneo],
         _ => &[],
     }
@@ -710,6 +885,7 @@ mod tests {
     fn arcade_classification_comes_from_system_registry() {
         assert!(find_system("arcade_fbneo").unwrap().is_arcade());
         assert!(is_arcade_system("arcade_dc"));
+        assert!(is_arcade_system("arcade_stv"));
         assert!(!is_arcade_system("nintendo_snes"));
         assert!(!is_arcade_system("unknown_arcade_like_name"));
     }
@@ -763,6 +939,8 @@ mod tests {
         assert!(find_system("arcade_fbneo").unwrap().uses_megabit());
         assert!(find_system("arcade_mame").unwrap().uses_megabit());
         assert!(find_system("arcade_mame_2k3p").unwrap().uses_megabit());
+        // STV: cartridge-based Saturn arcade hardware
+        assert!(find_system("arcade_stv").unwrap().uses_megabit());
     }
 
     #[test]
@@ -791,6 +969,7 @@ mod tests {
         assert!(find_system_uses_megabit("nintendo_snes"));
         assert!(find_system_uses_megabit("sega_smd"));
         assert!(find_system_uses_megabit("arcade_fbneo"));
+        assert!(find_system_uses_megabit("arcade_stv"));
     }
 
     #[test]
@@ -808,6 +987,42 @@ mod tests {
     }
 
     #[test]
+    fn alpha_player_is_only_hidden_system() {
+        let hidden: Vec<&str> = SYSTEMS
+            .iter()
+            .filter(|s| s.is_hidden())
+            .map(|s| s.folder_name)
+            .collect();
+        assert_eq!(hidden, vec!["alpha_player"]);
+    }
+
+    #[test]
+    fn arcade_stv_is_registered() {
+        let stv = find_system("arcade_stv").expect("arcade_stv must be in SYSTEMS");
+        assert_eq!(stv.display_name, "Sega Titan Video (ST-V)");
+        assert_eq!(stv.manufacturer, "Sega");
+        assert_eq!(stv.category, SystemCategory::Arcade);
+        assert_eq!(stv.abbreviation, "STV");
+        assert_eq!(stv.extensions, &["zip"]);
+        assert!(stv.uses_megabit);
+        assert!(!stv.hidden);
+        assert_eq!(stv.thumbnail_repos, &["MAME"]);
+    }
+
+    #[test]
+    fn arcade_stv_metadata_source_priority() {
+        let priority = arcade_source_priority("arcade_stv");
+        assert_eq!(
+            priority,
+            &[
+                ArcadeSource::Mame,
+                ArcadeSource::Mame2k3p,
+                ArcadeSource::Fbneo
+            ]
+        );
+    }
+
+    #[test]
     fn launchbox_platform_map_covers_non_utility_systems() {
         // Every non-utility, non-hidden system should have at least one
         // LaunchBox platform mapping. This catches forgotten mappings when
@@ -821,6 +1036,25 @@ mod tests {
                 !sys.launchbox_platforms.is_empty(),
                 "System '{}' has no LaunchBox platform mapping. \
                  Add launchbox_platforms to its definition in systems.rs.",
+                sys.folder_name
+            );
+        }
+    }
+
+    #[test]
+    fn thumbnail_repos_set_for_non_utility_systems() {
+        // Mirrors the LaunchBox-coverage test: every non-utility, non-hidden
+        // system should have at least one libretro-thumbnails repo, so new
+        // systems don't silently miss out on box-art enrichment.
+        for sys in SYSTEMS {
+            if sys.category == SystemCategory::Utility || sys.hidden {
+                continue;
+            }
+            assert!(
+                !sys.thumbnail_repos.is_empty(),
+                "System '{}' has no thumbnail_repos. \
+                 Set thumbnail_repos to the libretro-thumbnails repo name(s) \
+                 in its definition in systems.rs.",
                 sys.folder_name
             );
         }

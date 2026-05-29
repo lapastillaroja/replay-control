@@ -64,6 +64,45 @@ fn skip_empty(s: &str) -> Option<String> {
     }
 }
 
+/// Fill empty fields on `dst` from `src`. Non-empty fields on `dst` are kept.
+///
+/// LaunchBox dual-lists many games across platform tags (e.g. a title appears
+/// under both `Sega ST-V` and `Arcade`, where the latter typically carries
+/// VideoURL/Overview/Wikipedia and the former is name-only). When a system's
+/// `launchbox_platforms` field lists both tags, the importer sees two rows for
+/// the same `(system, normalized_title)` key; this merge ensures the rich row
+/// fills in the sparse row's gaps regardless of XML iteration order.
+fn merge_in_place(dst: &mut LaunchboxGameRow, src: LaunchboxGameRow) {
+    if dst.description.is_none() {
+        dst.description = src.description;
+    }
+    if dst.genre.is_none() {
+        dst.genre = src.genre;
+    }
+    if dst.developer.is_none() {
+        dst.developer = src.developer;
+    }
+    if dst.publisher.is_none() {
+        dst.publisher = src.publisher;
+    }
+    if dst.release_date.is_none() {
+        dst.release_date = src.release_date;
+        dst.release_precision = src.release_precision;
+    }
+    if dst.rating.is_none() {
+        dst.rating = src.rating;
+        dst.rating_count = src.rating_count;
+    }
+    if dst.players.is_none() {
+        dst.players = src.players;
+    }
+    // `cooperative` is bool, not Option. Treat `true` as the signal — only
+    // promote, never demote.
+    if !dst.cooperative {
+        dst.cooperative = src.cooperative;
+    }
+}
+
 fn row_from_lb(g: &LbGame) -> Option<LaunchboxGameRow> {
     // Skip entries with no useful data — same gate as the legacy importer
     // so the host-global DB doesn't grow with thousands of empty rows.
@@ -146,9 +185,17 @@ pub fn prepare_launchbox_refresh(
     let reader = std::io::BufReader::with_capacity(256 * 1024, file);
     let platforms = platform_map();
 
-    // Per-(system, normalized_title) dedup. Two source entries that collapse
-    // to the same key (rare: e.g. "Game" and "Game ()") resolve last-wins —
-    // matches the COALESCE-on-conflict semantics of the legacy importer.
+    // Per-(system, normalized_title) dedup with field-level richer-wins
+    // merging. Two source entries collapse to the same key when:
+    //   1. A title appears with parenthetical noise — "Game" and "Game ()"
+    //      normalize identically. Rare.
+    //   2. A title is dual-listed under multiple platform tags both mapped to
+    //      the same system — e.g. arcade_stv includes both `Sega ST-V`
+    //      (sparse, often name-only) and `Arcade` (richer, with VideoURL,
+    //      Overview, Wikipedia). Common.
+    // `merge_in_place` keeps existing non-empty fields and fills empties from
+    // the incoming row, so the final row is the union of both sources
+    // regardless of XML iteration order.
     let mut games: HashMap<(String, String), LaunchboxGameRow> = HashMap::new();
     // database_id → all (system, normalized_title) rows the game ended up in.
     // Used to attach LaunchBox alternate names to the right provider_game keys.
@@ -170,7 +217,14 @@ pub fn prepare_launchbox_refresh(
                 .push(key.clone());
         }
         if let Some(row) = row_from_lb(game) {
-            games.insert(key.clone(), row);
+            match games.entry(key.clone()) {
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(row);
+                }
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    merge_in_place(o.get_mut(), row);
+                }
+            }
         }
         if let Some(resource) = video_resource_from_lb(game) {
             resources.insert(
@@ -349,6 +403,14 @@ pub fn apply_launchbox_refresh(
             &tx,
             meta_keys::TITLE_NORM_VERSION,
             Some(&replay_control_core::title_utils::TITLE_NORM_VERSION.to_string()),
+        )?;
+        // Stamp the LaunchBox platform map fingerprint so adding a new
+        // system (e.g. `arcade_stv`) on a future deploy re-triggers the
+        // reparse even when the XML hash hasn't changed.
+        external_metadata::write_meta(
+            &tx,
+            meta_keys::LAUNCHBOX_PLATFORM_MAP_HASH,
+            Some(&replay_control_core::systems::launchbox_platform_map_fingerprint()),
         )?;
         tx.commit()
             .map_err(|e| Error::Other(format!("commit: {e}")))?;

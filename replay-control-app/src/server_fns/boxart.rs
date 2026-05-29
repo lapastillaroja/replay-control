@@ -1,5 +1,7 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core::systems::system_thumbnail_repos;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
 /// A box art variant returned to the UI.
@@ -86,7 +88,7 @@ pub async fn set_boxart_override(
 
     // Look up the variant in the thumbnail index to get repo/branch info.
     let manifest_match = {
-        let repo_names = replay_control_core_server::thumbnails::thumbnail_repo_names(&system)
+        let repo_names = system_thumbnail_repos(&system)
             .ok_or_else(|| ServerFnError::new(format!("No thumbnail repo for {system}")))?;
 
         let variant_fn = variant_filename.clone();

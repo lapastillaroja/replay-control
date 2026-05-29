@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
+use replay_control_core::systems::system_thumbnail_repos;
 use replay_control_core_server::library_db::LibraryDb;
 
 /// Acquire a write lock, panicking on poison with a standard message.
@@ -295,9 +296,7 @@ impl ThumbnailPipeline {
         )
         .await
         .into_iter()
-        .filter(|system| {
-            replay_control_core_server::thumbnails::thumbnail_repo_names(system).is_some()
-        })
+        .filter(|system| system_thumbnail_repos(system).is_some())
         .collect();
 
         let total_systems = supported.len();
@@ -344,11 +343,7 @@ impl ThumbnailPipeline {
                 let repo_data = state
                     .external_metadata_reader
                     .read(move |em_conn| {
-                        let Some(repo_names) =
-                            replay_control_core_server::thumbnails::thumbnail_repo_names(
-                                &system_plan,
-                            )
-                        else {
+                        let Some(repo_names) = system_thumbnail_repos(&system_plan) else {
                             return Err(replay_control_core::error::Error::Other(format!(
                                 "No thumbnail repo for {system_plan}"
                             )));

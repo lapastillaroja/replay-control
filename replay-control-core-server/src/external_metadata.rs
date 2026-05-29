@@ -176,6 +176,13 @@ pub mod meta_keys {
     /// host-global normalized cache) was last (re)populated. Mismatch on
     /// boot triggers a `refresh_launchbox` reparse.
     pub const TITLE_NORM_VERSION: &str = "title_norm_version";
+
+    /// `replay_control_core::systems::launchbox_platform_map_fingerprint()`
+    /// value at the time provider rows were last (re)populated. Mismatch
+    /// triggers a `refresh_launchbox` reparse — picks up newly-added systems
+    /// (e.g. `arcade_stv` joining `launchbox_platforms`) even when the
+    /// upstream XML hash and title-norm version are both unchanged.
+    pub const LAUNCHBOX_PLATFORM_MAP_HASH: &str = "launchbox_platform_map_hash";
 }
 
 /// Create or rebuild the schema. Drops divergent tables before recreating
@@ -218,6 +225,7 @@ pub fn init_tables(conn: &rusqlite::Connection) -> Result<()> {
             let _ = conn.execute_batch(&format!("DROP TABLE IF EXISTS {legacy};"));
             write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
             write_meta(conn, meta_keys::TITLE_NORM_VERSION, None)?;
+            write_meta(conn, meta_keys::LAUNCHBOX_PLATFORM_MAP_HASH, None)?;
         }
     }
     for (name, cols, ddl) in pairs {
@@ -649,6 +657,7 @@ pub fn clear_launchbox(conn: &rusqlite::Connection) -> Result<()> {
     .map_err(|e| Error::Other(format!("clear provider_resource launchbox: {e}")))?;
     write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
     write_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG, None)?;
+    write_meta(conn, meta_keys::LAUNCHBOX_PLATFORM_MAP_HASH, None)?;
     Ok(())
 }
 

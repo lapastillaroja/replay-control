@@ -64,6 +64,7 @@ MAPPING = {
 # Icons that use a different source (fallback or alias)
 FALLBACKS = {
     "commodore_amicd": "commodore_ami",  # copy from Amiga
+    "arcade_stv": "arcade_fbneo",        # generic KyleBing ARCADE.png artwork
 }
 
 # Icons generated from non-KyleBing sources

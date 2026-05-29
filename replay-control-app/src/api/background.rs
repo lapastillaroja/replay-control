@@ -1,3 +1,4 @@
+use replay_control_core::systems::system_thumbnail_repos;
 use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::library_db::{IdentityState, LibraryDb};
 use replay_control_core_server::roms::{RomEntry, StorageProbe};
@@ -1290,10 +1291,12 @@ impl BackgroundManager {
             (
                 external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32),
                 external_metadata::read_meta(conn, meta_keys::TITLE_NORM_VERSION),
+                external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_PLATFORM_MAP_HASH),
             )
         });
         let (hash_join, stamps) = tokio::join!(hash_fut, stamp_fut);
-        let (stored_hash, stored_norm_version) = stamps.unwrap_or((None, None));
+        let (stored_hash, stored_norm_version, stored_platform_hash) =
+            stamps.unwrap_or((None, None, None));
         let stored_norm_version: Option<u32> = stored_norm_version.and_then(|s| s.parse().ok());
 
         let current_hash = match hash_join {
@@ -1311,28 +1314,44 @@ impl BackgroundManager {
             }
         };
 
-        // Re-parse on either input change: XML content (hash) or normalizer
-        // version (the keys stored in `provider_alternate.normalized_alternate`
-        // become stale when `title_utils::normalize_title_for_metadata`
-        // changes its output). `refresh_launchbox` writes both stamps in one
-        // transaction, so a single pass clears both gates.
+        let current_platform_hash =
+            replay_control_core::systems::launchbox_platform_map_fingerprint();
+
+        // Re-parse on any input change:
+        //   - XML content (hash) — upstream LaunchBox data changed
+        //   - normalizer version — `title_utils::normalize_title_for_metadata`
+        //     output changed, so cached `provider_alternate.normalized_alternate`
+        //     is stale
+        //   - platform-map fingerprint — a system was added/removed or its
+        //     `launchbox_platforms` field changed (e.g. arcade_stv joining),
+        //     so games previously dropped for "no matching system" need a
+        //     second look
+        // `refresh_launchbox` writes all three stamps in one transaction, so a
+        // single pass clears every gate.
         let hash_matches = stored_hash.as_deref() == Some(current_hash.as_str());
         let version_matches =
             stored_norm_version == Some(replay_control_core::title_utils::TITLE_NORM_VERSION);
-        if hash_matches && version_matches {
+        let platform_hash_matches =
+            stored_platform_hash.as_deref() == Some(current_platform_hash.as_str());
+        if hash_matches && version_matches && platform_hash_matches {
             tracing::debug!(
-                "phase_auto_import: LaunchBox XML hash + title_norm_version both match — skipping refresh"
+                "phase_auto_import: LaunchBox XML hash + title_norm_version + platform_map_hash all match — skipping refresh"
             );
             return;
         }
 
         let reason = if !hash_matches {
             format!("hash {current_hash} differs from stored {:?}", stored_hash)
-        } else {
+        } else if !version_matches {
             format!(
                 "title_norm_version {} differs from stored {:?}",
                 replay_control_core::title_utils::TITLE_NORM_VERSION,
                 stored_norm_version
+            )
+        } else {
+            format!(
+                "platform_map_hash {current_platform_hash} differs from stored {:?}",
+                stored_platform_hash
             )
         };
         tracing::info!(
@@ -1641,9 +1660,7 @@ impl BackgroundManager {
             let system_name = system_entry.file_name();
             let system_str = system_name.to_string_lossy().into_owned();
 
-            let Some(repo_names) =
-                replay_control_core_server::thumbnails::thumbnail_repo_names(&system_str)
-            else {
+            let Some(repo_names) = system_thumbnail_repos(&system_str) else {
                 continue;
             };
 

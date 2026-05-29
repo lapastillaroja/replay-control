@@ -47,6 +47,7 @@ The priority order per system lives in `replay_control_core::systems::arcade_sou
 | `arcade_mame` | MAME → MAME 2003+ → FBNeo |
 | `arcade_mame_2k3p` | MAME 2003+ → MAME → FBNeo |
 | `arcade_dc` | Naomi → MAME → MAME 2003+ → FBNeo |
+| `arcade_stv` | MAME → MAME 2003+ → FBNeo |
 | (any other) | empty — uses deterministic fallback |
 
 After the priority list is exhausted, the merge walks any remaining sources (`ArcadeSource::ALL`) so that a ROM present *only* in (e.g.) the Naomi catalog still resolves on `arcade_mame`.

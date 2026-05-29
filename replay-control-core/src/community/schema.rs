@@ -14,6 +14,11 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct CommunityFile {
     pub entries: Vec<CommunityEntry>,
+    /// IDE/editor schema reference (e.g. `"../../schemas/community-metadata.schema.json"`).
+    /// Accepted but ignored at runtime so JSON files can carry a `$schema` hint
+    /// without breaking `deny_unknown_fields`.
+    #[serde(default, rename = "$schema")]
+    pub _schema: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
