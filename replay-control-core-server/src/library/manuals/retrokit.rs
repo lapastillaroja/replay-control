@@ -118,7 +118,9 @@ pub fn retrokit_folder_name(system: &str) -> Option<&'static str> {
         "snk_ngp" => "ngp",
         "panasonic_3do" => "3do",
         "ibm_pc" | "scummvm" => "pc",
-        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc" => "arcade",
+        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc" | "arcade_stv" => {
+            "arcade"
+        }
         _ => return None,
     })
 }
@@ -140,7 +142,9 @@ pub fn platform_search_terms(system: &str) -> &'static str {
         "sega_st" => "Saturn",
         "sony_psx" => "PlayStation OR PSX OR PS1",
         "nec_pce" => "PC Engine OR TurboGrafx",
-        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc" => "Arcade",
+        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc" | "arcade_stv" => {
+            "Arcade"
+        }
         _ => "",
     }
 }
@@ -205,7 +209,18 @@ mod tests {
     }
 
     #[test]
+    fn retrokit_folder_stv_maps_to_arcade() {
+        assert_eq!(retrokit_folder_name("arcade_stv"), Some("arcade"));
+        assert_eq!(manual_folder_name("arcade_stv"), "arcade");
+    }
+
+    #[test]
     fn platform_terms_snes() {
         assert!(platform_search_terms("nintendo_snes").contains("SNES"));
+    }
+
+    #[test]
+    fn platform_terms_stv_maps_to_arcade() {
+        assert_eq!(platform_search_terms("arcade_stv"), "Arcade");
     }
 }
