@@ -222,16 +222,22 @@ def sparql_query(query, retries=5, backoff=10):
     """
     global _last_query_secs, _total_retry_wait_secs
 
-    params = urllib.parse.urlencode({
+    # POST, not GET. The chunked series queries embed up to `chunk_size`
+    # `wd:Q…` IRIs in a `VALUES` block; at chunk_size=600 that query string is
+    # several KB and a GET (query in the URL) is rejected with HTTP 414 URI Too
+    # Long. WDQS supports POST with the query in the body
+    # (application/x-www-form-urlencoded), which has no URL-length ceiling — the
+    # recommended transport for large queries. `data=` makes urllib use POST.
+    body = urllib.parse.urlencode({
         "query": query,
         "format": "json",
-    })
-    url = f"{SPARQL_ENDPOINT}?{params}"
+    }).encode("utf-8")
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "application/sparql-results+json",
+        "Content-Type": "application/x-www-form-urlencoded",
     }
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(SPARQL_ENDPOINT, data=body, headers=headers)
 
     _courtesy_pause()
 
@@ -631,17 +637,18 @@ def main():
         # Get sequel/prequel info
         sequel_info = sequel_map.get(game_qid, {})
 
+        # Always emit all 6 keys with stable defaults (series_order: null,
+        # follows/followed_by: "") so the snapshot has a uniform shape that the
+        # workflow's strict validator accepts. Absent values use the same
+        # defaults the consumer (build-catalog) already treats as "missing".
         entry = {
             "game_title": game_title,
             "series_name": series_name,
             "system": system,
+            "series_order": ordinal if ordinal is not None else None,
+            "follows": sequel_info.get("follows") or "",
+            "followed_by": sequel_info.get("followed_by") or "",
         }
-        if ordinal is not None:
-            entry["series_order"] = ordinal
-        if sequel_info.get("follows"):
-            entry["follows"] = sequel_info["follows"]
-        if sequel_info.get("followed_by"):
-            entry["followed_by"] = sequel_info["followed_by"]
 
         entries.append(entry)
 
@@ -672,14 +679,16 @@ def main():
             continue
         seen.add(dedup_key)
 
+        # Sequel-only entries have no series; emit the full 6-key shape with
+        # series_name "" and series_order null to match the series-row rows.
         entry = {
             "game_title": game_title,
+            "series_name": "",
             "system": system,
+            "series_order": None,
+            "follows": row.get("followsLabel", {}).get("value", ""),
+            "followed_by": row.get("followedByLabel", {}).get("value", ""),
         }
-        if "followsLabel" in row:
-            entry["follows"] = row["followsLabel"]["value"]
-        if "followedByLabel" in row:
-            entry["followed_by"] = row["followedByLabel"]["value"]
 
         entries.append(entry)
 
@@ -688,10 +697,12 @@ def main():
         else:
             stats["console_matches"] += 1
 
-    # Sort for deterministic output
+    # Sort for deterministic output. series_order is now always present but may
+    # be None (no ordinal); coerce None to a high sentinel so unordered entries
+    # sort to the end of their series group and None never compares against int.
     entries.sort(key=lambda e: (
-        e.get("series_name", ""),
-        e.get("series_order", 999999),
+        e["series_name"],
+        e["series_order"] if e["series_order"] is not None else 999999,
         e["game_title"],
         e["system"],
     ))
@@ -704,9 +715,10 @@ def main():
     print(f"  Arcade matches:      {stats['arcade_matches']}", file=sys.stderr)
     print(f"  Discarded:           {stats['discarded']}", file=sys.stderr)
     print(f"  Output entries:      {len(entries)}", file=sys.stderr)
-    print(f"    With series:       {sum(1 for e in entries if 'series_name' in e)}", file=sys.stderr)
-    print(f"    With ordinal:      {sum(1 for e in entries if 'series_order' in e)}", file=sys.stderr)
-    print(f"    With sequel info:  {sum(1 for e in entries if 'follows' in e or 'followed_by' in e)}", file=sys.stderr)
+    # All 6 keys are always present now, so count by non-default value.
+    print(f"    With series:       {sum(1 for e in entries if e['series_name'])}", file=sys.stderr)
+    print(f"    With ordinal:      {sum(1 for e in entries if e['series_order'] is not None)}", file=sys.stderr)
+    print(f"    With sequel info:  {sum(1 for e in entries if e['follows'] or e['followed_by'])}", file=sys.stderr)
 
     json.dump(entries, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
