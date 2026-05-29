@@ -2578,6 +2578,11 @@ struct ShmupsWikiBuildEntry {
     video_index: bool,
     #[serde(default)]
     video_index_inherits_from: Option<String>,
+    // Section anchor on the parent's Video Index page (already MediaWiki-encoded,
+    // e.g. "Version_1.5"). Only set alongside video_index_inherits_from; when
+    // present the inherited link deep-links to the variant's section.
+    #[serde(default)]
+    video_index_anchor: Option<String>,
 }
 
 fn load_shmups_wiki_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
@@ -2627,13 +2632,21 @@ fn load_shmups_wiki_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
             });
         } else if let Some(parent) = entry.video_index_inherits_from {
             let parent_url = shmups_wiki_page_url(&parent);
+            // Deep-link to the variant's section when the extract resolved one;
+            // otherwise link to the Video Index page top.
+            let url = match entry.video_index_anchor.as_deref() {
+                Some(anchor) if !anchor.is_empty() => {
+                    format!("{parent_url}/Video_Index#{anchor}")
+                }
+                _ => format!("{parent_url}/Video_Index"),
+            };
             out.push(CatalogResourceBuild {
                 system: resource_kind::GLOBAL_SYSTEM.to_string(),
                 normalized_title: entry.normalized_title,
                 resource_type: resource_kind::VIDEO_INDEX,
                 source: resource_kind::SHMUPS_WIKI_SOURCE,
                 resource_id: parent.clone(),
-                url: format!("{parent_url}/Video_Index"),
+                url,
                 title: parent,
                 languages: String::new(),
                 mime_type: "text/html",

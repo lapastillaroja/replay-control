@@ -250,6 +250,29 @@ def list_video_index_pages() -> set[str]:
     }
 
 
+def list_section_anchors(page: str) -> list[tuple[str, str]]:
+    """Return (heading_text, anchor) pairs for every section of `page`, via
+    `action=parse&prop=sections`. The `anchor` is MediaWiki's own URL fragment,
+    already encoded the way the wiki expects (e.g. "Version_1.5",
+    "Guides_.26_Commentaries"), so a section deep link is exactly
+    `<page_url>#<anchor>`. Used to point a variant's *inherited* Video Index
+    link at the matching section instead of the page top."""
+    data = http_get_json(
+        {
+            "action": "parse",
+            "page": page,
+            "prop": "sections",
+            "format": "json",
+            "formatversion": "2",
+        }
+    )
+    return [
+        (section["line"], section["anchor"])
+        for section in data.get("parse", {}).get("sections", [])
+        if section.get("line") and section.get("anchor")
+    ]
+
+
 def list_redirects_for_targets(targets: set[str]) -> dict[str, str]:
     """For every accepted game page, fetch its incoming main-namespace
     redirects via `prop=redirects`. Returns `{redirect_source: target}`.
@@ -385,6 +408,17 @@ def normalize_title_for_metadata(name: str) -> str:
     return "".join(ch.lower() for ch in versionless if ch.isalnum())
 
 
+_VERSION_WORD_RE = re.compile(r"\bversion\b", re.IGNORECASE)
+
+
+def _section_match_key(text: str) -> str:
+    """Key for matching a variant's residual title against a Video Index
+    heading. Same alnum-lowercasing as the title normalizer, but first
+    collapses "Version" -> "Ver" so a page residual like "Ver 1.5" matches a
+    heading written "Version 1.5"."""
+    return normalize_title_for_metadata(_VERSION_WORD_RE.sub("Ver", text))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -447,6 +481,34 @@ def main() -> int:
         file=sys.stderr,
     )
 
+    # Orphan Video Index pages: a "<Game>/Video Index" sub-page can be a member
+    # of Category:Video Index while the game's *main article* doesn't exist yet
+    # (e.g. "Shikigami no Shiro", "Pulstar", "19XX: The War Against Destiny",
+    # "Zero Gunner 2"). collect_game_pages only enumerates main-namespace
+    # articles, so those games never produced a row and the flag loop above had
+    # nothing to mark. Editors curate Category:Video Index by hand, so a
+    # membership entry is authoritative proof the game exists and has a
+    # walkthrough — emit a row for it directly, keyed on the parent title. These
+    # also become valid inherit targets for the variant pass below.
+    existing_titles = {row["page_title"] for row in rows}
+    orphan_video_index = 0
+    for parent in sorted(video_index_parents):
+        if parent in existing_titles:
+            continue
+        key = normalize_title_for_metadata(parent)
+        if not key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        rows.append(
+            {"normalized_title": key, "page_title": parent, "video_index": True}
+        )
+        orphan_video_index += 1
+    print(
+        f"shmups-wiki-extract: added {orphan_video_index} orphan video-index "
+        f"row(s) for games whose main article is missing",
+        file=sys.stderr,
+    )
+
     # Inherited video index: variant pages (e.g. "DoDonPachi DaiFukkatsu
     # Ver 1.5", "… Arrange A") typically don't have their own /Video Index
     # sub-page — the videos live at the parent's /Video Index. The wiki
@@ -478,7 +540,9 @@ def main() -> int:
         ]
     ]
     video_index_titles = {row["page_title"] for row in rows if row.get("video_index")}
+    section_cache: dict[str, list[tuple[str, str]]] = {}
     inferred = 0
+    anchored = 0
     for row in rows:
         if row.get("video_index"):
             continue
@@ -488,13 +552,41 @@ def main() -> int:
             if not m:
                 continue
             candidate = title[: m.start()].rstrip()
-            if candidate in video_index_titles:
-                row["video_index_inherits_from"] = candidate
-                inferred += 1
-                break
+            if candidate not in video_index_titles:
+                continue
+            row["video_index_inherits_from"] = candidate
+            inferred += 1
+            # Deep-link to the matching section of the parent's Video Index —
+            # but only when the variant's residual title (the part after the
+            # parent, e.g. "Ver 1.5") UNIQUELY matches one heading. Ambiguous,
+            # absent, or fetch-failure cases leave the anchor unset, so the link
+            # falls back to the page top and can never point at a wrong section.
+            residual = title[len(candidate) :].strip()
+            vi_page = f"{candidate}{VIDEO_INDEX_SUFFIX}"
+            if residual and vi_page not in section_cache:
+                try:
+                    section_cache[vi_page] = list_section_anchors(vi_page)
+                except Exception as exc:  # noqa: BLE001 - degrade to page-top link
+                    print(
+                        f"shmups-wiki-extract: section fetch failed for "
+                        f"{vi_page!r}: {exc}",
+                        file=sys.stderr,
+                    )
+                    section_cache[vi_page] = []
+            if residual:
+                want = _section_match_key(residual)
+                matches = [
+                    anchor
+                    for line, anchor in section_cache.get(vi_page, [])
+                    if _section_match_key(line) == want
+                ]
+                if len(matches) == 1:
+                    row["video_index_anchor"] = matches[0]
+                    anchored += 1
+            break
     print(
-        f"shmups-wiki-extract: inferred video_index_inherits_from "
-        f"for {inferred} variant row(s)",
+        f"shmups-wiki-extract: inferred video_index_inherits_from for "
+        f"{inferred} variant row(s); resolved a section anchor for {anchored}",
         file=sys.stderr,
     )
 

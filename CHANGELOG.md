@@ -4,6 +4,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.14]
+
+### Highlights
+
+- **More games now show their Shmups Wiki Video Index, and version variants link to the exact section.** Many shmups whose wiki page is a video walkthrough without a full article — for example *Shikigami no Shiro*, *Pulstar*, *19XX: The War Against Destiny*, and *Zero Gunner 2* — now show a Video Index link on their detail page. Version and regional variants now deep-link to their specific section of the parent's Video Index instead of the top (e.g. *DoDonPachi Dai-Fukkatsu Ver 1.0 / 1.5 / 1.51* each jump to the matching Version section), and an arcade clone now shows its *own* version's section rather than its parent set's. Variants that have no wiki page of their own are matched to the parent game through Shmups Wiki redirects (e.g. *Ibara Kuro Black Label* → *Ibara*, *Mushihime-Sama Futari Ver 1.5* → *Mushihimesama Futari*).
+
+### Fixed
+
+- Fixed shmups whose Shmups Wiki entry is a Video Index page with no standalone game article never showing a Video Index link. These are now indexed directly, so games like *Shikigami no Shiro*, *Pulstar*, and *19XX* link to their walkthrough.
+- Fixed version/label variants linking to the top of a parent's multi-section Video Index instead of their own section. Variants now deep-link to the right section (e.g. *Version 1.5*, *Arrange A*) when it can be matched unambiguously, and fall back to the page top otherwise.
+- Fixed an arcade clone inheriting its parent set's Video Index section instead of its own — for example *DoDonPachi Dai-Fukkatsu Ver 1.0* previously linked to the *Version 1.5* section and now links to *Version 1.0*.
+
+### Acknowledgments
+
+- Thanks to [@f8less](https://github.com/f8less) for help improving the Shmups Wiki integration — reporting the missing Video Index links and creating the variant→parent redirect pages on shmups.wiki.
+
+---
+
 ## [0.4.0-beta.13]
 
 ### Highlights
