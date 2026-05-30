@@ -361,7 +361,8 @@
   {
     "normalized_title": "deathsmilesmegablacklabel",
     "page_title": "Deathsmiles",
-    "video_index": true
+    "video_index_inherits_from": "Deathsmiles",
+    "video_index_anchor": "Deathsmiles_Mega_Black_Label"
   },
   {
     "normalized_title": "detanatwinbee",
@@ -461,7 +462,8 @@
   {
     "normalized_title": "dodonpachidaioujoublacklabel",
     "page_title": "DoDonPachi DaiOuJou",
-    "video_index": true
+    "video_index_inherits_from": "DoDonPachi DaiOuJou",
+    "video_index_anchor": "DoDonPachi_DaiOuJou_Black_Label"
   },
   {
     "normalized_title": "dodonpachidaioujoureincarnation",
@@ -476,7 +478,8 @@
   {
     "normalized_title": "dodonpachidaioujoutamashii",
     "page_title": "DoDonPachi DaiOuJou",
-    "video_index": true
+    "video_index_inherits_from": "DoDonPachi DaiOuJou",
+    "video_index_anchor": "DoDonPachi_DaiOuJou_Tamashii"
   },
   {
     "normalized_title": "dodonpachiii",
@@ -491,7 +494,8 @@
   {
     "normalized_title": "dodonpachiiii",
     "page_title": "DoDonPachi DaiOuJou",
-    "video_index": true
+    "video_index_inherits_from": "DoDonPachi DaiOuJou",
+    "video_index_anchor": "DoDonPachi_III"
   },
   {
     "normalized_title": "dodonpachimaximum",
@@ -639,7 +643,8 @@
   {
     "normalized_title": "fireshark",
     "page_title": "Same! Same! Same!",
-    "video_index": true
+    "video_index_inherits_from": "Same! Same! Same!",
+    "video_index_anchor": "Fire_Shark_.28International_version.29"
   },
   {
     "normalized_title": "flamezapperkotsujin",
@@ -1041,7 +1046,8 @@
   {
     "normalized_title": "kingdomgrandprix",
     "page_title": "Shippu Mahou Daisakusen",
-    "video_index": true
+    "video_index_inherits_from": "Shippu Mahou Daisakusen",
+    "video_index_anchor": "Kingdom_Grandprix"
   },
   {
     "normalized_title": "klon",
@@ -1182,7 +1188,8 @@
   {
     "normalized_title": "mushihimesamafutariblacklabel",
     "page_title": "Mushihimesama Futari",
-    "video_index": true
+    "video_index_inherits_from": "Mushihimesama Futari",
+    "video_index_anchor": "Mushihimesama_Futari_Black_Label"
   },
   {
     "normalized_title": "mushihimesamafutariblacklabelanotherversion",
@@ -1670,7 +1677,8 @@
   {
     "normalized_title": "sorcerstriker",
     "page_title": "Mahou Daisakusen",
-    "video_index": true
+    "video_index_inherits_from": "Mahou Daisakusen",
+    "video_index_anchor": "Sorcer_Striker"
   },
   {
     "normalized_title": "soukyugurentai",
@@ -1826,7 +1834,8 @@
   {
     "normalized_title": "tengai",
     "page_title": "Sengoku Blade",
-    "video_index": true
+    "video_index_inherits_from": "Sengoku Blade",
+    "video_index_anchor": "Tengai"
   },
   {
     "normalized_title": "tentashooter",
@@ -1913,7 +1922,8 @@
   {
     "normalized_title": "truxtonii",
     "page_title": "Tatsujin Ou",
-    "video_index": true
+    "video_index_inherits_from": "Tatsujin Ou",
+    "video_index_anchor": "Truxton_II_.28International.29"
   },
   {
     "normalized_title": "tukiyono",
