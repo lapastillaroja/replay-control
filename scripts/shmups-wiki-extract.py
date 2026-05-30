@@ -419,6 +419,43 @@ def _section_match_key(text: str) -> str:
     return normalize_title_for_metadata(_VERSION_WORD_RE.sub("Ver", text))
 
 
+def _sections_for(vi_page, section_cache):
+    """Memoized section fetch; degrades to an empty list on failure so a
+    missing/erroring Video Index page just yields no anchor (page-top link)."""
+    if vi_page not in section_cache:
+        try:
+            section_cache[vi_page] = list_section_anchors(vi_page)
+        except Exception as exc:  # noqa: BLE001 - degrade to page-top link
+            print(
+                f"shmups-wiki-extract: section fetch failed for {vi_page!r}: {exc}",
+                file=sys.stderr,
+            )
+            section_cache[vi_page] = []
+    return section_cache[vi_page]
+
+
+def _full_title_section_anchor(vi_page, normalized_title, section_cache):
+    """Anchor for the section of `vi_page` whose heading, normalized, equals
+    `normalized_title` — for variants that are a *section* of a parent's Video
+    Index rather than their own page (e.g. the ROM "DoDonPachi DaiOuJou Black
+    Label" redirects to "DoDonPachi DaiOuJou", whose Video Index has a
+    "DoDonPachi DaiOuJou Black Label" section).
+
+    Returns the anchor only on a UNIQUE match against a NON-FIRST section. The
+    first section is the page's main game; a synonym of it should keep the
+    page-top link, not anchor to its own heading. Ambiguous or absent matches
+    return None so the caller falls back to the page top."""
+    matches = [
+        (idx, anchor)
+        for idx, (line, anchor) in enumerate(_sections_for(vi_page, section_cache))
+        if normalize_title_for_metadata(line) == normalized_title
+    ]
+    distinct = {anchor for _, anchor in matches}
+    if len(distinct) == 1 and min(idx for idx, _ in matches) > 0:
+        return matches[0][1]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -470,14 +507,40 @@ def main() -> int:
         file=sys.stderr,
     )
     video_index_parents = list_video_index_pages()
+    # Shared across the redirect-section pass below and the inherited-variant
+    # pass further down so each Video Index page's sections are fetched once.
+    section_cache: dict[str, list[tuple[str, str]]] = {}
     flagged = 0
+    sectioned = 0
     for row in rows:
-        if row["page_title"] in video_index_parents:
-            row["video_index"] = True
-            flagged += 1
+        if row["page_title"] not in video_index_parents:
+            continue
+        # A redirect/synonym row points at a Video Index page it does NOT own
+        # (its normalized title differs from the page's). When that name matches
+        # a specific section of the page, the game is a *section* of the parent's
+        # Video Index, not the whole page — e.g. "DoDonPachi DaiOuJou Black
+        # Label" redirects to "DoDonPachi DaiOuJou" and is the Black Label
+        # section. Deep-link to the section via the same inherits_from + anchor
+        # shape build-catalog already understands. The article's own row (whose
+        # normalized title equals the page) keeps the whole-page link.
+        page = row["page_title"]
+        if row["normalized_title"] != normalize_title_for_metadata(page):
+            anchor = _full_title_section_anchor(
+                f"{page}{VIDEO_INDEX_SUFFIX}",
+                row["normalized_title"],
+                section_cache,
+            )
+            if anchor is not None:
+                row["video_index_inherits_from"] = page
+                row["video_index_anchor"] = anchor
+                sectioned += 1
+                continue
+        row["video_index"] = True
+        flagged += 1
     print(
         f"shmups-wiki-extract: flagged {flagged} row(s) as having a video index "
-        f"({len(video_index_parents)} parent pages in Category:Video Index)",
+        f"({len(video_index_parents)} parent pages in Category:Video Index); "
+        f"deep-linked {sectioned} redirect/synonym row(s) to a section",
         file=sys.stderr,
     )
 
@@ -540,11 +603,12 @@ def main() -> int:
         ]
     ]
     video_index_titles = {row["page_title"] for row in rows if row.get("video_index")}
-    section_cache: dict[str, list[tuple[str, str]]] = {}
     inferred = 0
     anchored = 0
     for row in rows:
-        if row.get("video_index"):
+        # Skip rows already resolved: own Video Index pages and the
+        # redirect/synonym rows the section pass above linked to a section.
+        if row.get("video_index") or row.get("video_index_inherits_from"):
             continue
         title = row["page_title"]
         for pattern in variant_suffix_patterns:
@@ -562,22 +626,13 @@ def main() -> int:
             # absent, or fetch-failure cases leave the anchor unset, so the link
             # falls back to the page top and can never point at a wrong section.
             residual = title[len(candidate) :].strip()
-            vi_page = f"{candidate}{VIDEO_INDEX_SUFFIX}"
-            if residual and vi_page not in section_cache:
-                try:
-                    section_cache[vi_page] = list_section_anchors(vi_page)
-                except Exception as exc:  # noqa: BLE001 - degrade to page-top link
-                    print(
-                        f"shmups-wiki-extract: section fetch failed for "
-                        f"{vi_page!r}: {exc}",
-                        file=sys.stderr,
-                    )
-                    section_cache[vi_page] = []
             if residual:
                 want = _section_match_key(residual)
                 matches = [
                     anchor
-                    for line, anchor in section_cache.get(vi_page, [])
+                    for line, anchor in _sections_for(
+                        f"{candidate}{VIDEO_INDEX_SUFFIX}", section_cache
+                    )
                     if _section_match_key(line) == want
                 ]
                 if len(matches) == 1:

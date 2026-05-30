@@ -4,6 +4,18 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.15]
+
+### Fixed
+
+- Fixed regional names and label variants that redirect to a parent game on Shmups Wiki linking to the top of the parent's Video Index instead of their own section. Games like *DoDonPachi DaiOuJou Black Label*, *DoDonPachi DaiOuJou Tamashii*, *DoDonPachi III*, *Mushihime-Sama Futari Black Label*, *Deathsmiles Mega Black Label*, *Fire Shark*, *Tengai*, *Sorcer Striker*, and *Truxton II* now deep-link to their exact section of the Video Index when the section can be matched unambiguously.
+
+### Acknowledgments
+
+- Thanks again to [@f8less](https://github.com/f8less) for continued Shmups Wiki testing and reporting.
+
+---
+
 ## [0.4.0-beta.14]
 
 ### Highlights
