@@ -14492,7 +14492,7 @@
     "series_name": "Gradius",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -14500,7 +14500,7 @@
     "series_name": "Gradius",
     "system": "nec_pce",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -14508,7 +14508,7 @@
     "series_name": "Gradius",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -16078,6 +16078,14 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
+  },
+  {
+    "game_title": "Incoming",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Incoming Forces"
   },
   {
     "game_title": "Incoming",
@@ -24076,6 +24084,14 @@
     "series_name": "Need for Speed",
     "system": "nintendo_ds",
     "series_order": 12,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Need for Speed: Underground",
+    "series_name": "Need for Speed",
+    "system": "arcade_fbneo",
+    "series_order": 7,
     "follows": "",
     "followed_by": ""
   },
@@ -37212,16 +37228,16 @@
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "The Black Bass",
-    "followed_by": ""
+    "follows": "",
+    "followed_by": "The Black Bass"
   },
   {
     "game_title": "The Black Bass",
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "",
-    "followed_by": "The Black Bass"
+    "follows": "The Black Bass",
+    "followed_by": ""
   },
   {
     "game_title": "The Blue Crystal Rod",
