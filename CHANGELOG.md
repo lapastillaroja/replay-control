@@ -12,6 +12,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Changed
 
+- Refreshed the bundled Shmups Wiki index and Wikidata series snapshots to their latest revisions, so game-detail pages reflect current Video Index / strategy-guide links and series relationships (including the version- and label-variant section deep links).
 - Each browser tab now holds a single live-updates connection for skin, activity, and Now Playing changes instead of one connection per topic, reducing the number of open connections to the device and improving reliability across reconnects (for example after an auto-update restart).
 
 ---
