@@ -3,7 +3,7 @@ Browser e2e tests for the database-corruption banner over SSE.
 
 Covers what the Rust integration suite can't: the live client-side wire.
 Server-side flag transition → ConfigEvent::CorruptionChanged broadcast →
-/sse/config delivery → SseConfigListener parses → context signal updates →
+/sse/events delivery → SseEventsListener parses → context signal updates →
 <Show> toggles the banner. The Rust tests stop at the broadcast send; these
 take over at receive.
 
@@ -158,7 +158,7 @@ def test_restore_from_backup_clears_banner_via_sse_push(
 ):
     """Clear-direction push: clicking Restore removes the banner without a
     navigation — proves the inverse `CorruptionChanged` event is delivered
-    and the SseConfigListener wires it back to the context signal."""
+    and the SseEventsListener wires it back to the context signal."""
     _corrupt_db_and_restart(USER_DATA_DB)
 
     page.goto(pi_url, wait_until="load", timeout=30000)

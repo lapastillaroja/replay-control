@@ -8,6 +8,9 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod ssr {
     use clap::Parser;
     use leptos::config::LeptosOptions;
+    use replay_control_core::skins;
+    use replay_control_core_server::update::read_available_update;
+    use serde::Serialize;
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
@@ -91,6 +94,46 @@ mod ssr {
         Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
     }
 
+    fn config_init_payload(state: &api::AppState) -> serde_json::Value {
+        let skin = state.effective_skin();
+        let skin_css = skins::theme_css(skin);
+        let storage_kind = if state.has_storage() {
+            state.storage().kind.as_str().to_string()
+        } else {
+            "none".to_string()
+        };
+        let storage_status = state.storage_status();
+        let rom_watcher_status = state.rom_watcher_status();
+        let available_update = read_available_update();
+        let version = replay_control_app::VERSION;
+        let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
+            state.corruption_status();
+        let asset_health = state.asset_health_snapshot();
+
+        serde_json::json!({
+            "type": "init",
+            "skin_index": skin,
+            "skin_css": skin_css,
+            "storage_kind": storage_kind,
+            "storage_status": storage_status,
+            "rom_watcher_status": rom_watcher_status,
+            "available_update": available_update,
+            "version": version,
+            "library_corrupt": library_corrupt,
+            "user_data_corrupt": user_data_corrupt,
+            "user_data_backup_exists": user_data_backup_exists,
+            "asset_health": asset_health,
+        })
+    }
+
+    fn multiplexed_sse_payload<T: Serialize>(stream: &str, payload: T) -> String {
+        serde_json::json!({
+            "stream": stream,
+            "payload": payload,
+        })
+        .to_string()
+    }
+
     /// Broadcast-based SSE stream for config change notifications.
     ///
     /// Unlike the polling-based `/sse/activity`, this stream is event-driven:
@@ -107,34 +150,7 @@ mod ssr {
         let mut rx = state.config_tx.subscribe();
         let stream = async_stream::stream! {
             // Send initial state so the client has current values on connect.
-            let skin = state.effective_skin();
-            let skin_css = replay_control_core::skins::theme_css(skin);
-            let storage_kind = if state.has_storage() {
-                state.storage().kind.as_str().to_string()
-            } else {
-                "none".to_string()
-            };
-            let storage_status = state.storage_status();
-            let rom_watcher_status = state.rom_watcher_status();
-            let available_update = replay_control_core_server::update::read_available_update();
-            let version = replay_control_app::VERSION;
-            let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
-                state.corruption_status();
-            let asset_health = state.asset_health_snapshot();
-            yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
-                "type": "init",
-                "skin_index": skin,
-                "skin_css": skin_css,
-                "storage_kind": storage_kind,
-                "storage_status": storage_status,
-                "rom_watcher_status": rom_watcher_status,
-                "available_update": available_update,
-                "version": version,
-                "library_corrupt": library_corrupt,
-                "user_data_corrupt": user_data_corrupt,
-                "user_data_backup_exists": user_data_backup_exists,
-                "asset_health": asset_health,
-            }).to_string()));
+            yield Ok::<_, Infallible>(Event::default().data(config_init_payload(&state).to_string()));
 
             // Then wait for broadcast events (no polling).
             loop {
@@ -180,6 +196,86 @@ mod ssr {
                         yield Ok::<_, Infallible>(Event::default().data(json));
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        };
+
+        Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    }
+
+    /// Single browser-facing SSE stream for app-wide live state.
+    ///
+    /// The legacy per-topic endpoints remain available, but the hydrated UI uses
+    /// this endpoint so each tab holds one HTTP/1.1 connection instead of three.
+    fn sse_events_stream(
+        state: api::AppState,
+    ) -> axum::response::sse::Sse<
+        impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+    > {
+        use axum::response::sse::{Event, KeepAlive, Sse};
+        use std::convert::Infallible;
+
+        let mut config_rx = state.config_tx.subscribe();
+        let mut activity_rx = state.activity_tx.subscribe();
+        let mut now_playing_rx = state.now_playing_tx.subscribe();
+        let stream = async_stream::stream! {
+            yield Ok::<_, Infallible>(Event::default().data(
+                multiplexed_sse_payload("config", config_init_payload(&state)),
+            ));
+            yield Ok::<_, Infallible>(Event::default().data(
+                multiplexed_sse_payload("activity", state.activity()),
+            ));
+            yield Ok::<_, Infallible>(Event::default().data(
+                multiplexed_sse_payload("now_playing", state.now_playing()),
+            ));
+
+            loop {
+                tokio::select! {
+                    event = config_rx.recv() => {
+                        match event {
+                            Ok(event) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("config", event),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("config", config_init_payload(&state)),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                    activity = activity_rx.recv() => {
+                        match activity {
+                            Ok(activity) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("activity", activity),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("activity", state.activity()),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                    now_playing = now_playing_rx.recv() => {
+                        match now_playing {
+                            Ok(now_playing) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("now_playing", now_playing),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                yield Ok::<_, Infallible>(Event::default().data(
+                                    multiplexed_sse_payload("now_playing", state.now_playing()),
+                                ));
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
                 }
             }
         };
@@ -779,6 +875,11 @@ mod ssr {
             let state = now_playing_sse_state.clone();
             async move { sse_now_playing_stream(state) }
         });
+        let events_sse_state = app_state.clone();
+        let events_sse_handler = axum::routing::get(move || {
+            let state = events_sse_state.clone();
+            async move { sse_events_stream(state) }
+        });
 
         // Clone state for the storage guard middleware before build_router consumes it.
         let guard_state = app_state.clone();
@@ -810,6 +911,7 @@ mod ssr {
             .route("/sse/activity", activity_sse_handler)
             .route("/sse/config", config_sse_handler)
             .route("/sse/now-playing", now_playing_sse_handler)
+            .route("/sse/events", events_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/owned-manuals/*path", owned_manuals_handler)

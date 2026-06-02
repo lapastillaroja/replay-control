@@ -28,7 +28,7 @@ pub fn MetadataPage() -> impl IntoView {
         Resource::new(|| (), |_| server_fns::get_metadata_library_overview());
     let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
 
-    // App-level activity signal (populated by SseActivityListener at the App
+    // App-level activity signal (populated by SseEventsListener at the App
     // root). Shared with banners, the setup checklist, and other consumers
     // — activity from another tab/process is reflected here too.
     let activity = use_context::<RwSignal<Activity>>().expect("Activity context");

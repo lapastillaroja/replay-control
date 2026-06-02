@@ -4,6 +4,18 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.16]
+
+### Fixed
+
+- Fixed released builds shipping an outdated game catalog. The release was rebuilding the catalog from a stale cached copy of its source data, so recent Shmups Wiki Video Index links and Wikidata series updates (added in 0.4.0-beta.14 and 0.4.0-beta.15) were never actually included and didn't reach devices. Releases now build the catalog from the current committed data, so those Video Index links and series relationships show up after upgrading.
+
+### Changed
+
+- Each browser tab now holds a single live-updates connection for skin, activity, and Now Playing changes instead of one connection per topic, reducing the number of open connections to the device and improving reliability across reconnects (for example after an auto-update restart).
+
+---
+
 ## [0.4.0-beta.15]
 
 ### Fixed

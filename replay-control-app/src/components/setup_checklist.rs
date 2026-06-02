@@ -54,7 +54,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     // can see the result and re-run if needed.
     let show_complete_view = !force && status.has_metadata && status.has_thumbnail_index;
 
-    // Read the app-level activity signal (populated by SseActivityListener at
+    // Read the app-level activity signal (populated by SseEventsListener at
     // the App root). Per-row busy flags derive from it, so activity from
     // another tab/process is reflected here without a second SSE connection.
     let activity = use_context::<RwSignal<Activity>>().expect("Activity context");

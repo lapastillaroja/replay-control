@@ -38,7 +38,7 @@ pub fn format_rebuild_progress_label(locale: Locale, p: &RebuildProgress) -> Opt
 /// (import, thumbnail update, rebuild, startup scan, maintenance).
 ///
 /// Reads from a context-provided `RwSignal<Activity>` fed by the App-root
-/// `SseActivityListener`. No polling, no resources.
+/// `SseEventsListener`. No polling, no resources.
 #[component]
 pub fn MetadataBusyBanner() -> impl IntoView {
     let i18n = use_i18n();

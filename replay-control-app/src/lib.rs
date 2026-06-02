@@ -134,15 +134,13 @@ pub fn App() -> impl IntoView {
     provide_context(Clock::install());
 
     let now_playing = use_now_playing();
-    // Fed by SseConfigListener; the skin page subscribes so its "current"
+    // Fed by SseEventsListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
 
     view! {
         <Router>
-            <SseConfigListener />
-            <SseActivityListener />
-            <SseNowPlayingListener />
+            <SseEventsListener />
             <SearchShortcut />
             <div class="app">
                 <header
@@ -249,52 +247,6 @@ fn initial_now_playing_from_window() -> Option<NowPlayingState> {
     serde_json::from_str(&json).ok()
 }
 
-/// SSE listener for now-playing state. The stream sends the current state as
-/// its first event, then subsequent changes.
-#[component]
-fn SseNowPlayingListener() -> impl IntoView {
-    #[cfg(feature = "hydrate")]
-    {
-        let now_playing = use_context::<RwSignal<NowPlayingState>>();
-        Effect::new(move || {
-            if let Some(now_playing) = now_playing {
-                install_sse_listener::<NowPlayingState>("/sse/now-playing", move |np| {
-                    now_playing.set(np)
-                });
-            }
-        });
-    }
-}
-
-/// Subscribe to a server-sent-events stream, parse each `data:` payload as
-/// `T`, and dispatch via `on_payload`. The `EventSource` and the message
-/// closure are intentionally leaked: SSE listeners installed at the app
-/// root never unmount.
-#[cfg(feature = "hydrate")]
-fn install_sse_listener<T: serde::de::DeserializeOwned + 'static>(
-    url: &'static str,
-    on_payload: impl Fn(T) + 'static,
-) {
-    use wasm_bindgen::prelude::*;
-    let es = match web_sys::EventSource::new(url) {
-        Ok(es) => es,
-        Err(_) => return,
-    };
-    let on_message =
-        Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            if data.is_empty() {
-                return;
-            }
-            if let Ok(payload) = serde_json::from_str::<T>(&data) {
-                on_payload(payload);
-            }
-        });
-    es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-    on_message.forget();
-    std::mem::forget(es);
-}
-
 #[cfg(feature = "hydrate")]
 fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStatus {
     let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -340,10 +292,11 @@ fn rom_watcher_status_from_payload(payload: &serde_json::Value) -> RomWatcherSta
         .unwrap_or_default()
 }
 
-/// SSE listener for config changes (skin, storage, update, corruption).
+/// Single app-wide SSE listener for config, activity, and now-playing changes.
 ///
-/// Connects to `/sse/config` on hydration. This is a broadcast-based endpoint
-/// (no polling) — the server pushes events only when state actually changes.
+/// Connects to `/sse/events` on hydration. This is a multiplexed endpoint so
+/// each browser tab holds one long-lived HTTP connection instead of one per
+/// live topic.
 ///
 /// Handles:
 /// - `init`: records current skin/storage state and corruption flags from server
@@ -352,7 +305,7 @@ fn rom_watcher_status_from_payload(payload: &serde_json::Value) -> RomWatcherSta
 /// - `UpdateAvailable`: sets the update-state signal
 /// - `CorruptionChanged`: writes to the `RwSignal<CorruptionStatus>` context
 #[component]
-fn SseConfigListener() -> impl IntoView {
+fn SseEventsListener() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
         use wasm_bindgen::prelude::*;
@@ -368,9 +321,11 @@ fn SseConfigListener() -> impl IntoView {
         let storage_status_signal = use_context::<RwSignal<StorageStatus>>();
         let rom_watcher_status_signal = use_context::<RwSignal<RomWatcherStatus>>();
         let asset_health_signal = use_context::<RwSignal<Vec<AssetHealthIssue>>>();
+        let activity_signal = use_context::<RwSignal<Activity>>();
+        let now_playing_signal = use_context::<RwSignal<NowPlayingState>>();
 
         Effect::new(move || {
-            let es = match web_sys::EventSource::new("/sse/config") {
+            let es = match web_sys::EventSource::new("/sse/events") {
                 Ok(es) => es,
                 Err(_) => return,
             };
@@ -382,9 +337,39 @@ fn SseConfigListener() -> impl IntoView {
                         return;
                     }
 
-                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&data) else {
+                    let Ok(event) = serde_json::from_str::<serde_json::Value>(&data) else {
                         return;
                     };
+
+                    let stream = event
+                        .get("stream")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    let Some(payload) = event.get("payload").cloned() else {
+                        return;
+                    };
+
+                    match stream {
+                        "activity" => {
+                            if let Some(signal) = activity_signal
+                                && let Ok(activity) = serde_json::from_value::<Activity>(payload)
+                            {
+                                signal.set(activity);
+                            }
+                            return;
+                        }
+                        "now_playing" => {
+                            if let Some(signal) = now_playing_signal
+                                && let Ok(now_playing) =
+                                    serde_json::from_value::<NowPlayingState>(payload)
+                            {
+                                signal.set(now_playing);
+                            }
+                            return;
+                        }
+                        "config" => {}
+                        _ => return,
+                    }
 
                     let event_type = payload
                         .get("type")
@@ -525,6 +510,18 @@ fn SseConfigListener() -> impl IntoView {
             es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
             on_message.forget();
 
+            let es_for_beforeunload = es.clone();
+            let on_beforeunload = Closure::<dyn Fn(web_sys::Event)>::new(move |_| {
+                es_for_beforeunload.close();
+            });
+            if let Some(window) = web_sys::window() {
+                let _ = window.add_event_listener_with_callback(
+                    "beforeunload",
+                    on_beforeunload.as_ref().unchecked_ref(),
+                );
+            }
+            on_beforeunload.forget();
+
             // No onerror handler: rely on EventSource's built-in retry so the
             // listener reconnects after a server restart (e.g. auto-update).
             // The fresh `init` payload that follows is what triggers the
@@ -534,28 +531,6 @@ fn SseConfigListener() -> impl IntoView {
             // end of this Effect — the listener is mounted at the App root and
             // never unmounts.
             std::mem::forget(es);
-        });
-    }
-}
-
-/// SSE listener for activity state (import, thumbnail, rebuild, maintenance, etc.).
-///
-/// Connects to `/sse/activity` once at hydration and stays open for the
-/// lifetime of the tab. Each event payload is a JSON-encoded `Activity`;
-/// this writes it into the `RwSignal<Activity>` provided by `App`. Banners
-/// and other consumers subscribe via `use_context::<RwSignal<Activity>>()`.
-///
-/// No `onerror` handler — the browser's built-in EventSource retry reconnects
-/// after server restarts, the same as `SseConfigListener`.
-#[component]
-fn SseActivityListener() -> impl IntoView {
-    #[cfg(feature = "hydrate")]
-    {
-        let signal = use_context::<RwSignal<Activity>>();
-        Effect::new(move || {
-            if let Some(signal) = signal {
-                install_sse_listener::<Activity>("/sse/activity", move |a| signal.set(a));
-            }
         });
     }
 }

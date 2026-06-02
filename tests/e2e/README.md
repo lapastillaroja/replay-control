@@ -107,7 +107,7 @@ container runner.
 
 ### `test_corruption_banner.py` — Triggers service restart + DB corruption
 Covers the live client wire that the Rust integration suite can't reach:
-`/sse/config` event → `SseConfigListener` → context signal → banner toggle.
+`/sse/events` event → `SseEventsListener` → context signal → banner toggle.
 
 `user_data.db`:
 - Banner appears via the `init` payload after corrupt + service restart
