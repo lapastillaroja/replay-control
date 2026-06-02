@@ -465,6 +465,16 @@ def main() -> int:
     print("shmups-wiki-extract: enumerating main-namespace pages...", file=sys.stderr)
     titles = collect_game_pages()
 
+    # A healthy crawl always finds hundreds of pages. Zero means the wiki API
+    # returned nothing (transient outage / rate-limit) — abort with a non-zero
+    # exit so the snapshot is never overwritten with an empty result, rather
+    # than emitting `[]` that downstream would treat as "all shmups removed".
+    if not titles:
+        sys.exit(
+            "shmups-wiki-extract: 0 pages returned by the wiki API; "
+            "aborting without writing an empty snapshot"
+        )
+
     rows: list[dict[str, object]] = []
     seen_keys: set[str] = set()
     collisions: list[tuple[str, str, str]] = []

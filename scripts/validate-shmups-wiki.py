@@ -30,6 +30,10 @@ def validate(path: Path) -> int:
     rows = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(rows, list):
         raise SystemExit("snapshot must be a JSON array")
+    # Reject an empty snapshot: a degraded wiki response can make the extract
+    # emit [], which would silently strip every shmups link from the catalog.
+    if not rows:
+        raise SystemExit("snapshot is empty")
     if rows:
         bad_shape = [
             idx
