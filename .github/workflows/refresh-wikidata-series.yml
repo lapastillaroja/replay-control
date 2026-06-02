@@ -98,7 +98,10 @@ jobs:
           git checkout -B "$BRANCH"
           git add data/wikidata/series.json
           git commit -m "chore: refresh wikidata series snapshot"
-          git push --force-with-lease origin "$BRANCH"
+          # Plain --force: this bot-owned branch is always fully overwritten, and
+          # --force-with-lease can't form a lease here (checkout fetches only the
+          # default branch, so there's no remote-tracking ref → "stale info").
+          git push --force origin "$BRANCH"
 
           pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')"
           body="Refreshes the committed Wikidata series snapshot.
