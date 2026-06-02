@@ -32,24 +32,16 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y mold p7zip-full
 
-      - name: Cache upstream data sources
-        uses: actions/cache@v5
+      - name: Restore upstream data cache
+        # Restore-only from the shared data/upstream cache (produced weekly by
+        # refresh-upstream-data.yml); the download steps below skip present
+        # files and fetch fresh on a cold cache.
+        uses: actions/cache/restore@v4
         with:
           path: |
-            data/catver.ini
-            data/catver-mame-current.ini
-            data/fbneo-arcade.dat
-            data/mame2003plus.xml
-            data/mame0285-arcade.xml
-            data/nplayers.ini
-            data/no-intro
-            data/libretro-meta
-            data/thegamesdb-latest.json
-            data/tgdb-developers.json
-            data/tgdb-genres.json
-            data/tgdb-publishers.json
-            data/wikidata
-          key: upstream-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/download-tgdb-lookups.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py', 'scripts/wikidata-series-extract.py') }}
+            data/upstream/
+          key: data-upstream-latest
+          restore-keys: data-upstream-
 
       - name: Download arcade data
         run: ./scripts/download-arcade-data.sh
@@ -61,7 +53,7 @@ jobs:
         env:
           TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
         run: |
-          if [[ ! -s data/tgdb-developers.json ]]; then
+          if [[ ! -s data/upstream/tgdb-developers.json ]]; then
             ./scripts/download-tgdb-lookups.sh
           fi
 

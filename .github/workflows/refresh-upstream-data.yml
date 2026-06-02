@@ -1,0 +1,62 @@
+name: Refresh Upstream Data Cache
+
+# Weekly producer for the shared data/upstream build cache (downloaded
+# third-party inputs only). Saves under a per-run key — GH caches are immutable
+# per key, so a unique key gives a fresh cache each run; consumers restore the
+# most recent via the data-upstream- prefix. Keeps the cache current regardless
+# of release cadence.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 05:00 UTC.
+    - cron: '0 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        # p7zip-full + unzip: MAME XML is extracted from .7z, nplayers from .zip.
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full unzip
+
+      # No cache restore: a clean checkout makes the (skip-if-present) download
+      # scripts fetch everything fresh, then we publish that as the new cache.
+      - name: Download upstream data
+        env:
+          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
+        run: |
+          ./scripts/download-arcade-data.sh
+          ./scripts/download-metadata.sh
+          ./scripts/download-tgdb-lookups.sh
+
+      - name: Verify required inputs are present
+        # Never publish a partial cache (mirrors build-catalog REQUIRED_SOURCES).
+        run: |
+          missing=0
+          for req in \
+              fbneo-arcade.dat \
+              mame2003plus.xml \
+              mame0285-arcade.xml \
+              no-intro \
+              thegamesdb-latest.json; do
+            if [[ ! -e "data/upstream/$req" ]]; then
+              echo "MISSING: data/upstream/$req" >&2
+              missing=1
+            fi
+          done
+          [[ "$missing" == "0" ]] || { echo "Refusing to publish a partial upstream cache." >&2; exit 1; }
+          du -sh data/upstream
+
+      - name: Save upstream data cache
+        # Per-run key → a fresh cache each run; consumers restore the latest.
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/upstream/
+          key: data-upstream-${{ github.run_id }}

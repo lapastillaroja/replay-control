@@ -32,23 +32,16 @@ jobs:
         # "cannot find 'ld'" (the flag does not fall back to the system linker).
         run: sudo apt-get update && sudo apt-get install -y p7zip-full mold
 
-      - name: Cache catalog source data
-        uses: actions/cache@v5
+      - name: Restore catalog source data cache
+        # Restore-only from the shared data/upstream cache (produced weekly by
+        # refresh-upstream-data.yml); the download step below fetches on a cold
+        # cache.
+        uses: actions/cache/restore@v4
         with:
           path: |
-            data/catver.ini
-            data/catver-mame-current.ini
-            data/fbneo-arcade.dat
-            data/mame2003plus.xml
-            data/mame0285-arcade.xml
-            data/nplayers.ini
-            data/no-intro
-            data/libretro-meta
-            data/mister-manuals
-            data/retrokit-manuals
-            data/thegamesdb-latest.json
-          key: wikidata-refresh-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py') }}
-          restore-keys: wikidata-refresh-data-
+            data/upstream/
+          key: data-upstream-latest
+          restore-keys: data-upstream-
 
       - name: Download catalog source data
         run: |
