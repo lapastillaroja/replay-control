@@ -28,7 +28,10 @@ if [[ -z "${TGDB_API_KEY:-}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_DIR="$SCRIPT_DIR/../data"
+# Downloaded third-party inputs live under data/upstream (regenerable,
+# gitignored) — kept separate from committed curated data so build caches that
+# restore this dir can never clobber source-of-truth files.
+DATA_DIR="$SCRIPT_DIR/../data/upstream"
 API_BASE="https://api.thegamesdb.net/v1"
 
 mkdir -p "$DATA_DIR"

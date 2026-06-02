@@ -27,7 +27,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DATA_DIR="$PROJECT_ROOT/data"
+# Downloaded third-party inputs live under data/upstream (regenerable,
+# gitignored) — kept separate from committed curated data so build caches that
+# restore this dir can never clobber source-of-truth files.
+DATA_DIR="$PROJECT_ROOT/data/upstream"
 
 mkdir -p "$DATA_DIR/no-intro"
 mkdir -p "$DATA_DIR/libretro-meta/maxusers"

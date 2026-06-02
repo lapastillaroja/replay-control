@@ -103,7 +103,8 @@ fn main() {
         fs::remove_dir_all(&output_dir).expect("failed to clean output directory");
     }
 
-    let data_dir = workspace_root().join("data");
+    // Downloaded inputs (No-Intro DATs, FBNeo DAT) live under data/upstream.
+    let data_dir = workspace_root().join("data").join("upstream");
 
     // Track all generated ROM files per system for favorites/recents
     let mut all_roms: HashMap<String, Vec<String>> = HashMap::new();

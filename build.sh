@@ -31,10 +31,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "${SKIP_DATA:-}" == "1" ]]; then
     echo "==> SKIP_DATA=1: skipping data download + catalog rebuild."
 else
+    # Probe every input the catalog's preflight requires (mirror of
+    # build-catalog REQUIRED_SOURCES). Downloaded inputs live under
+    # data/upstream; data/wikidata is committed. Checking only a subset lets a
+    # partial cache (e.g. fbneo + tgdb present but mame/no-intro missing after a
+    # failed 7z step) report "present" and then fail preflight, so list them all.
     data_missing=false
-    [[ ! -d "$SCRIPT_DIR/data/arcade" || -z "$(ls "$SCRIPT_DIR/data/arcade/"*.dat "$SCRIPT_DIR/data/arcade/"*.xml 2>/dev/null)" ]] && data_missing=true
-    [[ ! -f "$SCRIPT_DIR/data/thegamesdb-latest.json" ]] && data_missing=true
-    [[ ! -s "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
+    for req in \
+        upstream/fbneo-arcade.dat \
+        upstream/mame2003plus.xml \
+        upstream/mame0285-arcade.xml \
+        upstream/no-intro \
+        upstream/thegamesdb-latest.json \
+        wikidata/series.json; do
+        [[ ! -e "$SCRIPT_DIR/data/$req" ]] && data_missing=true
+    done
 
     if [[ "$data_missing" == "true" ]]; then
         echo "==> Downloading data files..."

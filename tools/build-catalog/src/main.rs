@@ -728,6 +728,16 @@ fn normalize_arcade_genre(category: &str) -> &'static str {
 // Arcade DB insertion
 // =============================================================================
 
+/// Subdirectory under the data dir holding downloaded / derived third-party
+/// inputs (No-Intro, MAME / FBNeo DATs, catver, nplayers, TGDB, libretro /
+/// MiSTer / retrokit). These are regenerable and gitignored, kept separate from
+/// the committed curated data (`arcade/`, `community/`, `shmups-wiki/`,
+/// `wikidata/`) so a build cache that restores this dir can never clobber a
+/// source-of-truth file. Populated by the download scripts under `data/upstream`.
+fn upstream(sources_dir: &Path) -> PathBuf {
+    sources_dir.join("upstream")
+}
+
 fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
     let arcade_dir = sources_dir.join("arcade");
 
@@ -746,21 +756,21 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         buckets.push(("naomi", entries));
     }
 
-    let fbneo_path = sources_dir.join("fbneo-arcade.dat");
+    let fbneo_path = upstream(sources_dir).join("fbneo-arcade.dat");
     if fbneo_path.exists() {
         let entries = parse_fbneo_dat(&fbneo_path);
         eprintln!("Arcade DB: FBNeo DAT loaded {} entries", entries.len());
         buckets.push(("fbneo", entries));
     }
 
-    let mame_2k3p_path = sources_dir.join("mame2003plus.xml");
+    let mame_2k3p_path = upstream(sources_dir).join("mame2003plus.xml");
     if mame_2k3p_path.exists() {
         let entries = parse_mame2003plus_xml(&mame_2k3p_path);
         eprintln!("Arcade DB: MAME 2003+ loaded {} entries", entries.len());
         buckets.push(("mame_2k3p", entries));
     }
 
-    let mame_current_path = sources_dir.join("mame0285-arcade.xml");
+    let mame_current_path = upstream(sources_dir).join("mame0285-arcade.xml");
     if mame_current_path.exists() {
         let entries = parse_mame_current_xml(&mame_current_path);
         eprintln!("Arcade DB: MAME current loaded {} entries", entries.len());
@@ -773,7 +783,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let catver: HashMap<String, String> = {
         let mut m: HashMap<String, String> = HashMap::new();
         for ini in ["catver.ini", "catver-mame-current.ini"] {
-            let path = sources_dir.join(ini);
+            let path = upstream(sources_dir).join(ini);
             if path.exists() {
                 m.extend(parse_catver_ini(&path));
             }
@@ -781,7 +791,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         m
     };
     let nplayers: HashMap<String, u8> = {
-        let path = sources_dir.join("nplayers.ini");
+        let path = upstream(sources_dir).join("nplayers.ini");
         if path.exists() {
             parse_nplayers_ini(&path)
         } else {
@@ -1740,10 +1750,10 @@ fn normalize_title_for_tgdb(title: &str) -> String {
 // =============================================================================
 
 fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
-    let nointro_dir = sources_dir.join("no-intro");
-    let maxusers_dir = sources_dir.join("libretro-meta").join("maxusers");
-    let genre_dir = sources_dir.join("libretro-meta").join("genre");
-    let tgdb_path = sources_dir.join("thegamesdb-latest.json");
+    let nointro_dir = upstream(sources_dir).join("no-intro");
+    let maxusers_dir = upstream(sources_dir).join("libretro-meta").join("maxusers");
+    let genre_dir = upstream(sources_dir).join("libretro-meta").join("genre");
+    let tgdb_path = upstream(sources_dir).join("thegamesdb-latest.json");
 
     let (tgdb, tgdb_regional_dates) = if tgdb_path.exists() {
         eprintln!("Game DB: Loading TheGamesDB JSON dump...");
@@ -1755,9 +1765,9 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         (HashMap::new(), HashMap::new())
     };
 
-    let tgdb_developers = load_tgdb_name_map(&sources_dir.join("tgdb-developers.json"));
-    let tgdb_publishers = load_tgdb_name_map(&sources_dir.join("tgdb-publishers.json"));
-    let tgdb_genres = load_tgdb_name_map(&sources_dir.join("tgdb-genres.json"));
+    let tgdb_developers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-developers.json"));
+    let tgdb_publishers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-publishers.json"));
+    let tgdb_genres = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-genres.json"));
     eprintln!(
         "Game DB: TGDB lookups: {} devs, {} pubs, {} genres",
         tgdb_developers.len(),
@@ -2448,7 +2458,7 @@ fn insert_catalog_resources(conn: &Connection, sources_dir: &Path) -> rusqlite::
 
 fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
     let mut out = Vec::new();
-    let dir = sources_dir.join("mister-manuals");
+    let dir = upstream(sources_dir).join("mister-manuals");
     for &(repo, system) in MISTER_MANUAL_REPOS {
         let path = dir.join(format!("{repo}.csv"));
         if !path.exists() {
@@ -2524,7 +2534,7 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
 
 fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
     let mut out = Vec::new();
-    let dir = sources_dir.join("retrokit-manuals");
+    let dir = upstream(sources_dir).join("retrokit-manuals");
     for &(folder, systems) in RETROKIT_MANUAL_FOLDERS {
         let path = dir.join(format!("{folder}-sources.tsv"));
         if !path.exists() {
@@ -2738,12 +2748,14 @@ fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<Stri
 ///
 /// Truly optional inputs (catver, nplayers, tgdb-*, libretro-meta) are
 /// skipped individually at parse time — they only enrich existing entries.
+// Paths relative to the data dir. Downloaded inputs live under `upstream/`;
+// `wikidata/series.json` is committed and stays at the data-dir root.
 const REQUIRED_SOURCES: &[&str] = &[
-    "fbneo-arcade.dat",
-    "mame2003plus.xml",
-    "mame0285-arcade.xml",
-    "no-intro",
-    "thegamesdb-latest.json",
+    "upstream/fbneo-arcade.dat",
+    "upstream/mame2003plus.xml",
+    "upstream/mame0285-arcade.xml",
+    "upstream/no-intro",
+    "upstream/thegamesdb-latest.json",
     "wikidata/series.json",
 ];
 
@@ -2903,9 +2915,12 @@ mod tests {
     #[test]
     fn insert_arcade_games_retains_full_mame_categories() {
         let dir = temp_sources_dir();
-        fs::create_dir_all(&dir).unwrap();
+        // Downloaded inputs (MAME XML, catver) live under upstream/ — mirror the
+        // production layout the loaders read from.
+        let up = upstream(&dir);
+        fs::create_dir_all(&up).unwrap();
         fs::write(
-            dir.join("mame0285-arcade.xml"),
+            up.join("mame0285-arcade.xml"),
             r#"<?xml version="1.0"?>
 <mame version="0.285">
 <m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
@@ -2916,7 +2931,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            dir.join("catver-mame-current.ini"),
+            up.join("catver-mame-current.ini"),
             "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\n",
         )
         .unwrap();
