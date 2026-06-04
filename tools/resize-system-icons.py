@@ -21,7 +21,8 @@ import sys
 
 # Source → destination filename mapping (KyleBing name → app folder_name)
 MAPPING = {
-    "ARCADE": "arcade_fbneo",
+    "ARCADE_FBNEO": "arcade_fbneo",  # FBNeo-branded cabinet (was the generic ARCADE)
+    "ARCADE": "arcade_stv",          # generic cabinet for Sega Titan Video
     "MAME": "arcade_mame",
     "MAME2003PLUS": "arcade_mame_2k3p",
     "NAOMI": "arcade_dc",
@@ -64,7 +65,6 @@ MAPPING = {
 # Icons that use a different source (fallback or alias)
 FALLBACKS = {
     "commodore_amicd": "commodore_ami",  # copy from Amiga
-    "arcade_stv": "arcade_fbneo",        # generic KyleBing ARCADE.png artwork
 }
 
 # Icons generated from non-KyleBing sources
