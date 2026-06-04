@@ -4,6 +4,26 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0]
+
+Stable release rolling up the 0.4.0-beta.1 → beta.16 series. The most important user-facing changes:
+
+### Highlights
+
+- **Now Playing, everywhere.** While a game is running on the appliance, a live badge in the top bar shows its name, system, and elapsed play time on every page; the home page gets a hero card for the active game and the game's own detail page gets a "Now Playing" pill. Tap to jump straight to it, deep-link to its manual, or **Stop Game** to return to the menu. Detection is accurate across the hard cases — arcade clones show the exact running variant, and ScummVM, Neo Geo, and MAME titles are identified correctly instead of as a menu or an internal data file.
+- **Run Replay Control off the device.** A new standalone mode (`--storage-path /path/to/roms`) makes managing a library from a desktop or laptop a first-class deployment. Browsing, favorites, search, metadata, and recommendations work the same; device-only features (Wi-Fi, NFS, RetroAchievements, launch on TV, …) are clearly marked unavailable instead of silently writing to a folder the OS doesn't own.
+- **Faster, safer library scans — especially on NFS.** Scans now show the file listing and metadata first and run CRC identity matching in the background, so large libraries stay responsive (the 95k-ROM NFS test library went from a ~10-minute forced rebuild to a ~2.5-minute responsive foreground pass). Unchanged systems skip rework on restart via a storage-safe modification-time fast path, rebuilds are resumable and safe to interrupt (a dropped mount or power loss no longer wipes your library), and a rescan now reflects ROMs you deleted on disk.
+- **Much better metadata, and one button to refresh it.** A redesigned pipeline stores external metadata host-global, so ROMs added after an import get enriched automatically, and a single **Refresh metadata** action downloads, parses, and re-enriches with live progress. Coverage improved across release dates, descriptions, developers, genres, ratings, and player counts — including arcade clones, alternate regional titles, and filename-only matches — and arcade names now follow each system's upstream curation (FBNeo's "Galaga '88" on `arcade_fbneo`, MAME's name on `arcade_mame`).
+- **Richer game detail pages.** Box art, title screen, screenshots, and your own captures share one swipeable lightbox; precise release dates ("Aug 31, 2000") show when known; and pages link out to GameFAQs and Shmups Wiki strategy guides + Video Index walkthroughs (with version/label variants deep-linking to the right section). You can save manuals offline or add your own by URL or upload.
+- **Community-curated metadata.** A new bundled source lets anyone contribute descriptions, art, manuals, videos, and guides for games no upstream source covers — one JSON file per system, no code changes — so titles like the AmigaVision distribution finally show real details.
+- **SEGA Titan Video (ST-V) support.** ROMs dropped into `arcade_stv/` now appear as a full system with display name, icon, Megabit ROM sizes, MAME / LaunchBox / Wikidata metadata, box art, manuals, and Now Playing detection.
+- **More reliable storage, updates, and recovery.** A central per-storage library database keyed to each drive's filesystem id means re-plugging a USB keeps every cached row — no rescan; a clobbered or torn-write database recovers automatically (with a one-click Reset for your saved data) instead of crash-looping; auto-update swaps the bundled game catalog atomically and no longer traps browsers in a reload loop; and slow NFS mounts wait gracefully instead of failing startup.
+- **Snappier under load.** Async connection pools and async subprocess/filesystem calls roughly doubled homepage throughput, and a longer response cache keeps the recommendations and favorites carousels warm across navigation.
+
+For the complete per-release detail, see the `0.4.0-beta.*` entries below.
+
+---
+
 ## [0.4.0-beta.16]
 
 ### Fixed
