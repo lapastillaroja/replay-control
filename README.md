@@ -89,6 +89,15 @@ This is a personal project born from my love for retro gaming on real hardware. 
 - Responsive design from phones to desktops
 - Instant page loads with smart multi-layer caching
 
+## Roadmap
+
+Planned, not yet available (in no particular order):
+
+- Improved game detail page UI and resource management
+- Deeper RePlayOS integration via the newly released official API
+- New Now Playing UI and controls
+- DMDos integration
+
 ## Quick Install
 
 Works on **Windows 10+, macOS, and Linux** — all three ship with SSH built in. SSH into your Pi, then run the installer:

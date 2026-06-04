@@ -96,6 +96,29 @@
       </div>
     </div>
   </section>
+
+  <!-- Roadmap -->
+  <section class="section section-md">
+    <div class="container">
+      <h2 class="text-center mb-2">Roadmap</h2>
+      <p class="text-center mb-4" style="color: #888; font-size: 0.9rem;">On the horizon &mdash; planned, not yet available (in no particular order).</p>
+      <div class="row justify-content-center">
+        <div class="col-lg-9 col-xl-8">
+          <ul style="list-style: none; padding: 0; max-width: 640px; margin: 0 auto;">
+            {{ $roadmap := slice
+              "🎮 Improved game detail page UI and resource management"
+              "🔗 Deeper RePlayOS integration via the newly released official API"
+              "⏱️ New Now Playing UI and controls"
+              `🟧 <a href="https://www.dmdos.net/">DMDos</a> integration`
+            }}
+            {{ range $roadmap }}
+            <li style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 0.6rem; color: #ccc;">{{ . | safeHTML }}</li>
+            {{ end }}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
 {{ end }}
 
 {{ define "sidebar-footer" }}
