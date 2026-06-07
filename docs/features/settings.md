@@ -28,11 +28,11 @@ Primary and secondary language (e.g., English, Spanish, Japanese). Defaults base
 
 Configure your RetroAchievements username and password from **Settings > RetroAchievements**. The password field is always blank when the page opens; Replay Control only shows whether a password is already saved.
 
-Credentials are saved together. Enter both username and password to set the account, or use **Clear & Restart RePlayOS** to remove both. Changing the username also requires entering the password again.
+Credentials are saved together. Enter both username and password to set the account, or use **Clear & Reboot RePlayOS** to remove both. Changing the username also requires entering the password again.
 
-Use **Save & Restart RePlayOS** to apply changes. Restarting RePlayOS stops any running game and briefly disconnects the TV frontend.
+Use **Save & Reboot RePlayOS** to apply changes. Rebooting RePlayOS stops any running game and briefly disconnects the TV frontend.
 
-Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control stops the TV frontend, saves the updated RePlayOS configuration, then starts the frontend again. On development systems outside RePlayOS, the configuration file is still updated but the restart step is skipped.
+Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control sends the changes through the RePlayOS API, then asks RePlayOS to reboot so the new system-level settings take effect. On development systems outside RePlayOS, these system settings are skipped.
 
 ## Font Size
 

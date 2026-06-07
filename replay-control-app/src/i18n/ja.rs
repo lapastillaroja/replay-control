@@ -631,11 +631,11 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::NowPlayingLabelPlaying => "プレイ中",
         Key::NowPlayingLabelPaused => "プレイ中（一時停止）",
-        Key::NowPlayingLabelHalted => "静止中",
+        Key::NowPlayingLabelHalted => "停止中",
         Key::NowPlayingLabelInMenu => "プレイ中（メニュー）",
         Key::NowPlayingDisc => "ディスク {0}/{1}",
         Key::PlayerControlScreenshot => "撮影",
-        Key::PlayerControlHalt => "静止",
+        Key::PlayerControlHalt => "停止",
         Key::PlayerControlMute => "ミュート",
         Key::PlayerControlVolumeDown => "音量 -",
         Key::PlayerControlVolumeUp => "音量 +",

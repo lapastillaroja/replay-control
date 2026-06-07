@@ -4,6 +4,29 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.5.0-beta.1]
+
+### Highlights
+
+- **Launch on TV now uses RePlayOS Net Control.** Game launches go through the official RePlayOS `load_game` API instead of writing `_autostart/autostart.auto` and restarting a`replay.service`, so launching no longer forces the frontend storage remount that could downgrade NFS/USB/NVMe storage back to SD.
+- **Stop Game has been removed.** The old stop action depended on restarting the RePlayOS frontend and could trigger the same storage-remount failure as the legacy launch path, so it has been removed from the Now Playing hero, game detail pages, server functions, translations, styles, and tests.
+- **Net Control setup and status are now first-class.** Settings includes RePlayOS Net Control onboarding/status flows, Replay Control stores the verified control code in its own settings, and launch surfaces connection/token problems instead of silently falling back to unsafe restart behavior.
+- **Redesigned Now Playing, with on-TV controls.** Detection was rebuilt on the official RePlayOS API, so what you see is exactly what the TV is running — arcade clones, multi-disc games, and ScummVM titles included — along with whether the game is actively playing, paused, or parked behind the RePlayOS menu, and the current disc of multi-disc games ("Disc 2/4"). New controls let you take screenshots, manage the volume, halt/freeze the picture (great for photographing CRTs), and reset the running game straight from Replay Control.
+
+### Changed
+
+- Launch is refused while Replay Control is already doing storage-mutating work, but it no longer opens a `FrontendRestart` quiesce window because successful API launches do not restart `replay.service`.
+- Now Playing offers no stop/unload action (RePlayOS exposes no stop API); active-game surfaces deep-link to details/manuals, and game control happens through the new screenshot/volume/halt/reset buttons instead of frontend restarts.
+- The legacy autostart launch helper script and restart-based launch process have been removed from the active release path.
+
+### Fixed
+
+- Fixed Replay Control launch on NFS by avoiding the RePlayOS service restart/remount path entirely. On-device validation launched a Master System ROM from NFS through Net Control while `replay.service` kept the same PID/start time and `system_storage` remained `nfs`.
+- Fixed NFS outage recovery during storage fallback detection. Replay Control no longer probes a stale hard-mounted NFS share before accepting the configured-storage error/fallback state, avoiding hangs when the NFS server is unreachable.
+- Fixed stale stop UI/server-function artifacts by removing the component, endpoint registration, i18n keys, CSS classes, and stop-specific regression test hooks.
+
+---
+
 ## [0.4.0]
 
 Stable release rolling up the 0.4.0-beta.1 → beta.16 series. The most important user-facing changes:

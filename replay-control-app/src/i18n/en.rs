@@ -174,10 +174,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsPasswordSaved => "Password saved",
         Key::RetroAchievementsPasswordMissing => "No password saved",
         Key::RetroAchievementsCredentialsRequired => {
-            "Enter both username and password, or use Clear & Restart RePlayOS to remove the saved account."
+            "Enter both username and password, or use Clear & Reboot RePlayOS to remove the saved account."
         }
-        Key::RetroAchievementsSaveRestart => "Save & Restart RePlayOS",
-        Key::RetroAchievementsClearRestart => "Clear & Restart RePlayOS",
+        Key::RetroAchievementsSaveRestart => "Save & Reboot RePlayOS",
+        Key::RetroAchievementsClearRestart => "Clear & Reboot RePlayOS",
         Key::RetroAchievementsSaved => "RetroAchievements credentials updated",
 
         // Skin
@@ -204,12 +204,12 @@ pub fn translate(key: Key) -> &'static str {
 
         // Settings (shared)
         Key::SettingsSave => "Save",
-        Key::SettingsSaveRestart => "Save & Restart RePlayOS",
+        Key::SettingsSaveRestart => "Save & Reboot RePlayOS",
         Key::SettingsSaving => "Saving...",
         Key::SettingsSaved => "Settings saved",
-        Key::SettingsRestarting => "Restarting...",
+        Key::SettingsRestarting => "Rebooting...",
         Key::SettingsReplayRestartWarning => {
-            "Restarting RePlayOS stops any running game and briefly disconnects the TV frontend."
+            "Rebooting RePlayOS stops any running game and briefly disconnects the device."
         }
         Key::SettingsReboot => "Reboot System",
         Key::SettingsRebooting => "Rebooting...",

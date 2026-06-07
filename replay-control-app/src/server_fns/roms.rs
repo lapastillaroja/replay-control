@@ -2,6 +2,8 @@ use super::*;
 use replay_control_core::library_db::LibraryResourceLink;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
+#[cfg(feature = "ssr")]
+use replay_control_core_server::recents::add_recent;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -775,21 +777,15 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
         return Err(ServerFnError::new(e.to_string()));
     }
 
-    // Create a recents entry so the home page reflects the launch immediately.
-    // Extract system and rom_filename from the rom_path.
-    // rom_path format: "/roms/<system>/<optional_subdirs>/<rom_filename>"
-    if let Some((system, rom_filename)) = parse_rom_path(&rom_path) {
-        if let Err(e) = replay_control_core_server::recents::add_recent(
-            &storage,
-            &system,
-            &rom_filename,
-            &rom_path,
-        ) {
-            tracing::warn!("Failed to create recents entry: {e}");
-        }
-        state.cache.invalidate_recents().await;
-        state.cache.invalidate_recommendations().await;
+    let rom_filename = game_file
+        .rsplit_once('/')
+        .map(|(_, filename)| filename)
+        .unwrap_or(game_file);
+    if let Err(e) = add_recent(&storage, system, rom_filename, &rom_path) {
+        tracing::warn!("Failed to create recents entry: {e}");
     }
+    state.cache.invalidate_recents().await;
+    state.cache.invalidate_recommendations().await;
 
     #[cfg(feature = "ssr")]
     redirect_after_progressive_form(&return_to);
@@ -803,65 +799,9 @@ fn redirect_after_progressive_form(return_to: &str) {
     }
 }
 
-/// Extract system folder and ROM filename from a rom_path.
-///
-/// Handles paths like `/roms/sega_smd/Sonic.md` (simple) and
-/// `/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip` (nested).
-#[cfg(feature = "ssr")]
-fn parse_rom_path(rom_path: &str) -> Option<(String, String)> {
-    let path = rom_path.strip_prefix("/roms/")?;
-    let (system, rest) = path.split_once('/')?;
-    let rom_filename = rest.rsplit_once('/').map(|(_, f)| f).unwrap_or(rest);
-    Some((system.to_string(), rom_filename.to_string()))
-}
-
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
     use super::*;
-
-    // --- parse_rom_path ---
-
-    #[test]
-    fn parse_simple_rom_path() {
-        let result = parse_rom_path("/roms/sega_smd/Sonic.md");
-        assert_eq!(
-            result,
-            Some(("sega_smd".to_string(), "Sonic.md".to_string()))
-        );
-    }
-
-    #[test]
-    fn parse_nested_rom_path() {
-        let result =
-            parse_rom_path("/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip");
-        assert_eq!(
-            result,
-            Some(("arcade_dc".to_string(), "ggx15.zip".to_string()))
-        );
-    }
-
-    #[test]
-    fn parse_rom_path_missing_prefix() {
-        assert_eq!(parse_rom_path("sega_smd/Sonic.md"), None);
-    }
-
-    #[test]
-    fn parse_rom_path_only_system() {
-        // No filename after system
-        assert_eq!(parse_rom_path("/roms/sega_smd"), None);
-    }
-
-    #[test]
-    fn parse_rom_path_with_spaces() {
-        let result = parse_rom_path("/roms/nintendo_snes/Super Mario World (USA).sfc");
-        assert_eq!(
-            result,
-            Some((
-                "nintendo_snes".to_string(),
-                "Super Mario World (USA).sfc".to_string()
-            ))
-        );
-    }
 
     // --- validate_path_safe ---
 

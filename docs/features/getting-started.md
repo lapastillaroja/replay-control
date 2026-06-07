@@ -2,7 +2,7 @@
 
 A quick guide to get Replay Control running on your Pi.
 
-{{< screenshot "home-desktop.png" "Replay Control home page" >}}
+{{< screenshot "home.png" "Replay Control home page" >}}
 
 ## Prerequisites
 

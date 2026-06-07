@@ -602,7 +602,6 @@ mod ssr {
         server_fn::axum::register_explicit::<
             replay_control_app::server_fns::SaveRetroachievementsConfigAndRestart,
         >();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::RestartReplayUi>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebootSystem>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::OrganizeFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSkins>();

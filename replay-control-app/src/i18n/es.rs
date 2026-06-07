@@ -209,7 +209,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsSaved => "Ajustes guardados",
         Key::SettingsRestarting => "Reiniciando...",
         Key::SettingsReplayRestartWarning => {
-            "Reiniciar RePlayOS detiene cualquier juego en ejecución y desconecta brevemente la interfaz de TV."
+            "Reiniciar RePlayOS detiene cualquier juego en ejecución y desconecta brevemente el dispositivo."
         }
         Key::SettingsReboot => "Reiniciar sistema",
         Key::SettingsRebooting => "Reiniciando...",

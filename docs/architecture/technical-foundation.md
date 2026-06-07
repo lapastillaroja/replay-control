@@ -6,7 +6,7 @@ The core technical stack and infrastructure that powers Replay Control. For perf
 
 The app supports two first-class deployment shapes, captured in a single `Mode` enum (`replay-control-core/src/runtime_env.rs`) that is fixed at startup by `detect_mode`:
 
-- **`Mode::Device`** — running on the RePlayOS device. The `/opt/replay` marker is present, `replay.cfg` lives at `/media/sd/config/replay.cfg`, system-mutation features (Wi-Fi, NFS, RetroAchievements, hostname, password, reboot, frontend restart) are enabled, the `replay.cfg` file watcher and `mountinfo` POLLPRI watcher are spawned.
+- **`Mode::Device`** — running on the RePlayOS device. The `/opt/replay` marker is present, `replay.cfg` lives at `/media/sd/config/replay.cfg`, system-mutation features (Wi-Fi, NFS, RetroAchievements, hostname, password, reboot, assisted Net Control setup) are enabled, the `replay.cfg` file watcher and `mountinfo` POLLPRI watcher are spawned.
 - **`Mode::Standalone { storage_root }`** — running off-device as a standalone ROM manager (`--storage-path /path/to/roms`). The variant carries the storage root the user supplied, so "where does `replay.cfg` live?" is answered by pattern-matching on `Mode` itself — no parallel `Option<PathBuf>` to drift. System-mutation features are disabled (the closure that would have written `replay.cfg` is never invoked); the storage watcher is a no-op because the folder isn't OS-owned. Storage is always `StorageKind::Folder`; the device-only kinds (`Sd`, `Usb`, `Nvme`, `Nfs`) only mean something with `/proc/mounts` + `replay.cfg` in scope.
 
 `Mode::standalone_root()` returns `Some(&Path)` iff `Standalone`, by construction — every site that previously checked "is there a `--storage-path` override?" now reads the variant directly. The wire shape exposed to the client is just the tag string (`"device"` / `"standalone"`); the storage path is a server-side concern and never leaves the host.
@@ -29,18 +29,18 @@ This crate is the default home for new code. If code touches SQLite, fs, HTTP, o
 
 ### replay-control-core-server (native library)
 
-Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest` (optional), `quick-xml` (optional). Contains:
+Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest`, and optional `quick-xml` for metadata-library tooling. Contains:
 
 - **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, internal `WriteGate` (auto-activated on DELETE-mode pools only), `try_read`/`try_write` returning typed `DbError`, and atomic lifecycle (`reset_to_empty`, `replace_with_file`, drained `close`/`reopen`). App constructs `library_pool`, `external_metadata_pool`, and `user_data_pool` on top, sized 3 / 2 / 1 readers respectively.
 - **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
 - **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
 - **Library scanning + uploads**: ROM discovery, favorites/recents I/O, hashing, disc-group detection, `roms::write_rom` for upload writes
 - **Metadata pipeline**: LaunchBox XML parsing (`launchbox::run_bulk_import` bridges sync XML parsing to the async pool, `import_launchbox_aliases` writes the alias table), thumbnail manifest download, image resolution, library DB writes, `thumbnails::update_image_paths_from_disk`
-- **Update I/O**: GitHub release polling (`update::check_github_update`), asset download (`update::download_asset`), and `available.json` filesystem helpers — gated on the `http` feature
+- **Update I/O**: GitHub release polling (`update::check_github_update`), asset download (`update::download_asset`), and `available.json` filesystem helpers
 - **Platform adapters**: `/proc/mounts` filesystem detection, `df` disk usage, storage location detection
-- **HTTP client**: `reqwest`-backed helpers (feature-gated)
-- **Settings store**: `replay.cfg` / `settings.cfg` reader+writer, including RePlayOS RetroAchievements credential keys (`rcheevos_username`, `rcheevos_password`). RePlayOS-facing config saves stop `replay.service`, write `replay.cfg`, then start `replay.service`.
-- **Launch**: spawns `replay` process for game playback
+- **HTTP client**: `reqwest`-backed helpers for RePlayOS API, updates, metadata downloads, and remote media
+- **Settings store**: `replay.cfg` / `settings.cfg` readers and app-settings writers. RePlayOS-facing Wi-Fi, NFS, RetroAchievements, launch, and player commands go through the RePlayOS API. The remaining direct `replay.cfg` write is assisted Net Control setup, which enables the API flag before a token exists.
+- **Launch**: validates local ROM existence, then asks RePlayOS to launch through the official API
 - **Test utilities**: `test_utils` module with shared fixtures (`build_library_pool`, `insert_game_library_row`) used by both inline `#[cfg(test)]` modules and any `tests/*.rs` integration tests
 
 Re-exports `replay-control-core`'s pure types at each matching module level (e.g. `replay_control_core_server::arcade_db::ArcadeGameInfo` resolves via `pub use replay_control_core::arcade_db::*`), so SSR callers have a single import path for both type and native fn.

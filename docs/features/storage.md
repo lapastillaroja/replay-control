@@ -32,6 +32,8 @@ This also applies to skin/theme changes, which are pushed to all browsers instan
 
 If the configured storage target cannot be activated (for example NVMe is selected but no NVMe drive is mounted), Replay Control keeps the last successfully opened storage online when one exists and shows a storage-status banner. The banner names the configured target, the fallback storage if available, and tells the user to insert the device or change the selection in RePlayOS settings. Read-only browsing remains available on the fallback storage, but launch, rebuild/rescan, upload, rename/delete, metadata refresh, media downloads, favorites, and other storage-scoped mutations are blocked until the configured storage is ready. On first boot with no usable storage, the `/waiting` page shows the same configured-storage problem instead of silently waiting on an unspecified device.
 
+If RePlayOS temporarily reports a lower-priority fallback storage while the previous local storage is still readable, Replay Control keeps the previous storage online and blocks storage-scoped mutations. This prevents accidental rescans or launches against the SD card when the intended USB or NVMe storage is still the user's active library. NFS outage recovery does not probe the stale share because hard-mounted NFS reads can block.
+
 Long-running startup scans, manual rescans/rebuilds, and ROM-watcher scans are tied to the storage generation that was active when they started. A storage swap or transition into a configured-storage error cancels stale scan work before it writes the next system, preventing fallback or old-storage scan results from landing after the active storage state has changed.
 
 ## Filesystem Adaptation

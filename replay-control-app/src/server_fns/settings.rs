@@ -1,6 +1,8 @@
 use super::*;
 
 #[cfg(feature = "ssr")]
+use replay_control_core::replay_api::{ReplayApiStatus, SetCommand};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::config::ReplayConfig;
 
 /// WiFi configuration (password is never sent to the client).
@@ -96,10 +98,21 @@ pub async fn save_wifi_config(
     hidden: bool,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let is_device = state.mode.is_device();
-    apply_replay_config_change(is_device, move || {
-        state.update_wifi(&ssid, &password, &country, &auth_mode, hidden)
-    })
+    let (ssid, password, country, auth_mode) =
+        validate_wifi_config(&ssid, &password, &country, &auth_mode)?;
+    apply_replay_api_config_change(
+        &state,
+        vec![
+            ("wifi_name", ssid),
+            ("wifi_pwd", password),
+            ("wifi_country", country),
+            ("wifi_mode", auth_mode),
+            (
+                "wifi_hidden",
+                if hidden { "true" } else { "false" }.to_string(),
+            ),
+        ],
+    )
     .await
 }
 
@@ -125,10 +138,15 @@ pub async fn save_nfs_config(
     version: String,
 ) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let is_device = state.mode.is_device();
-    apply_replay_config_change(is_device, move || {
-        state.update_nfs(&server, &share, &version)
-    })
+    let (server, share, version) = validate_nfs_config(&server, &share, &version)?;
+    apply_replay_api_config_change(
+        &state,
+        vec![
+            ("nfs_server", server),
+            ("nfs_share", share),
+            ("nfs_version", version),
+        ],
+    )
     .await
 }
 
@@ -190,11 +208,131 @@ pub async fn save_retroachievements_config_and_restart(
         ));
     }
     let state = expect_context::<crate::api::AppState>();
-    let is_device = state.mode.is_device();
-    apply_replay_config_change(is_device, move || {
-        state.update_retroachievements_credentials(&username, &password)
-    })
+    let username = username.trim().to_string();
+    let password = password.trim().to_string();
+    apply_replay_api_config_change(
+        &state,
+        vec![
+            ("rcheevos_username", username),
+            ("rcheevos_password", password),
+        ],
+    )
     .await
+}
+
+#[cfg(feature = "ssr")]
+type ConfigWrite = (&'static str, String);
+
+#[cfg(feature = "ssr")]
+async fn apply_replay_api_config_change(
+    state: &crate::api::AppState,
+    writes: Vec<ConfigWrite>,
+) -> Result<String, ServerFnError> {
+    if !state.mode.is_device() {
+        return Ok("Save skipped (standalone mode)".to_string());
+    }
+
+    let Some(api) = state.replay_api.clone() else {
+        return Err(ServerFnError::new(
+            "RePlayOS Net Control is only available on the device",
+        ));
+    };
+    if !api.status().is_active() {
+        return Err(ServerFnError::new(
+            "RePlayOS Net Control is not connected. Set it up from Settings > RePlayOS Net Control.",
+        ));
+    }
+
+    let mut applied: Vec<&'static str> = Vec::new();
+    for (option, value) in writes {
+        if let Err(error) = api.client().set_replay_config(option, &value).await {
+            api.report_error(&error);
+            let prefix = if applied.is_empty() {
+                "No settings were saved".to_string()
+            } else {
+                format!("Saved {}, then stopped", applied.join(", "))
+            };
+            return Err(ServerFnError::new(format!(
+                "{prefix}: failed to save {option}: {error}. Review the settings and save again."
+            )));
+        }
+        applied.push(option);
+    }
+
+    // RePlayOS persists API config writes synchronously; refresh our mirror so
+    // read-side pages and skin sync see the new values before the reboot.
+    let _ = state.reload_replay_config();
+
+    let _restart_window = api.begin_restart_window();
+    if let Err(error) = api.client().set_cmd(SetCommand::Reboot).await {
+        api.report_error(&error);
+        return Err(ServerFnError::new(format!(
+            "Settings were saved, but RePlayOS could not be rebooted: {error}. Reboot from the TV to apply them."
+        )));
+    }
+    api.set_status(ReplayApiStatus::PendingRestart);
+    Ok("Settings saved; RePlayOS is rebooting...".to_string())
+}
+
+#[cfg(feature = "ssr")]
+fn validate_wifi_config(
+    ssid: &str,
+    password: &str,
+    country: &str,
+    auth_mode: &str,
+) -> Result<(String, String, String, String), ServerFnError> {
+    let ssid = ssid.trim().to_string();
+    if ssid.is_empty() || ssid.len() > 32 {
+        return Err(ServerFnError::new(
+            "Wi-Fi network name must be 1-32 characters",
+        ));
+    }
+
+    if !password.is_empty() && !(8..=63).contains(&password.len()) {
+        return Err(ServerFnError::new(
+            "Wi-Fi password must be 8-63 characters, or blank for an open network",
+        ));
+    }
+
+    let country = country.trim().to_ascii_uppercase();
+    if country.len() != 2 || !country.chars().all(|ch| ch.is_ascii_alphabetic()) {
+        return Err(ServerFnError::new(
+            "Wi-Fi country code must be two letters, for example US or ES",
+        ));
+    }
+
+    let auth_mode = auth_mode.trim().to_string();
+    if !matches!(auth_mode.as_str(), "transition" | "wpa2" | "wpa3") {
+        return Err(ServerFnError::new("Unsupported Wi-Fi security mode"));
+    }
+
+    Ok((ssid, password.to_string(), country, auth_mode))
+}
+
+#[cfg(feature = "ssr")]
+fn validate_nfs_config(
+    server: &str,
+    share: &str,
+    version: &str,
+) -> Result<(String, String, String), ServerFnError> {
+    let server = server.trim().to_string();
+    if server.is_empty() || server.chars().any(char::is_whitespace) {
+        return Err(ServerFnError::new(
+            "NFS server must be a hostname or IP address without spaces",
+        ));
+    }
+
+    let share = share.trim().to_string();
+    if !share.starts_with('/') {
+        return Err(ServerFnError::new("NFS share path must start with /"));
+    }
+
+    let version = version.trim().to_string();
+    if !matches!(version.as_str(), "3" | "4") {
+        return Err(ServerFnError::new("NFS version must be 3 or 4"));
+    }
+
+    Ok((server, share, version))
 }
 
 /// Stop the frontend, write the config, then start it again. The `systemctl`
@@ -297,20 +435,26 @@ impl Drop for StartReplayOnDrop {
 }
 
 #[server(prefix = "/sfn")]
-pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
-    if !expect_context::<crate::api::AppState>().mode.is_device() {
-        return Ok("Restart skipped (standalone mode)".to_string());
+pub async fn reboot_system() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.mode.is_device() {
+        return Ok("Reboot skipped (standalone mode)".to_string());
     }
 
-    replay_control_core_server::replay_service::restart()
-        .map_err(|e| ServerFnError::new(format!("Restart failed: {e}")))?;
-    Ok("ReplayOS restarted".to_string())
-}
-
-#[server(prefix = "/sfn")]
-pub async fn reboot_system() -> Result<String, ServerFnError> {
-    if !expect_context::<crate::api::AppState>().mode.is_device() {
-        return Ok("Reboot skipped (standalone mode)".to_string());
+    if let Some(api) = state.replay_api.clone()
+        && api.status().is_active()
+    {
+        let _restart_window = api.begin_restart_window();
+        match api.client().set_cmd(SetCommand::Reboot).await {
+            Ok(()) => {
+                api.set_status(ReplayApiStatus::PendingRestart);
+                return Ok("Rebooting...".to_string());
+            }
+            Err(error) => {
+                api.report_error(&error);
+                tracing::warn!("API reboot failed, falling back to CLI reboot: {error}");
+            }
+        }
     }
 
     // Best-effort flush before reboot, but never *wait* on it: the network share
@@ -866,6 +1010,48 @@ pub async fn skip_version(version: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     replay_control_core_server::settings::write_skipped_version(&state.settings, &version)
         .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wifi_validation_trims_and_normalizes_country() {
+        let (ssid, password, country, mode) =
+            validate_wifi_config(" ReplayNet ", "", "es", "wpa2").unwrap();
+
+        assert_eq!(ssid, "ReplayNet");
+        assert_eq!(password, "");
+        assert_eq!(country, "ES");
+        assert_eq!(mode, "wpa2");
+    }
+
+    #[test]
+    fn wifi_validation_rejects_short_password() {
+        assert!(validate_wifi_config("ReplayNet", "short", "US", "wpa2").is_err());
+    }
+
+    #[test]
+    fn wifi_validation_rejects_bad_country() {
+        assert!(validate_wifi_config("ReplayNet", "", "USA", "wpa2").is_err());
+    }
+
+    #[test]
+    fn nfs_validation_accepts_trimmed_values() {
+        let (server, share, version) =
+            validate_nfs_config(" 192.168.1.10 ", " /exports/roms ", "4").unwrap();
+
+        assert_eq!(server, "192.168.1.10");
+        assert_eq!(share, "/exports/roms");
+        assert_eq!(version, "4");
+    }
+
+    #[test]
+    fn nfs_validation_rejects_invalid_share_and_version() {
+        assert!(validate_nfs_config("192.168.1.10", "exports/roms", "4").is_err());
+        assert!(validate_nfs_config("192.168.1.10", "/exports/roms", "2").is_err());
+    }
 }
 
 /// Start the download + install process for a specific release tag.

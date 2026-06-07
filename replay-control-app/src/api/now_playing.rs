@@ -181,6 +181,14 @@ async fn apply_status(
                     box_art_url,
                     started_at_unix_secs: now_unix_secs(),
                 });
+
+                // RePlayOS wrote a fresh `_recent/` marker for this session.
+                // TV-side launches bypass the launch server fn, and on NFS
+                // storage no filesystem watcher sees the marker (disabled by
+                // design) — the observed transition is the invalidation
+                // signal. Mirrors the launch server fn.
+                state.cache.invalidate_recents().await;
+                state.cache.invalidate_recommendations().await;
             }
             let session = resolved_cache.as_ref().expect("session resolved above");
 

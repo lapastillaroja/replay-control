@@ -131,6 +131,17 @@ impl ReplayApiClient {
         self.get_json("get_media_status", &[]).await
     }
 
+    /// Update one RePlayOS config option. RePlayOS owns validation,
+    /// persistence, and any side effects; callers sequence multi-key saves.
+    pub async fn set_replay_config(&self, option: &str, value: &str) -> Result<(), ApiError> {
+        self.get_json::<serde_json::Value>(
+            "set_replay_config",
+            &[("option", option.to_string()), ("value", value.to_string())],
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// Launch a game. `game_file` is relative to the system folder. Works from
     /// the menu and mid-game (including core swaps) without a frontend
     /// restart. Bad paths come back as `BadStatus` with RePlayOS's
@@ -254,6 +265,15 @@ mod tests {
             }
             other => panic!("expected BadStatus, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn set_replay_config_accepts_success() {
+        let base = serve("200 OK", r#"{"ok":true}"#);
+        client_for(base)
+            .set_replay_config("rcheevos_username", "player")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

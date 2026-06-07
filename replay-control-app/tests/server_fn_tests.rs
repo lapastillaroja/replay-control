@@ -83,6 +83,18 @@ async fn invoke_server_fn_response<F: ServerFn>(
     (status, String::from_utf8_lossy(&body).into_owned())
 }
 
+fn seed_retroachievements_config(env: &TestEnv, username: &str, password: &str) {
+    std::fs::write(
+        env.tmp.join("config/replay.cfg"),
+        format!("rcheevos_username = \"{username}\"\nrcheevos_password = \"{password}\"\n"),
+    )
+    .unwrap();
+    assert!(
+        env.state.reload_replay_config(),
+        "seeded replay.cfg should be adopted as the in-memory config"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_systems_returns_test_systems() {
     setup();
@@ -370,7 +382,7 @@ async fn sfn_wifi_save_in_standalone_skips_write_and_restart() {
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("Save skipped (standalone mode)"),
-        "Standalone save must short-circuit before write_config; got: {body}"
+        "Standalone save must skip RePlayOS API config writes; got: {body}"
     );
     let post = std::fs::read_to_string(&cfg_path).unwrap();
     assert_eq!(
@@ -405,7 +417,7 @@ async fn sfn_nfs_save_in_standalone_skips_write_and_restart() {
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("Save skipped (standalone mode)"),
-        "Standalone save must short-circuit before write_config; got: {body}"
+        "Standalone save must skip RePlayOS API config writes; got: {body}"
     );
     let post = std::fs::read_to_string(&cfg_path).unwrap();
     assert_eq!(pre, post, "Standalone must not mutate replay.cfg");
@@ -425,9 +437,7 @@ async fn sfn_nfs_save_in_standalone_skips_write_and_restart() {
 async fn sfn_retroachievements_read_falls_back_to_lkg_when_disk_unreadable() {
     setup();
     let env = TestEnv::new().await;
-    env.state
-        .update_retroachievements_credentials("player", "supersecret")
-        .unwrap();
+    seed_retroachievements_config(&env, "player", "supersecret");
 
     // Simulate the mid-atomic-rewrite window: replay.cfg is briefly empty.
     let cfg_path = env.tmp.join("config/replay.cfg");
@@ -453,9 +463,7 @@ async fn sfn_retroachievements_read_falls_back_to_lkg_when_disk_unreadable() {
 async fn sfn_retroachievements_read_never_returns_password() {
     setup();
     let env = TestEnv::new().await;
-    env.state
-        .update_retroachievements_credentials("player", "supersecret")
-        .unwrap();
+    seed_retroachievements_config(&env, "player", "supersecret");
     let app = test_router(env.state.clone());
 
     let (status, body) =
@@ -521,9 +529,7 @@ async fn sfn_retroachievements_rejects_password_without_username() {
 async fn sfn_retroachievements_username_change_requires_password() {
     setup();
     let env = TestEnv::new().await;
-    env.state
-        .update_retroachievements_credentials("player1", "secret1")
-        .unwrap();
+    seed_retroachievements_config(&env, "player1", "secret1");
     let app = test_router(env.state.clone());
 
     let status = invoke_server_fn::<server_fns::SaveRetroachievementsConfigAndRestart>(
@@ -537,28 +543,6 @@ async fn sfn_retroachievements_username_change_requires_password() {
     assert!(config.contains("rcheevos_username = \"player1\""));
     assert!(config.contains("rcheevos_password = \"secret1\""));
     assert!(!config.contains("player2"));
-}
-
-/// The server-fn path is gated off in Standalone (covered by
-/// `sfn_retroachievements_save_in_standalone_skips_write_and_restart`), so
-/// this test exercises the lower-level write path directly to confirm the
-/// "clear → empty pair on disk" semantics still hold. This is the logic the
-/// device-mode server fn calls through to.
-#[tokio::test(flavor = "multi_thread")]
-async fn retroachievements_credentials_clear_writes_empty_values() {
-    setup();
-    let env = TestEnv::new().await;
-    env.state
-        .update_retroachievements_credentials("player", "secret")
-        .unwrap();
-
-    env.state
-        .update_retroachievements_credentials("", "")
-        .unwrap();
-
-    let config = std::fs::read_to_string(env.tmp.join("config/replay.cfg")).unwrap();
-    assert!(config.contains("rcheevos_username = \"\""));
-    assert!(config.contains("rcheevos_password = \"\""));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -580,7 +564,7 @@ async fn sfn_retroachievements_save_in_standalone_skips_write_and_restart() {
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("Save skipped (standalone mode)"),
-        "Standalone save must short-circuit before write_config; got: {body}"
+        "Standalone save must skip RePlayOS API config writes; got: {body}"
     );
     let post = std::fs::read_to_string(&cfg_path).unwrap();
     assert_eq!(pre, post, "Standalone must not mutate replay.cfg");

@@ -250,57 +250,7 @@ impl ReplayConfig {
         self.inner.get_non_empty("rcheevos_password").is_some()
     }
 
-    // ── Write methods (only known app-owned config flows) ─────
-
-    /// Update wifi settings. Only these keys may be written to `replay.cfg`.
-    pub fn set_wifi(
-        &mut self,
-        ssid: &str,
-        password: &str,
-        country: &str,
-        mode: &str,
-        hidden: bool,
-    ) {
-        self.inner.set("wifi_name", ssid);
-        self.inner.set("wifi_pwd", password);
-        self.inner.set("wifi_country", country);
-        self.inner.set("wifi_mode", mode);
-        self.inner
-            .set("wifi_hidden", if hidden { "true" } else { "false" });
-    }
-
-    /// Update NFS settings. Only these keys may be written to `replay.cfg`.
-    pub fn set_nfs(&mut self, server: &str, share: &str, version: &str) {
-        self.inner.set("nfs_server", server);
-        self.inner.set("nfs_share", share);
-        self.inner.set("nfs_version", version);
-    }
-
-    /// Update RetroAchievements credentials. Credentials are all-or-nothing:
-    /// both empty clears the keys, otherwise both username and password are required.
-    pub fn set_retroachievements_credentials(
-        &mut self,
-        username: &str,
-        password: &str,
-    ) -> Result<()> {
-        let username = username.trim();
-        let password = password.trim();
-        match (username.is_empty(), password.is_empty()) {
-            (true, true) => {
-                self.inner.set("rcheevos_username", "");
-                self.inner.set("rcheevos_password", "");
-                Ok(())
-            }
-            (false, false) => {
-                self.inner.set("rcheevos_username", username);
-                self.inner.set("rcheevos_password", password);
-                Ok(())
-            }
-            _ => Err(Error::Other(
-                "RetroAchievements username and password must be provided together".to_string(),
-            )),
-        }
-    }
+    // ── Write methods ───────────────────────────────────────────
 
     /// Enable or disable RePlayOS Net Control. RePlayOS owns token generation;
     /// Replay Control only toggles the feature flag during assisted setup.
@@ -606,26 +556,16 @@ mod tests {
     }
 
     #[test]
-    fn set_wifi_updates_values() {
-        let mut config = ReplayConfig::parse("wifi_name = \"old\"").unwrap();
-        config.set_wifi("new", "pass", "US", "wpa2", false);
-        assert_eq!(config.wifi_name(), Some("new"));
-        assert_eq!(config.wifi_country(), Some("US"));
-        assert_eq!(config.wifi_mode(), Some("wpa2"));
-        assert!(!config.wifi_hidden());
-    }
-
-    #[test]
     fn default_storage_mode() {
         let config = ReplayConfig::parse("").unwrap();
         assert_eq!(config.storage_mode(), "sd");
     }
 
     #[test]
-    fn write_preserves_comments_and_updates_values() {
+    fn net_control_write_preserves_comments_and_updates_value() {
         use std::io::Write;
 
-        let original = "# RePlayOS config\nwifi_name = \"OldWifi\"\nnfs_server = \"old-server\"\n";
+        let original = "# RePlayOS config\nsystem_net_control = \"false\"\n";
         let tmp_dir =
             std::env::temp_dir().join(format!("replay-config-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp_dir);
@@ -638,16 +578,14 @@ mod tests {
             .unwrap();
 
         let mut config = ReplayConfig::parse(original).unwrap();
-        config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
-        config.set_nfs("new-server", "/share", "4");
+        config.set_system_net_control(true);
         config.write_to_file(&original_path, &output_path).unwrap();
 
         let result = std::fs::read_to_string(&output_path).unwrap();
         assert!(result.contains("# RePlayOS config"), "comment preserved");
-        assert!(result.contains("wifi_name = \"NewWifi\""), "value updated");
         assert!(
-            result.contains("nfs_server = \"new-server\""),
-            "nfs updated"
+            result.contains("system_net_control = \"true\""),
+            "net control updated"
         );
     }
 
@@ -700,69 +638,6 @@ mod tests {
     }
 
     #[test]
-    fn retroachievements_write_preserves_comments_and_unrelated_keys() {
-        use std::io::Write;
-
-        let original = "# RePlayOS config\nsystem_skin = \"3\"\nrcheevos_username = \"old\"\n";
-        let tmp_dir =
-            std::env::temp_dir().join(format!("replay-ra-config-preserve-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        std::fs::create_dir_all(&tmp_dir).unwrap();
-        let original_path = tmp_dir.join("original.cfg");
-        let output_path = tmp_dir.join("output.cfg");
-        std::fs::File::create(&original_path)
-            .unwrap()
-            .write_all(original.as_bytes())
-            .unwrap();
-
-        let mut config = ReplayConfig::parse(original).unwrap();
-        config
-            .set_retroachievements_credentials("new-player", "new-pass")
-            .unwrap();
-        config.write_to_file(&original_path, &output_path).unwrap();
-
-        let result = std::fs::read_to_string(&output_path).unwrap();
-        assert!(result.contains("# RePlayOS config"), "comment preserved");
-        assert!(
-            result.contains("system_skin = \"3\""),
-            "unrelated key preserved"
-        );
-        assert!(
-            result.contains("rcheevos_username = \"new-player\""),
-            "username updated"
-        );
-        assert!(
-            result.contains("rcheevos_password = \"new-pass\""),
-            "password appended"
-        );
-    }
-
-    #[test]
-    fn retroachievements_empty_pair_clears_both_fields() {
-        let mut config =
-            ReplayConfig::parse("rcheevos_username = \"player\"\nrcheevos_password = \"secret\"\n")
-                .unwrap();
-        config.set_retroachievements_credentials("", "").unwrap();
-        assert_eq!(config.retroachievements_username(), None);
-        assert!(!config.retroachievements_password_configured());
-    }
-
-    #[test]
-    fn retroachievements_rejects_partial_credentials() {
-        let mut config = ReplayConfig::parse("").unwrap();
-        assert!(
-            config
-                .set_retroachievements_credentials("player", "")
-                .is_err()
-        );
-        assert!(
-            config
-                .set_retroachievements_credentials("", "secret")
-                .is_err()
-        );
-    }
-
-    #[test]
     fn write_to_file_refuses_to_create_missing_config() {
         let config = ReplayConfig::parse("rcheevos_username = \"player\"\n").unwrap();
         let missing =
@@ -786,7 +661,7 @@ mod tests {
         std::fs::write(&path, "").unwrap();
 
         let mut config = ReplayConfig::parse("").unwrap();
-        config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
+        config.set_system_net_control(true);
 
         assert!(config.write_to_file(&path, &path).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
@@ -810,7 +685,7 @@ mod tests {
         std::fs::create_dir(&output_path).unwrap();
 
         let mut config = ReplayConfig::parse(original).unwrap();
-        config.set_wifi("NewWifi", "pass", "US", "wpa2", false);
+        config.set_system_net_control(true);
 
         assert!(config.write_to_file(&original_path, &output_path).is_err());
         assert_eq!(std::fs::read_to_string(&original_path).unwrap(), original);

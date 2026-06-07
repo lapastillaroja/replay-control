@@ -106,6 +106,7 @@ use replay_control_core::runtime_env::Mode;
 use replay_control_core_server::config::{ReplayConfig, replay_config_path};
 use replay_control_core_server::data_dir::DataDir;
 use replay_control_core_server::replay_service::detect_mode;
+use replay_control_core_server::roms::{StorageProbe, probe_storage_ready};
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
 pub use crate::types::{RomWatcherStatus, StorageStatus, storage_kind_label};
@@ -943,6 +944,34 @@ impl AppState {
             .map(|storage| storage.kind.as_str().to_string())
     }
 
+    async fn suspected_storage_fallback_reason(&self, next: &StorageLocation) -> Option<String> {
+        let current = self
+            .storage
+            .read()
+            .expect("storage lock poisoned")
+            .clone()?;
+
+        if current.root == next.root
+            || current.kind == next.kind
+            || !storage_kind_is_downgrade(current.kind, next.kind)
+            || !storage_kind_is_safe_for_fallback_probe(current.kind)
+            || !current.is_ready()
+        {
+            return None;
+        }
+
+        match probe_storage_ready(&current).await {
+            StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => Some(format!(
+                "RePlayOS reported {} storage at {}, but current {} storage at {} is still readable; keeping the current storage online to avoid adopting an OS fallback.",
+                next.kind.as_str(),
+                next.root.display(),
+                current.kind.as_str(),
+                current.root.display()
+            )),
+            StorageProbe::NotReady => None,
+        }
+    }
+
     /// Read-lock storage and clone the current StorageLocation.
     /// Panics if storage is None — the middleware redirects ALL requests to
     /// `/waiting` when storage is unavailable, so no handler should ever
@@ -1069,61 +1098,6 @@ impl AppState {
                 .map(|c| c.system_skin())
                 .unwrap_or(0)
         }
-    }
-
-    /// Update wifi settings in `replay.cfg` and write back to disk.
-    pub fn update_wifi(
-        &self,
-        ssid: &str,
-        password: &str,
-        country: &str,
-        mode: &str,
-        hidden: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let config_path = self.config_file_path();
-        let mut config = ReplayConfig::from_file(&config_path)?;
-        config.set_wifi(ssid, password, country, mode, hidden);
-        config.write_to_file(&config_path, &config_path)?;
-        *self
-            .replay_config
-            .write()
-            .expect("replay_config lock poisoned") = Some(config);
-        Ok(())
-    }
-
-    /// Update NFS settings in `replay.cfg` and write back to disk.
-    pub fn update_nfs(
-        &self,
-        server: &str,
-        share: &str,
-        version: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let config_path = self.config_file_path();
-        let mut config = ReplayConfig::from_file(&config_path)?;
-        config.set_nfs(server, share, version);
-        config.write_to_file(&config_path, &config_path)?;
-        *self
-            .replay_config
-            .write()
-            .expect("replay_config lock poisoned") = Some(config);
-        Ok(())
-    }
-
-    /// Update RetroAchievements credentials in `replay.cfg` and write back to disk.
-    pub fn update_retroachievements_credentials(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let config_path = self.config_file_path();
-        let mut config = ReplayConfig::from_file(&config_path)?;
-        config.set_retroachievements_credentials(username, password)?;
-        config.write_to_file(&config_path, &config_path)?;
-        *self
-            .replay_config
-            .write()
-            .expect("replay_config lock poisoned") = Some(config);
-        Ok(())
     }
 
     /// Enable RePlayOS Net Control in `replay.cfg` and write back to disk.
@@ -1301,6 +1275,16 @@ impl AppState {
             });
             return Ok(false);
         }
+        if let Some(reason) = self.suspected_storage_fallback_reason(&new_storage).await {
+            tracing::warn!("redetect_storage: {reason}");
+            self.cancel_storage_scans_if_ready();
+            self.set_storage_status(StorageStatus::Misconfigured {
+                wanted,
+                current_kind,
+                reason,
+            });
+            return Ok(false);
+        }
         let had_storage = self.has_storage();
 
         let changed = {
@@ -1325,8 +1309,7 @@ impl AppState {
             // with all-zero rows. The probe walks roms_dir + system
             // subdirs with a bounded retry so the gate only opens once
             // the dirent cache stabilizes.
-            use replay_control_core_server::roms::StorageProbe;
-            match replay_control_core_server::roms::probe_storage_ready(&new_storage).await {
+            match probe_storage_ready(&new_storage).await {
                 StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => {}
                 StorageProbe::NotReady => {
                     tracing::debug!(
@@ -1441,6 +1424,24 @@ impl AppState {
     pub(crate) fn config_file_path(&self) -> PathBuf {
         replay_config_path(self.mode.standalone_root())
     }
+}
+
+fn storage_kind_rank(kind: StorageKind) -> u8 {
+    match kind {
+        StorageKind::Sd => 0,
+        StorageKind::Usb => 1,
+        StorageKind::Nvme => 2,
+        StorageKind::Nfs => 3,
+        StorageKind::Folder => 4,
+    }
+}
+
+fn storage_kind_is_downgrade(current: StorageKind, next: StorageKind) -> bool {
+    storage_kind_rank(next) < storage_kind_rank(current)
+}
+
+fn storage_kind_is_safe_for_fallback_probe(kind: StorageKind) -> bool {
+    kind.is_local()
 }
 
 /// Parse the `Accept-Language` header and return the best-matching supported locale.
@@ -2048,6 +2049,15 @@ mod tests {
             rx.try_recv().is_err(),
             "duplicate status should not broadcast"
         );
+    }
+
+    #[test]
+    fn fallback_probe_skips_nfs_storage() {
+        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Sd));
+        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Usb));
+        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Nvme));
+        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Folder));
+        assert!(!storage_kind_is_safe_for_fallback_probe(StorageKind::Nfs));
     }
 
     #[tokio::test(flavor = "multi_thread")]
