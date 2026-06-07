@@ -4,14 +4,15 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [0.5.0-beta.1]
+## [0.5.0]
 
 ### Highlights
 
-- **Launch on TV now uses RePlayOS Net Control.** Game launches go through the official RePlayOS `load_game` API instead of writing `_autostart/autostart.auto` and restarting a`replay.service`, so launching no longer forces the frontend storage remount that could downgrade NFS/USB/NVMe storage back to SD.
-- **Stop Game has been removed.** The old stop action depended on restarting the RePlayOS frontend and could trigger the same storage-remount failure as the legacy launch path, so it has been removed from the Now Playing hero, game detail pages, server functions, translations, styles, and tests.
-- **Net Control setup and status are now first-class.** Settings includes RePlayOS Net Control onboarding/status flows, Replay Control stores the verified control code in its own settings, and launch surfaces connection/token problems instead of silently falling back to unsafe restart behavior.
-- **Redesigned Now Playing, with on-TV controls.** Detection was rebuilt on the official RePlayOS API, so what you see is exactly what the TV is running — arcade clones, multi-disc games, and ScummVM titles included — along with whether the game is actively playing, paused, or parked behind the RePlayOS menu, and the current disc of multi-disc games ("Disc 2/4"). New controls let you take screenshots, manage the volume, halt/freeze the picture (great for photographing CRTs), and reset the running game straight from Replay Control.
+- **Replay Control now uses the official RePlayOS API for TV integration.** Launch on TV goes through RePlayOS Net Control instead of writing autostart files, editing `replay.cfg`, or restarting `replay.service`, eliminating the storage-remount path that could downgrade NFS/USB/NVMe libraries back to SD.
+- **Net Control setup and status are first-class.** Settings can guide device users through enabling RePlayOS Net Control, restarting the TV interface, reading the control code, and storing the verified code in Replay Control; launch now reports connection/control-code problems directly instead of falling back to unsafe restart behavior.
+- **Now Playing is backed by RePlayOS status.** The home and detail surfaces now reflect the TV's actual running game, including arcade clones, multi-disc games, ScummVM titles, elapsed play time, paused/playing state, optional halted state on newer RePlayOS builds, and current-disc labels like "Disc 2/4".
+- **On-TV controls are available from Replay Control.** The redesigned Now Playing UI adds screenshot, volume, mute, halt, and reset controls using the RePlayOS API while removing the old Stop Game action that depended on frontend restarts.
+- **Storage and metadata activity are safer and clearer.** Launch no longer restarts the frontend, NFS outage recovery avoids probing stale hard-mounted shares, and long media-stat refreshes now show their own progress label instead of looking like the previous system scan is stuck.
 
 ### Changed
 
