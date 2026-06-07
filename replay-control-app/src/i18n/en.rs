@@ -366,6 +366,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBannerRebuildingLibrary => "Rebuilding library...",
         Key::MetadataBannerRescanningLibrary => "Rescanning library...",
         Key::MetadataBannerEnrichingLibrary => "Enriching library...",
+        Key::MetadataBannerUpdatingMediaStats => "Updating media stats...",
         Key::MetadataProgressVerbRebuilding => "Rebuilding",
         Key::MetadataProgressVerbRescanning => "Rescanning",
         Key::MetadataProgressVerbEnriching => "Enriching",

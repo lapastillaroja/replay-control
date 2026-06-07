@@ -8,6 +8,9 @@ use crate::server_fns::{self, Activity, RebuildPhase, RebuildProgress};
 /// surfaces show the same text. Returns `None` when no progress text
 /// applies (terminal phases).
 pub fn format_rebuild_progress_label(locale: Locale, p: &RebuildProgress) -> Option<String> {
+    if matches!(p.phase, RebuildPhase::MediaStats) {
+        return Some(t(locale, Key::MetadataBannerUpdatingMediaStats).to_string());
+    }
     if !matches!(p.phase, RebuildPhase::Scanning | RebuildPhase::Enriching) {
         return None;
     }
@@ -163,5 +166,29 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                 }}
             </div>
         </Show>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_stats_phase_has_dedicated_label() {
+        let progress = RebuildProgress {
+            phase: RebuildPhase::MediaStats,
+            current_system: "PlayStation".to_string(),
+            systems_done: 42,
+            systems_total: 42,
+            elapsed_secs: 12,
+            error: None,
+            is_rescan: true,
+            enriching: false,
+        };
+
+        assert_eq!(
+            format_rebuild_progress_label(Locale::En, &progress).as_deref(),
+            Some("Updating media stats...")
+        );
     }
 }

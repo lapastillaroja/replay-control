@@ -288,6 +288,8 @@ pub enum RebuildPhase {
     Scanning,
     /// Applying metadata and local thumbnail matches for the current system.
     Enriching,
+    /// Walking cached artwork/media files to refresh summary stats.
+    MediaStats,
     /// Rebuild completed successfully.
     Complete,
     /// Rebuild was cancelled because storage changed.

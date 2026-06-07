@@ -1961,6 +1961,15 @@ impl BackgroundManager {
             start.elapsed().as_secs_f64()
         );
 
+        if let Some(start) = progress.rebuild_start() {
+            update_rebuild_progress(state, |p| {
+                p.phase = RebuildPhase::MediaStats;
+                p.current_system = String::new();
+                p.systems_done = p.systems_total;
+                p.elapsed_secs = start.elapsed().as_secs();
+                p.enriching = false;
+            });
+        }
         Self::refresh_thumbnail_media_stats(state, storage, generation, "L2 populate").await?;
         Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);
         Ok(())

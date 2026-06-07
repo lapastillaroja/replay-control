@@ -343,6 +343,7 @@ pub enum Key {
     MetadataBannerRebuildingLibrary,
     MetadataBannerRescanningLibrary,
     MetadataBannerEnrichingLibrary,
+    MetadataBannerUpdatingMediaStats,
     MetadataProgressVerbRebuilding,
     MetadataProgressVerbRescanning,
     MetadataProgressVerbEnriching,

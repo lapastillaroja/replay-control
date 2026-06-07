@@ -333,6 +333,7 @@ pub struct ThumbnailProgress {
 pub enum RebuildPhase {
     Scanning,
     Enriching,
+    MediaStats,
     Complete,
     Cancelled,
     Failed,

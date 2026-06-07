@@ -370,6 +370,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBannerRebuildingLibrary => "ライブラリを再構築中...",
         Key::MetadataBannerRescanningLibrary => "ライブラリを再スキャン中...",
         Key::MetadataBannerEnrichingLibrary => "ライブラリのメタデータを取得中...",
+        Key::MetadataBannerUpdatingMediaStats => "メディア統計を更新中...",
         Key::MetadataProgressVerbRebuilding => "再構築中",
         Key::MetadataProgressVerbRescanning => "再スキャン中",
         Key::MetadataProgressVerbEnriching => "メタデータ取得中",
