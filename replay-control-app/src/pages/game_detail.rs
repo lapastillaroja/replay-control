@@ -1,4 +1,3 @@
-use leptos::form::ActionForm;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_navigate, use_params_map};
@@ -9,12 +8,13 @@ use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
-use crate::components::stop_game_button::StopGameButton;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
+use replay_control_core::replay_api::ReplayApiStatus;
 use replay_control_core::resource_kind;
+use replay_control_core::systems;
 
 /// Maximum number of capture thumbnails shown before "View all".
 const INITIAL_CAPTURE_COUNT: usize = 12;
@@ -217,8 +217,7 @@ fn GameDetailContent(
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
     let gamefaqs_url = StoredValue::new(
-        replay_control_core::systems::find_system(&system)
-            .and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
+        systems::find_system(&system).and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
     );
     let shmups_wiki_url = StoredValue::new(detail.find_resource_url(
         resource_kind::STRATEGY_GUIDE,
@@ -236,7 +235,6 @@ fn GameDetailContent(
     let title_url = StoredValue::new(game.title_url.clone());
     let has_title = game.title_url.is_some();
 
-    let clock = use_context::<crate::hooks::Clock>();
     let active_started_at = move || match now_playing.get() {
         crate::types::NowPlayingState::Playing {
             ref system,
@@ -249,14 +247,6 @@ fn GameDetailContent(
         _ => None,
     };
     let is_now_playing = move || active_started_at().is_some();
-    let active_elapsed = Memo::new(move |_| {
-        let started_at = active_started_at()?;
-        let elapsed = clock
-            .map(|c| c.now())
-            .unwrap_or(0)
-            .saturating_sub(started_at);
-        crate::util::format_elapsed_short(elapsed)
-    });
 
     // Box art variant picker state.
     // Suppress "Change cover" for hack and special ROMs — they should inherit the base ROM's cover.
@@ -363,18 +353,6 @@ fn GameDetailContent(
             </button>
             <div class="game-detail-title-wrap">
                 <h2 class="page-title">{game_name.clone()}</h2>
-                <Show when=move || is_now_playing() fallback=|| ()>
-                    <span class="game-live-pill">
-                        {move || {
-                            let locale = i18n.locale.get();
-                            let label = t(locale, Key::GameDetailNowPlaying);
-                            match active_elapsed.get() {
-                                Some(elapsed) => format!("{label} · {elapsed}"),
-                                None => label.to_string(),
-                            }
-                        }}
-                    </span>
-                </Show>
             </div>
         </div>
 
@@ -430,13 +408,8 @@ fn GameDetailContent(
 
         // Launch on TV (prominent CTA)
         <section class="game-launch-cta">
-            <Show
-                when=move || is_now_playing()
-                fallback=move || view! {
-                    <GameLaunchAction relative_path=relative_path_sv return_to=return_to_sv />
-                }
-            >
-                <StopGameButton class="game-action-launch game-action-stop" />
+            <Show when=move || !is_now_playing()>
+                <GameLaunchAction relative_path=relative_path_sv return_to=return_to_sv />
             </Show>
         </section>
 
@@ -710,10 +683,37 @@ fn GameLaunchAction(
     return_to: StoredValue<String>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let _ = return_to;
     let launch = ServerAction::<server_fns::LaunchGame>::new();
+    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
+    let initial_replay_api_status =
+        Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
+    let replay_api_status = use_context::<RwSignal<ReplayApiStatus>>();
     let launching = launch.pending();
     let launch_result = launch.value();
     let launch_clicked = RwSignal::new(false);
+    let launch_requires_setup = Memo::new(move |_| {
+        let on_device = mode
+            .get()
+            .and_then(Result::ok)
+            .is_some_and(|mode| mode.is_device());
+        if !on_device {
+            return false;
+        }
+
+        let live_status = replay_api_status
+            .map(|status| status.get())
+            .unwrap_or_default();
+        let status = if live_status == ReplayApiStatus::default() {
+            initial_replay_api_status
+                .get()
+                .and_then(Result::ok)
+                .unwrap_or(live_status)
+        } else {
+            live_status
+        };
+        !status.is_active()
+    });
 
     Effect::new(move |_| {
         if launch_result.get().is_some() {
@@ -729,6 +729,10 @@ fn GameLaunchAction(
     let is_disabled = move || launching.get() || is_launched();
     let is_launching =
         move || launching.get() || (launch_clicked.get() && launch_result.get().is_none());
+    let error_message = move || match launch_result.get() {
+        Some(Err(error)) => Some(error.to_string()),
+        _ => None,
+    };
 
     let label = move || {
         let locale = i18n.locale.get();
@@ -744,23 +748,47 @@ fn GameLaunchAction(
             t(locale, Key::GameDetailLaunch)
         }
     };
+    let on_launch = move |_| {
+        if is_disabled() || launch_requires_setup.get() {
+            return;
+        }
+        launch_clicked.set(true);
+        launch.dispatch(server_fns::LaunchGame {
+            rom_path: relative_path.get_value(),
+            return_to: String::new(),
+        });
+    };
 
     view! {
-        <ActionForm action=launch>
-            <input type="hidden" name="rom_path" value=relative_path.get_value() />
-            <input type="hidden" name="return_to" value=return_to.get_value() />
-            <button
-                type="submit"
-                class="game-action-launch"
-                class:game-action-launch-success=is_launched
-                class:game-action-launch-simulated=is_simulated
-                prop:disabled=is_disabled
-                on:click=move |_| launch_clicked.set(true)
+        <div class="game-launch-action">
+            <Show
+                when=move || launch_requires_setup.get()
+                fallback=move || view! {
+                    <button
+                        type="button"
+                        class="game-action-launch"
+                        class:game-action-launch-success=is_launched
+                        class:game-action-launch-simulated=is_simulated
+                        prop:disabled=is_disabled
+                        on:click=on_launch
+                    >
+                        <span class="game-action-icon">{"\u{25B6}"}</span>
+                        {label}
+                    </button>
+                }
             >
-                <span class="game-action-icon">{"\u{25B6}"}</span>
-                {label}
-            </button>
-        </ActionForm>
+                <A
+                    href="/settings/replay-net-control"
+                    attr:class="game-action-launch game-action-launch-setup"
+                >
+                    <span class="game-action-icon">{"\u{25B6}"}</span>
+                    {move || t(i18n.locale.get(), Key::SetupReplayosTitle)}
+                </A>
+            </Show>
+            <Show when=move || error_message().is_some() && !launch_requires_setup.get()>
+                <p class="game-action-error">{move || error_message().unwrap_or_default()}</p>
+            </Show>
+        </div>
     }
 }
 

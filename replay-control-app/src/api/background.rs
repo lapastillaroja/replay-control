@@ -189,17 +189,20 @@ impl BackgroundManager {
             Self::update_check_loop(update_state).await;
         });
 
-        // Spawn now-playing detector loop (independent of startup pipeline).
-        // Linux-only: the detector relies on `/proc/<pid>/{maps,mem}`. On
-        // non-RePlayOS dev hosts (macOS, containers without `/proc`) the
-        // detector exits immediately; skip the spawn entirely.
-        #[cfg(target_os = "linux")]
-        {
-            let now_playing_state = state.clone();
-            tokio::spawn(async move {
-                super::now_playing::run_now_playing_loop(now_playing_state).await;
-            });
-        }
+        // Spawn the now-playing detector loop (independent of the startup
+        // pipeline). API-based: exits immediately in standalone mode, where
+        // `state.replay_api` is `None`.
+        let now_playing_state = state.clone();
+        tokio::spawn(async move {
+            super::now_playing::run_now_playing_loop(now_playing_state).await;
+        });
+
+        // RePlayOS API integration: startup probe + self-recovery maintenance.
+        // No-ops immediately in standalone mode (`state.replay_api` is None).
+        let replay_api_state = state.clone();
+        tokio::spawn(async move {
+            super::replay_api::run_replay_api_maintenance(replay_api_state).await;
+        });
     }
 
     /// Spawn only the ordered pipeline. Used after an already-running app
@@ -951,156 +954,181 @@ impl BackgroundManager {
     /// file hasn't changed since the last successful download.
     pub fn spawn_external_metadata_download_and_refresh(state: AppState) {
         tokio::spawn(async move {
-            use replay_control_core_server::external_metadata::{self, meta_keys};
+            let _ = Self::download_external_metadata_and_refresh(&state).await;
+        });
+    }
 
-            // Claim the slot. Start at Checking so the banner shows while we
-            // do the HEAD request before committing to a full download.
-            let guard = match state.try_start_activity(Activity::RefreshExternalMetadata {
-                progress: RefreshMetadataProgress {
-                    phase: RefreshMetadataPhase::Checking,
-                    ..RefreshMetadataProgress::initial()
-                },
-            }) {
-                Ok(g) => g,
-                Err(e) => {
-                    tracing::warn!("download+refresh: activity busy: {e}");
-                    return;
-                }
-            };
+    /// First-run setup wrapper: one UI action can fill both external metadata
+    /// sources. LaunchBox runs first; when it releases the activity slot, the
+    /// thumbnail manifest update starts from the same click.
+    pub fn spawn_setup_metadata_downloads(
+        state: AppState,
+        needs_launchbox: bool,
+        needs_thumbnail_index: bool,
+    ) {
+        tokio::spawn(async move {
+            if needs_launchbox && !Self::download_external_metadata_and_refresh(&state).await {
+                return;
+            }
 
-            let start = std::time::Instant::now();
-            let cache_dir = state.data_dir.cache_dir();
+            if needs_thumbnail_index && !state.thumbnails.start_thumbnail_update(&state) {
+                tracing::warn!("setup metadata: thumbnail update could not start; activity busy");
+            }
+        });
+    }
 
-            let stored_etag = state
-                .external_metadata_reader
-                .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG))
-                .await
-                .flatten();
+    async fn download_external_metadata_and_refresh(state: &AppState) -> bool {
+        use replay_control_core_server::external_metadata::{self, meta_keys};
 
-            // Single HEAD request — captures ETag (freshness check) and Content-Length
-            // (passed to download_metadata to avoid a redundant second HEAD).
-            let upstream_head = tokio::task::spawn_blocking(
-                replay_control_core_server::launchbox::fetch_upstream_head,
-            )
+        // Claim the slot. Start at Checking so the banner shows while we
+        // do the HEAD request before committing to a full download.
+        let guard = match state.try_start_activity(Activity::RefreshExternalMetadata {
+            progress: RefreshMetadataProgress {
+                phase: RefreshMetadataPhase::Checking,
+                ..RefreshMetadataProgress::initial()
+            },
+        }) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::warn!("download+refresh: activity busy: {e}");
+                return false;
+            }
+        };
+
+        let start = std::time::Instant::now();
+        let cache_dir = state.data_dir.cache_dir();
+
+        let stored_etag = state
+            .external_metadata_reader
+            .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG))
             .await
-            .unwrap_or(replay_control_core_server::launchbox::HeadHeaders {
-                content_length: None,
-                etag: None,
-            });
+            .flatten();
 
-            if stored_etag.is_some() && stored_etag == upstream_head.etag {
-                tracing::info!(
-                    "LaunchBox ETag matches ({}) — skipping download, re-enriching",
-                    upstream_head.etag.as_deref().unwrap_or("")
-                );
-                // Skip the download and XML re-parse, but still enrich so any
-                // ROMs added since the last refresh pick up their metadata.
-                state.update_activity(|act| {
-                    if let Activity::RefreshExternalMetadata { progress } = act {
-                        progress.phase = RefreshMetadataPhase::Enriching;
-                    }
+        // Single HEAD request — captures ETag (freshness check) and Content-Length
+        // (passed to download_metadata to avoid a redundant second HEAD).
+        let upstream_head =
+            tokio::task::spawn_blocking(replay_control_core_server::launchbox::fetch_upstream_head)
+                .await
+                .unwrap_or(replay_control_core_server::launchbox::HeadHeaders {
+                    content_length: None,
+                    etag: None,
                 });
-                Self::reenrich_all_systems(&state).await;
+
+        if stored_etag.is_some() && stored_etag == upstream_head.etag {
+            tracing::info!(
+                "LaunchBox ETag matches ({}) — skipping download, re-enriching",
+                upstream_head.etag.as_deref().unwrap_or("")
+            );
+            // Skip the download and XML re-parse, but still enrich so any
+            // ROMs added since the last refresh pick up their metadata.
+            state.update_activity(|act| {
+                if let Activity::RefreshExternalMetadata { progress } = act {
+                    progress.phase = RefreshMetadataPhase::Enriching;
+                }
+            });
+            Self::reenrich_all_systems(state).await;
+            state.update_activity(|act| {
+                if let Activity::RefreshExternalMetadata { progress } = act {
+                    progress.phase = RefreshMetadataPhase::Complete;
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+            });
+            return true; // guard drops → Activity::Idle
+        }
+
+        // ETags differ (or unavailable) — proceed with the full download.
+        state.update_activity(|act| {
+            if let Activity::RefreshExternalMetadata { progress } = act {
+                progress.phase = RefreshMetadataPhase::Downloading;
+            }
+        });
+
+        let upstream_etag = upstream_head.etag;
+        let upstream_content_length = upstream_head.content_length;
+        let download_result = {
+            let state_for_progress = state.clone();
+            tokio::task::spawn_blocking(move || {
+                // Throttle: each curl read is ~64 KB; updating activity per
+                // chunk is 3000+ RwLock+broadcast cycles per 200 MB
+                // download. Only fire when we cross a 1 MiB boundary.
+                // `download_metadata` takes `Fn`, so we need interior
+                // mutability for the watermark.
+                use std::sync::atomic::{AtomicU64, Ordering};
+                const THROTTLE_BYTES: u64 = 1024 * 1024;
+                let last_reported = AtomicU64::new(0);
+                replay_control_core_server::launchbox::download_metadata(
+                    &cache_dir,
+                    upstream_content_length,
+                    |bytes, total| {
+                        let prev = last_reported.load(Ordering::Relaxed);
+                        if bytes - prev < THROTTLE_BYTES && bytes != 0 {
+                            return;
+                        }
+                        last_reported.store(bytes, Ordering::Relaxed);
+                        state_for_progress.update_activity(|act| {
+                            if let Activity::RefreshExternalMetadata { progress } = act {
+                                progress.downloaded_bytes = bytes;
+                                progress.total_bytes = total;
+                            }
+                        });
+                    },
+                )
+            })
+            .await
+        };
+
+        match download_result {
+            Ok(Ok(xml_path)) => {
+                tracing::info!("LaunchBox metadata downloaded to {}", xml_path.display());
+                // Store the upstream ETag so the next "Refresh metadata" can
+                // detect an unchanged file without re-downloading.
+                if let Some(etag) = upstream_etag {
+                    match state
+                        .external_metadata_writer
+                        .try_write(move |conn| {
+                            external_metadata::write_meta(
+                                conn,
+                                meta_keys::LAUNCHBOX_UPSTREAM_ETAG,
+                                Some(&etag),
+                            )
+                        })
+                        .await
+                    {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            tracing::warn!("LaunchBox upstream ETag SQL failed: {e}");
+                        }
+                        Err(e) => {
+                            tracing::warn!("LaunchBox upstream ETag write failed: {e}");
+                        }
+                    }
+                }
+                Self::phase_auto_import_inner(state, Some(guard)).await;
+                true
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("LaunchBox download failed: {e}");
                 state.update_activity(|act| {
                     if let Activity::RefreshExternalMetadata { progress } = act {
-                        progress.phase = RefreshMetadataPhase::Complete;
+                        progress.phase = RefreshMetadataPhase::Failed;
+                        progress.error = Some(e.to_string());
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
-                return; // guard drops → Activity::Idle
+                false
             }
-
-            // ETags differ (or unavailable) — proceed with the full download.
-            state.update_activity(|act| {
-                if let Activity::RefreshExternalMetadata { progress } = act {
-                    progress.phase = RefreshMetadataPhase::Downloading;
-                }
-            });
-
-            let upstream_etag = upstream_head.etag;
-            let upstream_content_length = upstream_head.content_length;
-            let download_result = {
-                let state_for_progress = state.clone();
-                tokio::task::spawn_blocking(move || {
-                    // Throttle: each curl read is ~64 KB; updating activity per
-                    // chunk is 3000+ RwLock+broadcast cycles per 200 MB
-                    // download. Only fire when we cross a 1 MiB boundary.
-                    // `download_metadata` takes `Fn`, so we need interior
-                    // mutability for the watermark.
-                    use std::sync::atomic::{AtomicU64, Ordering};
-                    const THROTTLE_BYTES: u64 = 1024 * 1024;
-                    let last_reported = AtomicU64::new(0);
-                    replay_control_core_server::launchbox::download_metadata(
-                        &cache_dir,
-                        upstream_content_length,
-                        |bytes, total| {
-                            let prev = last_reported.load(Ordering::Relaxed);
-                            if bytes - prev < THROTTLE_BYTES && bytes != 0 {
-                                return;
-                            }
-                            last_reported.store(bytes, Ordering::Relaxed);
-                            state_for_progress.update_activity(|act| {
-                                if let Activity::RefreshExternalMetadata { progress } = act {
-                                    progress.downloaded_bytes = bytes;
-                                    progress.total_bytes = total;
-                                }
-                            });
-                        },
-                    )
-                })
-                .await
-            };
-
-            match download_result {
-                Ok(Ok(xml_path)) => {
-                    tracing::info!("LaunchBox metadata downloaded to {}", xml_path.display());
-                    // Store the upstream ETag so the next "Refresh metadata" can
-                    // detect an unchanged file without re-downloading.
-                    if let Some(etag) = upstream_etag {
-                        match state
-                            .external_metadata_writer
-                            .try_write(move |conn| {
-                                external_metadata::write_meta(
-                                    conn,
-                                    meta_keys::LAUNCHBOX_UPSTREAM_ETAG,
-                                    Some(&etag),
-                                )
-                            })
-                            .await
-                        {
-                            Ok(Ok(())) => {}
-                            Ok(Err(e)) => {
-                                tracing::warn!("LaunchBox upstream ETag SQL failed: {e}");
-                            }
-                            Err(e) => {
-                                tracing::warn!("LaunchBox upstream ETag write failed: {e}");
-                            }
-                        }
+            Err(e) => {
+                tracing::warn!("LaunchBox download task panicked: {e}");
+                state.update_activity(|act| {
+                    if let Activity::RefreshExternalMetadata { progress } = act {
+                        progress.phase = RefreshMetadataPhase::Failed;
+                        progress.error = Some(format!("task panicked: {e}"));
+                        progress.elapsed_secs = start.elapsed().as_secs();
                     }
-                    Self::phase_auto_import_inner(&state, Some(guard)).await;
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("LaunchBox download failed: {e}");
-                    state.update_activity(|act| {
-                        if let Activity::RefreshExternalMetadata { progress } = act {
-                            progress.phase = RefreshMetadataPhase::Failed;
-                            progress.error = Some(e.to_string());
-                            progress.elapsed_secs = start.elapsed().as_secs();
-                        }
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("LaunchBox download task panicked: {e}");
-                    state.update_activity(|act| {
-                        if let Activity::RefreshExternalMetadata { progress } = act {
-                            progress.phase = RefreshMetadataPhase::Failed;
-                            progress.error = Some(format!("task panicked: {e}"));
-                            progress.elapsed_secs = start.elapsed().as_secs();
-                        }
-                    });
-                }
+                });
+                false
             }
-        });
+        }
     }
 
     /// Phase 1.5: Reconcile per-storage `title_norm_version` on `library.db`.
@@ -2013,7 +2041,7 @@ impl BackgroundManager {
                 update_io::nuke_update_dir();
                 update_io::write_available_update(&available).ok();
                 let _ = state
-                    .config_tx
+                    .events_tx
                     .send(super::ConfigEvent::UpdateAvailable { update: available });
             }
             None => {
@@ -2051,7 +2079,7 @@ impl BackgroundManager {
         {
             Some(available) => {
                 update_io::write_available_update(&available).ok();
-                let _ = state.config_tx.send(super::ConfigEvent::UpdateAvailable {
+                let _ = state.events_tx.send(super::ConfigEvent::UpdateAvailable {
                     update: available.clone(),
                 });
                 Ok(Some(available))

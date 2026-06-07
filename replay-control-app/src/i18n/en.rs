@@ -290,10 +290,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "Launched!",
         Key::GameDetailLaunchError => "Failed to launch",
         Key::GameDetailLaunchNotReplayos => "Not running on RePlayOS",
-        Key::GameDetailStopGame => "Stop Game",
-        Key::GameDetailStoppingGame => "Stopping...",
-        Key::GameDetailStopGameFailed => "Stop failed",
-        Key::GameDetailNowPlaying => "Now Playing",
         Key::GameDetailFavorite => "Favorite",
         Key::GameDetailUnfavorite => "Unfavorite",
         Key::GameDetailConfirmDelete => "Confirm Delete",
@@ -585,19 +581,65 @@ pub fn translate(key: Key) -> &'static str {
         // Setup checklist (first-run)
         Key::SetupWelcome => "Welcome to Replay Control!",
         Key::SetupIntro => {
-            "Get the most out of your library with these optional downloads. You can always do this later from the Metadata page."
+            "Get the most out of your library and connect Replay Control to RePlayOS."
         }
-        Key::SetupMetadataTitle => "Download game descriptions & ratings",
+        Key::SetupMetadataTitle => "Download metadata sources",
         Key::SetupMetadataHint => {
-            "~100 MB \u{2014} adds descriptions, genres, ratings, and release dates"
+            "Adds game descriptions, ratings, release dates, and automatic box art"
         }
-        Key::SetupThumbnailTitle => "Update box art index",
-        Key::SetupThumbnailHint => "Enables automatic box art downloads",
+        Key::SetupReplayosTitle => "Enable RePlayOS integration",
+        Key::SetupReplayosHint => {
+            "Enables RePlayOS Net Control, restarts RePlayOS, and reads the Net Control code so you do not need to do anything."
+        }
         Key::SetupSkip => "Skip",
         Key::SetupDismiss => "Dismiss",
         Key::SetupComplete => "Setup complete!",
         Key::SetupInProgress => "In progress\u{2026}",
+        Key::SetupBusyHint => {
+            "Setup actions pause while another library task is running. Wait for it to finish, then continue."
+        }
         Key::SetupStart => "Start",
-        Key::SetupUpdate => "Update",
+        Key::SetupDone => "Done",
+
+        Key::SetupReplayosManualLink => "or enter the code manually",
+
+        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayApiStatusConnected => "Connected to {0}",
+        Key::ReplayApiStatusNotConnected => "Not connected",
+        Key::ReplayApiStatusRestarting => "RePlayOS is restarting…",
+        Key::ReplayApiStatusUnauthorized => {
+            "The Net Control code stopped working — it may have been reset on the TV"
+        }
+        Key::ReplayApiStatusUnsupported => {
+            "Remote control requires a newer RePlayOS — update RePlayOS on the TV"
+        }
+        Key::ReplayApiStatusError => "Could not reach RePlayOS",
+        Key::ReplayApiCheckAgain => "Check again",
+        Key::ReplayApiAutoTitle => "Automatic setup",
+        Key::ReplayApiAutoButton => "Enable automatically",
+        Key::ReplayApiAutoHint => {
+            "Turns on Net Control and restarts RePlayOS: the TV returns to the menu and any running game stops. RePlayOS must be set to the storage where your games live."
+        }
+        Key::ReplayApiManualTitle => "Manual setup",
+        Key::ReplayApiManualStep1 => "On the TV, open SYSTEM > OPTIONS and enable NET CONTROL",
+        Key::ReplayApiManualStep2 => "Open SYSTEM > INFORMATION and read the NET CONTROL CODE",
+        Key::ReplayApiManualStep3 => "Enter the code here",
+        Key::ReplayApiConnect => "Connect",
+        Key::ReplayApiConnecting => "Connecting…",
+        Key::ReplayApiReenterCode => "Re-enter code",
+        Key::ReplayApiSetUpAgain => "Set up again",
+
+        Key::NowPlayingLabelPlaying => "Playing",
+        Key::NowPlayingLabelPaused => "Playing (on pause)",
+        Key::NowPlayingLabelHalted => "Halt",
+        Key::NowPlayingLabelInMenu => "Playing (on menu)",
+        Key::NowPlayingDisc => "Disc {0}/{1}",
+        Key::PlayerControlScreenshot => "Shot",
+        Key::PlayerControlHalt => "Halt",
+        Key::PlayerControlMute => "Mute",
+        Key::PlayerControlVolumeDown => "Vol -",
+        Key::PlayerControlVolumeUp => "Vol +",
+        Key::PlayerControlReset => "Reset",
+        Key::PlayerControlResetConfirm => "Reset the running game?",
     }
 }

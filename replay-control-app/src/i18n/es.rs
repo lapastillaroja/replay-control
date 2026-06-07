@@ -296,10 +296,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "¡Lanzado!",
         Key::GameDetailLaunchError => "Error al lanzar",
         Key::GameDetailLaunchNotReplayos => "No se está ejecutando en RePlayOS",
-        Key::GameDetailStopGame => "Detener juego",
-        Key::GameDetailStoppingGame => "Deteniendo...",
-        Key::GameDetailStopGameFailed => "Error al detener",
-        Key::GameDetailNowPlaying => "Jugando ahora",
         Key::GameDetailFavorite => "Favorito",
         Key::GameDetailUnfavorite => "Quitar de favoritos",
         Key::GameDetailConfirmDelete => "Confirmar eliminación",
@@ -597,19 +593,65 @@ pub fn translate(key: Key) -> &'static str {
         // Setup checklist (first-run)
         Key::SetupWelcome => "\u{00a1}Bienvenido a Replay Control!",
         Key::SetupIntro => {
-            "Saca el m\u{00e1}ximo partido a tu biblioteca con estas descargas opcionales. Siempre puedes hacerlo despu\u{00e9}s desde la p\u{00e1}gina de Metadatos."
+            "Saca el m\u{00e1}ximo partido a tu biblioteca y conecta Replay Control con RePlayOS."
         }
-        Key::SetupMetadataTitle => "Descargar descripciones y valoraciones",
+        Key::SetupMetadataTitle => "Descargar fuentes de metadatos",
         Key::SetupMetadataHint => {
-            "~100 MB \u{2014} a\u{00f1}ade descripciones, g\u{00e9}neros, valoraciones y fechas"
+            "A\u{00f1}ade descripciones, valoraciones, fechas y car\u{00e1}tulas autom\u{00e1}ticas"
         }
-        Key::SetupThumbnailTitle => "Actualizar \u{00ed}ndice de car\u{00e1}tulas",
-        Key::SetupThumbnailHint => "Permite la descarga autom\u{00e1}tica de car\u{00e1}tulas",
+        Key::SetupReplayosTitle => "Activar integraci\u{00f3}n con RePlayOS",
+        Key::SetupReplayosHint => {
+            "Activa Net Control de RePlayOS, reinicia RePlayOS y lee el c\u{00f3}digo de Net Control para que no tengas que hacer nada."
+        }
         Key::SetupSkip => "Omitir",
         Key::SetupDismiss => "Cerrar",
         Key::SetupComplete => "\u{00a1}Configuraci\u{00f3}n completada!",
         Key::SetupInProgress => "En progreso\u{2026}",
+        Key::SetupBusyHint => {
+            "Las acciones de configuraci\u{00f3}n se pausan mientras se ejecuta otra tarea de biblioteca. Espera a que termine y contin\u{00fa}a."
+        }
         Key::SetupStart => "Iniciar",
-        Key::SetupUpdate => "Actualizar",
+        Key::SetupDone => "Listo",
+
+        Key::SetupReplayosManualLink => "o introduce el código manualmente",
+
+        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayApiStatusConnected => "Conectado a {0}",
+        Key::ReplayApiStatusNotConnected => "No conectado",
+        Key::ReplayApiStatusRestarting => "RePlayOS se está reiniciando…",
+        Key::ReplayApiStatusUnauthorized => {
+            "El código de Net Control dejó de funcionar — puede que se haya restablecido en la TV"
+        }
+        Key::ReplayApiStatusUnsupported => {
+            "El control remoto requiere una versión más reciente de RePlayOS — actualiza RePlayOS en la TV"
+        }
+        Key::ReplayApiStatusError => "No se pudo conectar con RePlayOS",
+        Key::ReplayApiCheckAgain => "Comprobar de nuevo",
+        Key::ReplayApiAutoTitle => "Configuración automática",
+        Key::ReplayApiAutoButton => "Activar automáticamente",
+        Key::ReplayApiAutoHint => {
+            "Activa Net Control y reinicia RePlayOS: la TV vuelve al menú y cualquier partida en curso se detiene. RePlayOS debe estar configurado con el almacenamiento donde están tus juegos."
+        }
+        Key::ReplayApiManualTitle => "Configuración manual",
+        Key::ReplayApiManualStep1 => "En la TV, abre SYSTEM > OPTIONS y activa NET CONTROL",
+        Key::ReplayApiManualStep2 => "Abre SYSTEM > INFORMATION y consulta el NET CONTROL CODE",
+        Key::ReplayApiManualStep3 => "Introduce el código aquí",
+        Key::ReplayApiConnect => "Conectar",
+        Key::ReplayApiConnecting => "Conectando…",
+        Key::ReplayApiReenterCode => "Volver a introducir el código",
+        Key::ReplayApiSetUpAgain => "Configurar de nuevo",
+
+        Key::NowPlayingLabelPlaying => "Jugando",
+        Key::NowPlayingLabelPaused => "Jugando (en pausa)",
+        Key::NowPlayingLabelHalted => "Halt",
+        Key::NowPlayingLabelInMenu => "Jugando (en el menú)",
+        Key::NowPlayingDisc => "Disco {0}/{1}",
+        Key::PlayerControlScreenshot => "Captura",
+        Key::PlayerControlHalt => "Halt",
+        Key::PlayerControlMute => "Silenciar",
+        Key::PlayerControlVolumeDown => "Vol -",
+        Key::PlayerControlVolumeUp => "Vol +",
+        Key::PlayerControlReset => "Reset",
+        Key::PlayerControlResetConfirm => "¿Reiniciar el juego en curso?",
     }
 }

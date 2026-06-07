@@ -17,6 +17,10 @@ mod ssr {
     use tower_http::set_header::SetResponseHeaderLayer;
 
     use replay_control_app::api;
+    use replay_control_app::server_fns::{
+        EnableReplayApiAssisted, GetReplayApiStatus, ReprobeReplayApi, SendReplayPlayerCommand,
+        StartSetupMetadataDownloads, VerifyReplayApiToken,
+    };
 
     #[derive(Parser)]
     #[command(
@@ -109,6 +113,11 @@ mod ssr {
         let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
             state.corruption_status();
         let asset_health = state.asset_health_snapshot();
+        let replay_api_status = state
+            .replay_api
+            .as_ref()
+            .map(|api| api.status())
+            .unwrap_or_default();
 
         serde_json::json!({
             "type": "init",
@@ -123,6 +132,7 @@ mod ssr {
             "user_data_corrupt": user_data_corrupt,
             "user_data_backup_exists": user_data_backup_exists,
             "asset_health": asset_health,
+            "replay_api_status": replay_api_status,
         })
     }
 
@@ -147,7 +157,7 @@ mod ssr {
         use axum::response::sse::{Event, KeepAlive, Sse};
         use std::convert::Infallible;
 
-        let mut rx = state.config_tx.subscribe();
+        let mut rx = state.events_tx.subscribe();
         let stream = async_stream::stream! {
             // Send initial state so the client has current values on connect.
             yield Ok::<_, Infallible>(Event::default().data(config_init_payload(&state).to_string()));
@@ -215,7 +225,7 @@ mod ssr {
         use axum::response::sse::{Event, KeepAlive, Sse};
         use std::convert::Infallible;
 
-        let mut config_rx = state.config_tx.subscribe();
+        let mut config_rx = state.events_tx.subscribe();
         let mut activity_rx = state.activity_tx.subscribe();
         let mut now_playing_rx = state.now_playing_tx.subscribe();
         let stream = async_stream::stream! {
@@ -580,7 +590,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RenameRom>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomFileGroup>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::LaunchGame>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::StopCurrentGame>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomDetail>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RefreshStorage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetWifiConfig>();
@@ -684,6 +693,12 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSetupStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DismissSetup>();
+        server_fn::axum::register_explicit::<StartSetupMetadataDownloads>();
+        server_fn::axum::register_explicit::<EnableReplayApiAssisted>();
+        server_fn::axum::register_explicit::<GetReplayApiStatus>();
+        server_fn::axum::register_explicit::<ReprobeReplayApi>();
+        server_fn::axum::register_explicit::<SendReplayPlayerCommand>();
+        server_fn::axum::register_explicit::<VerifyReplayApiToken>();
         server_fn::axum::register_explicit::<
             replay_control_app::server_fns::GetMetadataLibraryOverview,
         >();

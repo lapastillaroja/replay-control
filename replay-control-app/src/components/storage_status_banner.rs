@@ -1,29 +1,18 @@
 use leptos::prelude::*;
 
+use crate::components::system_status_banner::SystemStatusBanner;
 use crate::types::{StorageStatus, storage_kind_label};
 
 /// App-shell banner for storage states where the gate is still open but the
-/// configured target is not being honored.
+/// configured target is not being honored. Domain logic only — the markup is
+/// the shared [`SystemStatusBanner`] shell.
 #[component]
 pub fn StorageStatusBanner() -> impl IntoView {
     let status = expect_context::<RwSignal<StorageStatus>>();
-    let message = move || banner_message(&status.get());
-    let reason = move || banner_reason(&status.get());
+    let message = Signal::derive(move || banner_message(&status.read()));
+    let detail = Signal::derive(move || banner_reason(&status.read()));
 
-    view! {
-        <Show when=move || message().is_some() fallback=|| ()>
-            <div class="storage-status-banner">
-                <div class="storage-status-banner-row">
-                    <span>{move || message().unwrap_or_default()}</span>
-                    <Show when=move || reason().is_some() fallback=|| ()>
-                        <small class="storage-status-banner-reason">
-                            {move || reason().unwrap_or_default()}
-                        </small>
-                    </Show>
-                </div>
-            </div>
-        </Show>
-    }
+    view! { <SystemStatusBanner message detail /> }
 }
 
 fn banner_message(status: &StorageStatus) -> Option<String> {

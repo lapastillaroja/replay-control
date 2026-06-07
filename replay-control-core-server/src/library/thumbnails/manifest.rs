@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-#[cfg(feature = "http")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::Connection;
@@ -99,7 +98,6 @@ pub fn default_branch(repo_display_name: &str) -> &'static str {
 /// Outcome of a GitHub API GET, distinguishing rate-limit responses from
 /// other errors so the manifest pipeline can bail early instead of charging
 /// through 70 doomed requests.
-#[cfg(feature = "http")]
 #[derive(Debug)]
 pub enum GhResponse {
     Json {
@@ -117,7 +115,6 @@ pub enum GhResponse {
 
 /// GET a GitHub API endpoint and return a structured outcome that the
 /// caller can use to drive observable behaviour (logging, early bail).
-#[cfg(feature = "http")]
 async fn gh_api_get(
     url: &str,
     headers: &[(&str, &str)],
@@ -183,7 +180,6 @@ async fn gh_api_get(
 /// Returns the structured `GhResponse` so callers can distinguish rate-limit
 /// responses from network/parse errors. Use `fetch_repo_tree_simple` if all
 /// you need is the legacy `Result<(String, Vec)>` shape.
-#[cfg(feature = "http")]
 pub async fn fetch_repo_tree(
     url_name: &str,
     branch: &str,
@@ -280,7 +276,6 @@ pub struct ThumbnailEntry {
 
 /// Convert parsed thumbnail entries into the (kind, filename, symlink_target)
 /// triples expected by `external_metadata::insert_thumbnail_manifest_rows`.
-#[cfg_attr(not(feature = "http"), allow(dead_code))]
 pub(crate) fn entries_to_tuples(
     entries: &[ThumbnailEntry],
 ) -> Vec<(String, String, Option<String>)> {
@@ -305,7 +300,6 @@ pub(crate) fn entries_to_tuples(
 /// constructs and passes in. Each repo's per-transaction write briefly
 /// acquires the pool's single writer; the GitHub HTTP fetches between repos
 /// run pool-free so they don't hold a write lock.
-#[cfg(feature = "http")]
 pub async fn import_all_manifests(
     em_pool: &crate::DbPool,
     on_progress: &(dyn Fn(usize, usize, &str) + Send + Sync),
@@ -535,7 +529,6 @@ pub async fn import_all_manifests(
 /// Outcome of `check_repo_freshness`. Distinguishes "unchanged / changed /
 /// unknown" from rate-limit responses so the caller can bail rather than
 /// falling through to a re-fetch (which would also be rate-limited).
-#[cfg(feature = "http")]
 enum FreshnessOutcome {
     Unchanged,
     Changed,
@@ -553,7 +546,6 @@ enum FreshnessOutcome {
 /// Uses `GET /repos/libretro-thumbnails/{url_name}/commits/HEAD`. We send
 /// `Accept: application/vnd.github+json` (instead of the SHA media type) so
 /// rate-limit responses come back as JSON we can introspect via `gh_api_get`.
-#[cfg(feature = "http")]
 async fn check_repo_freshness(
     url_name: &str,
     stored_hash: &str,
@@ -940,12 +932,10 @@ fn url_encode_path_component(s: &str) -> String {
     result
 }
 
-#[cfg(feature = "http")]
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// Download a thumbnail image, handling symlink resolution transparently.
 /// Returns the raw PNG bytes on success.
-#[cfg(feature = "http")]
 pub async fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>> {
     let url = thumbnail_download_url(m, kind);
     let bytes = download_bytes(&url).await?;
@@ -981,7 +971,6 @@ pub async fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>
 }
 
 /// Download raw bytes from a URL.
-#[cfg(feature = "http")]
 pub async fn download_bytes(url: &str) -> Result<Vec<u8>> {
     crate::http::get_bytes_with_timeout(url, std::time::Duration::from_secs(15)).await
 }
@@ -1379,7 +1368,6 @@ pub fn plan_system_thumbnails_from_repo_data(
 /// Does not need a DB connection — call `plan_system_thumbnails_from_repo_data` first.
 ///
 /// `on_progress(processed, total, downloaded)` is called periodically.
-#[cfg(feature = "http")]
 pub async fn download_system_thumbnails(
     plan: &DownloadPlan,
     storage_root: &Path,

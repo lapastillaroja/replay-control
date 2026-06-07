@@ -9,6 +9,7 @@ pub mod logs;
 pub mod metadata;
 pub mod nfs;
 pub mod password;
+pub mod replay_net_control;
 pub mod retroachievements;
 pub mod search;
 pub mod settings;

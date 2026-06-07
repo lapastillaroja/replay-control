@@ -1,6 +1,12 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::external_metadata::{
+    clear_launchbox, get_data_source_stats, launchbox_game_count,
+};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::settings::write_setup_dismissed;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +17,10 @@ pub struct SetupStatus {
     pub has_metadata: bool,
     /// Thumbnail index has entries.
     pub has_thumbnail_index: bool,
+    /// Running on the RePlayOS device rather than standalone development mode.
+    pub is_device: bool,
+    /// RePlayOS Net Control integration is connected and ready.
+    pub replay_api_active: bool,
 }
 
 /// Check whether the first-run setup card should be displayed.
@@ -34,39 +44,71 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
                 show_setup: false,
                 has_metadata: true,
                 has_thumbnail_index: true,
+                is_device: state.mode.is_device(),
+                replay_api_active: true,
             });
         }
     }
 
+    let (has_metadata, has_thumbnail_index) = setup_metadata_status(&state).await;
+    let is_device = state.mode.is_device();
+    let replay_api_active = match state.replay_api.as_ref() {
+        Some(api) if api.status().is_active() => true,
+        Some(api) if api.client().has_token() => api.probe().await.is_active(),
+        _ => false,
+    };
+
+    let show_setup =
+        force || !has_metadata || !has_thumbnail_index || (is_device && !replay_api_active);
+
+    Ok(SetupStatus {
+        show_setup,
+        has_metadata,
+        has_thumbnail_index,
+        is_device,
+        replay_api_active,
+    })
+}
+
+#[cfg(feature = "ssr")]
+async fn setup_metadata_status(state: &crate::api::AppState) -> (bool, bool) {
     let has_metadata = state
         .external_metadata_reader
-        .read(|conn| {
-            replay_control_core_server::external_metadata::launchbox_game_count(conn).unwrap_or(0)
-                > 0
-        })
+        .read(|conn| launchbox_game_count(conn).unwrap_or(0) > 0)
         .await
         .unwrap_or(false);
 
     let has_thumbnail_index = state
         .external_metadata_reader
         .read(|conn| {
-            replay_control_core_server::external_metadata::get_data_source_stats(
-                conn,
-                "libretro-thumbnails",
-            )
-            .map(|s| s.total_entries > 0)
-            .unwrap_or(false)
+            get_data_source_stats(conn, "libretro-thumbnails")
+                .map(|s| s.total_entries > 0)
+                .unwrap_or(false)
         })
         .await
         .unwrap_or(false);
 
-    let show_setup = force || !has_metadata || !has_thumbnail_index;
+    (has_metadata, has_thumbnail_index)
+}
 
-    Ok(SetupStatus {
-        show_setup,
-        has_metadata,
-        has_thumbnail_index,
-    })
+/// Start missing setup metadata sources from one UI action. LaunchBox metadata
+/// runs before the libretro thumbnail manifest because enrichment can use it
+/// immediately.
+#[server(prefix = "/sfn")]
+pub async fn start_setup_metadata_downloads() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "set up metadata").await?;
+
+    let (has_metadata, has_thumbnail_index) = setup_metadata_status(&state).await;
+    if has_metadata && has_thumbnail_index {
+        return Ok(());
+    }
+    crate::api::BackgroundManager::spawn_setup_metadata_downloads(
+        state,
+        !has_metadata,
+        !has_thumbnail_index,
+    );
+    Ok(())
 }
 
 /// Dismiss the first-run setup checklist. Persists to settings.cfg and
@@ -74,8 +116,7 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
 #[server(prefix = "/sfn")]
 pub async fn dismiss_setup() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core_server::settings::write_setup_dismissed(&state.settings, true)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    write_setup_dismissed(&state.settings, true).map_err(|e| ServerFnError::new(e.to_string()))?;
     state
         .prefs
         .write()
@@ -196,7 +237,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 
     state
         .external_metadata_writer
-        .try_write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
+        .try_write(|conn| clear_launchbox(conn))
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -212,7 +253,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     super::require_storage_mutation_allowed(&state, "regenerate metadata").await?;
     state
         .external_metadata_writer
-        .try_write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
+        .try_write(|conn| clear_launchbox(conn))
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;

@@ -2,6 +2,7 @@ pub mod asset_health;
 pub mod error;
 pub mod languages;
 pub mod locale;
+pub mod replay_api;
 pub mod runtime_env;
 pub mod search_scoring;
 pub mod update;

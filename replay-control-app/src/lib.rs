@@ -26,10 +26,11 @@ use components::asset_health_banner::AssetHealthBanner;
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
-use components::now_playing_indicator::NowPlayingIndicator;
+use components::now_playing_bar::NowPlayingBar;
+use components::replay_api_status_banner::ReplayApiStatusBanner;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
-use hooks::{Clock, use_now_playing};
+use hooks::Clock;
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
@@ -43,12 +44,14 @@ use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::nfs::NfsPage;
 use pages::password::PasswordPage;
+use pages::replay_net_control::ReplayNetControlPage;
 use pages::retroachievements::RetroAchievementsPage;
 use pages::search::SearchPage;
 use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
+use replay_control_core::replay_api::ReplayApiStatus;
 #[cfg(feature = "hydrate")]
 use replay_control_core::update::AvailableUpdate;
 use replay_control_core::{asset_health::AssetHealthIssue, update::UpdateState};
@@ -130,10 +133,10 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(StorageStatus::default()));
     provide_context(RwSignal::new(RomWatcherStatus::default()));
     provide_context(RwSignal::new(Vec::<AssetHealthIssue>::new()));
+    provide_context(RwSignal::new(ReplayApiStatus::default()));
     provide_context(RwSignal::new(initial_now_playing_state()));
     provide_context(Clock::install());
 
-    let now_playing = use_now_playing();
     // Fed by SseEventsListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
@@ -145,10 +148,6 @@ pub fn App() -> impl IntoView {
             <div class="app">
                 <header
                     class="top-bar"
-                    class:top-bar-with-now-playing=move || matches!(
-                        now_playing.get(),
-                        NowPlayingState::Playing { .. }
-                    )
                 >
                     <h1 class="app-title">
                         <A href="/" attr:class="app-title-link">
@@ -161,15 +160,14 @@ pub fn App() -> impl IntoView {
                             <span class="app-logo" aria-label="Replay Control"></span>
                         </A>
                     </h1>
-                    <div class="top-bar-now-playing">
-                        <NowPlayingIndicator />
-                    </div>
                 </header>
 
+                <NowPlayingBar />
                 <CorruptionBanner />
                 <StorageStatusBanner />
                 <RomWatcherBanner />
                 <AssetHealthBanner />
+                <ReplayApiStatusBanner />
                 <MetadataBusyBanner />
 
                 <main class="content">
@@ -187,6 +185,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
                         <Route path=path!("/settings/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/retroachievements") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><RetroAchievementsPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/replay-net-control") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />
@@ -321,6 +320,7 @@ fn SseEventsListener() -> impl IntoView {
         let storage_status_signal = use_context::<RwSignal<StorageStatus>>();
         let rom_watcher_status_signal = use_context::<RwSignal<RomWatcherStatus>>();
         let asset_health_signal = use_context::<RwSignal<Vec<AssetHealthIssue>>>();
+        let replay_api_status_signal = use_context::<RwSignal<ReplayApiStatus>>();
         let activity_signal = use_context::<RwSignal<Activity>>();
         let now_playing_signal = use_context::<RwSignal<NowPlayingState>>();
 
@@ -408,6 +408,13 @@ fn SseEventsListener() -> impl IntoView {
                             }
                             if let Some(sig) = asset_health_signal {
                                 sig.set(asset_health_from_payload(&payload));
+                            }
+                            if let Some(sig) = replay_api_status_signal
+                                && let Some(value) = payload.get("replay_api_status")
+                                && let Ok(status) =
+                                    serde_json::from_value::<ReplayApiStatus>(value.clone())
+                            {
+                                sig.set(status);
                             }
                             // Version-based reload for stale tabs.
                             if let Some(server_version) =
@@ -500,6 +507,15 @@ fn SseEventsListener() -> impl IntoView {
                         "AssetHealthChanged" => {
                             if let Some(sig) = asset_health_signal {
                                 sig.set(asset_health_from_payload(&payload));
+                            }
+                        }
+                        "ReplayApiStatusChanged" => {
+                            if let Some(sig) = replay_api_status_signal
+                                && let Some(value) = payload.get("status")
+                                && let Ok(status) =
+                                    serde_json::from_value::<ReplayApiStatus>(value.clone())
+                            {
+                                sig.set(status);
                             }
                         }
                         _ => {}

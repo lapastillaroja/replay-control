@@ -749,9 +749,31 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
     super::require_storage_mutation_allowed(&state, "launch games").await?;
     let storage = state.storage();
 
-    replay_control_core_server::launch::launch_game(&storage, &rom_path)
+    // Launching goes through the RePlayOS API: no integration ⇒ point the
+    // user at onboarding instead of failing cryptically.
+    let api = state
+        .replay_api
+        .clone()
+        .filter(|api| api.client().has_token())
+        .ok_or_else(|| {
+            ServerFnError::new(
+                "Launching games needs the RePlayOS Net Control connection — set it up in Settings",
+            )
+        })?;
+
+    replay_control_core_server::launch::validate_rom_exists(&storage, &rom_path)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let (system, game_file) = replay_control_core_server::launch::launch_parts(&rom_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    tracing::info!(rom = %rom_path, system, game_file, "launching game via RePlayOS API");
+    if let Err(e) = api.client().load_game(system, game_file).await {
+        // Feed connection-state failures (401 after a TV-side code reset,
+        // frontend down) into the status machine so the UI surfaces them.
+        api.report_error(&e);
+        return Err(ServerFnError::new(e.to_string()));
+    }
 
     // Create a recents entry so the home page reflects the launch immediately.
     // Extract system and rom_filename from the rom_path.

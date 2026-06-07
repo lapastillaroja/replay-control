@@ -112,19 +112,27 @@
    last active storage, or when an active storage swap hits an error.
    ================================================================ */
 
-.storage-status-banner {
+.system-status-banner {
     display: flex;
     flex-direction: column;
     width: 100%;
     padding: 8px 16px;
-    background: #1e3a5f;
-    color: #dbeafe;
     font-size: 0.8rem;
     text-align: center;
     line-height: 1.4;
 }
 
-.storage-status-banner-row {
+.system-status-banner--warning {
+    background: #1e3a5f;
+    color: #dbeafe;
+}
+
+.system-status-banner--info {
+    background: #1f3d33;
+    color: #d1fae5;
+}
+
+.system-status-banner-row {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -132,9 +140,15 @@
     flex-wrap: wrap;
 }
 
-.storage-status-banner-reason {
-    color: rgba(219, 234, 254, 0.78);
+.system-status-banner-reason {
+    color: rgba(255, 255, 255, 0.65);
     font-size: 0.72rem;
+}
+
+.system-status-banner-action {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
 }
 
 /* ================================================================

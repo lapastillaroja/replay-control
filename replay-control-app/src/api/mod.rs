@@ -9,6 +9,7 @@ pub(crate) mod library_systems;
 mod mountinfo_watcher;
 pub mod now_playing;
 pub mod recents;
+pub mod replay_api;
 pub mod response_cache;
 pub mod roms;
 pub mod system_info;
@@ -137,6 +138,9 @@ pub enum ConfigEvent {
     RomWatcherStatusChanged {
         status: RomWatcherStatus,
     },
+    ReplayApiStatusChanged {
+        status: replay_control_core::replay_api::ReplayApiStatus,
+    },
 }
 
 /// Shared application state.
@@ -197,7 +201,11 @@ pub struct AppState {
     /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
     pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
     /// Broadcast channel for config change notifications (skin, storage).
-    pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
+    pub events_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
+    /// RePlayOS API integration (client + status machine). `None` in
+    /// standalone mode — the absence is structural: off-device code cannot
+    /// reach the API at all. See `api/replay_api.rs`.
+    pub replay_api: Option<Arc<replay_api::ReplayApi>>,
     /// Broadcast channel for activity state changes (import, thumbnail, rebuild).
     pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
     /// Current "Now Playing" session state.
@@ -227,13 +235,13 @@ pub struct AppState {
 /// Register a corruption-change callback on each pool.
 ///
 /// Both pools share a closure that reads the latest combined corruption state
-/// and broadcasts `ConfigEvent::CorruptionChanged` on `config_tx`. The closure
+/// and broadcasts `ConfigEvent::CorruptionChanged` on `events_tx`. The closure
 /// captures atomic flag handles and the user-data path handle (no `DbPool`
 /// clones), so there is no Pool ↔ callback reference cycle.
 fn register_corruption_callbacks(
     library_pool: &DbPool,
     user_data_pool: &DbPool,
-    config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
+    events_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
 ) {
     use std::sync::atomic::Ordering;
 
@@ -245,7 +253,7 @@ fn register_corruption_callbacks(
         let lib_flag = lib_flag.clone();
         let ud_flag = ud_flag.clone();
         let ud_path = ud_path.clone();
-        let tx = config_tx.clone();
+        let tx = events_tx.clone();
         move || {
             let _ = tx.send(ConfigEvent::CorruptionChanged {
                 library_corrupt: lib_flag.load(Ordering::Relaxed),
@@ -547,8 +555,8 @@ impl AppState {
         };
 
         // Channels are constructed before the pools so the corruption
-        // callbacks registered below can capture `config_tx`.
-        let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
+        // callbacks registered below can capture `events_tx`.
+        let (events_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
         let (now_playing_tx, _) =
             tokio::sync::broadcast::channel::<crate::types::NowPlayingState>(32);
@@ -645,7 +653,7 @@ impl AppState {
                 pool
             };
 
-            register_corruption_callbacks(&library_pool, &user_data_pool, config_tx.clone());
+            register_corruption_callbacks(&library_pool, &user_data_pool, events_tx.clone());
 
             (library_pool, user_data_pool)
         } else {
@@ -666,7 +674,7 @@ impl AppState {
                 4096,
                 2048,
             );
-            register_corruption_callbacks(&library_pool, &user_data_pool, config_tx.clone());
+            register_corruption_callbacks(&library_pool, &user_data_pool, events_tx.clone());
             (library_pool, user_data_pool)
         };
 
@@ -695,6 +703,16 @@ impl AppState {
 
         // Load all user preferences from settings.cfg once at startup.
         let prefs = replay_control_core_server::settings::UserPreferences::load(&settings);
+
+        // RePlayOS API integration: device-only by construction. The stored
+        // Net Control code (if onboarding happened) seeds the client; the
+        // startup probe in `BackgroundManager::start` resolves the status.
+        let replay_api = mode.is_device().then(|| {
+            Arc::new(replay_api::ReplayApi::new(
+                replay_control_core_server::settings::read_replay_api_token(&settings),
+                events_tx.clone(),
+            ))
+        });
 
         // Seed the asset-health registry from startup probes. Today's only
         // reporter is the catalog schema check (set in init_catalog before
@@ -743,7 +761,8 @@ impl AppState {
                 ),
             ),
             activity,
-            config_tx,
+            events_tx,
+            replay_api,
             activity_tx,
             now_playing: Arc::new(std::sync::RwLock::new(
                 crate::types::NowPlayingState::NotRunning,
@@ -805,7 +824,7 @@ impl AppState {
         *guard = status.clone();
         drop(guard);
         let _ = self
-            .config_tx
+            .events_tx
             .send(ConfigEvent::StorageStatusChanged { status });
     }
 
@@ -832,7 +851,7 @@ impl AppState {
         *guard = status.clone();
         drop(guard);
         let _ = self
-            .config_tx
+            .events_tx
             .send(ConfigEvent::RomWatcherStatusChanged { status });
     }
 
@@ -977,7 +996,7 @@ impl AppState {
             guard.clone()
         };
         let _ = self
-            .config_tx
+            .events_tx
             .send(ConfigEvent::AssetHealthChanged { issues: snapshot });
     }
 
@@ -1107,6 +1126,20 @@ impl AppState {
         Ok(())
     }
 
+    /// Enable RePlayOS Net Control in `replay.cfg` and write back to disk.
+    /// RePlayOS generates `replay_http_token`; this only flips the feature flag.
+    pub fn enable_replayos_net_control(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let config_path = self.config_file_path();
+        let mut config = ReplayConfig::from_file(&config_path)?;
+        config.set_system_net_control(true);
+        config.write_to_file(&config_path, &config_path)?;
+        *self
+            .replay_config
+            .write()
+            .expect("replay_config lock poisoned") = Some(config);
+        Ok(())
+    }
+
     /// Re-read `replay.cfg` into the in-memory config (the source SSR and the
     /// UI read). RePlayOS owns the file and rewrites it atomically; the app
     /// only mirrors it. A freshly read config is adopted ONLY when the file is
@@ -1150,7 +1183,7 @@ impl AppState {
         let new_skin = self.effective_skin();
         if old_skin != new_skin {
             let skin_css = replay_control_core::skins::theme_css(new_skin);
-            let _ = self.config_tx.send(ConfigEvent::SkinChanged {
+            let _ = self.events_tx.send(ConfigEvent::SkinChanged {
                 skin_index: new_skin,
                 skin_css,
             });
@@ -1383,7 +1416,7 @@ impl AppState {
 
             let kind = self.storage().kind.as_str().to_string();
             let _ = self
-                .config_tx
+                .events_tx
                 .send(ConfigEvent::StorageChanged { storage_kind: kind });
 
             // None->Some transition: start background pipeline and ROM watcher.
@@ -1948,7 +1981,7 @@ mod tests {
     async fn rom_watcher_status_broadcasts_only_on_transition() {
         let tmp = tempfile::tempdir().unwrap();
         let state = build_waiting_page_test_state(tmp.path());
-        let mut rx = state.config_tx.subscribe();
+        let mut rx = state.events_tx.subscribe();
         let failed = RomWatcherStatus::Failed {
             reason: "inotify max_user_watches exceeded".into(),
         };
@@ -1973,7 +2006,7 @@ mod tests {
     async fn rom_watcher_status_skipped_does_not_block_active_transition() {
         let tmp = tempfile::tempdir().unwrap();
         let state = build_waiting_page_test_state(tmp.path());
-        let mut rx = state.config_tx.subscribe();
+        let mut rx = state.events_tx.subscribe();
 
         state.set_rom_watcher_status_for_test(RomWatcherStatus::Skipped {
             reason: "NFS".into(),
@@ -1994,7 +2027,7 @@ mod tests {
     async fn storage_status_broadcasts_only_on_transition() {
         let tmp = tempfile::tempdir().unwrap();
         let state = build_waiting_page_test_state(tmp.path());
-        let mut rx = state.config_tx.subscribe();
+        let mut rx = state.events_tx.subscribe();
         let status = StorageStatus::Misconfigured {
             wanted: "nvme".into(),
             current_kind: Some("usb".into()),

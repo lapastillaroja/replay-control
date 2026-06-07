@@ -170,63 +170,27 @@ impl LibraryDb {
         Ok(result)
     }
 
-    /// Resolve a `scummvm` library row from a now-playing basename stem.
-    ///
-    /// The now-playing detector picks the `.scummvm`/`.svm` content file inside
-    /// a ScummVM game folder (or the folder itself when the heap has no `.svm`),
-    /// whose basename **stem** matches the library's `.m3u` stem even when the
-    /// folder tag differs (e.g. `Beneath a Steel Sky (CD DOS Spanish).scummvm`
-    /// or the folder `Beneath a Steel Sky (CD Spanish)` → row
-    /// `Beneath a Steel Sky (CD DOS Spanish).m3u`). An exact `(system, filename)`
-    /// lookup misses the `.m3u` row, so resolve by stem instead.
-    ///
-    /// `stem` is the now-playing filename with its extension removed (or the
-    /// folder name as-is). Matches a `system = 'scummvm'` row whose own
-    /// `rom_filename` stem (everything before the last `.`) equals `stem`,
-    /// extension-insensitively. The compare is done in Rust to avoid SQL `LIKE`
-    /// wildcard pitfalls (game titles contain `_`, a LIKE metacharacter).
-    pub fn lookup_scummvm_by_stem(conn: &Connection, stem: &str) -> Result<Option<GameEntry>> {
-        // Narrow to rows whose filename begins with the stem, escaping the
-        // LIKE metacharacters `%`, `_`, and the escape char itself so titles
-        // like `Game_2` don't widen the match.
-        let escaped = stem
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        let pattern = format!("{escaped}%");
+    /// Resolve a library row whose `rom_path` is a prefix of the given
+    /// relative rom path — the now-playing fallback when the API-reported
+    /// game doesn't resolve by `(system, game_name)` exactly. Longest prefix
+    /// wins so nested-subdir rows beat their parents.
+    pub fn lookup_game_by_path_prefix(
+        conn: &Connection,
+        system: &str,
+        rom_path: &str,
+    ) -> Result<Option<GameEntry>> {
         let sql = format!(
             "SELECT {GAME_ENTRY_COLUMNS} FROM game_library \
-             WHERE system = 'scummvm' AND rom_filename LIKE ?1 ESCAPE '\\'"
+             WHERE system = ?1 AND ?2 LIKE rom_path || '%' \
+             ORDER BY LENGTH(rom_path) DESC LIMIT 1"
         );
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Other(format!("Prepare lookup_scummvm_by_stem: {e}")))?;
-        let rows = stmt
-            .query_map(params![pattern], Self::row_to_game_entry)
-            .map_err(|e| Error::Other(format!("Query lookup_scummvm_by_stem: {e}")))?;
-
-        for entry in rows {
-            // Propagate row-conversion errors instead of silently dropping them
-            // — corruption / schema drift must not masquerade as "no match".
-            let entry =
-                entry.map_err(|e| Error::Other(format!("Row lookup_scummvm_by_stem: {e}")))?;
-            // Exact stem compare: strip the row filename's extension and require
-            // equality with the captured stem.
-            let row_stem = entry
-                .rom_filename
-                .rsplit_once('.')
-                .map(|(s, _)| s)
-                .unwrap_or(entry.rom_filename.as_str());
-            if row_stem == stem {
-                return Ok(Some(entry));
-            }
-        }
-        Ok(None)
+        conn.prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare lookup_game_by_path_prefix: {e}")))?
+            .query_row(params![system, rom_path], Self::row_to_game_entry)
+            .optional()
+            .map_err(|e| Error::Other(format!("Query lookup_game_by_path_prefix: {e}")))
     }
 
-    /// Get all distinct `box_art_url` values from `game_library` for a given system.
-    ///
-    /// Returns the URL paths (e.g., `/media/sega_smd/boxart/Sonic.png`).
     pub fn active_box_art_urls(conn: &Connection, system: &str) -> Result<Vec<String>> {
         let mut stmt = conn
             .prepare(
@@ -4893,77 +4857,32 @@ mod tests {
         assert!(result.contains_key(&("nes".into(), "contra.nes".into())));
     }
 
-    // ── lookup_scummvm_by_stem ──────────────────────────────────────
+    // ── lookup_game_by_path_prefix ──────────────────────────────────
 
     #[test]
-    fn lookup_scummvm_by_stem_matches_m3u_row_extension_insensitively() {
+    fn lookup_game_by_path_prefix_finds_longest_match() {
         let (mut conn, _dir) = open_temp_db();
-        LibraryDb::save_system_entries(
-            &mut conn,
-            "scummvm",
-            &[
-                make_game_entry("scummvm", "Beneath a Steel Sky (CD DOS Spanish).m3u", true),
-                make_game_entry("scummvm", "Bargon Attack (CD Spanish).m3u", true),
-            ],
-            None,
-        )
-        .unwrap();
+        let mut sub = make_game_entry("sega_smd", "Game.md", false);
+        sub.rom_path = "/roms/sega_smd/sub/Game.md".to_string();
+        let top = make_game_entry("sega_smd", "Other.md", false);
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[sub, top], None).unwrap();
 
-        // Detector picks `<stem>.scummvm`; the row is `<stem>.m3u`.
-        let got = LibraryDb::lookup_scummvm_by_stem(&conn, "Beneath a Steel Sky (CD DOS Spanish)")
-            .unwrap();
-        assert_eq!(
-            got.map(|e| e.rom_filename),
-            Some("Beneath a Steel Sky (CD DOS Spanish).m3u".to_string())
-        );
+        let got =
+            LibraryDb::lookup_game_by_path_prefix(&conn, "sega_smd", "/roms/sega_smd/sub/Game.md")
+                .unwrap();
+        assert_eq!(got.map(|e| e.rom_filename), Some("Game.md".to_string()));
     }
 
     #[test]
-    fn lookup_scummvm_by_stem_no_match_returns_none() {
+    fn lookup_game_by_path_prefix_no_match_returns_none() {
         let (mut conn, _dir) = open_temp_db();
-        LibraryDb::save_system_entries(
-            &mut conn,
-            "scummvm",
-            &[make_game_entry(
-                "scummvm",
-                "Bargon Attack (CD Spanish).m3u",
-                true,
-            )],
-            None,
-        )
-        .unwrap();
-        let got = LibraryDb::lookup_scummvm_by_stem(&conn, "Some Other Game").unwrap();
+        let entry = make_game_entry("sega_smd", "Game.md", false);
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
+
+        let got =
+            LibraryDb::lookup_game_by_path_prefix(&conn, "sega_smd", "/roms/sega_smd/Missing.md")
+                .unwrap();
         assert!(got.is_none());
-    }
-
-    #[test]
-    fn lookup_scummvm_by_stem_requires_full_stem_not_prefix() {
-        // A row whose stem merely starts with the query stem must NOT match —
-        // the compare is exact on the full stem, and `_` (a LIKE wildcard in
-        // the title) must be treated literally.
-        let (mut conn, _dir) = open_temp_db();
-        LibraryDb::save_system_entries(
-            &mut conn,
-            "scummvm",
-            &[
-                make_game_entry("scummvm", "Game_2 Deluxe.m3u", true),
-                make_game_entry("scummvm", "GameX2 Deluxe.m3u", true),
-            ],
-            None,
-        )
-        .unwrap();
-        // Prefix-only stem must not match the longer title.
-        assert!(
-            LibraryDb::lookup_scummvm_by_stem(&conn, "Game")
-                .unwrap()
-                .is_none()
-        );
-        // `_` is literal: querying `GameX2 Deluxe` must not pull `Game_2 Deluxe`.
-        let got = LibraryDb::lookup_scummvm_by_stem(&conn, "GameX2 Deluxe").unwrap();
-        assert_eq!(
-            got.map(|e| e.rom_filename),
-            Some("GameX2 Deluxe.m3u".to_string())
-        );
     }
 
     #[test]

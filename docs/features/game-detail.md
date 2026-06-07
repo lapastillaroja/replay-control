@@ -17,11 +17,9 @@ A summary card displays:
 - Developer, release year, genre
 - Player count and co-op support
 
-## Launch on TV / Stop Game
+## Launch on TV
 
 A "Play" button sends the game to RePlayOS for immediate launch on the connected TV. Available when the Pi is running RePlayOS with a supported core.
-
-When the game detail page is showing the game currently running on RePlayOS, the primary action changes to **Stop Game**. Stopping restarts the RePlayOS frontend service, which unloads the game and returns the TV frontend to the menu.
 
 ## User Screenshots
 

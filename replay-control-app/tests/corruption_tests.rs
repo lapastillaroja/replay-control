@@ -3,7 +3,7 @@
 //!
 //! Covers the contract the live SSE banner depends on:
 //!   1. Pool flag transitions broadcast `ConfigEvent::CorruptionChanged` on
-//!      `config_tx` (the wire that backs `/sse/config`).
+//!      `events_tx` (the wire that backs `/sse/config`).
 //!   2. The three recovery server fns (`repair_corrupt_user_data`,
 //!      `restore_user_data_backup`, `rebuild_corrupt_library`) clear the
 //!      corrupt flag *and* broadcast the inverse event.
@@ -106,7 +106,7 @@ impl Drop for StandaloneStorage {
 async fn user_data_mark_corrupt_broadcasts_event() {
     setup();
     let env = TestEnv::new().await;
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
 
     env.state.user_data_writer.mark_corrupt();
 
@@ -129,7 +129,7 @@ async fn user_data_mark_corrupt_broadcasts_event() {
 async fn library_mark_corrupt_broadcasts_event() {
     setup();
     let env = TestEnv::new().await;
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
 
     env.state.library_writer.mark_corrupt();
 
@@ -151,7 +151,7 @@ async fn library_mark_corrupt_broadcasts_event() {
 async fn idempotent_mark_corrupt_does_not_re_broadcast() {
     setup();
     let env = TestEnv::new().await;
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
 
     env.state.user_data_writer.mark_corrupt();
     let _first = next_corruption_event(&mut rx).await;
@@ -187,7 +187,7 @@ async fn invoke_server_fn<F: ServerFn>(state: AppState, body: &str) -> StatusCod
 async fn run_user_data_recovery_test<F: ServerFn>() -> ConfigEvent {
     setup();
     let env = TestEnv::new().await;
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
 
     env.state.user_data_writer.mark_corrupt();
     let _set = next_corruption_event(&mut rx).await;
@@ -232,7 +232,7 @@ async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
         "TestEnv setup should have created .bak"
     );
 
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
     env.state.user_data_writer.mark_corrupt();
     let _set = next_corruption_event(&mut rx).await;
 
@@ -253,7 +253,7 @@ async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
 async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
     setup();
     let env = TestEnv::new().await;
-    let mut rx = env.state.config_tx.subscribe();
+    let mut rx = env.state.events_tx.subscribe();
 
     env.state.library_writer.mark_corrupt();
     let _set = next_corruption_event(&mut rx).await;
@@ -472,7 +472,7 @@ async fn restore_after_startup_corruption_recovers_pool() {
     let state = storage.build_state();
     assert!(state.user_data_reader.is_corrupt());
 
-    let mut rx = state.config_tx.subscribe();
+    let mut rx = state.events_tx.subscribe();
     let status = invoke_server_fn::<server_fns::RestoreUserDataBackup>(state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 

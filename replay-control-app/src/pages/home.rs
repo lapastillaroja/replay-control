@@ -2,40 +2,22 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::setup_checklist::SetupChecklist;
 use crate::components::stat_card::StatCard;
-use crate::components::stop_game_button::StopGameButton;
 use crate::components::system_card::SystemCard;
-use crate::hooks::{use_live_elapsed_secs, use_now_playing};
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
-use crate::pages::game_detail::MANUALS_FRAGMENT;
-use crate::server_fns::{self, RomDetail};
-use crate::types::NowPlayingState;
-use crate::util::{format_elapsed_short, format_size_short};
+use crate::server_fns;
+use crate::util::format_size_short;
 
 #[component]
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
-    let now_playing = use_now_playing();
     let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
     let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
-    let now_playing_detail = Resource::new_blocking(
-        move || match now_playing.get() {
-            NowPlayingState::Playing {
-                system, filename, ..
-            } => Some((system, filename)),
-            _ => None,
-        },
-        |current| async move {
-            let (system, filename) = current?;
-            server_fns::get_rom_detail(system, filename).await.ok()
-        },
-    );
 
     view! {
         <div class="page home-page">
@@ -49,75 +31,25 @@ pub fn HomePage() -> impl IntoView {
             </section>
 
             <section class="section">
-                <Show
-                    when=move || matches!(now_playing.get(), NowPlayingState::Playing { .. })
-                    fallback=move || {
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeLastPlayed)}</h2>
+                <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
+                    {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        view! {
-                            <h2 class="section-title">{t(locale, Key::HomeLastPlayed)}</h2>
-                            <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
-                                {move || Suspend::new(async move {
-                                    let locale = i18n.locale.get();
-                                    let entries = recents.await?;
-                                    Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
-                                        let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
-                                        let sys = last.entry.game.system_display.clone();
-                                        let sys_folder = last.entry.game.system.clone();
-                                        let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
-                                        let art_url = last.box_art_url.clone();
-                                        view! {
-                                            <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
-                                        }.into_any()
-                                    } else {
-                                        view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
-                                    })
-                                })}
-                            </Suspense>
-                        }
-                    }
-                >
-                    {move || {
-                        let locale = i18n.locale.get();
-                        match now_playing.get() {
-                            NowPlayingState::Playing {
-                                system,
-                                system_display,
-                                filename,
-                                display_name,
-                                box_art_url,
-                                started_at_unix_secs,
-                                ..
-                            } => view! {
-                                <h2 class="section-title">{t(locale, Key::HomeNowPlaying)}</h2>
-                                <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
-                                    {move || Suspend::new({
-                                        let system = system.clone();
-                                        let system_display = system_display.clone();
-                                        let filename = filename.clone();
-                                        let display_name = display_name.clone();
-                                        let box_art_url = box_art_url.clone();
-                                        async move {
-                                            let detail = now_playing_detail.await;
-                                            Ok::<_, ServerFnError>(view! {
-                                                <NowPlayingHeroCard
-                                                    system
-                                                    system_display
-                                                    filename
-                                                    display_name
-                                                    box_art_url
-                                                    started_at_unix_secs
-                                                    detail
-                                                />
-                                            })
-                                        }
-                                    })}
-                                </Suspense>
-                            }
-                            .into_any(),
-                            _ => ().into_any(),
-                        }
-                    }}
-                </Show>
+                        let entries = recents.await?;
+                        Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
+                            let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
+                            let sys = last.entry.game.system_display.clone();
+                            let sys_folder = last.entry.game.system.clone();
+                            let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
+                            let art_url = last.box_art_url.clone();
+                            view! {
+                                <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
+                            }.into_any()
+                        } else {
+                            view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
+                        })
+                    })}
+                </Suspense>
             </section>
 
             <section class="section">
@@ -211,95 +143,6 @@ pub fn HomePage() -> impl IntoView {
                     })}
                 </Suspense>
             </section>
-        </div>
-    }
-}
-
-#[component]
-fn NowPlayingHeroCard(
-    system: String,
-    system_display: String,
-    filename: String,
-    display_name: String,
-    box_art_url: Option<String>,
-    started_at_unix_secs: u64,
-    detail: Option<RomDetail>,
-) -> impl IntoView {
-    let i18n = use_i18n();
-    let elapsed = use_live_elapsed_secs(started_at_unix_secs);
-    let is_favorite = RwSignal::new(detail.as_ref().is_some_and(|d| d.is_favorite));
-    let relative_path = detail
-        .as_ref()
-        .map(|d| d.game.rom_path.clone())
-        .unwrap_or_else(|| format!("/roms/{system}/{filename}"));
-    let placeholder_system = system.clone();
-    let placeholder_name = display_name.clone();
-    let toggle_system = system.clone();
-
-    let href = format!("/games/{system}/{}", urlencoding::encode(&filename));
-    let manuals_href = format!("{href}#{MANUALS_FRAGMENT}");
-    let fav_filename = format!("{system}@{filename}.fav");
-
-    let system_display_for_meta = system_display.clone();
-    let meta = Memo::new(move |_| match format_elapsed_short(elapsed.get()) {
-        Some(text) => format!("{system_display_for_meta} \u{00B7} {text}"),
-        None => system_display_for_meta.clone(),
-    });
-
-    let on_toggle_fav = move |_| {
-        let fav = is_favorite.get();
-        is_favorite.set(!fav);
-        let sys = toggle_system.clone();
-        let rp = relative_path.clone();
-        let fav_filename = fav_filename.clone();
-        leptos::task::spawn_local(async move {
-            if fav {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            } else {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            }
-        });
-    };
-
-    view! {
-        <div class="hero-card hero-card-playing">
-            <A href=href.clone() attr:class="hero-card-main rom-name-link">
-                <span class="hero-badge">{move || t(i18n.locale.get(), Key::HomeNowPlaying)}</span>
-                {match box_art_url {
-                    Some(url) => view! { <img class="hero-thumb" src=url loading="lazy" /> }.into_any(),
-                    None => view! {
-                        <div class="hero-thumb-placeholder">
-                            <BoxArtPlaceholder
-                                system=placeholder_system.clone()
-                                name=placeholder_name.clone()
-                                size="hero".to_string()
-                            />
-                        </div>
-                    }.into_any(),
-                }}
-                <div class="hero-info">
-                    <h3 class="hero-title">{display_name}</h3>
-                    <p class="hero-system">{move || meta.get()}</p>
-                </div>
-            </A>
-            <div class="hero-actions">
-                <A href=href attr:class="hero-action-link">
-                    {move || t(i18n.locale.get(), Key::GameDetailInfo)}
-                </A>
-                <button class="hero-action-link" on:click=on_toggle_fav>
-                    {move || {
-                        if is_favorite.get() {
-                            t(i18n.locale.get(), Key::GameDetailUnfavorite)
-                        } else {
-                            t(i18n.locale.get(), Key::GameDetailFavorite)
-                        }
-                    }}
-                </button>
-                <A href=manuals_href attr:class="hero-action-link">
-                    {move || t(i18n.locale.get(), Key::GameDetailManual)}
-                </A>
-                <StopGameButton class="hero-action-link hero-action-stop" />
-            </div>
         </div>
     }
 }

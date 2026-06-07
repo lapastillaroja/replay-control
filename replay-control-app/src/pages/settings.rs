@@ -180,6 +180,7 @@ pub fn SettingsPage() -> impl IntoView {
                             </Transition>
 
                             <div class="menu-list">
+                                <MenuItem icon="\u{1F4E1}" label_key=Key::ReplayNetControlTitle href=Some("/settings/replay-net-control") />
                                 <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/settings/logs") />
                                 <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/settings/github") />
                             </div>

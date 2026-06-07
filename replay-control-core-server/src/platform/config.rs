@@ -208,6 +208,22 @@ impl ReplayConfig {
         self.inner.get("nfs_version")
     }
 
+    pub fn replay_http_token(&self) -> Option<&str> {
+        self.inner.get_non_empty("replay_http_token")
+    }
+
+    pub fn system_net_control_enabled(&self) -> bool {
+        self.inner.get("system_net_control") == Some("true")
+    }
+
+    /// Whether replay.cfg has the `system_net_control` key at all (true OR
+    /// false). Doubles as a version marker: the option doesn't exist before
+    /// RePlayOS 1.7.3, and newer frontends serialize their full config on
+    /// shutdown — key absent ⇒ the installed RePlayOS predates the API.
+    pub fn has_net_control_key(&self) -> bool {
+        self.inner.get("system_net_control").is_some()
+    }
+
     pub fn video_mode(&self) -> Option<&str> {
         self.inner.get("video_mode")
     }
@@ -234,7 +250,7 @@ impl ReplayConfig {
         self.inner.get_non_empty("rcheevos_password").is_some()
     }
 
-    // ── Write methods (only wifi + NFS + RetroAchievements credentials) ─────
+    // ── Write methods (only known app-owned config flows) ─────
 
     /// Update wifi settings. Only these keys may be written to `replay.cfg`.
     pub fn set_wifi(
@@ -284,6 +300,13 @@ impl ReplayConfig {
                 "RetroAchievements username and password must be provided together".to_string(),
             )),
         }
+    }
+
+    /// Enable or disable RePlayOS Net Control. RePlayOS owns token generation;
+    /// Replay Control only toggles the feature flag during assisted setup.
+    pub fn set_system_net_control(&mut self, enabled: bool) {
+        self.inner
+            .set("system_net_control", if enabled { "true" } else { "false" });
     }
 
     /// Write back to disk, preserving comments and key order from the original
@@ -408,6 +431,13 @@ impl AppSettings {
         self.inner.get_non_empty("github_api_key")
     }
 
+    /// RePlayOS Net Control code, stored app-side after onboarding (manual
+    /// entry or the assisted post-restart read). Never re-read from replay.cfg
+    /// at runtime: TV-side code resets surface as 401 → re-onboard.
+    pub fn replay_api_token(&self) -> Option<&str> {
+        self.inner.get_non_empty("replay_api_token")
+    }
+
     pub fn update_channel(&self) -> &str {
         self.inner.get("update_channel").unwrap_or("stable")
     }
@@ -465,6 +495,10 @@ impl AppSettings {
 
     pub fn set_github_api_key(&mut self, key: &str) {
         self.inner.set("github_api_key", key);
+    }
+
+    pub fn set_replay_api_token(&mut self, token: &str) {
+        self.inner.set("replay_api_token", token);
     }
 
     pub fn set_update_channel(&mut self, channel: &str) {

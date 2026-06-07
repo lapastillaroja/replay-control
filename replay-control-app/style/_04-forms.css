@@ -215,3 +215,77 @@ select.form-input option {
     color: var(--success);
     margin-top: 8px;
 }
+
+/* ================================================================
+   RePlayOS Net Control settings page
+   ================================================================ */
+
+.net-control-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    margin-bottom: 16px;
+}
+
+.net-control-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #6b7280;
+}
+
+.net-control-status--ok .net-control-status-dot {
+    background: #34d399;
+}
+
+.net-control-status--warn .net-control-status-dot {
+    background: #fbbf24;
+}
+
+.net-control-status--busy .net-control-status-dot {
+    background: #60a5fa;
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+.net-control-status--info .net-control-status-dot {
+    background: #38bdf8;
+}
+
+.net-control-reprobe {
+    margin-left: auto;
+}
+
+.net-control-steps {
+    margin: 0 0 10px 1.2em;
+    padding: 0;
+}
+
+.net-control-steps li {
+    margin-bottom: 4px;
+}
+
+.net-control-code-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.net-control-code-input {
+    max-width: 10ch;
+    letter-spacing: 0.2em;
+    text-align: center;
+}
+
+.setup-manual-link {
+    display: inline-block;
+    margin: 2px 0 0 44px;
+    font-size: 0.78rem;
+    color: inherit;
+    opacity: 0.75;
+    text-decoration: underline;
+}

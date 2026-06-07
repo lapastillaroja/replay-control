@@ -140,7 +140,6 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetRomsPage>();
     server_fn::axum::register_explicit::<server_fns::GetSystemFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRomDetail>();
-    server_fn::axum::register_explicit::<server_fns::StopCurrentGame>();
     server_fn::axum::register_explicit::<server_fns::RefreshStorage>();
     server_fn::axum::register_explicit::<server_fns::GetWifiConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveWifiConfig>();
@@ -169,6 +168,10 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::RescanGameLibrary>();
     server_fn::axum::register_explicit::<server_fns::GetSetupStatus>();
     server_fn::axum::register_explicit::<server_fns::DismissSetup>();
+    server_fn::axum::register_explicit::<server_fns::GetReplayApiStatus>();
+    server_fn::axum::register_explicit::<server_fns::ReprobeReplayApi>();
+    server_fn::axum::register_explicit::<server_fns::VerifyReplayApiToken>();
+    server_fn::axum::register_explicit::<server_fns::EnableReplayApiAssisted>();
     server_fn::axum::register_explicit::<server_fns::GetMetadataLibraryOverview>();
     server_fn::axum::register_explicit::<server_fns::GetLocalManuals>();
     server_fn::axum::register_explicit::<server_fns::DownloadManual>();

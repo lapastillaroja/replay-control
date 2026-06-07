@@ -403,6 +403,20 @@ pub fn write_github_api_key(store: &SettingsStore, key: &str) -> Result<()> {
     store.save(&settings)
 }
 
+/// Read the stored RePlayOS Net Control code (the API token).
+/// Returns `None` if the file doesn't exist or the key is empty.
+pub fn read_replay_api_token(store: &SettingsStore) -> Option<String> {
+    store.load().replay_api_token().map(|s| s.to_string())
+}
+
+/// Store the RePlayOS Net Control code after a successful onboarding
+/// (manual verify or assisted post-restart read). Preserves other keys.
+pub fn write_replay_api_token(store: &SettingsStore, token: &str) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_replay_api_token(token);
+    store.save(&settings)
+}
+
 /// Read the update channel from settings.
 pub fn read_update_channel(store: &SettingsStore) -> replay_control_core::update::UpdateChannel {
     replay_control_core::update::UpdateChannel::from_str_value(store.load().update_channel())

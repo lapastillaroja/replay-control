@@ -105,7 +105,6 @@ ssr = [
     "leptos/ssr",
     "server_fn/axum-no-default",
     "replay-control-core-server/library",
-    "replay-control-core-server/http",
     "dep:replay-control-core-server",
     "dep:axum",
     "dep:leptos_axum",

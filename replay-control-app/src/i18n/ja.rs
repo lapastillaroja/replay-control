@@ -294,10 +294,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "起動しました！",
         Key::GameDetailLaunchError => "起動に失敗しました",
         Key::GameDetailLaunchNotReplayos => "RePlayOS上で動作していません",
-        Key::GameDetailStopGame => "ゲームを停止",
-        Key::GameDetailStoppingGame => "停止中...",
-        Key::GameDetailStopGameFailed => "停止に失敗しました",
-        Key::GameDetailNowPlaying => "プレイ中",
         Key::GameDetailFavorite => "お気に入りに追加",
         Key::GameDetailUnfavorite => "お気に入りから削除",
         Key::GameDetailConfirmDelete => "削除の確認",
@@ -588,18 +584,62 @@ pub fn translate(key: Key) -> &'static str {
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "Replay Controlへようこそ！",
-        Key::SetupIntro => {
-            "オプションのダウンロードでライブラリを最大限に活用しましょう。メタデータページからいつでも実行できます。"
+        Key::SetupIntro => "ライブラリを充実させ、Replay ControlをRePlayOSに接続します。",
+        Key::SetupMetadataTitle => "メタデータソースをダウンロード",
+        Key::SetupMetadataHint => "説明、評価、発売日、自動カバーアートを追加します",
+        Key::SetupReplayosTitle => "RePlayOS連携を有効化",
+        Key::SetupReplayosHint => {
+            "RePlayOS Net Controlを有効化し、RePlayOSを再起動してNet Controlコードを読み取るため、操作は不要です"
         }
-        Key::SetupMetadataTitle => "ゲーム情報と評価をダウンロード",
-        Key::SetupMetadataHint => "約100 MB — 説明、ジャンル、評価、発売日を追加",
-        Key::SetupThumbnailTitle => "カバーアートのインデックスを更新",
-        Key::SetupThumbnailHint => "カバーアートの自動ダウンロードを有効にします",
         Key::SetupSkip => "スキップ",
         Key::SetupDismiss => "閉じる",
         Key::SetupComplete => "セットアップ完了！",
         Key::SetupInProgress => "処理中\u{2026}",
+        Key::SetupBusyHint => {
+            "別のライブラリ処理が実行中の間、セットアップ操作は一時停止されます。完了してから続けてください。"
+        }
         Key::SetupStart => "開始",
-        Key::SetupUpdate => "更新",
+        Key::SetupDone => "完了",
+
+        Key::SetupReplayosManualLink => "またはコードを手動で入力",
+
+        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayApiStatusConnected => "{0} に接続済み",
+        Key::ReplayApiStatusNotConnected => "未接続",
+        Key::ReplayApiStatusRestarting => "RePlayOS を再起動しています…",
+        Key::ReplayApiStatusUnauthorized => {
+            "Net Control コードが無効になりました — TV側でリセットされた可能性があります"
+        }
+        Key::ReplayApiStatusUnsupported => {
+            "リモート操作には新しい RePlayOS が必要です — TV で RePlayOS を更新してください"
+        }
+        Key::ReplayApiStatusError => "RePlayOS に接続できません",
+        Key::ReplayApiCheckAgain => "再確認",
+        Key::ReplayApiAutoTitle => "自動セットアップ",
+        Key::ReplayApiAutoButton => "自動で有効にする",
+        Key::ReplayApiAutoHint => {
+            "Net Control を有効にして RePlayOS を再起動します。TV はメニューに戻り、プレイ中のゲームは終了します。RePlayOS はゲームが保存されているストレージに設定されている必要があります。"
+        }
+        Key::ReplayApiManualTitle => "手動セットアップ",
+        Key::ReplayApiManualStep1 => "TV で SYSTEM > OPTIONS を開き、NET CONTROL を有効にする",
+        Key::ReplayApiManualStep2 => "SYSTEM > INFORMATION を開き、NET CONTROL CODE を確認する",
+        Key::ReplayApiManualStep3 => "コードをここに入力",
+        Key::ReplayApiConnect => "接続",
+        Key::ReplayApiConnecting => "接続中…",
+        Key::ReplayApiReenterCode => "コードを再入力",
+        Key::ReplayApiSetUpAgain => "再設定",
+
+        Key::NowPlayingLabelPlaying => "プレイ中",
+        Key::NowPlayingLabelPaused => "プレイ中（一時停止）",
+        Key::NowPlayingLabelHalted => "静止中",
+        Key::NowPlayingLabelInMenu => "プレイ中（メニュー）",
+        Key::NowPlayingDisc => "ディスク {0}/{1}",
+        Key::PlayerControlScreenshot => "撮影",
+        Key::PlayerControlHalt => "静止",
+        Key::PlayerControlMute => "ミュート",
+        Key::PlayerControlVolumeDown => "音量 -",
+        Key::PlayerControlVolumeUp => "音量 +",
+        Key::PlayerControlReset => "リセット",
+        Key::PlayerControlResetConfirm => "実行中のゲームをリセットしますか？",
     }
 }

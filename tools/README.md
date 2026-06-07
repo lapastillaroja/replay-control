@@ -11,12 +11,6 @@ Development tools for replay-control. Not part of the app itself.
 | `pi-cpu.sh` | Sample replay-control CPU% on the Pi over SSH. `--browse` adds a single-user browse load; `--json` for machine-readable output. |
 | `pi-memory.sh` | Read VmRSS / VmHWM / RssAnon for replay-control on the Pi. `--restart` for a clean idle baseline. |
 
-## Game Launching
-
-| Script | Description |
-|--------|-------------|
-| `game_launch_autostart.py` | Launch a game on RePlayOS via autostart file + service restart. Production method used by the app. |
-
 ## Assets
 
 | Script | Description |

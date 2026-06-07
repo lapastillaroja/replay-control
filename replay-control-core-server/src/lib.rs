@@ -10,8 +10,7 @@ pub mod data_dir;
 pub mod db_pool;
 pub mod external_metadata;
 pub mod launch;
-#[cfg(target_os = "linux")]
-pub mod replay_proc;
+pub mod replay_api;
 pub mod replay_service;
 pub mod settings;
 pub mod sqlite;
@@ -23,10 +22,8 @@ pub use db_pool::{DbError, DbPool};
 pub mod capture;
 pub use capture::screenshots;
 
-#[cfg(feature = "http")]
 pub mod http;
 
-#[cfg(feature = "http")]
 pub mod update;
 
 pub mod platform;
@@ -76,5 +73,4 @@ pub mod user_data;
 #[cfg(feature = "library")]
 pub use user_data::db as user_data_db;
 
-#[cfg(feature = "library")]
 pub mod test_utils;

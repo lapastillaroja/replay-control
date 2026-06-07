@@ -96,6 +96,27 @@ pub fn key_from_str(s: &str) -> Option<Key> {
 /// Placeholders are `{0}`, `{1}`, etc., allowing reordering per language.
 ///
 /// Example: `tf(locale, Key::GameDetailNOfM, &["3", "10"])` → `"3 of 10"` (en)
+/// i18n key for a now-playing play-state label. Shared by every surface that
+/// renders the state (home hero today; player bar and game detail next).
+pub fn play_state_label_key(play_state: replay_control_core::replay_api::PlayState) -> Key {
+    use replay_control_core::replay_api::PlayState;
+    match play_state {
+        PlayState::Playing => Key::NowPlayingLabelPlaying,
+        PlayState::Paused => Key::NowPlayingLabelPaused,
+        PlayState::Halted => Key::NowPlayingLabelHalted,
+        PlayState::InMenu => Key::NowPlayingLabelInMenu,
+    }
+}
+
+/// "Disc 2/4" label for a multi-disc game, shared by the now-playing surfaces.
+pub fn disc_label(locale: Locale, disc: replay_control_core::replay_api::DiscInfo) -> String {
+    tf(
+        locale,
+        Key::NowPlayingDisc,
+        &[&disc.number.to_string(), &disc.count.to_string()],
+    )
+}
+
 pub fn tf(locale: Locale, key: Key, args: &[&str]) -> String {
     let template = t(locale, key);
     let mut result = template.to_string();

@@ -42,16 +42,6 @@ pub fn restart() -> Result<()> {
     systemctl("restart")
 }
 
-pub async fn restart_async() -> Result<()> {
-    let output = tokio::process::Command::new("systemctl")
-        .args(["restart", REPLAY_SERVICE])
-        .output()
-        .await
-        .map_err(|e| Error::io(Path::new("systemctl"), e))?;
-
-    status_to_result("restart", output.status.success(), &output.stderr)
-}
-
 fn systemctl(action: &str) -> Result<()> {
     let output = std::process::Command::new("systemctl")
         .args([action, REPLAY_SERVICE])

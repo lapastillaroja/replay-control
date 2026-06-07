@@ -99,6 +99,12 @@ pub enum NowPlayingState {
         display_name: String,
         box_art_url: Option<String>,
         started_at_unix_secs: u64,
+        /// Sub-state of the loaded game: actively playing, paused, or behind
+        /// the RePlayOS menus (which stay overlays — there is no "exit").
+        play_state: replay_control_core::replay_api::PlayState,
+        /// Current disc of a multi-disc game ("Disc 2/4"), refreshed every
+        /// detection poll. `None` for cartridge/non-disc games.
+        disc: Option<replay_control_core::replay_api::DiscInfo>,
     },
     Menu,
     NotRunning,

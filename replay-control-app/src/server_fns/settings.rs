@@ -206,7 +206,7 @@ pub async fn save_retroachievements_config_and_restart(
 /// site (`state.mode.is_device()`) keeps the signature honest about what it
 /// actually needs.
 #[cfg(feature = "ssr")]
-async fn apply_replay_config_change<F>(
+pub(crate) async fn apply_replay_config_change<F>(
     is_device: bool,
     write_config: F,
 ) -> Result<String, ServerFnError>
@@ -452,7 +452,7 @@ pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
     state.prefs.write().expect("prefs lock poisoned").skin = Some(index);
 
     let skin_css = replay_control_core::skins::theme_css(index);
-    let _ = state.config_tx.send(crate::api::ConfigEvent::SkinChanged {
+    let _ = state.events_tx.send(crate::api::ConfigEvent::SkinChanged {
         skin_index: index,
         skin_css,
     });
@@ -476,7 +476,7 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
 
     let effective = state.effective_skin();
     let skin_css = replay_control_core::skins::theme_css(effective);
-    let _ = state.config_tx.send(crate::api::ConfigEvent::SkinChanged {
+    let _ = state.events_tx.send(crate::api::ConfigEvent::SkinChanged {
         skin_index: effective,
         skin_css,
     });

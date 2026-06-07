@@ -5,7 +5,6 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use replay_control_app::types::NowPlayingState;
 use replay_control_core_server::user_data_db::{ManualOrigin, UserDataDb};
 use server_fn::ServerFn;
 use tower::ServiceExt;
@@ -592,31 +591,6 @@ async fn sfn_retroachievements_save_in_standalone_skips_write_and_restart() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn sfn_stop_current_game_clears_now_playing_off_replayos() {
-    setup();
-    let env = TestEnv::new().await;
-    env.state.set_now_playing(NowPlayingState::Playing {
-        system: "nintendo_nes".to_string(),
-        system_display: "NES".to_string(),
-        filename: "TestGame.nes".to_string(),
-        display_name: "Test Game".to_string(),
-        box_art_url: None,
-        started_at_unix_secs: 1,
-    });
-    let app = test_router(env.state.clone());
-
-    let (status, body) =
-        invoke_server_fn_response::<server_fns::StopCurrentGame>(app, String::new()).await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        body.contains("Stop simulated") || body.contains("Game stopped"),
-        "stop should return the ReplayOS restart path result"
-    );
-    assert_eq!(env.state.now_playing(), NowPlayingState::Menu);
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn sfn_manual_download_delete_and_redownload_preserves_provider() {
     setup();
     let env = TestEnv::new().await;
@@ -816,4 +790,83 @@ async fn api_manual_upload_rejects_disallowed_extensions() {
         .await
         .expect("user data read should run");
     assert!(rows.is_empty(), "rejected uploads must not create rows");
+}
+
+// ── RePlayOS Net Control integration (standalone gating) ───────────────────
+//
+// TestEnv runs in standalone mode, where `AppState.replay_api` is `None` by
+// construction — these tests pin the structural-absence behavior. The status
+// machine itself (Active/Unauthorized/Unsupported/restart-window transitions)
+// is unit-tested against a mock API in `api/replay_api.rs`.
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_replay_api_status_in_standalone_is_not_configured() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::GetReplayApiStatus>(app, String::new()).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("NotConfigured"),
+        "standalone reports the default status, got: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_replay_api_verify_token_in_standalone_is_rejected() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::VerifyReplayApiToken>(
+        app,
+        form_body(&[("code", "123456")]),
+    )
+    .await;
+
+    assert_ne!(status, StatusCode::OK);
+    assert!(
+        body.contains("only available on the device"),
+        "manual onboarding must be device-only, got: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_replay_api_assisted_in_standalone_is_rejected() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) =
+        invoke_server_fn_response::<server_fns::EnableReplayApiAssisted>(app, String::new()).await;
+
+    assert_ne!(status, StatusCode::OK);
+    assert!(
+        body.contains("only available on the device"),
+        "assisted onboarding must be device-only, got: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_launch_game_in_standalone_stays_simulated() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let (status, body) = invoke_server_fn_response::<server_fns::LaunchGame>(
+        app,
+        form_body(&[
+            ("rom_path", "/roms/nintendo_nes/game.nes"),
+            ("return_to", "/"),
+        ]),
+    )
+    .await;
+
+    // Standalone never reaches the RePlayOS API path (and thus never demands
+    // Net Control onboarding) — the launch is simulated, as before.
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Launch simulated"), "got: {body}");
 }
