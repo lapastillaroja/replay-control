@@ -148,7 +148,7 @@ impl MediaStatus {
     /// Current-disc summary for now-playing surfaces, `None` when the loaded
     /// game has no disc control (cartridges, ScummVM, menu).
     pub fn disc_info(&self) -> Option<DiscInfo> {
-        (self.available && self.count > 0).then(|| DiscInfo {
+        (self.available && self.count > 0).then_some(DiscInfo {
             number: self.current_number,
             count: self.count,
         })
