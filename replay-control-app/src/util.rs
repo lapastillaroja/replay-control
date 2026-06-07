@@ -129,26 +129,23 @@ pub fn format_size(bytes: u64) -> String {
 
 /// Format an elapsed-time duration for live "now playing" displays.
 ///
-/// Returns `None` for the first minute (when minute-granularity would just
-/// read "0m"); callers should omit the elapsed segment in that window.
-/// Minute granularity is deliberate: 1 Hz text updates reflow the page and
-/// iOS Safari cancels in-flight horizontal momentum scrolls on any reflow,
-/// resetting `scrollLeft` to 0 on neighboring `.scroll-card-row` rows.
-pub fn format_elapsed_short(secs: u64) -> Option<String> {
-    if secs < 60 {
-        return None;
-    }
+/// Shows "0m" during the first minute so a freshly launched game has a
+/// visible timer immediately. Minute granularity is deliberate: 1 Hz text
+/// updates reflow the page and iOS Safari cancels in-flight horizontal
+/// momentum scrolls on any reflow, resetting `scrollLeft` to 0 on
+/// neighboring `.scroll-card-row` rows.
+pub fn format_elapsed_short(secs: u64) -> String {
     let minutes = secs / 60;
     let hours = minutes / 60;
     if hours > 0 {
         let mins_part = minutes % 60;
         if mins_part == 0 {
-            Some(format!("{hours}h"))
+            format!("{hours}h")
         } else {
-            Some(format!("{hours}h {mins_part}m"))
+            format!("{hours}h {mins_part}m")
         }
     } else {
-        Some(format!("{minutes}m"))
+        format!("{minutes}m")
     }
 }
 
@@ -289,6 +286,20 @@ pub fn format_size_short(bytes: u64) -> (String, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elapsed_shows_zero_minutes_immediately() {
+        assert_eq!(format_elapsed_short(0), "0m");
+        assert_eq!(format_elapsed_short(59), "0m");
+    }
+
+    #[test]
+    fn elapsed_minutes_and_hours() {
+        assert_eq!(format_elapsed_short(60), "1m");
+        assert_eq!(format_elapsed_short(59 * 60), "59m");
+        assert_eq!(format_elapsed_short(3600), "1h");
+        assert_eq!(format_elapsed_short(3600 + 90), "1h 1m");
+    }
 
     #[test]
     fn format_bytes_as_kb() {

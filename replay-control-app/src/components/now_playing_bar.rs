@@ -69,7 +69,7 @@ fn ActiveNowPlayingBar(
     let placeholder_system = system.clone();
     let placeholder_name = display_name.clone();
     let state_class = play_state_class(play_state);
-    let elapsed_text = Memo::new(move |_| format_elapsed_short(elapsed.get()).unwrap_or_default());
+    let elapsed_text = Memo::new(move |_| format_elapsed_short(elapsed.get()));
 
     view! {
         <section class="now-playing-bar" aria-label=move || t(i18n.locale.get(), Key::HomeNowPlaying)>
