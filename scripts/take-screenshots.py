@@ -84,9 +84,9 @@ RECENTS = [
 ]
 
 # Launched for real (the now-playing shots need a live game) and multi-disc
-# on purpose so the "Disc 1/3" indicator shows. Deliberately NOT part of the
+# on purpose so the "Disc 1/4" indicator shows. Deliberately NOT part of the
 # curated recents: its marker is deleted again right after the launch.
-NOW_PLAYING_ROM = "/roms/sony_psx/Final Fantasy VII (Spain).m3u"
+NOW_PLAYING_ROM = "/roms/sega_dc/Shenmue v1.001 (2000)(Sega)(PAL)(M4).m3u"
 FINAL_LAUNCH_BOOT_SECS = 15  # let the game boot before now-playing shots
 
 # SSH access for the recents-marker prep (same defaults as dev.sh).
@@ -103,7 +103,7 @@ PAGES = [
     # Home & navigation
     {"name": "home", "path": "/", "wait": "main"},
     # System browser
-    {"name": "system-megadrive", "path": "/games/sega_smd?hide_hacks=true&hide_translations=true&hide_betas=true&min_rating=4", "wait": ".content", "extra_wait": 8000},
+    {"name": "system-megadrive", "path": "/games/sega_smd?hide_hacks=true&hide_translations=true&hide_betas=true&min_rating=4", "wait": ".content", "extra_wait": 8000, "skin": 10},  # UNICOLORS
     # Game detail
     {"name": "detail-sonic2", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000},
     # Game detail scrolled to info card
@@ -111,7 +111,7 @@ PAGES = [
     # Box art picker (mobile only — click "Change cover" to open)
     {"name": "boxart-picker", "path": "/games/sega_smd/Rocket%20Knight%20Adventures%20(Europe).md", "wait": ".content", "extra_wait": 8000, "click": ".change-cover-link", "click_wait": ".boxart-picker-overlay", "mobile_only": True},
     # Search
-    {"name": "search-zelda", "path": "/search?q=zelda", "wait": ".content", "extra_wait": 8000},
+    {"name": "search-zelda", "path": "/search?q=zelda", "wait": ".content", "extra_wait": 8000, "skin": 3},  # ASTRO
     {"name": "search-capcom", "path": "/search?q=capcom", "wait": ".content", "extra_wait": 8000, "skin": 3},  # ASTRO
     {"name": "search-mario", "path": "/search?q=mario", "wait": ".content", "extra_wait": 8000},
     # Favorites
@@ -142,8 +142,8 @@ PAGES = [
 # after everything else (including the locale shots) is in the can.
 NOW_PLAYING_PAGES = [
     # Home with a live game: the sticky now-playing bar (player controls +
-    # "Disc 1/3" indicator from the multi-disc game)
-    {"name": "home-now-playing", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "device_only": True},
+    # "Disc 1/4" indicator from the multi-disc game)
+    {"name": "home-now-playing", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "device_only": True, "allow_bar": True},
 ]
 
 # Localized home shots for the site's language gallery (mobile only, exact
@@ -167,6 +167,31 @@ SFN_HEADERS = {
 # /sfn/<snake_case_name><macro_hash>; the hash comes from the #[server]
 # macro and changes between builds, so the paths can't be hardcoded.
 _sfn_routes = {}
+
+
+def route_not_found(page, route):
+    """True if the server has no handler at `route`. A missing server fn
+    answers 400 with this body; a real route answers 200 or a different
+    error (e.g. 500 / 405) — so this cleanly distinguishes them."""
+    resp = page.request.post(f"{APP_URL}{route}", headers=SFN_HEADERS, data="")
+    return "Could not find a server function" in resp.text()
+
+
+def repair_route(page, route):
+    """Server fn routes are `/sfn/<name><19-or-20-digit hash>`. Rust &str
+    literals in the wasm aren't delimited, so when a route's hash is
+    immediately followed by digits from adjacent data the extractor regex
+    over-matches (e.g. a 21-digit "hash"). Trim trailing digits until the
+    server recognizes the route. Returns the repaired route, or None."""
+    base = route.rstrip("0123456789")
+    digits = route[len(base):]
+    # Real hashes are 19-20 digits; try those lengths before giving up.
+    for length in (20, 19):
+        if len(digits) >= length:
+            candidate = base + digits[:length]
+            if not route_not_found(page, candidate):
+                return candidate
+    return None
 
 
 def build_sfn_routes(page):
@@ -196,6 +221,14 @@ def sfn(page, name, data="", accept_json=False):
     if accept_json:
         headers["Accept"] = "application/json"
     resp = page.request.post(f"{APP_URL}{route}", headers=headers, data=data)
+    # The wasm route extractor can over-match a route's hash with adjacent
+    # digits (see repair_route). Detected only when the server reports the
+    # route missing — repair once, cache, and retry.
+    if not resp.ok and "Could not find a server function" in resp.text():
+        repaired = repair_route(page, route)
+        if repaired:
+            _sfn_routes[name] = repaired
+            resp = page.request.post(f"{APP_URL}{repaired}", headers=headers, data=data)
     if not resp.ok:
         print(f"  WARNING: {name}({data!r}) returned {resp.status}")
     return resp
@@ -392,15 +425,31 @@ def wait_for_app(page, timeout_secs=120):
     else:
         sys.exit(f"Error: app did not come back within {timeout_secs}s")
 
-    # The activity banner is SSE-driven; watch it from a real page. It may
-    # take a few seconds to appear after restart, so wait through a short
-    # grace period before trusting its absence.
+    wait_for_scan_idle(page)
+
+
+def wait_for_scan_idle(page, timeout_secs=600):
+    """Block until the startup library scan finishes. The scan cycles
+    busy -> idle between systems, so a single "banner gone" observation
+    races it; require the banner to STAY gone for a while. Also gates
+    storage mutations: locale/favorites writes 400 while a scan is active."""
+    import time
+
     page.goto(f"{APP_URL}/", wait_until="load", timeout=30000)
     page.wait_for_timeout(8000)
-    try:
-        page.wait_for_selector(".metadata-busy-banner", state="detached", timeout=240000)
-    except PlaywrightTimeout:
-        print("  WARNING: library scan still running; captures may show the banner")
+    print("  waiting for the startup library scan to finish ...", flush=True)
+    deadline = time.time() + timeout_secs
+    quiet_since = None
+    while time.time() < deadline:
+        if page.query_selector(".metadata-busy-banner") is None:
+            if quiet_since is None:
+                quiet_since = time.time()
+            elif time.time() - quiet_since >= 15:
+                return
+        else:
+            quiet_since = None
+        page.wait_for_timeout(2000)
+    print("  WARNING: library scan still running; captures may show the banner")
 
 
 def launch_now_playing(page):
@@ -414,11 +463,18 @@ def launch_now_playing(page):
     # empties it) and the delete. Park the page on a blank tab and do NOT
     # follow the launch redirect to "/" — its SSR would re-read recents
     # while the marker still exists.
+    # Verify/repair the launch_game route before use (this posts directly
+    # rather than through sfn(), so it does its own over-match repair).
+    launch_route = _sfn_routes["launch_game"]
+    if route_not_found(page, launch_route):
+        launch_route = repair_route(page, launch_route) or launch_route
+        _sfn_routes["launch_game"] = launch_route
+
     page.goto("about:blank")
     name = NOW_PLAYING_ROM.rsplit("/", 1)[-1]
     print(f"  launching {name} (for now-playing shots; kept out of recents) ...", flush=True)
     resp = page.request.post(
-        f"{APP_URL}{_sfn_routes['launch_game']}",
+        f"{APP_URL}{launch_route}",
         headers=SFN_HEADERS,
         data=f"rom_path={quote(NOW_PLAYING_ROM)}&return_to=",
         max_redirects=0,
@@ -435,13 +491,17 @@ def launch_now_playing(page):
     # (silently killed; systemd restarts it within seconds). Poll a cheap
     # endpoint that does NOT read recents until it's back.
     wait_for_sfn(page, "get_mode")
-    recent_dir = recents_dir(page)
-    if not (recent_dir and ssh_run(f"rm -f '{recent_dir}/{recent_marker_name(NOW_PLAYING_ROM)}'")):
-        # Without the delete, "Last played" would show the now-playing game —
-        # skip the shots rather than capture wrong ones. (sshd has been seen
-        # dying around heavy-core launches; a reboot brings it back.)
-        print("  WARNING: marker cleanup failed — skipping now-playing shots")
-        return False
+    if os.environ.get("REPLAY_SHOTS_MARKER_REAPED") == "1":
+        # An external reaper process on the Pi keeps the now-playing marker
+        # deleted (survives the intermittent sshd outages) — nothing to do.
+        pass
+    else:
+        recent_dir = recents_dir(page)
+        if not (recent_dir and ssh_run(f"rm -f '{recent_dir}/{recent_marker_name(NOW_PLAYING_ROM)}'")):
+            # Without the delete, "Last played" would show the now-playing
+            # game — skip the shots rather than capture wrong ones.
+            print("  WARNING: marker cleanup failed — skipping now-playing shots")
+            return False
     # Now that the marker is gone, the full readiness check (which loads the
     # home page) re-seeds the recents cache fresh — and waits out a startup
     # scan if the app did get restarted.
@@ -461,7 +521,7 @@ def check_for_errors(page):
     return None
 
 
-def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, click=None, click_wait=None):
+def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, click=None, click_wait=None, allow_bar=False):
     """Capture a single screenshot with retry on error."""
     page.set_viewport_size(viewport)
     out_path = str(output_dir / f"{name}.png")
@@ -496,6 +556,23 @@ def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, c
             page.wait_for_selector(click_wait, timeout=10000)
         page.wait_for_timeout(1000)
 
+    # A game launched from the TV mid-run would put the sticky player bar
+    # into every remaining shot — skip the capture and keep the previous
+    # good file rather than overwrite it with a polluted one.
+    if not allow_bar and page.query_selector(".now-playing-bar"):
+        print("SKIPPED (a game is running on the TV)")
+        return "now-playing bar visible — game running mid-run, shot skipped"
+
+    # Last-line defense: never capture with the scan activity banner up
+    # (background rescans can resurface it at any point in the run).
+    if page.query_selector(".metadata-busy-banner"):
+        print("(scan banner up, waiting) ", end="", flush=True)
+        try:
+            page.wait_for_selector(".metadata-busy-banner", state="detached", timeout=300000)
+            page.wait_for_timeout(1500)
+        except PlaywrightTimeout:
+            print("WARNING: banner did not clear ", end="")
+
     page.screenshot(path=out_path, full_page=False)
     if not error:
         print("ok")
@@ -529,7 +606,7 @@ def capture_pages(page, pages, is_device, output_dir, errors):
         for suffix, viewport in viewports:
             name = f"{p['name']}{suffix}"
             try:
-                err = capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll, click, click_wait)
+                err = capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll, click, click_wait, allow_bar=p.get("allow_bar", False))
                 if err:
                     errors.append((name, err))
             except Exception as e:
@@ -554,7 +631,13 @@ def main():
         action="store_true",
         help="Skip state preparation (locale/skin/favorites/recents) and only capture",
     )
+    parser.add_argument(
+        "--only",
+        default="",
+        help="Comma-separated page names to capture (e.g. favorites,settings,home-mobile-es); others are skipped",
+    )
     args = parser.parse_args()
+    only = {name.strip() for name in args.only.split(",") if name.strip()}
 
     project_root = Path(__file__).resolve().parent.parent
     output_dir = project_root / args.output_dir
@@ -588,6 +671,12 @@ def main():
                 "in every shot. Reboot RePlayOS (Settings page or the TV) and rerun."
             )
 
+        # Mutations (locale/skin/favorites) 400 while a startup scan is
+        # active, and the rescue orchestrator restarts the app right before
+        # this script runs — so wait for the scan to settle before writing.
+        if is_device:
+            wait_for_scan_idle(page)
+
         # State preparation: consistent language, skin, favorites, recents.
         print(
             f"Setting up: locale={DEFAULT_LOCALE}, skin sync off, skin index {DEFAULT_SKIN}"
@@ -608,20 +697,21 @@ def main():
                 print("Skipping recents prep (standalone: no recents markers)")
             print("Preparing favorites (curated list)")
             reset_favorites(page)
-            if is_device:
-                if externally_prepped:
-                    # The external restart already happened; still wait out
-                    # the startup scan so the banner stays out of the shots.
-                    wait_for_app(page)
-                else:
-                    restart_app(page)
+            # Non-externally-prepped: marker writes need an app restart to
+            # drop the stale recents cache. (Externally prepped: the rescue
+            # script already restarted, and the scan-idle wait above covered
+            # the resulting scan.)
+            if is_device and not externally_prepped:
+                restart_app(page)
 
         print(f"Capturing screenshots to {output_dir}/")
 
-        capture_pages(page, PAGES, is_device, output_dir, errors)
+        pages = [p for p in PAGES if not only or p["name"] in only]
+        capture_pages(page, pages, is_device, output_dir, errors)
 
         # Localized home shots (site language gallery), then restore locale.
-        for locale, name in LOCALE_SHOTS:
+        locale_shots = [(loc, name) for loc, name in LOCALE_SHOTS if not only or name in only]
+        for locale, name in locale_shots:
             print(f"  Switching locale to {locale}")
             set_locale(page, locale)
             try:
@@ -631,12 +721,14 @@ def main():
             except Exception as e:
                 print(f"FAILED: {e}")
                 errors.append((name, str(e)))
-        set_locale(page, DEFAULT_LOCALE)
+        if locale_shots:
+            set_locale(page, DEFAULT_LOCALE)
 
         # Now-playing shots last: once the game launches, the sticky bar
         # renders on every page, so nothing else may be captured after this.
-        if is_device and launch_now_playing(page):
-            capture_pages(page, NOW_PLAYING_PAGES, is_device, output_dir, errors)
+        now_playing_pages = [p for p in NOW_PLAYING_PAGES if not only or p["name"] in only]
+        if is_device and now_playing_pages and launch_now_playing(page):
+            capture_pages(page, now_playing_pages, is_device, output_dir, errors)
 
         browser.close()
 
