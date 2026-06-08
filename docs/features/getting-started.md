@@ -38,12 +38,14 @@ If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `htt
 
 On first launch, you will see a "Scanning game library..." banner while the app indexes your ROMs. This runs in the background -- the UI is usable immediately, and your library fills in as systems are scanned.
 
-A **setup checklist** will also appear on the home page, recommending two optional downloads to enrich your library:
+A **setup checklist** will also appear on the home page with two optional steps:
 
-- **Game descriptions & ratings** (LaunchBox, ~100 MB)
-- **Box art index** (libretro-thumbnails)
+- **Download metadata sources** — game descriptions, ratings, and a box art index to enrich your library
+- **Enable RePlayOS integration** — connects Replay Control to RePlayOS Net Control so you can launch games from the browser and see what's playing on the TV
 
-Both are optional — skip and do it later from the [Settings](settings.md) page anytime.
+{{< screenshot "setup-mobile.png" "First-run setup checklist" >}}
+
+Both are optional — skip and do them later from the [Settings](settings.md) page anytime.
 
 ## Add ROMs
 

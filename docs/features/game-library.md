@@ -49,9 +49,11 @@ Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically show
 
 Favorites let you build a personal shortlist of the games you care about most. Star any game from its card or detail page and it appears in a dedicated Favorites section — a curated view of your collection that cuts through the noise of thousands of ROMs.
 
-{{< screenshot "favorites-grouped-mobile.png" "Favorites organized by system" >}}
+{{< screenshot "favorites-mobile.png" "Favorites page" >}}
 
 The favorites page shows a **featured card** for your most recent favorite, a **recently added** horizontal scroll, and **per-system cards** summarizing your favorites across systems. You can switch between a flat list and grouped views at any time. Games are sorted by date added (newest first) across all views.
+
+{{< screenshot "favorites-grouped-mobile.png" "Favorites organized by system" >}}
 
 ### Organizing Favorites
 

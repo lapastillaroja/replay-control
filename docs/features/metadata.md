@@ -2,6 +2,8 @@
 
 How game metadata is sourced and used.
 
+{{< screenshot "metadata-mobile.png" "Game metadata settings" >}}
+
 ## Offline-First Design
 
 Replay Control works fully offline from the first install. Built-in databases provide genre, player count, year, and display names for ~34K console ROMs and broad arcade metadata without any network access.

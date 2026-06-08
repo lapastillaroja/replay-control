@@ -44,6 +44,8 @@ System game lists use the same action scoped to the current system.
 
 ## Developer Search
 
+{{< screenshot "search-capcom.png" "Developer search results" >}}
+
 When your search query matches a developer or manufacturer name, a "Games by Developer" block appears above the regular search results. This shows:
 
 - The top-matched developer's games in a horizontal scroll with box art

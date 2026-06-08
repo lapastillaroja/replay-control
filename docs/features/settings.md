@@ -34,6 +34,14 @@ Use **Save & Reboot RePlayOS** to apply changes. Rebooting RePlayOS stops any ru
 
 Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control sends the changes through the RePlayOS API, then asks RePlayOS to reboot so the new system-level settings take effect. On development systems outside RePlayOS, these system settings are skipped.
 
+## RePlayOS Net Control
+
+The Net Control connection powers launching games from the browser, the Now Playing display, and the player controls. Set it up from **Settings > RePlayOS Net Control**, either automatically (Replay Control enables Net Control and restarts RePlayOS for you) or manually by enabling Net Control on the TV and typing the code it shows.
+
+{{< screenshot "net-control-setup-mobile.png" "RePlayOS Net Control setup" >}}
+
+The status card always shows the current connection state, and a **Check again** action re-tests it. If the code is ever reset on the TV, the app shows a banner and you can reconnect from the same page.
+
 ## Font Size
 
 Normal or large text. Applied across the entire app.

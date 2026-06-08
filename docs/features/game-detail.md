@@ -10,6 +10,8 @@ The top of the page shows box art with a screenshots gallery. Tap the box art to
 
 ## Game Info Card
 
+{{< screenshot "detail-info-mobile.png" "Game info card" >}}
+
 A summary card displays:
 
 - System and filename

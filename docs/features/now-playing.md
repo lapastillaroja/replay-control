@@ -2,6 +2,8 @@
 
 The companion app shows the game currently loaded in RePlayOS. Open browser tabs update automatically when the running game, play state, or disc state changes.
 
+{{< screenshot "home-now-playing-mobile.png" "Player bar with a multi-disc game running" >}}
+
 ## What you see
 
 - **Player bar** - appears across the app while a game is loaded. It shows cover art, game name, system, play state, elapsed time, and the current disc when RePlayOS reports one. Tap it to jump to the game's detail page.
