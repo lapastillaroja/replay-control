@@ -83,11 +83,15 @@ RECENTS = [
     "/roms/arcade_fbneo/Vertical/00 Clean Romset/gunlock.zip",
 ]
 
-# Launched for real (the now-playing shots need a live game). Deliberately
-# NOT part of the curated recents: its marker is deleted again right after
-# the launch so "Last played" stays the curated newest entry.
-NOW_PLAYING_ROM = "/roms/sega_smd/00 Clean Romset/Rocket Knight Adventures (USA).md"
 FINAL_LAUNCH_BOOT_SECS = 15  # let the game boot before now-playing shots
+
+# ROM paths of the now-playing games, for the reaper that keeps their
+# `_recent/` markers deleted (so "Last played" stays the curated newest
+# entry). Mirrors the `rom`s in NOW_PLAYING_GAMES below.
+NOW_PLAYING_ROMS = [
+    "/roms/sega_smd/00 Clean Romset/Rocket Knight Adventures (USA).md",
+    "/roms/sega_dc/Shenmue v1.001 (2000)(Sega)(PAL)(M4).m3u",
+]
 
 # SSH access for the recents-marker prep (same defaults as dev.sh).
 PI_USER = os.environ.get("PI_USER", "root")
@@ -137,17 +141,31 @@ PAGES = [
     {"name": "net-control-setup", "path": "/settings/replay-net-control", "wait": ".net-control-status", "extra_wait": 3000, "click": ".form-btn-secondary", "click_wait": ".net-control-code-input", "device_only": True},
 ]
 
-# Captured LAST, after NOW_PLAYING_ROM is launched — the sticky now-playing
-# bar renders on every page while a game runs, so the launch must happen
-# after everything else (including the locale shots) is in the can.
-NOW_PLAYING_PAGES = [
-    # The sticky now-playing player bar shown in two themes, each collapsed
-    # (icon controls) and expanded (the "..." More panel = save/load-state
-    # slot picker). MEGA TECH = skin 1, ASTRO = skin 3.
-    {"name": "now-playing-megatech", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "device_only": True, "allow_bar": True},
-    {"name": "now-playing-megatech-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
-    {"name": "now-playing-astro", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "device_only": True, "allow_bar": True},
-    {"name": "now-playing-astro-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
+# Captured LAST, after the games are launched — the sticky now-playing bar
+# renders on every page while a game runs, so the launches must happen after
+# everything else (including the locale shots) is in the can. Each game is
+# launched in turn and its pages captured while it runs. Each game's recents
+# marker is reaped (see NOW_PLAYING_ROMS) so none leak into "Last played".
+NOW_PLAYING_GAMES = [
+    {
+        # Single cartridge (no disc badge): themed showcase of the player bar,
+        # collapsed (icon controls) and expanded (the "..." More panel =
+        # save/load-state slot picker). MEGA TECH = skin 1, ASTRO = skin 3.
+        "rom": "/roms/sega_smd/00 Clean Romset/Rocket Knight Adventures (USA).md",
+        "pages": [
+            {"name": "now-playing-megatech", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "device_only": True, "allow_bar": True},
+            {"name": "now-playing-megatech-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
+            {"name": "now-playing-astro", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "device_only": True, "allow_bar": True},
+            {"name": "now-playing-astro-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
+        ],
+    },
+    {
+        # Multi-disc (.m3u): the bar shows the "Disc 1/4" indicator.
+        "rom": "/roms/sega_dc/Shenmue v1.001 (2000)(Sega)(PAL)(M4).m3u",
+        "pages": [
+            {"name": "now-playing-shenmue", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "device_only": True, "allow_bar": True},
+        ],
+    },
 ]
 
 # Localized home shots for the site's language gallery (mobile only, exact
@@ -206,7 +224,12 @@ def build_sfn_routes(page):
     if not match:
         sys.exit("Error: could not find the wasm bundle URL in the app HTML")
     wasm = page.request.get(f"{APP_URL}{match.group(1)}").body()
-    for route_bytes in set(re.findall(rb"/sfn/[a-z_0-9]+", wasm)):
+    # A route is `/sfn/<snake_name><digit hash>`. Rust &str literals in the
+    # wasm aren't delimited, so adjacent string data runs straight into the
+    # match. Match the name as [a-z_]+ then the hash as [0-9]* so we stop at
+    # the first letter after the hash (e.g. "...application"). A hash followed
+    # by more *digits* still over-matches — repair_route() trims those.
+    for route_bytes in set(re.findall(rb"/sfn/[a-z_]+[0-9]*", wasm)):
         route = route_bytes.decode()
         name = re.sub(r"\d+$", "", route.rsplit("/", 1)[1])
         # If both a bare and a hashed spelling surface for a name, the hashed
@@ -456,10 +479,10 @@ def wait_for_scan_idle(page, timeout_secs=600):
     print("  WARNING: library scan still running; captures may show the banner")
 
 
-def launch_now_playing(page):
-    """Launch NOW_PLAYING_ROM for the now-playing shots, then drop the
-    marker RePlayOS creates for it so it stays out of the recents list.
-    Returns True if the game is running."""
+def launch_now_playing(page, rom):
+    """Launch `rom` for the now-playing shots, then drop the marker RePlayOS
+    creates for it so it stays out of the recents list. Returns True if the
+    game is running."""
     from urllib.parse import quote
 
     # The marker delete below is invisible to the app (no watcher on NFS),
@@ -475,12 +498,12 @@ def launch_now_playing(page):
         _sfn_routes["launch_game"] = launch_route
 
     page.goto("about:blank")
-    name = NOW_PLAYING_ROM.rsplit("/", 1)[-1]
+    name = rom.rsplit("/", 1)[-1]
     print(f"  launching {name} (for now-playing shots; kept out of recents) ...", flush=True)
     resp = page.request.post(
         f"{APP_URL}{launch_route}",
         headers=SFN_HEADERS,
-        data=f"rom_path={quote(NOW_PLAYING_ROM)}&return_to=",
+        data=f"rom_path={quote(rom)}&return_to=",
         max_redirects=0,
     )
     if resp.status >= 400:
@@ -496,12 +519,12 @@ def launch_now_playing(page):
     # endpoint that does NOT read recents until it's back.
     wait_for_sfn(page, "get_mode")
     if os.environ.get("REPLAY_SHOTS_MARKER_REAPED") == "1":
-        # An external reaper process on the Pi keeps the now-playing marker
+        # An external reaper process on the Pi keeps the now-playing markers
         # deleted (survives the intermittent sshd outages) — nothing to do.
         pass
     else:
         recent_dir = recents_dir(page)
-        if not (recent_dir and ssh_run(f"rm -f '{recent_dir}/{recent_marker_name(NOW_PLAYING_ROM)}'")):
+        if not (recent_dir and ssh_run(f"rm -f '{recent_dir}/{recent_marker_name(rom)}'")):
             # Without the delete, "Last played" would show the now-playing
             # game — skip the shots rather than capture wrong ones.
             print("  WARNING: marker cleanup failed — skipping now-playing shots")
@@ -728,11 +751,14 @@ def main():
         if locale_shots:
             set_locale(page, DEFAULT_LOCALE)
 
-        # Now-playing shots last: once the game launches, the sticky bar
-        # renders on every page, so nothing else may be captured after this.
-        now_playing_pages = [p for p in NOW_PLAYING_PAGES if not only or p["name"] in only]
-        if is_device and now_playing_pages and launch_now_playing(page):
-            capture_pages(page, now_playing_pages, is_device, output_dir, errors)
+        # Now-playing shots last: once a game launches, the sticky bar renders
+        # on every page, so nothing else may be captured after this. Each game
+        # is launched in turn and its pages captured while it runs.
+        if is_device:
+            for game in NOW_PLAYING_GAMES:
+                game_pages = [p for p in game["pages"] if not only or p["name"] in only]
+                if game_pages and launch_now_playing(page, game["rom"]):
+                    capture_pages(page, game_pages, is_device, output_dir, errors)
 
         browser.close()
 

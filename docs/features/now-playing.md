@@ -13,6 +13,10 @@ The companion app shows the game currently loaded in RePlayOS. Open browser tabs
 
 The app distinguishes between a loaded game, the RePlayOS menu, and RePlayOS being unavailable. During game launches or core transitions, the UI avoids briefly showing stale game information.
 
+For multi-disc games, the player bar also shows which disc is in use ("Disc 1/4"), and it updates as the disc changes on the TV.
+
+{{< screenshot "now-playing-shenmue-mobile.png" "Player bar showing the current disc of a multi-disc game" >}}
+
 ## Controls
 
 The player bar carries quick on-TV controls for the running game: take a screenshot, lower the volume, mute, raise the volume, halt/freeze the picture (handy for photographing a CRT), and reset the game. The **"..." more button** opens a panel for save states.
