@@ -4,6 +4,26 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.6.0]
+
+### Highlights
+
+- **Save states are available from the Now Playing bar.** The "More" panel now lets you pick slots 1-18, save/load through the RePlayOS API, and see compact real slot status from `.sst` files with recent saves updating from "just now" to minute-based labels.
+- **RePlayOS device actions live in Settings.** The RePlayOS settings page now includes on-screen messages, current-game restart, device reboot/power-off, and kiosk mode controls, with each action showing its own result message inline.
+- **Initial app loading is visible and localized.** Slow WASM startup now shows a small translated loading strip instead of a blank or frozen-looking page.
+
+### Changed
+
+- The RePlayOS settings page keeps on-screen message text after sending, so repeated messages can be resent or edited; a separate Clear message button empties the field.
+
+### Fixed
+
+- Fixed custom cover art in the Now Playing bar by centralizing effective box-art resolution with the game-detail path.
+- Fixed startup scans showing the last scanned system name during the media-stat refresh step; the banner now switches to "Updating media stats..." for that final pass.
+- Fixed activity banners so scan/import/update messages stay visible while scrolling and stack below the Now Playing bar when a game is active.
+
+---
+
 ## [0.5.0]
 
 ### Highlights
