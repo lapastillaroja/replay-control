@@ -163,13 +163,15 @@ pub fn App() -> impl IntoView {
                     </h1>
                 </header>
 
-                <NowPlayingBar />
                 <CorruptionBanner />
                 <StorageStatusBanner />
                 <RomWatcherBanner />
                 <AssetHealthBanner />
                 <ReplayApiStatusBanner />
-                <MetadataBusyBanner />
+                <div class="sticky-status-stack">
+                    <NowPlayingBar />
+                    <MetadataBusyBanner />
+                </div>
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>

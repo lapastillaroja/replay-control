@@ -67,10 +67,13 @@
 }
 
 /* Now playing */
-.now-playing-bar {
+.sticky-status-stack {
     position: sticky;
     top: env(safe-area-inset-top);
     z-index: 30;
+}
+
+.now-playing-bar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
