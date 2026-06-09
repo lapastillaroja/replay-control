@@ -8,10 +8,10 @@ For reproducible galleries the run starts with a state-preparation step:
 locale forced to English, skin sync off + default skin, favorites reset to a
 curated list, and (device only) recents markers rewritten over SSH with
 staggered mtimes (NOTE: this replaces the device's real play history). At
-the very end one multi-disc game is launched for real so the now-playing
-shots show the sticky player bar with a disc indicator — last, because the
-bar renders on every page while a game runs; its recents marker is removed
-again so it stays out of the Last played list.
+the very end one game is launched for real so the now-playing shots show
+the sticky player bar — last, because the bar renders on every page while a
+game runs; its recents marker is removed again so it stays out of the Last
+played list.
 
 Pages marked device-only (Net Control settings, now-playing) are skipped
 automatically when the target runs in standalone mode; point APP_URL at the
@@ -83,10 +83,10 @@ RECENTS = [
     "/roms/arcade_fbneo/Vertical/00 Clean Romset/gunlock.zip",
 ]
 
-# Launched for real (the now-playing shots need a live game) and multi-disc
-# on purpose so the "Disc 1/4" indicator shows. Deliberately NOT part of the
-# curated recents: its marker is deleted again right after the launch.
-NOW_PLAYING_ROM = "/roms/sega_dc/Shenmue v1.001 (2000)(Sega)(PAL)(M4).m3u"
+# Launched for real (the now-playing shots need a live game). Deliberately
+# NOT part of the curated recents: its marker is deleted again right after
+# the launch so "Last played" stays the curated newest entry.
+NOW_PLAYING_ROM = "/roms/sega_smd/00 Clean Romset/Rocket Knight Adventures (USA).md"
 FINAL_LAUNCH_BOOT_SECS = 15  # let the game boot before now-playing shots
 
 # SSH access for the recents-marker prep (same defaults as dev.sh).
@@ -141,9 +141,13 @@ PAGES = [
 # bar renders on every page while a game runs, so the launch must happen
 # after everything else (including the locale shots) is in the can.
 NOW_PLAYING_PAGES = [
-    # Home with a live game: the sticky now-playing bar (player controls +
-    # "Disc 1/4" indicator from the multi-disc game)
-    {"name": "home-now-playing", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "device_only": True, "allow_bar": True},
+    # The sticky now-playing player bar shown in two themes, each collapsed
+    # (icon controls) and expanded (the "..." More panel = save/load-state
+    # slot picker). MEGA TECH = skin 1, ASTRO = skin 3.
+    {"name": "now-playing-megatech", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "device_only": True, "allow_bar": True},
+    {"name": "now-playing-megatech-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 1, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
+    {"name": "now-playing-astro", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "device_only": True, "allow_bar": True},
+    {"name": "now-playing-astro-more", "path": "/", "wait": ".now-playing-bar", "extra_wait": 9000, "skin": 3, "click": ".now-playing-control-more", "click_wait": ".now-playing-more-panel", "device_only": True, "allow_bar": True},
 ]
 
 # Localized home shots for the site's language gallery (mobile only, exact

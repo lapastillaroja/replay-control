@@ -2,7 +2,7 @@
 
 The companion app shows the game currently loaded in RePlayOS. Open browser tabs update automatically when the running game, play state, or disc state changes.
 
-{{< screenshot "home-now-playing-mobile.png" "Player bar with a multi-disc game running" >}}
+{{< screenshot "now-playing-megatech-mobile.png" "Player bar with a game running" >}}
 
 ## What you see
 
@@ -12,6 +12,16 @@ The companion app shows the game currently loaded in RePlayOS. Open browser tabs
 - **Elapsed timer** - shows how long the current play session has been active.
 
 The app distinguishes between a loaded game, the RePlayOS menu, and RePlayOS being unavailable. During game launches or core transitions, the UI avoids briefly showing stale game information.
+
+## Controls
+
+The player bar carries quick on-TV controls for the running game: take a screenshot, lower the volume, mute, raise the volume, halt/freeze the picture (handy for photographing a CRT), and reset the game. The **"..." more button** opens a panel for save states.
+
+{{< screenshot "now-playing-astro-more-mobile.png" "Save and load state slots" >}}
+
+- **Save states** - pick a slot (1-18) and save or load the game's state at that slot, straight from the browser. Loading is only offered for slots that already hold a state.
+
+All controls act on whatever RePlayOS currently has loaded, so they work the same whether the game was launched from Replay Control or from the TV.
 
 ## How it works
 

@@ -216,6 +216,7 @@ replay-control/
 ### UI Assets
 - **System controller icons** — [KyleBing/retro-game-console-icons](https://github.com/KyleBing/retro-game-console-icons) (GPLv3)
 - **Phosphor Icons** — top bar icons ([phosphoricons.com](https://phosphoricons.com/)) (MIT)
+- **Lucide Icons** — inline UI control icons ([lucide.dev](https://lucide.dev/)) (ISC)
 
 ## AI Transparency
 
