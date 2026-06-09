@@ -31,7 +31,7 @@ use components::replay_api_status_banner::ReplayApiStatusBanner;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
 use hooks::Clock;
-use i18n::provide_i18n;
+use i18n::{Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
@@ -142,6 +142,7 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::<Option<u32>>::new(None));
 
     view! {
+        <InitialLoadingShell />
         <Router>
             <SseEventsListener />
             <SearchShortcut />
@@ -185,6 +186,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
                         <Route path=path!("/settings/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/retroachievements") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><RetroAchievementsPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/replayos") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/replay-net-control") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
@@ -197,6 +199,33 @@ pub fn App() -> impl IntoView {
                 <BottomNav />
             </div>
         </Router>
+    }
+}
+
+#[component]
+fn InitialLoadingShell() -> impl IntoView {
+    let i18n = use_i18n();
+    let hidden = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        hidden.set(true);
+    });
+
+    view! {
+        <div
+            class="initial-loading-shell"
+            class:is-hidden=move || hidden.get()
+            aria-hidden=move || hidden.get().to_string()
+        >
+            <div class="initial-loading-inner">
+                <span class="initial-loading-text">
+                    {move || t(i18n.locale.get(), Key::CommonLoadingReplayControl)}
+                </span>
+                <div class="initial-loading-track" aria-hidden="true">
+                    <div class="initial-loading-bar"></div>
+                </div>
+            </div>
+        </div>
     }
 }
 

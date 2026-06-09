@@ -259,7 +259,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                                     <Show when=move || !replay_api_done.get()>
                                         <a
                                             class="setup-manual-link"
-                                            href="/settings/replay-net-control"
+                                            href="/settings/replayos"
                                         >
                                             {move || {
                                                 t(i18n.locale.get(), Key::SetupReplayosManualLink)

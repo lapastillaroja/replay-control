@@ -524,6 +524,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Common
         Key::CommonLoading => "Cargando...",
+        Key::CommonLoadingReplayControl => "Cargando Replay Control...",
         Key::CommonError => "Error",
         Key::CommonSeeAll => "Ver todo",
         Key::CommonSystems => "Sistemas",
@@ -616,7 +617,27 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::SetupReplayosManualLink => "o introduce el código manualmente",
 
-        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayOsSettingsTitle => "RePlayOS",
+        Key::ReplayOsConnectionTitle => "Conexión",
+        Key::ReplayOsActionsTitle => "Acciones",
+        Key::ReplayOsConnectedHint => {
+            "Estos controles requieren que RePlayOS Net Control esté conectado."
+        }
+        Key::ReplayOsMessageTitle => "Mensaje en pantalla",
+        Key::ReplayOsMessagePlaceholder => "Mensaje que se muestra en la TV",
+        Key::ReplayOsMessageSend => "Enviar mensaje",
+        Key::ReplayOsMessageClear => "Borrar mensaje",
+        Key::ReplayOsRestartGame => "Reiniciar juego actual",
+        Key::ReplayOsRestartGameConfirm => "¿Reiniciar el juego actual?",
+        Key::ReplayOsDeviceTitle => "Dispositivo",
+        Key::ReplayOsDeviceHint => "Estas acciones afectan a todo el dispositivo RePlayOS.",
+        Key::ReplayOsPowerOff => "Apagar",
+        Key::ReplayOsPowerOffConfirm => "¿Apagar el dispositivo RePlayOS?",
+        Key::ReplayOsModeTitle => "Modo",
+        Key::ReplayOsKioskMode => "Modo kiosco",
+        Key::ReplayOsKioskHint => {
+            "Limita la interfaz de la TV para que los invitados no cambien ajustes del sistema."
+        }
         Key::ReplayApiStatusConnected => "Conectado a {0}",
         Key::ReplayApiStatusNotConnected => "No conectado",
         Key::ReplayApiStatusRestarting => "RePlayOS se está reiniciando…",
@@ -643,8 +664,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayApiSetUpAgain => "Configurar de nuevo",
 
         Key::NowPlayingLabelPlaying => "Jugando",
-        Key::NowPlayingLabelPaused => "Jugando (en pausa)",
-        Key::NowPlayingLabelHalted => "Halt",
+        Key::NowPlayingLabelPaused => "Pausado",
+        Key::NowPlayingLabelHalted => "Detenido",
         Key::NowPlayingLabelInMenu => "Jugando (en el menú)",
         Key::NowPlayingDisc => "Disco {0}/{1}",
         Key::PlayerControlScreenshot => "Captura",
@@ -654,5 +675,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::PlayerControlVolumeUp => "Vol +",
         Key::PlayerControlReset => "Reset",
         Key::PlayerControlResetConfirm => "¿Reiniciar el juego en curso?",
+        Key::PlayerControlSaveStates => "Estados",
+        Key::PlayerControlMore => "Más",
+        Key::SaveStatesSlot => "Slot",
+        Key::SaveStatesEmpty => "Vacío",
+        Key::SaveStatesSaved => "Guardado",
+        Key::SaveStatesJustNow => "ahora",
+        Key::SaveStatesMinutesAgo => "hace {0} min",
+        Key::SaveStatesStatusPreview => "estado no cargado",
+        Key::SaveStatesPreviousSlot => "Ranura anterior",
+        Key::SaveStatesNextSlot => "Ranura siguiente",
+        Key::SaveStatesSave => "Guardar estado",
+        Key::SaveStatesLoad => "Cargar estado",
+        Key::SaveStatesOverwriteTitle => "¿Sobrescribir estado?",
+        Key::SaveStatesOverwriteBody => "{0} ya tiene un estado. Guardar ahora lo reemplazará.",
+        Key::SaveStatesLoadTitle => "¿Cargar estado?",
+        Key::SaveStatesLoadBody => "Cargar {0} reemplazará el estado actual del juego.",
     }
 }

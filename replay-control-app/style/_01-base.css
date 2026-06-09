@@ -43,6 +43,10 @@ body {
     overflow-x: clip;
 }
 
+body:has(.initial-loading-shell:not(.is-hidden)) {
+    padding-top: 18px;
+}
+
 html.font-large {
     font-size: 140%;
 }
@@ -53,8 +57,85 @@ a, a:visited, a:hover, a:active {
     text-decoration: none;
 }
 
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .app-title-link {
     color: var(--accent);
+}
+
+.initial-loading-shell {
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    padding: 4px max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+    background: color-mix(in srgb, var(--surface) 94%, black 6%);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+    opacity: 1;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+
+.initial-loading-shell.is-hidden {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+}
+
+.initial-loading-inner {
+    display: grid;
+    gap: 5px;
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+.initial-loading-track {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--surface-hover);
+}
+
+.initial-loading-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 44%;
+    border-radius: inherit;
+    background: var(--accent);
+    animation: initial-loading-slide 1.05s ease-in-out infinite;
+}
+
+.initial-loading-text {
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+@keyframes initial-loading-slide {
+    0% {
+        transform: translateX(-110%);
+    }
+    50% {
+        transform: translateX(68%);
+    }
+    100% {
+        transform: translateX(235%);
+    }
 }
 
 /* ── Pull-to-refresh (iOS standalone PWA only) ─────────────────────────── */

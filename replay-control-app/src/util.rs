@@ -1,6 +1,26 @@
 use replay_control_core::DatePrecision;
+use replay_control_core::systems::find_system_uses_megabit;
 
 use crate::i18n::Locale;
+
+/// Show a native browser confirmation dialog.
+///
+/// Server-side rendering cannot ask the user, so the SSR fallback returns true;
+/// callers only invoke this from browser click handlers.
+pub fn confirm_action(message: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .and_then(|window| window.confirm_with_message(message).ok())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = message;
+        true
+    }
+}
 
 /// Format a number with thousands separators (e.g., 15440 -> "15,440").
 pub fn format_number(n: usize) -> String {
@@ -151,7 +171,7 @@ pub fn format_elapsed_short(secs: u64) -> String {
 
 /// Check whether a system displays ROM sizes in Megabit.
 fn uses_megabit(system: &str) -> bool {
-    replay_control_core::systems::find_system_uses_megabit(system)
+    find_system_uses_megabit(system)
 }
 
 /// Format a byte count using historically appropriate units for the given system.

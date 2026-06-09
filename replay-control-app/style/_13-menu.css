@@ -108,11 +108,6 @@
     margin-bottom: 4px;
 }
 
-/* Reboot button visual separation */
-.settings-reboot {
-    margin-top: 16px;
-}
-
 /* Menu list */
 .menu-list {
     display: flex;

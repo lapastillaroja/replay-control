@@ -41,7 +41,10 @@ pub use library::favorites;
 pub use library::recents;
 pub use library::rom_hash;
 pub use library::roms;
+pub use library::save_states;
 
+#[cfg(feature = "library")]
+pub use library::boxart;
 #[cfg(feature = "library")]
 pub use library::db as library_db;
 #[cfg(feature = "library")]

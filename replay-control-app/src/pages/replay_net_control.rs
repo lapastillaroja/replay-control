@@ -1,4 +1,4 @@
-//! RePlayOS Net Control settings page (`/settings/replay-net-control`).
+//! RePlayOS settings page (`/settings/replayos`).
 //!
 //! Onboarding + status surface for the RePlayOS API integration. Two setup
 //! paths (see the integration plan): assisted (one button; the action copy
@@ -13,13 +13,15 @@ use server_fn::ServerFnError;
 
 use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, tf, use_i18n};
-use crate::server_fns;
+use crate::server_fns::{self, ReplayOsSettings};
+use crate::util::confirm_action;
 
 #[component]
 pub fn ReplayNetControlPage() -> impl IntoView {
     let i18n = use_i18n();
     let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
     let initial_status = Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
+    let initial_settings = Resource::new_blocking(|| (), |_| server_fns::get_replayos_settings());
 
     view! {
         <div class="page settings-page">
@@ -27,7 +29,7 @@ pub fn ReplayNetControlPage() -> impl IntoView {
                 <A href="/settings" attr:class="back-btn">
                     {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), Key::ReplayNetControlTitle)}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::ReplayOsSettingsTitle)}</h2>
             </div>
 
             <Suspense fallback=move || {
@@ -38,7 +40,8 @@ pub fn ReplayNetControlPage() -> impl IntoView {
                         return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
                     }
                     let initial = initial_status.await?;
-                    Ok::<_, ServerFnError>(view! { <NetControlContent initial /> }.into_any())
+                    let settings = initial_settings.await?;
+                    Ok::<_, ServerFnError>(view! { <NetControlContent initial settings /> }.into_any())
                 })}
             </Suspense>
         </div>
@@ -46,7 +49,7 @@ pub fn ReplayNetControlPage() -> impl IntoView {
 }
 
 #[component]
-fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
+fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> impl IntoView {
     let i18n = use_i18n();
 
     // Live status: the SSE-driven app context, seeded with the SSR-fetched
@@ -60,6 +63,14 @@ fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
     let busy = RwSignal::new(false);
     let error = RwSignal::new(Option::<String>::None);
     let code = RwSignal::new(String::new());
+    let action_busy = RwSignal::new(false);
+    let message_result = RwSignal::new(Option::<(bool, String)>::None);
+    let restart_result = RwSignal::new(Option::<(bool, String)>::None);
+    let device_result = RwSignal::new(Option::<(bool, String)>::None);
+    let mode_result = RwSignal::new(Option::<(bool, String)>::None);
+    let message_text = RwSignal::new(String::new());
+    let message_duration = RwSignal::new("3".to_string());
+    let kiosk_mode = RwSignal::new(settings.kiosk_mode);
     // "Re-enter code" affordance: re-open the setup sections while Active
     // (covers a TV-side code reset without waiting for a 401).
     let reenter = RwSignal::new(false);
@@ -68,6 +79,7 @@ fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
     let show_setup = Memo::new(move |_| !is_active.get() || reenter.get());
     let unsupported =
         Memo::new(move |_| matches!(*status.read(), ReplayApiStatus::Unsupported { .. }));
+    let api_action_disabled = Memo::new(move |_| action_busy.get() || !is_active.get());
 
     let on_auto = move |_| {
         run_status_action(
@@ -93,6 +105,62 @@ fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
     };
     let on_reprobe =
         move |_| run_status_action(busy, error, status, server_fns::reprobe_replay_api(), || ());
+    let on_send_message = move |_| {
+        let text = message_text.get_untracked();
+        let duration = message_duration.get_untracked().parse::<u8>().unwrap_or(3);
+        run_string_action(
+            action_busy,
+            message_result,
+            server_fns::send_replayos_message(text, duration),
+            || (),
+        );
+    };
+    let on_clear_message = move |_| {
+        message_text.set(String::new());
+        message_result.set(None);
+    };
+    let on_restart_game = move |_| {
+        if !confirm_action(t(
+            i18n.locale.get_untracked(),
+            Key::ReplayOsRestartGameConfirm,
+        )) {
+            return;
+        }
+        run_string_action(
+            action_busy,
+            restart_result,
+            server_fns::restart_replayos_game(),
+            || (),
+        );
+    };
+    let on_power_off = move |_| {
+        if !confirm_action(t(i18n.locale.get_untracked(), Key::ReplayOsPowerOffConfirm)) {
+            return;
+        }
+        run_string_action(
+            action_busy,
+            device_result,
+            server_fns::power_off_replayos_device(),
+            || (),
+        );
+    };
+    let on_reboot = move |_| {
+        run_string_action(
+            action_busy,
+            device_result,
+            server_fns::reboot_system(),
+            || (),
+        );
+    };
+    let on_save_kiosk = move |_| {
+        let enabled = kiosk_mode.get_untracked();
+        run_string_action(
+            action_busy,
+            mode_result,
+            server_fns::save_replayos_kiosk_mode(enabled),
+            || (),
+        );
+    };
 
     // One label rule for both action buttons: the idle key, or "Connecting…"
     // while any action is in flight.
@@ -107,7 +175,10 @@ fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
 
     view! {
         <div class="settings-form">
-            <NetControlStatusCard status busy on_reprobe />
+            <section class="replayos-settings-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsConnectionTitle)}</h3>
+                <NetControlStatusCard status busy on_reprobe />
+            </section>
 
             <Show when=move || error.read().is_some() fallback=|| ()>
                 <p class="form-hint form-error">{move || error.get().unwrap_or_default()}</p>
@@ -162,7 +233,130 @@ fn NetControlContent(initial: ReplayApiStatus) -> impl IntoView {
                     </div>
                 </section>
             </Show>
+
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsActionsTitle)}</h3>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsConnectedHint)}</p>
+
+                <div class="form-field">
+                    <label class="form-label" for="replayos-message">
+                        {move || t(i18n.locale.get(), Key::ReplayOsMessageTitle)}
+                    </label>
+                    <textarea
+                        id="replayos-message"
+                        class="form-input replayos-message-input"
+                        maxlength="120"
+                        rows="3"
+                        placeholder=move || t(i18n.locale.get(), Key::ReplayOsMessagePlaceholder)
+                        bind:value=message_text
+                    ></textarea>
+                    <div class="replayos-inline-controls">
+                        <select class="form-input replayos-duration-select" bind:value=message_duration>
+                            <option value="1">"1s"</option>
+                            <option value="3">"3s"</option>
+                            <option value="5">"5s"</option>
+                            <option value="10">"10s"</option>
+                        </select>
+                        <button
+                            type="button"
+                            class="form-btn"
+                            disabled=move || api_action_disabled.get() || message_text.read().trim().is_empty()
+                            on:click=on_send_message
+                        >
+                            {move || t(i18n.locale.get(), Key::ReplayOsMessageSend)}
+                        </button>
+                        <button
+                            type="button"
+                            class="form-btn form-btn-secondary"
+                            disabled=move || action_busy.get() || message_text.read().is_empty()
+                            on:click=on_clear_message
+                        >
+                            {move || t(i18n.locale.get(), Key::ReplayOsMessageClear)}
+                        </button>
+                    </div>
+                    <ActionResultMessage result=message_result />
+                </div>
+
+                <div class="replayos-action-block">
+                    <button
+                        type="button"
+                        class="form-btn form-btn-secondary"
+                        disabled=move || api_action_disabled.get()
+                        on:click=on_restart_game
+                    >
+                        {move || t(i18n.locale.get(), Key::ReplayOsRestartGame)}
+                    </button>
+                    <ActionResultMessage result=restart_result />
+                </div>
+            </section>
+
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsDeviceTitle)}</h3>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsDeviceHint)}</p>
+                <div class="replayos-button-stack">
+                    <button
+                        type="button"
+                        class="form-btn form-btn-secondary"
+                        disabled=move || action_busy.get()
+                        on:click=on_reboot
+                    >
+                        {move || t(i18n.locale.get(), Key::SettingsReboot)}
+                    </button>
+                    <button
+                        type="button"
+                        class="form-btn form-btn-secondary"
+                        disabled=move || api_action_disabled.get()
+                        on:click=on_power_off
+                    >
+                        {move || t(i18n.locale.get(), Key::ReplayOsPowerOff)}
+                    </button>
+                </div>
+                <ActionResultMessage result=device_result />
+            </section>
+
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsModeTitle)}</h3>
+                <div class="form-field form-field-check">
+                    <label class="form-label" for="replayos-kiosk-mode">
+                        {move || t(i18n.locale.get(), Key::ReplayOsKioskMode)}
+                    </label>
+                    <input
+                        id="replayos-kiosk-mode"
+                        type="checkbox"
+                        class="form-checkbox"
+                        prop:checked=move || kiosk_mode.get()
+                        disabled=move || api_action_disabled.get()
+                        on:change=move |ev| kiosk_mode.set(event_target_checked(&ev))
+                    />
+                </div>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsKioskHint)}</p>
+                <button
+                    type="button"
+                    class="form-btn"
+                    disabled=move || api_action_disabled.get()
+                    on:click=on_save_kiosk
+                >
+                    {move || t(i18n.locale.get(), Key::SettingsSave)}
+                </button>
+                <ActionResultMessage result=mode_result />
+            </section>
         </div>
+    }
+}
+
+#[component]
+fn ActionResultMessage(result: RwSignal<Option<(bool, String)>>) -> impl IntoView {
+    view! {
+        <Show when=move || result.read().is_some() fallback=|| ()>
+            {move || result.get().map(|(ok, msg)| {
+                let class = if ok {
+                    "status-msg status-ok replayos-action-status"
+                } else {
+                    "status-msg status-err replayos-action-status"
+                };
+                view! { <div class=class>{msg}</div> }
+            })}
+        </Show>
     }
 }
 
@@ -265,6 +459,31 @@ fn run_status_action<Fut>(
                 on_success();
             }
             Err(e) => error.set(Some(e.to_string())),
+        }
+        busy.set(false);
+    });
+}
+
+fn run_string_action<Fut>(
+    busy: RwSignal<bool>,
+    result: RwSignal<Option<(bool, String)>>,
+    fut: Fut,
+    on_success: impl FnOnce() + 'static,
+) where
+    Fut: std::future::Future<Output = Result<String, ServerFnError>> + 'static,
+{
+    if busy.get_untracked() {
+        return;
+    }
+    busy.set(true);
+    result.set(None);
+    leptos::task::spawn_local(async move {
+        match fut.await {
+            Ok(message) => {
+                on_success();
+                result.set(Some((true, message)));
+            }
+            Err(error) => result.set(Some((false, error.to_string()))),
         }
         busy.set(false);
     });

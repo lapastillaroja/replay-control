@@ -281,6 +281,42 @@ select.form-input option {
     text-align: center;
 }
 
+.replayos-message-input {
+    resize: vertical;
+    min-height: 84px;
+}
+
+.replayos-inline-controls {
+    display: grid;
+    grid-template-columns: minmax(86px, 0.35fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.replayos-duration-select {
+    min-width: 86px;
+}
+
+.replayos-button-stack {
+    display: grid;
+    gap: 8px;
+}
+
+.replayos-action-block {
+    display: grid;
+    gap: 8px;
+}
+
+.replayos-action-status {
+    margin-top: 8px;
+}
+
+@media (max-width: 560px) {
+    .replayos-inline-controls {
+        grid-template-columns: 1fr;
+    }
+}
+
 .setup-manual-link {
     display: inline-block;
     margin: 2px 0 0 44px;

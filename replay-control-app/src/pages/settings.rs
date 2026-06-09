@@ -2,7 +2,6 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::components::reboot_button::RebootButton;
 use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::util::format_size;
@@ -180,21 +179,12 @@ pub fn SettingsPage() -> impl IntoView {
                             </Transition>
 
                             <div class="menu-list">
-                                <MenuItem icon="\u{1F4E1}" label_key=Key::ReplayNetControlTitle href=Some("/settings/replay-net-control") />
+                                <MenuItem icon="\u{1F4E1}" label_key=Key::ReplayOsSettingsTitle href=Some("/settings/replayos") />
                                 <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/settings/logs") />
                                 <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/settings/github") />
                             </div>
 
                             <AnalyticsInline />
-
-                            <div class="settings-reboot">
-                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                    {move || Suspend::new(async move {
-                                        let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
-                                        Ok::<_, ServerFnError>(view! { <RebootButton disabled=!on_device /> })
-                                    })}
-                                </Transition>
-                            </div>
                         </div>
                     </section>
                 </div>

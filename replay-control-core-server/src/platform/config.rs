@@ -216,6 +216,10 @@ impl ReplayConfig {
         self.inner.get("system_net_control") == Some("true")
     }
 
+    pub fn system_kiosk_mode_enabled(&self) -> bool {
+        self.inner.get("system_kiosk_mode") == Some("true")
+    }
+
     /// Whether replay.cfg has the `system_net_control` key at all (true OR
     /// false). Doubles as a version marker: the option doesn't exist before
     /// RePlayOS 1.7.3, and newer frontends serialize their full config on

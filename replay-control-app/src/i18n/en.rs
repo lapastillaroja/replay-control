@@ -514,6 +514,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Common
         Key::CommonLoading => "Loading...",
+        Key::CommonLoadingReplayControl => "Loading Replay Control...",
         Key::CommonError => "Error",
         Key::CommonSeeAll => "See all",
         Key::CommonSystems => "Systems",
@@ -604,7 +605,27 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::SetupReplayosManualLink => "or enter the code manually",
 
-        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayOsSettingsTitle => "RePlayOS",
+        Key::ReplayOsConnectionTitle => "Connection",
+        Key::ReplayOsActionsTitle => "Actions",
+        Key::ReplayOsConnectedHint => {
+            "These controls require RePlayOS Net Control to be connected."
+        }
+        Key::ReplayOsMessageTitle => "On-screen message",
+        Key::ReplayOsMessagePlaceholder => "Message shown on the TV",
+        Key::ReplayOsMessageSend => "Send message",
+        Key::ReplayOsMessageClear => "Clear message",
+        Key::ReplayOsRestartGame => "Restart current game",
+        Key::ReplayOsRestartGameConfirm => "Restart the current game?",
+        Key::ReplayOsDeviceTitle => "Device",
+        Key::ReplayOsDeviceHint => "These actions affect the whole RePlayOS device.",
+        Key::ReplayOsPowerOff => "Power off",
+        Key::ReplayOsPowerOffConfirm => "Power off the RePlayOS device?",
+        Key::ReplayOsModeTitle => "Mode",
+        Key::ReplayOsKioskMode => "Kiosk mode",
+        Key::ReplayOsKioskHint => {
+            "Limits the TV interface so guests cannot change system settings."
+        }
         Key::ReplayApiStatusConnected => "Connected to {0}",
         Key::ReplayApiStatusNotConnected => "Not connected",
         Key::ReplayApiStatusRestarting => "RePlayOS is restarting…",
@@ -631,16 +652,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayApiSetUpAgain => "Set up again",
 
         Key::NowPlayingLabelPlaying => "Playing",
-        Key::NowPlayingLabelPaused => "Playing (on pause)",
-        Key::NowPlayingLabelHalted => "Halt",
+        Key::NowPlayingLabelPaused => "Paused",
+        Key::NowPlayingLabelHalted => "Halted",
         Key::NowPlayingLabelInMenu => "Playing (on menu)",
         Key::NowPlayingDisc => "Disc {0}/{1}",
-        Key::PlayerControlScreenshot => "Shot",
+        Key::PlayerControlScreenshot => "Screenshot",
         Key::PlayerControlHalt => "Halt",
         Key::PlayerControlMute => "Mute",
         Key::PlayerControlVolumeDown => "Vol -",
         Key::PlayerControlVolumeUp => "Vol +",
         Key::PlayerControlReset => "Reset",
         Key::PlayerControlResetConfirm => "Reset the running game?",
+        Key::PlayerControlSaveStates => "Save states",
+        Key::PlayerControlMore => "More",
+        Key::SaveStatesSlot => "Slot",
+        Key::SaveStatesEmpty => "Empty",
+        Key::SaveStatesSaved => "Saved",
+        Key::SaveStatesJustNow => "just now",
+        Key::SaveStatesMinutesAgo => "{0} min ago",
+        Key::SaveStatesStatusPreview => "status not loaded",
+        Key::SaveStatesPreviousSlot => "Previous slot",
+        Key::SaveStatesNextSlot => "Next slot",
+        Key::SaveStatesSave => "Save state",
+        Key::SaveStatesLoad => "Load state",
+        Key::SaveStatesOverwriteTitle => "Overwrite save state?",
+        Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
+        Key::SaveStatesLoadTitle => "Load save state?",
+        Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
     }
 }

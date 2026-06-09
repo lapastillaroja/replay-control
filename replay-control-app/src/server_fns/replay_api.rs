@@ -14,9 +14,13 @@
 use super::*;
 
 #[cfg(feature = "ssr")]
+use crate::api::{AppState, replay_api::ReplayApi};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::replay_api::{ApiError, ReplayApiClient};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::settings::write_replay_api_token;
+#[cfg(feature = "ssr")]
+use std::sync::Arc;
 
 use replay_control_core::replay_api::ReplayApiStatus;
 #[cfg(feature = "ssr")]
@@ -30,20 +34,41 @@ pub enum ReplayPlayerCommand {
     VolumeDown,
     VolumeUp,
     GameReset,
+    SaveState { slot: u8 },
+    LoadState { slot: u8 },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayOsSettings {
+    pub kiosk_mode: bool,
 }
 
 impl ReplayPlayerCommand {
     #[cfg(feature = "ssr")]
-    fn set_command(self) -> SetCommand {
+    fn set_command(self) -> Option<SetCommand> {
         match self {
-            ReplayPlayerCommand::Screenshot => SetCommand::Screenshot,
-            ReplayPlayerCommand::Halt => SetCommand::Halt,
-            ReplayPlayerCommand::Mute => SetCommand::Mute,
-            ReplayPlayerCommand::VolumeDown => SetCommand::VolumeDown,
-            ReplayPlayerCommand::VolumeUp => SetCommand::VolumeUp,
-            ReplayPlayerCommand::GameReset => SetCommand::GameReset,
+            ReplayPlayerCommand::Screenshot => Some(SetCommand::Screenshot),
+            ReplayPlayerCommand::Halt => Some(SetCommand::Halt),
+            ReplayPlayerCommand::Mute => Some(SetCommand::Mute),
+            ReplayPlayerCommand::VolumeDown => Some(SetCommand::VolumeDown),
+            ReplayPlayerCommand::VolumeUp => Some(SetCommand::VolumeUp),
+            ReplayPlayerCommand::GameReset => Some(SetCommand::GameReset),
+            ReplayPlayerCommand::SaveState { .. } | ReplayPlayerCommand::LoadState { .. } => None,
         }
     }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let kiosk_mode = state
+        .replay_config
+        .read()
+        .expect("replay_config lock poisoned")
+        .as_ref()
+        .is_some_and(|config| config.system_kiosk_mode_enabled());
+
+    Ok(ReplayOsSettings { kiosk_mode })
 }
 
 /// Current integration status. Standalone mode has no integration and reports
@@ -84,12 +109,110 @@ pub async fn send_replay_player_command(command: ReplayPlayerCommand) -> Result<
         return Err(ServerFnError::new("RePlayOS Net Control is not connected"));
     }
 
-    if let Err(e) = api.client().set_cmd(command.set_command()).await {
+    let result = match command {
+        ReplayPlayerCommand::SaveState { slot } => {
+            validate_save_state_slot(slot)?;
+            api.client().save_state(slot).await
+        }
+        ReplayPlayerCommand::LoadState { slot } => {
+            validate_save_state_slot(slot)?;
+            api.client().load_state(slot).await
+        }
+        _ => {
+            api.client()
+                .set_cmd(command.set_command().expect("set_cmd command"))
+                .await
+        }
+    };
+
+    if let Err(e) = result {
         api.report_error(&e);
         return Err(ServerFnError::new(e.to_string()));
     }
 
     Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn validate_save_state_slot(slot: u8) -> Result<(), ServerFnError> {
+    if (1..=18).contains(&slot) {
+        Ok(())
+    } else {
+        Err(ServerFnError::new(
+            "Save state slot must be between 1 and 18",
+        ))
+    }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn send_replayos_message(
+    text: String,
+    duration_secs: u8,
+) -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let api = require_active_replay_api(&state, "send an on-screen message")?;
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(ServerFnError::new("Message cannot be empty"));
+    }
+    if text.chars().count() > 120 {
+        return Err(ServerFnError::new(
+            "Message must be 120 characters or fewer",
+        ));
+    }
+    let duration_secs = duration_secs.clamp(1, 10);
+
+    if let Err(error) = api.client().set_msg(text, duration_secs).await {
+        api.report_error(&error);
+        return Err(ServerFnError::new(error.to_string()));
+    }
+
+    Ok("Message sent".to_string())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn restart_replayos_game() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let api = require_active_replay_api(&state, "restart the current game")?;
+
+    if let Err(error) = api.client().set_cmd(SetCommand::GameRestart).await {
+        api.report_error(&error);
+        return Err(ServerFnError::new(error.to_string()));
+    }
+
+    Ok("Restarting game...".to_string())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn power_off_replayos_device() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let api = require_active_replay_api(&state, "power off the device")?;
+
+    if let Err(error) = api.client().set_cmd(SetCommand::PowerOff).await {
+        api.report_error(&error);
+        return Err(ServerFnError::new(error.to_string()));
+    }
+
+    Ok("Powering off...".to_string())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_replayos_kiosk_mode(enabled: bool) -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let api = require_active_replay_api(&state, "change kiosk mode")?;
+    let value = if enabled { "true" } else { "false" };
+
+    if let Err(error) = api
+        .client()
+        .set_replay_config("system_kiosk_mode", value)
+        .await
+    {
+        api.report_error(&error);
+        return Err(ServerFnError::new(error.to_string()));
+    }
+    let _ = state.reload_replay_config();
+
+    Ok("Kiosk mode saved".to_string())
 }
 
 /// Manual onboarding: verify a user-entered Net Control code and store it on
@@ -280,6 +403,24 @@ fn adopt_token(
         .map_err(|e| ServerFnError::new(format!("Failed to store the code: {e}")))?;
     api.swap_local_token(Some(token));
     Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn require_active_replay_api(
+    state: &AppState,
+    action: &str,
+) -> Result<Arc<ReplayApi>, ServerFnError> {
+    let Some(api) = state.replay_api.clone() else {
+        return Err(ServerFnError::new(format!(
+            "RePlayOS Net Control is required to {action}"
+        )));
+    };
+    if !api.status().is_active() {
+        return Err(ServerFnError::new(format!(
+            "RePlayOS Net Control is not connected; connect it before you {action}"
+        )));
+    }
+    Ok(api)
 }
 
 #[cfg(feature = "ssr")]

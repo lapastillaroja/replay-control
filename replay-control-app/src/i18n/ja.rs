@@ -518,6 +518,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Common
         Key::CommonLoading => "読み込み中...",
+        Key::CommonLoadingReplayControl => "Replay Control を読み込み中...",
         Key::CommonError => "エラー",
         Key::CommonSeeAll => "すべて見る",
         Key::CommonSystems => "システム",
@@ -604,7 +605,23 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::SetupReplayosManualLink => "またはコードを手動で入力",
 
-        Key::ReplayNetControlTitle => "RePlayOS Net Control",
+        Key::ReplayOsSettingsTitle => "RePlayOS",
+        Key::ReplayOsConnectionTitle => "接続",
+        Key::ReplayOsActionsTitle => "操作",
+        Key::ReplayOsConnectedHint => "これらの操作には RePlayOS Net Control の接続が必要です。",
+        Key::ReplayOsMessageTitle => "画面メッセージ",
+        Key::ReplayOsMessagePlaceholder => "TV に表示するメッセージ",
+        Key::ReplayOsMessageSend => "メッセージを送信",
+        Key::ReplayOsMessageClear => "メッセージを消去",
+        Key::ReplayOsRestartGame => "現在のゲームを再起動",
+        Key::ReplayOsRestartGameConfirm => "現在のゲームを再起動しますか？",
+        Key::ReplayOsDeviceTitle => "デバイス",
+        Key::ReplayOsDeviceHint => "これらの操作は RePlayOS デバイス全体に影響します。",
+        Key::ReplayOsPowerOff => "電源を切る",
+        Key::ReplayOsPowerOffConfirm => "RePlayOS デバイスの電源を切りますか？",
+        Key::ReplayOsModeTitle => "モード",
+        Key::ReplayOsKioskMode => "キオスクモード",
+        Key::ReplayOsKioskHint => "ゲストが TV 側でシステム設定を変更できないようにします。",
         Key::ReplayApiStatusConnected => "{0} に接続済み",
         Key::ReplayApiStatusNotConnected => "未接続",
         Key::ReplayApiStatusRestarting => "RePlayOS を再起動しています…",
@@ -642,5 +659,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::PlayerControlVolumeUp => "音量 +",
         Key::PlayerControlReset => "リセット",
         Key::PlayerControlResetConfirm => "実行中のゲームをリセットしますか？",
+        Key::PlayerControlSaveStates => "ステート保存",
+        Key::PlayerControlMore => "その他",
+        Key::SaveStatesSlot => "スロット",
+        Key::SaveStatesEmpty => "空",
+        Key::SaveStatesSaved => "保存済み",
+        Key::SaveStatesJustNow => "たった今",
+        Key::SaveStatesMinutesAgo => "{0}分前",
+        Key::SaveStatesStatusPreview => "状態未取得",
+        Key::SaveStatesPreviousSlot => "前のスロット",
+        Key::SaveStatesNextSlot => "次のスロット",
+        Key::SaveStatesSave => "ステートを保存",
+        Key::SaveStatesLoad => "ステートを読み込み",
+        Key::SaveStatesOverwriteTitle => "ステートを上書きしますか？",
+        Key::SaveStatesOverwriteBody => {
+            "{0} にはすでにステートがあります。保存すると上書きされます。"
+        }
+        Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
+        Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
     }
 }

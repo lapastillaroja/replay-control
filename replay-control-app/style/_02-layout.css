@@ -76,7 +76,7 @@
     align-items: center;
     gap: 12px;
     min-height: 64px;
-    padding: 8px 16px;
+    padding: 8px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
     background: color-mix(in srgb, var(--surface) 92%, black 8%);
     border-bottom: 1px solid var(--border);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
@@ -193,6 +193,13 @@
 }
 
 .now-playing-controls {
+    display: grid;
+    gap: 6px;
+    justify-items: end;
+    min-width: 0;
+}
+
+.now-playing-controls-row {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -204,7 +211,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 32px;
+    min-height: 44px;
     padding: 6px 10px;
     border: 1px solid var(--accent-border);
     border-radius: var(--radius-sm);
@@ -216,12 +223,33 @@
     font-weight: 700;
     line-height: 1;
     white-space: nowrap;
+    touch-action: manipulation;
     transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
 
-.now-playing-control:hover {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+@media (hover: hover) and (pointer: fine) {
+    .now-playing-control:hover,
+    .save-states-step:hover:not(:disabled) {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+    }
+}
+
+.now-playing-control-icon-only {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 6px;
+    color: var(--accent);
+}
+
+.now-playing-control-icon {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+    stroke-width: 2.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .now-playing-control:disabled {
@@ -239,6 +267,133 @@
 .now-playing-control-reset:hover {
     border-color: var(--star);
     background: color-mix(in srgb, var(--star) 10%, var(--surface-hover));
+}
+
+.now-playing-control-more {
+    font-size: 0.95rem;
+}
+
+.now-playing-control-more.is-open {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
+}
+
+.now-playing-more-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.now-playing-save-states {
+    --save-states-gap: 6px;
+    display: grid;
+    gap: var(--save-states-gap);
+    grid-template-columns: 94px minmax(0, 1fr) 94px;
+    align-items: stretch;
+    width: 100%;
+}
+
+.save-states-step-group {
+    display: grid;
+    grid-template-columns: 44px 44px;
+    grid-template-rows: 44px;
+    gap: var(--save-states-gap);
+}
+
+.save-states-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px;
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-hover);
+    color: var(--accent);
+    cursor: pointer;
+    font-family: inherit;
+    touch-action: manipulation;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.save-states-step:disabled {
+    cursor: default;
+    opacity: 0.58;
+}
+
+.save-states-slot {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    height: 44px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.save-states-slot-label {
+    flex-shrink: 0;
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.save-states-slot-separator,
+.save-states-slot-state {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.save-states-slot-separator {
+    flex-shrink: 0;
+}
+
+.save-states-slot-state {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.save-states-actions {
+    display: grid;
+    grid-template-columns: 44px 44px;
+    grid-template-rows: 44px;
+    gap: var(--save-states-gap);
+}
+
+.save-states-action {
+    width: 44px;
+    min-width: 44px;
+    gap: 7px;
+    min-height: 44px;
+    padding: 6px;
+}
+
+.save-states-action .now-playing-control-icon {
+    color: var(--accent);
+}
+
+.save-states-action span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 @keyframes now-playing-pulse {

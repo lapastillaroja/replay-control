@@ -59,6 +59,7 @@ ring = { version = "0.17.14", optional = true }
 # Hydrate-only (optional, activated by `hydrate` feature)
 web-sys = { version = "0.3.99", features = [
     "HtmlInputElement",
+    "HtmlElement",
     "HtmlTextAreaElement",
     "IntersectionObserver",
     "IntersectionObserverInit",

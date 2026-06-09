@@ -30,10 +30,8 @@ use std::time::Duration;
 use replay_control_core::replay_api::{PlayState, StatusResponse};
 use replay_control_core::systems::system_display_name;
 use replay_control_core_server::arcade_db;
+use replay_control_core_server::boxart::resolve_effective_box_art_url;
 use replay_control_core_server::library_db::{GameEntry, LibraryDb};
-use replay_control_core_server::thumbnails::{
-    ThumbnailKind, is_valid_image, resolve_image_on_disk,
-};
 use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::AppState;
@@ -258,8 +256,7 @@ async fn resolve_game(
 async fn resolve_box_art_url(state: &AppState, entry: &GameEntry) -> Option<String> {
     let system = entry.system.clone();
     let rom_filename = entry.rom_filename.clone();
-
-    if let Some(override_path) = state
+    let override_path = state
         .user_data_reader
         .read({
             let system = system.clone();
@@ -271,34 +268,18 @@ async fn resolve_box_art_url(state: &AppState, entry: &GameEntry) -> Option<Stri
             }
         })
         .await
-        .flatten()
-    {
-        let full = state
-            .storage()
-            .rc_dir()
-            .join("media")
-            .join(&entry.system)
-            .join(&override_path);
-        if is_valid_image(full).await {
-            return Some(format!("/media/{}/{override_path}", entry.system));
-        }
-    }
-
-    if entry.box_art_url.is_some() {
-        return entry.box_art_url.clone();
-    }
-
+        .flatten();
     let arcade_display =
         arcade_db::display_name_if_arcade(&entry.system, &entry.rom_filename).await;
-    let media_base = state.storage().rc_dir().join("media").join(&entry.system);
-    resolve_image_on_disk(
-        arcade_display,
-        media_base,
-        ThumbnailKind::Boxart.media_dir(),
-        entry.rom_filename.clone(),
+    resolve_effective_box_art_url(
+        &state.storage().rc_dir(),
+        &entry.system,
+        &entry.rom_filename,
+        entry.box_art_url.as_deref(),
+        arcade_display.as_deref(),
+        override_path.as_deref(),
     )
     .await
-    .map(|path| format!("/media/{}/{path}", entry.system))
 }
 
 /// `/media/nfs/roms/sega_smd/sub/Game.md` → `/roms/sega_smd/sub/Game.md`

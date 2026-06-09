@@ -35,7 +35,7 @@ pub fn ReplayApiStatusBanner() -> impl IntoView {
     });
     let action = Signal::derive(move || {
         matches!(status.get(), ReplayApiStatus::Unauthorized).then(|| BannerAction {
-            href: "/settings/replay-net-control",
+            href: "/settings/replayos",
             label: t(i18n.locale.get(), Key::ReplayApiSetUpAgain).to_string(),
         })
     });

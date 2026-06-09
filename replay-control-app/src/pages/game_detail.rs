@@ -778,7 +778,7 @@ fn GameLaunchAction(
                 }
             >
                 <A
-                    href="/settings/replay-net-control"
+                    href="/settings/replayos"
                     attr:class="game-action-launch game-action-launch-setup"
                 >
                     <span class="game-action-icon">{"\u{25B6}"}</span>

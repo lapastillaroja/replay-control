@@ -1,5 +1,7 @@
 use replay_control_core::runtime_env::Mode;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::boxart::resolve_effective_box_art_url;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
@@ -13,6 +15,7 @@ pub(crate) mod recommendations;
 mod related;
 mod replay_api;
 mod roms;
+mod save_states;
 mod search;
 mod settings;
 mod system;
@@ -28,6 +31,7 @@ pub use recommendations::*;
 pub use related::*;
 pub use replay_api::*;
 pub use roms::*;
+pub use save_states::*;
 pub use search::*;
 pub use settings::*;
 pub use system::*;
@@ -401,8 +405,7 @@ async fn enrich_detail_fields(
     info: &mut GameInfo,
     arcade_display: Option<&str>,
 ) {
-    // Check user_data_db for box art override FIRST (highest priority).
-    if let Some(override_path) = state
+    let override_path = state
         .user_data_reader
         .read({
             let system = info.system.clone();
@@ -414,18 +417,16 @@ async fn enrich_detail_fields(
             }
         })
         .await
-        .flatten()
-    {
-        let full = state
-            .storage()
-            .rc_dir()
-            .join("media")
-            .join(&info.system)
-            .join(&override_path);
-        if is_valid_image(full).await {
-            info.box_art_url = Some(format!("/media/{}/{override_path}", info.system));
-        }
-    }
+        .flatten();
+    info.box_art_url = resolve_effective_box_art_url(
+        &state.storage().rc_dir(),
+        &info.system,
+        &info.rom_filename,
+        info.box_art_url.as_deref(),
+        arcade_display,
+        override_path.as_deref(),
+    )
+    .await;
 
     // Fetch detail-only fields (description, publisher) from
     // `game_detail_metadata` — denormalized at enrichment time so the request
@@ -478,10 +479,7 @@ pub(crate) async fn resolve_box_art_url(
     rom_filename: &str,
     arcade_display: Option<&str>,
 ) -> Option<String> {
-    let media_base = state.storage().rc_dir().join("media").join(system);
-
-    // 0. Check user_data_db for box art override (highest priority).
-    if let Some(override_path) = state
+    let override_path = state
         .user_data_reader
         .read({
             let system = system.to_string();
@@ -493,33 +491,18 @@ pub(crate) async fn resolve_box_art_url(
             }
         })
         .await
-        .flatten()
-    {
-        let full = state
-            .storage()
-            .rc_dir()
-            .join("media")
-            .join(system)
-            .join(&override_path);
-        if is_valid_image(full).await {
-            return Some(format!("/media/{system}/{override_path}"));
-        }
-    }
-
-    // 1. (Legacy game_metadata.box_art_path lookup removed — the new schema
-    //    stores box_art_url on game_library and the caller passes that through
-    //    `info.box_art_url`. Filesystem fallback below handles the rest.)
-    //    Filesystem fallback — resolve_image_on_disk handles arcade name translation.
-    resolve_image_on_disk(
-        arcade_display.map(str::to_owned),
-        media_base,
-        replay_control_core_server::thumbnails::ThumbnailKind::Boxart.media_dir(),
-        rom_filename.to_string(),
+        .flatten();
+    resolve_effective_box_art_url(
+        &state.storage().rc_dir(),
+        system,
+        rom_filename,
+        None,
+        arcade_display,
+        override_path.as_deref(),
     )
     .await
-    .map(|path| format!("/media/{system}/{path}"))
 }
 
 // Re-export image utilities from core for use in this crate.
 #[cfg(feature = "ssr")]
-pub(crate) use replay_control_core_server::thumbnails::{is_valid_image, resolve_image_on_disk};
+pub(crate) use replay_control_core_server::thumbnails::resolve_image_on_disk;

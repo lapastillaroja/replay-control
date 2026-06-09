@@ -49,3 +49,8 @@ License: GPLv3
 Top bar gaming icons.
 Source: [phosphoricons.com](https://phosphoricons.com/)
 License: MIT
+
+### Lucide Icons
+Inline UI control icons.
+Source: [lucide.dev](https://lucide.dev/)
+License: ISC

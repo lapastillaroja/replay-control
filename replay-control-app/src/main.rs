@@ -18,8 +18,10 @@ mod ssr {
 
     use replay_control_app::api;
     use replay_control_app::server_fns::{
-        EnableReplayApiAssisted, GetReplayApiStatus, ReprobeReplayApi, SendReplayPlayerCommand,
-        StartSetupMetadataDownloads, VerifyReplayApiToken,
+        EnableReplayApiAssisted, GetReplayApiStatus, GetReplayosSettings, GetSaveStateSlots,
+        PowerOffReplayosDevice, ReprobeReplayApi, RestartReplayosGame, SaveReplayosKioskMode,
+        SendReplayPlayerCommand, SendReplayosMessage, StartSetupMetadataDownloads,
+        VerifyReplayApiToken,
     };
 
     #[derive(Parser)]
@@ -695,8 +697,14 @@ mod ssr {
         server_fn::axum::register_explicit::<StartSetupMetadataDownloads>();
         server_fn::axum::register_explicit::<EnableReplayApiAssisted>();
         server_fn::axum::register_explicit::<GetReplayApiStatus>();
+        server_fn::axum::register_explicit::<GetReplayosSettings>();
+        server_fn::axum::register_explicit::<PowerOffReplayosDevice>();
         server_fn::axum::register_explicit::<ReprobeReplayApi>();
+        server_fn::axum::register_explicit::<RestartReplayosGame>();
+        server_fn::axum::register_explicit::<SaveReplayosKioskMode>();
+        server_fn::axum::register_explicit::<GetSaveStateSlots>();
         server_fn::axum::register_explicit::<SendReplayPlayerCommand>();
+        server_fn::axum::register_explicit::<SendReplayosMessage>();
         server_fn::axum::register_explicit::<VerifyReplayApiToken>();
         server_fn::axum::register_explicit::<
             replay_control_app::server_fns::GetMetadataLibraryOverview,

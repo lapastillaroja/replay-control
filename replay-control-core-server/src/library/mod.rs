@@ -2,7 +2,10 @@ pub mod favorites;
 pub mod recents;
 pub mod rom_hash;
 pub mod roms;
+pub mod save_states;
 
+#[cfg(feature = "library")]
+pub mod boxart;
 #[cfg(feature = "library")]
 pub mod db;
 #[cfg(feature = "library")]
