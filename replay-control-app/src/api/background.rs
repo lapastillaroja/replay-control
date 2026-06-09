@@ -1969,6 +1969,19 @@ impl BackgroundManager {
                 p.elapsed_secs = start.elapsed().as_secs();
                 p.enriching = false;
             });
+        } else if matches!(progress, PopulateProgress::Startup) {
+            state.update_activity(|act| {
+                if let Activity::Startup {
+                    phase,
+                    system,
+                    enriching,
+                } = act
+                {
+                    *phase = StartupPhase::MediaStats;
+                    system.clear();
+                    *enriching = false;
+                }
+            });
         }
         Self::refresh_thumbnail_media_stats(state, storage, generation, "L2 populate").await?;
         Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);

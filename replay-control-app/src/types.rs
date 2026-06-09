@@ -297,6 +297,7 @@ pub struct RefreshMetadataProgress {
 pub enum StartupPhase {
     FetchingMetadata,
     Scanning,
+    MediaStats,
     RebuildingIndex,
 }
 

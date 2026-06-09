@@ -194,6 +194,8 @@ pub enum StartupPhase {
     FetchingMetadata,
     /// Scanning ROM directories, populating game library.
     Scanning,
+    /// Walking cached artwork/media files to refresh summary stats.
+    MediaStats,
     /// Rebuilding thumbnail index from disk.
     RebuildingIndex,
 }

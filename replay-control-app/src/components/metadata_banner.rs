@@ -76,6 +76,9 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                         format!("{phase_text} ({system})...")
                     }
                 }
+                StartupPhase::MediaStats => {
+                    t(i18n.locale.get(), Key::MetadataBannerUpdatingMediaStats).to_string()
+                }
                 StartupPhase::RebuildingIndex => "Rebuilding thumbnail index...".to_string(),
             }
         }
