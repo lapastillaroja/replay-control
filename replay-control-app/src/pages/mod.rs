@@ -1,3 +1,4 @@
+pub mod board;
 pub mod developer;
 pub mod favorites;
 pub mod game_detail;

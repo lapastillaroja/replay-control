@@ -635,6 +635,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchByDeveloper>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetDeveloperGames>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetDeveloperGenres>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBoardGames>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBoardGenres>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchByBoard>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>(
         );

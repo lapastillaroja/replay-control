@@ -1,5 +1,5 @@
 <mame version="0.285">
-  <m name="sf2" rotate="0" players="2" status="good">
+  <m name="sf2" rotate="0" players="2" status="good" sourcefile="capcom/cps2.cpp">
     <d>Street Fighter II: The World Warrior (World 910522)</d>
     <y>1991</y>
     <f>Capcom</f>

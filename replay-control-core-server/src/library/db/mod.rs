@@ -29,6 +29,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::error::{Error, Result};
 
 // Re-export RC_DIR from storage (the canonical definition).
@@ -157,6 +158,11 @@ pub struct GameEntry {
     /// for console ROMs and arcade parents. Lets the matcher fall back to the
     /// parent's metadata without a separate per-ROM lookup at enrich time.
     pub normalized_title_alt: String,
+    /// Curated arcade board (CPS-2, Neo Geo MVS, Taito F3, …). `None` for
+    /// console ROMs, BIOS rows, and arcade ROMs whose driver sourcefile isn't
+    /// in `ArcadeBoard::from_sourcefile`. Populated at scan time from
+    /// `arcade_db::ArcadeGameInfo::board`.
+    pub board: Option<ArcadeBoard>,
 }
 
 /// Durable identity state for ROM hash matching.
@@ -452,8 +458,10 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         cooperative INTEGER NOT NULL DEFAULT 0,
         normalized_title TEXT NOT NULL DEFAULT '',
         normalized_title_alt TEXT NOT NULL DEFAULT '',
+        board TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (system, rom_filename)
     );
+    CREATE INDEX IF NOT EXISTS idx_gl_board ON game_library(system, board) WHERE board != '';
 ";
 
 /// SQL to create the `game_library_meta` table.
@@ -679,6 +687,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "cooperative",
     "normalized_title",
     "normalized_title_alt",
+    "board",
 ];
 
 const LIBRARY_THUMBNAIL_JOB_COLUMNS: &[&str] = &[
@@ -1345,7 +1354,7 @@ impl LibraryDb {
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
     ///   identity_state, release_date, release_precision, release_region_used, cooperative,
-    ///   normalized_title, normalized_title_alt
+    ///   normalized_title, normalized_title_alt, board
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -1398,6 +1407,10 @@ impl LibraryDb {
             cooperative: row.get::<_, bool>(29).unwrap_or_default(),
             normalized_title: row.get::<_, String>(30).unwrap_or_default(),
             normalized_title_alt: row.get::<_, String>(31).unwrap_or_default(),
+            board: row
+                .get::<_, Option<String>>(32)
+                .unwrap_or_default()
+                .and_then(|tag| ArcadeBoard::from_tag(&tag)),
         })
     }
 }
@@ -1455,6 +1468,7 @@ mod tests {
             cooperative: false,
             normalized_title: String::new(),
             normalized_title_alt: String::new(),
+            board: None,
         }
     }
 

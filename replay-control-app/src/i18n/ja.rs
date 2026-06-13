@@ -238,6 +238,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPlayers => "プレイヤー数",
         Key::GameDetailRotation => "画面の向き",
         Key::GameDetailParentRom => "オリジナル版",
+        Key::GameDetailBoard => "基板",
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
 
@@ -489,11 +490,15 @@ pub fn translate(key: Key) -> &'static str {
         Key::SearchNoResults => "結果が見つかりません",
         Key::SearchResultsSummary => "件、",
         Key::SearchSystems => "システムで見つかりました",
+        Key::SearchFilterPrefix => "フィルター",
+        Key::SearchFilterRemove => "フィルターを解除",
         Key::SearchBrowsingGenre => "すべて閲覧中",
         Key::SearchGamesBy => "開発元のゲーム",
+        Key::SearchGamesOn => "基板のゲーム",
         Key::SearchRandomGame => "おまかせゲーム",
         Key::SearchRecentSearches => "最近の検索",
         Key::SearchOtherDevelopers => "一致する他の開発元",
+        Key::SearchOtherBoards => "一致する他の基板",
 
         // Filters
         Key::FilterHideHacks => "ハック版を非表示",
@@ -508,6 +513,9 @@ pub fn translate(key: Key) -> &'static str {
         // Developer page
         Key::DeveloperNoGames => "この開発元のゲームが見つかりません",
         Key::DeveloperAllSystems => "すべて",
+
+        // Board page
+        Key::BoardNoGames => "この基板のゲームが見つかりません",
 
         // Metadata busy/scanning banners
         Key::MetadataBusyBanner => {

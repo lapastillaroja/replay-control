@@ -12,8 +12,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::community::{CommunityEntry, CommunityFile};
 use replay_control_core::library::resource_kind;
+use replay_control_core::title_utils;
 
-use crate::{normalize_console_genre, normalize_title, sha256_resource_id, title_utils};
+use crate::{normalize_console_genre, normalize_title, sha256_resource_id};
 
 /// Walk `data/community/*.json` and write community entries into
 /// `canonical_game`, `rom_entry`, and `catalog_game_resource`. Returns the

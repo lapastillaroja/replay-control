@@ -17,6 +17,13 @@ pub struct RomPage {
     /// Whether this system is an arcade system (for clone filter visibility).
     #[serde(default)]
     pub is_arcade: bool,
+    /// Set when the search recognizer extracted a structured filter from
+    /// the user's free-text query. Drives the pill on the system ROM list.
+    #[serde(
+        default,
+        skip_serializing_if = "super::search::RecognizedFilter::is_empty"
+    )]
+    pub recognized: super::search::RecognizedFilter,
 }
 
 /// A user-taken screenshot URL for the game detail page.
@@ -148,7 +155,14 @@ pub async fn get_roms_page(
     let min_rating_f64 = min_rating.map(|r| r as f64);
     let genre_owned = genre.clone();
     let sys_owned = system.clone();
-    let search_owned = search.clone();
+
+    // Route structured terms (board name) out of the free-text query and
+    // into exact-filter dimensions before the ranked scorer runs.
+    let recognized_query =
+        replay_control_core_server::library::search_recognizer::recognize(search.trim());
+    let recognized_board = recognized_query.filters.board;
+    let remaining_query_display = recognized_query.remaining_text.clone();
+    let search_owned = recognized_query.remaining_text.to_lowercase();
 
     let db_result = state
         .library_reader
@@ -164,6 +178,7 @@ pub async fn get_roms_page(
                 min_rating: min_rating_f64,
                 min_year,
                 max_year,
+                board: recognized_board,
             };
             LibraryDb::search_game_library_ranked(
                 conn,
@@ -190,6 +205,10 @@ pub async fn get_roms_page(
         has_more,
         system_display,
         is_arcade,
+        recognized: super::search::RecognizedFilter {
+            board: recognized_board.map(|b| b.display_label()),
+            remaining_query: remaining_query_display,
+        },
     })
 }
 

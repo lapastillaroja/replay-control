@@ -55,6 +55,7 @@ def main():
 
         name = elem.get("name", "")
         cloneof = elem.get("cloneof", "")
+        sourcefile = elem.get("sourcefile", "")
 
         desc_el = elem.find("description")
         description = desc_el.text if desc_el is not None and desc_el.text else ""
@@ -91,6 +92,8 @@ def main():
             attrs += f' players="{players}"'
         if status != "unknown":
             attrs += f' status="{status}"'
+        if sourcefile:
+            attrs += f' sourcefile="{sourcefile}"'
 
         lines.append(
             f"<m {attrs}><d>{description}</d><y>{year}</y><f>{manufacturer}</f></m>"

@@ -10,7 +10,7 @@
     <year>1991</year>
     <manufacturer>Capcom</manufacturer>
   </game>
-  <game name="3countb">
+  <game name="3countb" sourcefile="neogeo/d_neogeo.cpp">
     <description>3 Count Bout</description>
     <year>1993</year>
     <manufacturer>SNK</manufacturer>

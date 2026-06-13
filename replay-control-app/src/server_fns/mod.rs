@@ -245,6 +245,10 @@ pub struct GameInfo {
     pub is_clone: Option<bool>,
     pub parent_rom: Option<String>,
     pub arcade_category: Option<String>,
+    /// Curated hardware-board label (e.g. "CPS-2", "Neo Geo MVS").
+    /// None for non-arcade systems and for arcade ROMs whose driver sourcefile
+    /// isn't mapped in `arcade_board`.
+    pub arcade_board: Option<String>,
 
     // --- Console-specific (None for arcade) ---
     pub region: Option<String>,
@@ -311,7 +315,7 @@ pub(crate) async fn build_game_detail(
     let is_arcade = systems::is_arcade_system(&entry.system);
 
     // Arcade-only fields from static arcade_db lookup.
-    let (rotation, parent_rom, arcade_category, arcade_display) = if is_arcade {
+    let (rotation, parent_rom, arcade_category, arcade_display, arcade_board) = if is_arcade {
         let stem = replay_control_core::title_utils::filename_stem(&entry.rom_filename);
         match arcade_db::lookup_arcade_game(&entry.system, stem).await {
             Some(info) => {
@@ -330,17 +334,19 @@ pub(crate) async fn build_game_detail(
                 } else {
                     Some(info.category.to_string())
                 };
+                let board = info.board.map(|b| b.display_label());
                 (
                     Some(rotation.to_string()),
                     parent,
                     category,
                     Some(info.display_name),
+                    board,
                 )
             }
-            None => (None, None, None, None),
+            None => (None, None, None, None, None),
         }
     } else {
-        (None, None, None, None)
+        (None, None, None, None, None)
     };
 
     let mut info = GameInfo {
@@ -375,6 +381,7 @@ pub(crate) async fn build_game_detail(
         },
         parent_rom,
         arcade_category,
+        arcade_board,
         region: if entry.region.is_empty() {
             None
         } else {

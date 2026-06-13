@@ -363,6 +363,7 @@ mod tests {
             cooperative: false,
             normalized_title: String::new(),
             normalized_title_alt: String::new(),
+            board: None,
         }
     }
 

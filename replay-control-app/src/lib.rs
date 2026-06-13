@@ -33,6 +33,7 @@ use components::storage_status_banner::StorageStatusBanner;
 use hooks::Clock;
 use i18n::{Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
+use pages::board::BoardPage;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
@@ -177,6 +178,7 @@ pub fn App() -> impl IntoView {
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
                         <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HomePage /></ErrorBoundary> } />
                         <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
+                        <Route path=path!("/board/:tag") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><BoardPage /></ErrorBoundary> } />
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
                         <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />

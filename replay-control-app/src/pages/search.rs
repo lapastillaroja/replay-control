@@ -10,8 +10,8 @@ use crate::components::search_controls::{RandomGameButton, SearchControls};
 use crate::hooks::use_debounced;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
-    self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResults, RomListEntry,
-    SystemSearchGroup,
+    self, BoardMatch, BoardSearchResult, DeveloperMatch, DeveloperSearchResult,
+    GlobalSearchResults, RomListEntry, SystemSearchGroup,
 };
 
 #[cfg(feature = "hydrate")]
@@ -160,6 +160,14 @@ pub fn SearchPage() -> impl IntoView {
         |q| server_fns::search_by_developer(q, 20),
     );
 
+    // Arcade-board match resource — surfaces a 3-game preview block + an
+    // "Other arcade boards matching" list. Same shape as the developer
+    // block, separate resource so it fans out in parallel.
+    let board_results = Resource::new(
+        move || debounced_query.get(),
+        |q| server_fns::search_by_board(q, 20),
+    );
+
     // Derived: show the "empty state" panel (recent searches + random game).
     // Show whenever the search field is empty — don't gate on focus state because
     // autofocus fires before hydration so the on:focus handler never triggers,
@@ -264,6 +272,18 @@ pub fn SearchPage() -> impl IntoView {
                     let dev = developer_results.await?;
                     Ok::<_, server_fn::ServerFnError>(dev.map(|data| {
                         view! { <DeveloperBlock data locale query /> }
+                    }))
+                })}
+            </Suspense>
+
+            // Arcade-board match block — same shape as the developer block.
+            <Suspense fallback=|| ()>
+                {move || Suspend::new(async move {
+                    let locale = i18n.locale.get();
+                    let query = debounced_query.get();
+                    let board = board_results.await?;
+                    Ok::<_, server_fn::ServerFnError>(board.map(|data| {
+                        view! { <BoardBlock data locale query /> }
                     }))
                 })}
             </Suspense>
@@ -560,6 +580,78 @@ fn OtherDevelopersList(
                 view! {
                     <A href=href attr:class="developer-match-item">
                         <span class="developer-match-name">{dev.name}</span>
+                        <span class="developer-match-count">{count_label}</span>
+                    </A>
+                }
+            }).collect::<Vec<_>>()}
+        </section>
+    }
+}
+
+/// "Games on [Board]" compact preview block — mirrors `DeveloperBlock`.
+///
+/// Renders the top recognized arcade board with up to 3 game thumbnails and
+/// a "See all →" link to `/board/<tag>`. When the recognizer surfaced
+/// additional boards (e.g. "cps" → CPS-1/2/3), `OtherBoardsList` shows them
+/// below as a `developer-match-list`.
+#[component]
+fn BoardBlock(
+    data: BoardSearchResult,
+    locale: crate::i18n::Locale,
+    query: String,
+) -> impl IntoView {
+    let title = format!(
+        "{} {} ({})",
+        t(locale, Key::SearchGamesOn),
+        data.board_display_name,
+        data.total_count
+    );
+    let see_all_href = format!("/board/{}", urlencoding::encode(&data.board_tag));
+    let has_other_boards = !data.other_boards.is_empty();
+
+    view! {
+        <div class="search-group">
+            <div class="search-group-header">
+                <h3 class="search-group-title">{title}</h3>
+                <A href=see_all_href attr:class="search-see-all">
+                    {t(locale, Key::CommonSeeAll)} " \u{2192}"
+                </A>
+            </div>
+            <div class="search-group-results">
+                {data.games.into_iter().take(3).map(|result| {
+                    view! { <SearchResultItem result /> }
+                }).collect::<Vec<_>>()}
+            </div>
+        </div>
+        <Show when=move || has_other_boards>
+            <OtherBoardsList
+                boards=data.other_boards.clone()
+                query=query.clone()
+                locale
+            />
+        </Show>
+    }
+}
+
+/// Additional board matches surfaced as a `developer-match-list` (same
+/// styling as `OtherDevelopersList`).
+#[component]
+fn OtherBoardsList(
+    boards: Vec<BoardMatch>,
+    query: String,
+    locale: crate::i18n::Locale,
+) -> impl IntoView {
+    let heading = format!("{} \"{}\"", t(locale, Key::SearchOtherBoards), query);
+
+    view! {
+        <section class="developer-match-list">
+            <h3 class="developer-match-heading">{heading}</h3>
+            {boards.into_iter().map(|board| {
+                let href = format!("/board/{}", urlencoding::encode(&board.tag));
+                let count_label = board.game_count.to_string();
+                view! {
+                    <A href=href attr:class="developer-match-item">
+                        <span class="developer-match-name">{board.display_name}</span>
                         <span class="developer-match-count">{count_label}</span>
                     </A>
                 }

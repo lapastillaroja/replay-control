@@ -238,6 +238,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPlayers => "Players",
         Key::GameDetailRotation => "Orientation",
         Key::GameDetailParentRom => "Original Version",
+        Key::GameDetailBoard => "Board",
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
 
@@ -485,6 +486,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::SearchNoResults => "No results found",
         Key::SearchResultsSummary => "results across",
         Key::SearchSystems => "systems",
+        Key::SearchFilterPrefix => "Filter",
+        Key::SearchFilterRemove => "Remove filter",
+        Key::SearchGamesOn => "Games on",
+        Key::SearchOtherBoards => "Other arcade boards matching",
         Key::SearchBrowsingGenre => "Browsing all",
         Key::SearchGamesBy => "Games by",
         Key::SearchRandomGame => "Random Game",
@@ -504,6 +509,9 @@ pub fn translate(key: Key) -> &'static str {
         // Developer page
         Key::DeveloperNoGames => "No games found for this developer",
         Key::DeveloperAllSystems => "All",
+
+        // Board page
+        Key::BoardNoGames => "No games found on this arcade board",
 
         // Metadata busy/scanning banners
         Key::MetadataBusyBanner => {

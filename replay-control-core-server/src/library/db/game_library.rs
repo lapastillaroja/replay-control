@@ -22,7 +22,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
     identity_state, release_date, release_precision, release_region_used, cooperative, \
-    normalized_title, normalized_title_alt";
+    normalized_title, normalized_title_alt, board";
 
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
@@ -108,6 +108,9 @@ pub struct SearchFilter<'a> {
     pub min_rating: Option<f64>,
     pub min_year: Option<u16>,
     pub max_year: Option<u16>,
+    /// Restrict results to a single arcade board. Hits the partial index
+    /// `idx_gl_board` for an indexed lookup; ignored when `None`.
+    pub board: Option<replay_control_core::arcade_board::ArcadeBoard>,
 }
 
 impl LibraryDb {
@@ -463,10 +466,10 @@ impl LibraryDb {
                  box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                  scan_token, identity_state,
                  release_date, release_precision, release_region_used, cooperative,
-                 normalized_title, normalized_title_alt)
+                 normalized_title, normalized_title_alt, board)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27,
-                         ?28, ?29, ?30, ?31, ?32, ?33, ?34)
+                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     rom_path = excluded.rom_path,
                     display_name = excluded.display_name,
@@ -499,7 +502,8 @@ impl LibraryDb {
                     release_region_used = excluded.release_region_used,
                     cooperative = excluded.cooperative,
                     normalized_title = excluded.normalized_title,
-                    normalized_title_alt = excluded.normalized_title_alt",
+                    normalized_title_alt = excluded.normalized_title_alt,
+                    board = excluded.board",
             )
             .map_err(|e| Error::Other(format!("Prepare game_library upsert: {e}")))?;
 
@@ -546,6 +550,7 @@ impl LibraryDb {
                 rom.cooperative,
                 &rom.normalized_title,
                 &rom.normalized_title_alt,
+                rom.board.map(|b| b.as_tag()).unwrap_or_default(),
             ])
             .map_err(|e| Error::Other(format!("Upsert game_library failed: {e}")))?;
         }
@@ -2324,6 +2329,169 @@ impl LibraryDb {
         }
     }
 
+    /// Distinct base-title counts for a set of arcade boards, in one grouped
+    /// query. Used by `/search` to size the "Matched board" cards and decide
+    /// which to show (boards with no hits are simply absent from the map).
+    ///
+    /// `board_tags` are `ArcadeBoard::as_tag()` slugs. Hits the partial index
+    /// `idx_gl_board(system, board) WHERE board != ''` and skips hacks /
+    /// translations / specials / clones to match the developer-count
+    /// semantics on the same page.
+    pub fn board_game_counts(
+        conn: &Connection,
+        board_tags: &[&str],
+    ) -> Result<HashMap<String, usize>> {
+        if board_tags.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders = vec!["?"; board_tags.len()].join(", ");
+        let sql = format!(
+            "SELECT board, COUNT(DISTINCT base_title) FROM game_library \
+             WHERE board IN ({placeholders}) \
+               AND is_clone = 0 \
+               AND is_translation = 0 \
+               AND is_hack = 0 \
+               AND is_special = 0 \
+             GROUP BY board"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare board_game_counts: {e}")))?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(board_tags), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })
+            .map_err(|e| Error::Other(format!("Query board_game_counts: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get systems where the user has games on a given arcade board, with
+    /// game counts. Mirrors `developer_systems` shape so the board page can
+    /// render the same system-filter chips.
+    pub fn board_systems(conn: &Connection, board_tag: &str) -> Result<Vec<(String, usize)>> {
+        if board_tag.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, COUNT(DISTINCT base_title) as cnt
+                 FROM game_library
+                 WHERE board = ?1
+                   AND is_clone = 0
+                   AND is_translation = 0
+                   AND is_hack = 0
+                   AND is_special = 0
+                 GROUP BY system
+                 ORDER BY cnt DESC",
+            )
+            .map_err(|e| Error::Other(format!("Prepare board_systems: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![board_tag], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query board_systems: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get the top N games on a given arcade board, preferring entries with
+    /// cover art. Mirrors `games_by_developer` shape so the `/search` board
+    /// discovery block can render an identical 3-thumbnail preview.
+    pub fn games_by_board(
+        conn: &Connection,
+        board_tag: &str,
+        limit: usize,
+        region_pref: &str,
+        region_secondary: &str,
+    ) -> Result<Vec<GameEntry>> {
+        if board_tag.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "WITH deduped AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY base_title
+                    ORDER BY
+                        box_art_url IS NULL,
+                        CASE
+                            WHEN region = ?2 THEN 0
+                            WHEN region = ?3 THEN 1
+                            WHEN region = 'world' THEN 2
+                            ELSE 3
+                        END
+                ) AS rn
+                FROM game_library
+                WHERE board = ?1
+                  AND is_clone = 0
+                  AND is_translation = 0
+                  AND is_hack = 0
+                  AND is_special = 0
+                  AND base_title != ''
+            )
+            SELECT {GAME_ENTRY_COLUMNS}
+            FROM deduped WHERE rn = 1
+            ORDER BY box_art_url IS NULL, RANDOM()
+            LIMIT ?4"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare games_by_board: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![board_tag, region_pref, region_secondary, limit as i64],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query games_by_board: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get distinct genre groups for games on a given arcade board, optionally
+    /// filtered by system. Mirrors `developer_genre_groups`.
+    pub fn board_genre_groups(
+        conn: &Connection,
+        board_tag: &str,
+        system_filter: Option<&str>,
+    ) -> Result<Vec<String>> {
+        if board_tag.is_empty() {
+            return Ok(Vec::new());
+        }
+        let has_system = system_filter.is_some_and(|s| !s.is_empty());
+
+        if has_system {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT DISTINCT genre_group FROM game_library
+                     WHERE board = ?1 AND genre_group != '' AND system = ?2
+                     ORDER BY genre_group",
+                )
+                .map_err(|e| Error::Other(format!("Prepare board_genre_groups: {e}")))?;
+            let rows = stmt
+                .query_map(params![board_tag, system_filter.unwrap()], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| Error::Other(format!("Query board_genre_groups: {e}")))?;
+            Ok(rows.flatten().collect())
+        } else {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT DISTINCT genre_group FROM game_library
+                     WHERE board = ?1 AND genre_group != ''
+                     ORDER BY genre_group",
+                )
+                .map_err(|e| Error::Other(format!("Prepare board_genre_groups: {e}")))?;
+            let rows = stmt
+                .query_map(params![board_tag], |row| row.get::<_, String>(0))
+                .map_err(|e| Error::Other(format!("Query board_genre_groups: {e}")))?;
+            Ok(rows.flatten().collect())
+        }
+    }
+
     /// Get systems where a developer has games, with display names and game counts.
     pub fn developer_systems(conn: &Connection, developer: &str) -> Result<Vec<(String, usize)>> {
         let mut stmt = conn
@@ -2464,6 +2632,14 @@ impl LibraryDb {
             param_values.push(filter.genre.to_string());
             let idx = param_values.len();
             where_clauses.push(format!("genre_group = ?{idx} COLLATE NOCASE"));
+        }
+
+        // Board filter (parameterized). Matches the `idx_gl_board` partial
+        // index on (system, board) WHERE board != ''.
+        if let Some(board) = filter.board {
+            param_values.push(board.as_tag().to_string());
+            let idx = param_values.len();
+            where_clauses.push(format!("board = ?{idx}"));
         }
 
         // Rating filter (parameterized).

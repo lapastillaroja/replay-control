@@ -9,12 +9,10 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
+use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::library::resource_kind;
+use replay_control_core::title_utils;
 use rusqlite::{Connection, params};
-
-#[allow(dead_code)]
-#[path = "../../../replay-control-core/src/game/title_utils.rs"]
-mod title_utils;
 
 mod community;
 
@@ -73,8 +71,16 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             parent TEXT NOT NULL DEFAULT '',
             category TEXT NOT NULL DEFAULT '',
             normalized_genre TEXT NOT NULL DEFAULT '',
+            -- ArcadeBoard::as_tag() resolved at insert time from the upstream's
+            -- sourcefile; empty when the parser couldn't recognize it.
+            board TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (rom_name, source)
         );
+
+        -- Enables future board-keyed reverse lookups (filter dropdown
+        -- population, all-games-on-this-board recommendations). Partial
+        -- index keeps it small since most rows have an empty board tag.
+        CREATE INDEX idx_ag_board ON arcade_game(board) WHERE board != '';
 
         CREATE TABLE canonical_game (
             id INTEGER PRIMARY KEY,
@@ -182,6 +188,50 @@ struct ArcadeEntry {
     is_bios: bool,
     parent: String,
     category: String,
+    /// `ArcadeBoard::as_tag()` (e.g. `"cps2"`) or empty if the parser couldn't
+    /// recognize the upstream's driver sourcefile. The sourcefile itself never
+    /// reaches the schema — it's resolved here and discarded.
+    board: String,
+}
+
+/// `ArcadeBoard::as_tag()` from a parser-side raw sourcefile string, or empty.
+/// Normalizes parser-shape quirks (FBNeo `d_` prefix), then defers to
+/// `ArcadeBoard::from_sourcefile`, which owns every board↔sourcefile spelling
+/// (MAME current, FBNeo, and MAME 2003+ legacy `.c`) in one table.
+fn board_tag_from_sourcefile(raw: &str) -> String {
+    ArcadeBoard::from_sourcefile(&normalize_sourcefile(raw))
+        .map(|b| b.as_tag().to_string())
+        .unwrap_or_default()
+}
+
+/// Strip the one parser-shape quirk `ArcadeBoard::from_sourcefile` doesn't
+/// model: FBNeo emits `dir/d_board.cpp`, so drop the `d_` basename prefix.
+/// MAME current (`dir/board.cpp`) and MAME 2003+ legacy (`board.c`) are matched
+/// verbatim by `from_sourcefile` and pass through unchanged.
+fn normalize_sourcefile(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return String::new();
+    }
+    if let Some((dir, basename)) = raw.rsplit_once('/')
+        && let Some(rest) = basename.strip_prefix("d_")
+    {
+        return format!("{dir}/{rest}");
+    }
+    raw.to_string()
+}
+
+/// Derive an `ArcadeBoard` for a Flycast CSV entry, whose `display_name`
+/// carries the board hint in a `GDS-` (Naomi 2) / `GDL-` (Atomiswave) prefix.
+/// Default → Naomi 1.
+fn flycast_board(display_name: &str) -> ArcadeBoard {
+    if display_name.contains("GDS-") {
+        ArcadeBoard::SegaNaomi2
+    } else if display_name.contains("GDL-") {
+        ArcadeBoard::SammyAtomiswave
+    } else {
+        ArcadeBoard::SegaNaomi
+    }
 }
 
 // =============================================================================
@@ -208,9 +258,11 @@ fn parse_csv(path: &Path) -> Vec<ArcadeEntry> {
         }
         let players: u8 = record.get(4).unwrap_or("0").parse().unwrap_or(0);
         let is_clone = record.get(7).unwrap_or("false") == "true";
+        let display_name = record.get(1).unwrap_or("").to_string();
+        let board = flycast_board(&display_name).as_tag().to_string();
         entries.push(ArcadeEntry {
             rom_name,
-            display_name: record.get(1).unwrap_or("").to_string(),
+            display_name,
             year: record.get(2).unwrap_or("").to_string(),
             manufacturer: record.get(3).unwrap_or("").to_string(),
             players,
@@ -220,6 +272,7 @@ fn parse_csv(path: &Path) -> Vec<ArcadeEntry> {
             is_bios: false,
             parent: record.get(8).unwrap_or("").to_string(),
             category: record.get(9).unwrap_or("").to_string(),
+            board,
         });
     }
     entries
@@ -249,6 +302,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
     let mut current_manufacturer = String::new();
     let mut current_element = String::new();
     let mut current_is_bios = false;
+    let mut current_sourcefile = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -261,6 +315,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                     current_year.clear();
                     current_manufacturer.clear();
                     current_is_bios = false;
+                    current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
                             b"name" => {
@@ -271,6 +326,10 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                             }
                             b"isbios" => {
                                 current_is_bios = String::from_utf8_lossy(&attr.value) == "yes"
+                            }
+                            b"sourcefile" => {
+                                current_sourcefile =
+                                    String::from_utf8_lossy(&attr.value).into_owned()
                             }
                             _ => {}
                         }
@@ -305,6 +364,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                             is_bios: current_is_bios,
                             parent: current_cloneof.clone(),
                             category: String::new(),
+                            board: board_tag_from_sourcefile(&current_sourcefile),
                         });
                     }
                     in_game = false;
@@ -355,6 +415,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
     let mut current_status = "unknown".to_string();
     let mut current_element = String::new();
     let mut current_is_bios = false;
+    let mut current_sourcefile = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -370,6 +431,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                     current_players = 0;
                     current_status = "unknown".to_string();
                     current_is_bios = false;
+                    current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
                             b"name" => {
@@ -380,6 +442,10 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                             }
                             b"runnable" if String::from_utf8_lossy(&attr.value) == "no" => {
                                 current_is_bios = true;
+                            }
+                            b"sourcefile" => {
+                                current_sourcefile =
+                                    String::from_utf8_lossy(&attr.value).into_owned()
                             }
                             _ => {}
                         }
@@ -444,6 +510,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                             is_bios: current_is_bios,
                             parent: current_cloneof.clone(),
                             category: String::new(),
+                            board: board_tag_from_sourcefile(&current_sourcefile),
                         });
                     }
                     in_game = false;
@@ -493,6 +560,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
     let mut current_year = String::new();
     let mut current_manufacturer = String::new();
     let mut current_element = String::new();
+    let mut current_sourcefile = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -507,6 +575,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                     current_description.clear();
                     current_year.clear();
                     current_manufacturer.clear();
+                    current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
                             b"name" => {
@@ -524,6 +593,10 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                             }
                             b"status" => {
                                 current_status = String::from_utf8_lossy(&attr.value).into_owned()
+                            }
+                            b"sourcefile" => {
+                                current_sourcefile =
+                                    String::from_utf8_lossy(&attr.value).into_owned()
                             }
                             _ => {}
                         }
@@ -558,6 +631,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                             is_bios: false,
                             parent: current_cloneof.clone(),
                             category: String::new(),
+                            board: board_tag_from_sourcefile(&current_sourcefile),
                         });
                     }
                     in_machine = false;
@@ -805,8 +879,8 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let mut stmt = conn.prepare(
         "INSERT INTO arcade_game \
          (rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-          is_clone, is_bios, parent, category, normalized_genre) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+          is_clone, is_bios, parent, category, normalized_genre, board) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
     )?;
     let mut stmt_rd = conn
         .prepare("INSERT INTO arcade_release_date (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
@@ -850,6 +924,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
                 entry.parent,
                 entry.category,
                 norm_genre,
+                entry.board,
             ])?;
             total_inserted += 1;
 

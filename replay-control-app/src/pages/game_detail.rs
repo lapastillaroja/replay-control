@@ -204,6 +204,7 @@ fn GameDetailContent(
     let parent_rom = game.parent_rom.clone();
     let arcade_category = StoredValue::new(game.arcade_category.clone());
     let has_category = game.arcade_category.is_some();
+    let arcade_board = game.arcade_board.clone();
 
     // Console-specific fields
     let region = game.region.clone();
@@ -473,6 +474,12 @@ fn GameDetailContent(
                 </Show>
 
                 // Arcade-specific fields
+                {arcade_board.map(|b| view! {
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailBoard)}</span>
+                        <span class="game-meta-value">{b}</span>
+                    </div>
+                })}
                 {rotation.map(|r| view! {
                     <div class="game-meta-item">
                         <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRotation)}</span>

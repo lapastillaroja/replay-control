@@ -8,6 +8,7 @@ pub mod search_scoring;
 pub mod update;
 
 mod platform;
+pub use platform::arcade_board;
 pub use platform::systems;
 
 mod game;

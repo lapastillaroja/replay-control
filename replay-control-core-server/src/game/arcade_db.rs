@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::systems::{ArcadeSource, arcade_source_priority};
 
 /// Fixed-size table of one optional row per source, indexed by `ArcadeSource::idx()`.
@@ -41,6 +42,10 @@ pub struct ArcadeGameInfo {
     pub parent: String,
     pub category: String,
     pub normalized_genre: String,
+    /// Curated arcade board (CPS-2, Neo Geo MVS, Taito F3, …) resolved at
+    /// catalog-build time from the upstream MAME driver sourcefile. `None`
+    /// for unmapped or non-arcade rows.
+    pub board: Option<ArcadeBoard>,
 }
 
 /// Single-source row as stored in the `arcade_game` table.
@@ -59,6 +64,7 @@ struct SourceRow {
     parent: String,
     category: String,
     normalized_genre: String,
+    board: Option<ArcadeBoard>,
 }
 
 fn rotation_from_str(s: &str) -> Rotation {
@@ -87,6 +93,7 @@ fn row_to_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRow> {
             format!("unknown arcade source tag: {source_tag}").into(),
         )
     })?;
+    let board_tag: String = row.get(13)?;
     Ok(SourceRow {
         rom_name: row.get(0)?,
         source,
@@ -101,6 +108,7 @@ fn row_to_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRow> {
         parent: row.get(10)?,
         category: row.get(11)?,
         normalized_genre: row.get(12)?,
+        board: ArcadeBoard::from_tag(&board_tag),
     })
 }
 
@@ -122,10 +130,11 @@ pub(crate) const ARCADE_COL_NAMES: &[&str] = &[
     "parent",
     "category",
     "normalized_genre",
+    "board",
 ];
 
 const ARCADE_COLS: &str = "rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-     is_clone, is_bios, parent, category, normalized_genre";
+     is_clone, is_bios, parent, category, normalized_genre, board";
 
 /// Merge a `rom_name`'s per-source rows into a single `ArcadeGameInfo`,
 /// walking the system's priority list first and falling back to any
@@ -146,6 +155,7 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         parent: String::new(),
         category: String::new(),
         normalized_genre: String::new(),
+        board: None,
     };
     let mut got_bool_decision = false;
 
@@ -198,6 +208,37 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         }
     }
 
+    // Board gets its own fixed source order, independent of the per-system
+    // metadata priority above. A board is a physical property of the PCB —
+    // the same no matter which emulator's metadata names it — so it should
+    // not follow, say, `arcade_mame`'s "MAME first" preference. FBNeo is
+    // Replay's primary arcade core and carries the richest board coverage,
+    // so it outranks MAME 2003+ (legacy, enabled only on older Pis). MAME
+    // 0.285's compact XML has no `sourcefile`, so it never contributes a
+    // board. Naomi leads because GD-ROM board hints (Naomi / Naomi 2 /
+    // Atomiswave) live only in that source.
+    const BOARD_PRIORITY: &[ArcadeSource] = &[
+        ArcadeSource::Naomi,
+        ArcadeSource::Fbneo,
+        ArcadeSource::Mame2k3p,
+        ArcadeSource::Mame,
+    ];
+    // Explicit order first, then a sweep of any source not named above — the
+    // same belt-and-suspenders the metadata loop uses, so a newly added
+    // `ArcadeSource` still contributes a board rather than silently dropping.
+    for &src in BOARD_PRIORITY.iter().chain(
+        ArcadeSource::ALL
+            .iter()
+            .filter(|s| !BOARD_PRIORITY.contains(s)),
+    ) {
+        if info.board.is_some() {
+            break;
+        }
+        if let Some(row) = rows[src.idx()].as_ref() {
+            info.board = row.board;
+        }
+    }
+
     info
 }
 
@@ -219,25 +260,31 @@ fn group_by_rom(rows: Vec<SourceRow>) -> HashMap<String, SourceRows> {
 /// Returns `None` only if the ROM isn't present in any source.
 pub async fn lookup_arcade_game(system: &str, rom_name: &str) -> Option<ArcadeGameInfo> {
     let rom = rom_name.to_string();
-    let rows: Vec<SourceRow> = crate::catalog_pool::with_catalog(move |conn| {
+    let rom_for_merge = rom_name.to_string();
+    let system_for_merge = system.to_string();
+    crate::catalog_pool::with_catalog(move |conn| {
         let mut stmt = conn.prepare_cached(&format!(
             "SELECT {ARCADE_COLS} FROM arcade_game WHERE rom_name = ?1"
         ))?;
-        let rows = stmt.query_map([rom.as_str()], row_to_source_row)?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()
+        let rows = stmt
+            .query_map([rom.as_str()], row_to_source_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let mut slots: SourceRows = Default::default();
+        for row in rows {
+            let i = row.source.idx();
+            slots[i] = Some(row);
+        }
+        Ok(Some(merge_for_system(
+            &rom_for_merge,
+            &slots,
+            &system_for_merge,
+        )))
     })
     .await
-    .unwrap_or_default();
-
-    if rows.is_empty() {
-        return None;
-    }
-    let mut slots: SourceRows = Default::default();
-    for row in rows {
-        let i = row.source.idx();
-        slots[i] = Some(row);
-    }
-    Some(merge_for_system(rom_name, &slots, system))
+    .flatten()
 }
 
 /// Batch lookup by ROM names. Returns only entries found in the DB.
@@ -251,24 +298,25 @@ pub async fn lookup_arcade_games_batch(
         return HashMap::new();
     }
     let names_json = serde_json::to_string(rom_names).unwrap_or_else(|_| "[]".into());
-    let rows: Vec<SourceRow> = crate::catalog_pool::with_catalog(move |conn| {
+    let system = system.to_string();
+    crate::catalog_pool::with_catalog(move |conn| {
         let mut stmt = conn.prepare_cached(&format!(
             "SELECT {ARCADE_COLS} FROM arcade_game \
              WHERE rom_name IN (SELECT value FROM json_each(?1))"
         ))?;
-        let rows = stmt.query_map([names_json.as_str()], row_to_source_row)?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()
+        let rows = stmt
+            .query_map([names_json.as_str()], row_to_source_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(group_by_rom(rows)
+            .into_iter()
+            .map(|(rom, slots)| {
+                let merged = merge_for_system(&rom, &slots, &system);
+                (rom, merged)
+            })
+            .collect::<HashMap<String, ArcadeGameInfo>>())
     })
     .await
-    .unwrap_or_default();
-
-    group_by_rom(rows)
-        .into_iter()
-        .map(|(rom, slots)| {
-            let merged = merge_for_system(&rom, &slots, system);
-            (rom, merged)
-        })
-        .collect()
+    .unwrap_or_default()
 }
 
 /// Get the display name for an arcade ROM filename on a specific system.
@@ -374,6 +422,45 @@ mod tests {
                 .await
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn board_resolved_from_mame_sourcefile() {
+        // sf2's MAME 0.285 fixture row carries `sourcefile="capcom/cps2.cpp"`,
+        // which build-catalog resolves to `ArcadeBoard::Cps2` at insert time.
+        init_test_catalog().await;
+        let info = lookup_arcade_game("arcade_mame", "sf2")
+            .await
+            .expect("sf2 should exist");
+        let board = info.board.expect("CPS-2 board should resolve");
+        assert_eq!(board, ArcadeBoard::Cps2);
+        assert_eq!(board.display_name(), "CPS-2");
+        assert_eq!(board.manufacturer(), "Capcom");
+    }
+
+    #[tokio::test]
+    async fn board_resolved_from_fbneo_sourcefile_with_d_prefix_stripped() {
+        // 3countb's FBNeo fixture row carries `sourcefile="neogeo/d_neogeo.cpp"`.
+        // build-catalog normalizes the `d_` prefix away at insert time before
+        // resolving to `ArcadeBoard::NeoGeoMvs`.
+        init_test_catalog().await;
+        let info = lookup_arcade_game("arcade_fbneo", "3countb")
+            .await
+            .expect("3countb should exist (FBNeo)");
+        let board = info.board.expect("Neo Geo MVS board should resolve");
+        assert_eq!(board, ArcadeBoard::NeoGeoMvs);
+        assert_eq!(board.display_name(), "Neo Geo MVS");
+        assert_eq!(board.manufacturer(), "SNK");
+    }
+
+    #[tokio::test]
+    async fn unmapped_or_missing_sourcefile_leaves_board_none() {
+        // 1941 has no sourcefile in any fixture; board stays None.
+        init_test_catalog().await;
+        let info = lookup_arcade_game("arcade_mame", "1941")
+            .await
+            .expect("1941 should exist");
+        assert!(info.board.is_none());
     }
 
     #[tokio::test]

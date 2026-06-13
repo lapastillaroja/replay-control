@@ -277,6 +277,29 @@ pub fn RomList(system: String) -> impl IntoView {
                         };
 
                         let icon_src = format!("/static/icons/systems/{}.png", sys.get_value());
+                        let recognized = page.recognized.clone();
+                        let recognized_remaining = recognized.remaining_query.clone();
+                        let on_remove_recognized = move |_| {
+                            search_input.set(recognized_remaining.clone());
+                        };
+                        let recognized_pill = recognized.board.clone().map(|name| {
+                            let prefix = t(locale, Key::SearchFilterPrefix).to_string();
+                            let aria = t(locale, Key::SearchFilterRemove).to_string();
+                            view! {
+                                <div class="recent-searches-chips search-filter-pill">
+                                    <span class="recent-chip filter-chip-active">
+                                        <span class="recent-chip-text">{prefix} ": " {name}</span>
+                                        <button
+                                            class="recent-chip-remove"
+                                            aria-label=aria
+                                            on:click=on_remove_recognized
+                                        >
+                                            {"\u{2715}"}
+                                        </button>
+                                    </span>
+                                </div>
+                            }
+                        });
                         view! {
                             <div class="rom-header">
                                 <A href="/" attr:class="back-btn">
@@ -294,6 +317,7 @@ pub fn RomList(system: String) -> impl IntoView {
                                 </h2>
                             </div>
                             <p class="rom-count">{count_text}</p>
+                            {recognized_pill}
                             <div class="rom-list">
                                 // First page ROMs (from SSR).
                                 {page.roms.into_iter().map(|rom| {

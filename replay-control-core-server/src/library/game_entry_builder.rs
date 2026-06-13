@@ -23,7 +23,7 @@ struct CatalogLookup {
 
 /// Intermediate metadata extracted from game/arcade databases and filename tags.
 ///
-/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative)
+/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative, board)
 type RomMetadata = (
     Option<String>,
     String,
@@ -33,6 +33,7 @@ type RomMetadata = (
     String,
     Option<u16>,
     bool,
+    Option<replay_control_core::arcade_board::ArcadeBoard>,
 );
 
 /// Build `GameEntry` records from scanned ROM entries.
@@ -96,6 +97,7 @@ fn build_single_entry(
         dev,
         release_year,
         cooperative,
+        board,
     ) = if is_arcade {
         build_arcade_metadata(stem, batch)
     } else {
@@ -193,6 +195,7 @@ fn build_single_entry(
         cooperative,
         normalized_title: String::new(),
         normalized_title_alt: String::new(),
+        board,
     })
 }
 
@@ -333,6 +336,7 @@ fn build_arcade_metadata(stem: &str, batch: &CatalogLookup) -> Option<RomMetadat
                 dev,
                 year,
                 false,
+                info.board,
             ))
         }
         None => Some((
@@ -344,6 +348,7 @@ fn build_arcade_metadata(stem: &str, batch: &CatalogLookup) -> Option<RomMetadat
             String::new(),
             None,
             false,
+            None,
         )),
     }
 }
@@ -393,6 +398,7 @@ fn build_console_metadata(
                 developer::normalize_developer(&g.developer),
                 year,
                 cooperative,
+                None,
             ))
         }
         None => Some((
@@ -404,6 +410,7 @@ fn build_console_metadata(
             String::new(),
             None,
             false,
+            None,
         )),
     }
 }
@@ -659,7 +666,7 @@ mod tests {
         let rom = rom_entry("commodore_ami", "AmigaVision.hdf", Some("AmigaVision"));
         let hash_results = HashMap::new();
 
-        let (_, _, _, _, _, developer, _, _) = build_console_metadata(
+        let (_, _, _, _, _, developer, _, _, _) = build_console_metadata(
             &rom,
             "AmigaVision.hdf",
             "AmigaVision",

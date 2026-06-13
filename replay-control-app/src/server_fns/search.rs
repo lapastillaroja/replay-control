@@ -27,6 +27,54 @@ pub struct SystemSearchGroup {
     pub top_results: Vec<RomListEntry>,
 }
 
+/// A structured filter the search recognizer extracted from the user's free-text
+/// query (e.g. typing "CPS-2" auto-routes to a board filter). Surfaces to the UI
+/// for the per-system pill on `RomPage`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RecognizedFilter {
+    /// `ArcadeBoard::display_label()` of the matched board, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    /// The query text after the recognizer consumed its tokens. Powers the
+    /// pill's "remove filter" button: clicking ✕ navigates the page to the
+    /// same route with `q = remaining_query`, dropping the structured term.
+    #[serde(default)]
+    pub remaining_query: String,
+}
+
+impl RecognizedFilter {
+    pub fn is_empty(&self) -> bool {
+        self.board.is_none()
+    }
+}
+
+/// A board match surfaced on `/search` — name + library game count. Drives
+/// both the top "Games on …" preview block and the "Other arcade boards
+/// matching" list below it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardMatch {
+    /// `ArcadeBoard::as_tag()` — stable URL/storage slug.
+    pub tag: String,
+    /// `ArcadeBoard::display_label()` — what the user reads on the card.
+    pub display_name: String,
+    /// Distinct base-title count on this board in the user's library
+    /// (clones / translations / hacks / specials excluded, matching the
+    /// developer-count semantics on the same page).
+    pub game_count: usize,
+}
+
+/// Top board search result on `/search`. Mirrors `DeveloperSearchResult`:
+/// the top match renders a `BoardBlock` preview (3 thumbnails + see-all
+/// link), and additional matches show up in `other_boards`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardSearchResult {
+    pub board_tag: String,
+    pub board_display_name: String,
+    pub total_count: usize,
+    pub games: Vec<RomListEntry>,
+    pub other_boards: Vec<BoardMatch>,
+}
+
 /// Aggregated global search results across all systems.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSearchResults {
@@ -107,12 +155,14 @@ pub async fn global_search(
     #[server(default)] max_year: Option<u16>,
 ) -> Result<GlobalSearchResults, ServerFnError> {
     use replay_control_core::systems::{self as sys_db};
-    use replay_control_core_server::library_db::GameEntry;
+    use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
     let state = expect_context::<crate::api::AppState>();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
+
     let q = query.trim().to_lowercase();
+
     let per_system_limit = if per_system_limit == 0 {
         3
     } else {
@@ -151,6 +201,7 @@ pub async fn global_search(
                 min_rating: min_rating_f64,
                 min_year,
                 max_year,
+                board: None,
             };
             LibraryDb::search_game_library_ranked(
                 conn,
@@ -431,6 +482,7 @@ pub async fn get_developer_games(
                 min_rating: min_rating_f64,
                 min_year,
                 max_year,
+                board: None,
             };
             let (entries, total) = LibraryDb::search_game_library(
                 conn,
@@ -480,6 +532,278 @@ pub async fn get_developer_games(
         total,
         has_more,
         developer,
+        systems,
+    })
+}
+
+/// Find arcade boards matching the query and surface the top one with a
+/// 3-game preview + an "Other arcade boards matching" list. Mirrors
+/// `search_by_developer`.
+///
+/// The recognizer is broader than for implicit filtering: any board whose
+/// display-name / tag / synonym contains the query string scores in. Only
+/// boards with at least one game in the user's library are returned, so the
+/// click-through `/board/<tag>` page always has something to show.
+#[server(prefix = "/sfn")]
+pub async fn search_by_board(
+    query: String,
+    limit: usize,
+) -> Result<Option<BoardSearchResult>, ServerFnError> {
+    use replay_control_core_server::library::search_recognizer::find_board_matches;
+
+    let q = query.trim();
+    if q.len() < 2 {
+        return Ok(None);
+    }
+
+    let state = expect_context::<crate::api::AppState>();
+    let (region_str, region_secondary_str) = super::region_strings(&state);
+    let limit = limit.clamp(1, 30);
+
+    // Rank-only step. No DB hit yet.
+    let ranked_boards = find_board_matches(q);
+    if ranked_boards.is_empty() {
+        return Ok(None);
+    }
+
+    // Single DB acquire: count every candidate board in one grouped query,
+    // keep those with hits (preserving the recognizer's ranking order), then
+    // fetch the top-N games for the winner.
+    let db_result = state
+        .library_reader
+        .read(move |conn| {
+            let tags: Vec<&str> = ranked_boards.iter().map(|b| b.as_tag()).collect();
+            let counts = LibraryDb::board_game_counts(conn, &tags).unwrap_or_default();
+            let mut with_counts: Vec<(replay_control_core::arcade_board::ArcadeBoard, usize)> =
+                ranked_boards
+                    .into_iter()
+                    .filter_map(|board| {
+                        counts
+                            .get(board.as_tag())
+                            .copied()
+                            .filter(|&c| c > 0)
+                            .map(|c| (board, c))
+                    })
+                    .collect();
+            if with_counts.is_empty() {
+                return None;
+            }
+            let (top_board, top_count) = with_counts.remove(0);
+            let games = LibraryDb::games_by_board(
+                conn,
+                top_board.as_tag(),
+                limit,
+                &region_str,
+                &region_secondary_str,
+            )
+            .unwrap_or_default();
+            let other_boards: Vec<BoardMatch> = with_counts
+                .into_iter()
+                .map(|(b, c)| BoardMatch {
+                    tag: b.as_tag().to_string(),
+                    display_name: b.display_label(),
+                    game_count: c,
+                })
+                .collect();
+            Some((
+                top_board.as_tag().to_string(),
+                top_board.display_label(),
+                top_count,
+                games,
+                other_boards,
+            ))
+        })
+        .await;
+
+    let Some(Some((board_tag, board_display_name, total_count, game_entries, other_boards))) =
+        db_result
+    else {
+        return Ok(None);
+    };
+
+    if game_entries.is_empty() {
+        return Ok(None);
+    }
+
+    let games = super::enrich_game_entries(&state, game_entries).await;
+
+    Ok(Some(BoardSearchResult {
+        board_tag,
+        board_display_name,
+        total_count,
+        games,
+        other_boards,
+    }))
+}
+
+/// A system that has games on a given arcade board, with game count and
+/// display name. Mirrors `DeveloperSystem`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardSystem {
+    pub system: String,
+    pub system_display: String,
+    pub game_count: usize,
+}
+
+/// Response for the board game list page. Mirrors `DeveloperPageData`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardPageData {
+    pub roms: Vec<RomListEntry>,
+    pub total: usize,
+    pub has_more: bool,
+    /// `ArcadeBoard::as_tag()` slug — stable URL value.
+    pub board_tag: String,
+    /// `ArcadeBoard::display_label()` — what the title bar shows.
+    pub board_display_name: String,
+    pub systems: Vec<BoardSystem>,
+}
+
+/// Get genres available for a board's games, optionally filtered by system.
+#[server(prefix = "/sfn")]
+pub async fn get_board_genres(
+    board_tag: String,
+    #[server(default)] system: String,
+) -> Result<Vec<String>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+
+    let system_filter: Option<String> = if system.is_empty() {
+        None
+    } else {
+        Some(system)
+    };
+
+    let genres = state
+        .library_reader
+        .read(move |conn| {
+            LibraryDb::board_genre_groups(conn, &board_tag, system_filter.as_deref())
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+
+    Ok(genres)
+}
+
+/// Get paginated game list for a board, with optional system and content filters.
+// clippy::too_many_arguments — Leptos server functions require flat parameter lists
+// for serialization; wrapping in a struct is not supported by the #[server] macro.
+#[allow(clippy::too_many_arguments)]
+#[server(prefix = "/sfn")]
+pub async fn get_board_games(
+    board_tag: String,
+    #[server(default)] system: String,
+    offset: usize,
+    limit: usize,
+    #[server(default)] hide_hacks: bool,
+    #[server(default)] hide_translations: bool,
+    #[server(default)] hide_betas: bool,
+    #[server(default)] hide_clones: bool,
+    #[server(default)] multiplayer_only: bool,
+    #[server(default)] genre: String,
+    #[server(default)] min_rating: Option<f32>,
+    #[server(default)] min_year: Option<u16>,
+    #[server(default)] max_year: Option<u16>,
+) -> Result<BoardPageData, ServerFnError> {
+    use replay_control_core::arcade_board::ArcadeBoard;
+    use replay_control_core::systems as sys_db;
+    use replay_control_core_server::library_db::SearchFilter;
+
+    let state = expect_context::<crate::api::AppState>();
+    let limit = limit.clamp(1, 200);
+
+    // Resolve tag → enum once, up front. Unknown tag → empty page (the UI
+    // shows the "no games" empty state with the raw tag as the title).
+    let board_enum = ArcadeBoard::from_tag(&board_tag);
+    let board_display_name = board_enum
+        .map(|b| b.display_label())
+        .unwrap_or_else(|| board_tag.clone());
+
+    if board_enum.is_none() {
+        return Ok(BoardPageData {
+            roms: Vec::new(),
+            total: 0,
+            has_more: false,
+            board_tag,
+            board_display_name,
+            systems: Vec::new(),
+        });
+    }
+
+    let system_filter: Option<String> = if system.is_empty() {
+        None
+    } else {
+        Some(system)
+    };
+
+    let min_rating_f64 = min_rating.map(|r| r as f64);
+
+    let tag_for_db = board_tag.clone();
+    let fetch_limit = limit + 1;
+    let db_result = state
+        .library_reader
+        .read(move |conn| {
+            let systems_raw = LibraryDb::board_systems(conn, &tag_for_db).unwrap_or_default();
+            let filters = SearchFilter {
+                hide_hacks,
+                hide_translations,
+                hide_betas,
+                hide_clones,
+                multiplayer_only,
+                coop_only: false,
+                genre: &genre,
+                min_rating: min_rating_f64,
+                min_year,
+                max_year,
+                board: board_enum,
+            };
+            let (entries, total) = LibraryDb::search_game_library(
+                conn,
+                system_filter.as_deref(),
+                None,
+                &[],
+                &filters,
+                offset,
+                fetch_limit,
+            )
+            .unwrap_or_default();
+            (systems_raw, entries, total)
+        })
+        .await;
+
+    let Some((systems_raw, mut entries, total)) = db_result else {
+        return Ok(BoardPageData {
+            roms: Vec::new(),
+            total: 0,
+            has_more: false,
+            board_tag,
+            board_display_name,
+            systems: Vec::new(),
+        });
+    };
+
+    let has_more = entries.len() > limit;
+    entries.truncate(limit);
+
+    let systems: Vec<BoardSystem> = systems_raw
+        .into_iter()
+        .map(|(sys, count)| {
+            let display = sys_db::system_display_name(&sys);
+            BoardSystem {
+                system: sys,
+                system_display: display,
+                game_count: count,
+            }
+        })
+        .collect();
+
+    let list_entries = super::enrich_game_entries(&state, entries).await;
+
+    Ok(BoardPageData {
+        roms: list_entries,
+        total,
+        has_more,
+        board_tag,
+        board_display_name,
         systems,
     })
 }

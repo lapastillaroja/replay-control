@@ -222,6 +222,7 @@ pub enum Key {
     GameDetailPlayers,
     GameDetailRotation,
     GameDetailParentRom,
+    GameDetailBoard,
     GameDetailGenre,
     GameDetailDeveloper,
     GameDetailEmulation,
@@ -450,11 +451,15 @@ pub enum Key {
     SearchNoResults,
     SearchResultsSummary,
     SearchSystems,
+    SearchFilterPrefix,
+    SearchFilterRemove,
     SearchBrowsingGenre,
     SearchGamesBy,
+    SearchGamesOn,
     SearchRandomGame,
     SearchRecentSearches,
     SearchOtherDevelopers,
+    SearchOtherBoards,
 
     // Filters
     FilterHideHacks,
@@ -469,6 +474,9 @@ pub enum Key {
     // Developer page
     DeveloperNoGames,
     DeveloperAllSystems,
+
+    // Board page
+    BoardNoGames,
 
     // Metadata busy/scanning banners
     MetadataBusyBanner,
