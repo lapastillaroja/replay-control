@@ -8,9 +8,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Highlights
 
-- **Games now show which arcade board they ran on.** Arcade titles display their original hardware — like "CPS-2 (Capcom)", "Neo Geo MVS (SNK)", or "F3 System (Taito)" — on the game detail page.
+- **Games now show which arcade board they ran on.** Arcade titles display their original hardware — like "CPS-2 (Capcom)", "Neo Geo MVS (SNK)", or "F3 System (Taito)" — on the game detail page. The board links to its page, and a "More on this board" row suggests other games on the same hardware.
 - **Browse every game on an arcade board.** A new board page lists all the games in your library that share a board, with the same system and content filters as the developer pages.
 - **Search understands arcade boards.** Typing a board name or shorthand — for example "cps", "neo geo", "naomi", or "f3" — surfaces a "Games on …" preview plus a list of other matching boards, each linking straight to its board page.
+- **Arcade boards turn up in your recommendations.** The home page mixes board shortcuts into the Discover pills (e.g. "More CPS-2 (Capcom)") and occasionally spotlights a board you own a lot of ("Games on Neo Geo MVS").
 
 ---
 
