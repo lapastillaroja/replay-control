@@ -3,78 +3,82 @@
    ================================================================ */
 
 .boxart-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    --bp-abbrev-display: inline-block;
+    --bp-abbrev-font-size: var(--font-size-tiny-default);
+    --bp-name-display: -webkit-box;
+    --bp-name-font-size: var(--font-size-tiny-default);
+    --bp-name-font-weight: 400;
+    --bp-name-color: var(--text-on-overlay-subtle);
+    --bp-name-padding-inline: var(--content-padding-inline-slim);
+    --bp-name-line-height: 1.2;
+    --bp-name-clamp: 2;
     border-radius: var(--radius-sm, 4px);
     overflow: hidden;
-    text-align: center;
-    gap: 2px;
     width: 100%;
     height: 100%;
 }
 
 .bp-abbrev {
+    display: var(--bp-abbrev-display);
     font-weight: 700;
-    font-size: 0.7rem;
+    font-size: var(--bp-abbrev-font-size);
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--text-on-overlay-muted);
 }
 
 .bp-name {
-    font-size: 0.5rem;
-    color: rgba(255, 255, 255, 0.6);
+    display: var(--bp-name-display);
+    font-size: var(--bp-name-font-size);
+    font-weight: var(--bp-name-font-weight);
+    color: var(--bp-name-color);
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: var(--bp-name-clamp);
     -webkit-box-orient: vertical;
     text-transform: capitalize;
-    padding: 0 4px;
-    line-height: 1.2;
+    padding: 0 var(--bp-name-padding-inline);
+    line-height: var(--bp-name-line-height);
 }
 
 /* Size variants */
-.bp-hero .bp-abbrev { font-size: 0.9rem; }
-.bp-hero .bp-name { font-size: 0.6rem; }
-.bp-list .bp-abbrev { font-size: 0.55rem; }
-.bp-list .bp-name { display: none; }
+.bp-hero {
+    --bp-abbrev-font-size: var(--secondary-meta-size-emphasis);
+    --bp-name-font-size: var(--bp-name-font-size-hero);
+}
+
+.bp-list {
+    --bp-abbrev-font-size: var(--bp-abbrev-font-size-list);
+    --bp-name-display: none;
+}
 
 /* Detail size — game detail cover placeholder.
    Radial gradient background with large game name as the hero element. */
 .bp-detail {
+    --bp-abbrev-display: none;
+    --bp-name-display: -webkit-box;
+    --bp-name-font-size: var(--bp-name-font-size-detail);
+    --bp-name-font-weight: 600;
+    --bp-name-color: var(--text-on-overlay-strong);
+    --bp-name-padding-inline: var(--content-padding-inline);
+    --bp-name-line-height: 1.3;
+    --bp-name-clamp: 4;
     width: auto;
-    height: 18.75rem;
+    height: var(--cover-media-height-default);
     aspect-ratio: 0.7;
-    padding: 24px 16px;
+    padding: var(--surface-inset-hero);
+    --stack-gap: var(--control-gap-compact);
+    --stack-justify: flex-end;
     background: radial-gradient(
         ellipse at center,
         var(--bp-color, #2a4858) 0%,
         color-mix(in srgb, var(--bp-color, #2a4858), black 40%) 100%
     ) !important;
-    justify-content: flex-end;
-    gap: 6px;
-}
-
-.bp-detail .bp-abbrev {
-    display: none;
-}
-
-.bp-detail .bp-name {
-    font-size: 1.1rem;
-    font-weight: 600;
-    -webkit-line-clamp: 4;
-    padding: 0 12px;
-    color: rgba(255, 255, 255, 0.9);
-    line-height: 1.3;
 }
 
 .bp-system-display {
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-on-overlay-faint);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    padding-bottom: 4px;
+    padding-bottom: var(--control-gap-tight);
 }

@@ -3,33 +3,20 @@
    ================================================================ */
 
 .metadata-page .section {
-    margin-bottom: 32px;
+    margin-bottom: var(--empty-block-padding-tight);
 }
 
 /* ── Data Source Cards ─────────────────────────────────────────── */
 
 .data-source-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 14px;
-    margin-bottom: 12px;
+    margin-bottom: var(--panel-gap);
 }
 
 .data-source-header {
-    margin-bottom: 6px;
-}
-
-.data-source-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text);
+    --header-margin-bottom: var(--space-2);
 }
 
 .data-source-summary {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    line-height: 1.6;
     margin: 0;
 }
 
@@ -38,31 +25,20 @@
 }
 
 .data-source-details {
-    margin-bottom: 2px;
+    margin-bottom: var(--control-gap-tight);
 }
 
 .data-source-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 10px;
+    margin-top: var(--section-gap-sm);
 }
 
 /* ── Update Button ─────────────────────────────────────────────── */
 
 .metadata-download-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 18px;
+    --button-padding: var(--action-padding-wide);
     background: var(--accent);
     color: var(--bg);
     border: none;
-    border-radius: var(--radius-sm);
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s;
 }
 
 .metadata-download-btn:hover {
@@ -78,70 +54,34 @@
 /* ── System Overview Accordion ─────────────────────────────────── */
 
 .system-overview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 10px;
-}
-
-.system-overview-toggle-all {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    cursor: pointer;
-    padding: 4px 0;
-    transition: color 0.2s;
-}
-
-.system-overview-toggle-all:hover {
-    color: var(--text);
+    --row-align: baseline;
+    --row-justify: space-between;
+    --header-margin-bottom: var(--space-4);
 }
 
 .system-accordion-list {
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    /* Bordered container only; rows own their inset (full-bleed dividers). */
+    --panel-padding: 0;
+    --stack-gap: var(--stack-gap-none);
     overflow: hidden;
 }
 
 .system-accordion-row {
-    padding: 12px 14px;
+    --row-divider: var(--control-border-subtle);
     cursor: pointer;
-    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
-    transition: background 0.15s;
-}
-
-.system-accordion-row:last-child {
-    border-bottom: none;
 }
 
 .system-accordion-row:hover {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-.system-accordion-row .system-row-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
+    background: var(--translucent-surface-faint);
 }
 
 .system-row-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text);
     word-break: break-word;
 }
 
 .system-row-chevron {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
     flex-shrink: 0;
-    transition: transform 0.2s;
+    transition: transform var(--motion-base);
 }
 
 .system-accordion-row.expanded .system-row-chevron {
@@ -149,45 +89,25 @@
 }
 
 .system-row-summary {
-    font-size: 0.82rem;
-    color: var(--text-secondary);
-    margin-top: 4px;
-    font-variant-numeric: tabular-nums;
+    margin-top: var(--control-gap-tight);
 }
 
 .system-row-overall-bar {
-    display: block;
-    width: 100%;
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 6px;
-}
-
-.system-row-overall-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 2px;
-    transition: width 0.3s ease;
+    --meter-height: var(--meter-height-compact);
+    margin-top: var(--control-gap-compact);
 }
 
 .system-row-details {
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    margin-top: var(--panel-gap);
+    padding-top: var(--section-gap-sm);
+    border-top: var(--control-border-subtle);
 }
 
 .coverage-row {
     display: grid;
-    grid-template-columns: 110px 1fr 48px;
+    grid-template-columns: 110px 1fr var(--square-size-large-default);
     align-items: center;
-    gap: 10px;
-    font-size: 0.82rem;
-    color: var(--text-secondary);
+    gap: var(--cluster-gap-md);
 }
 
 .coverage-row-label {
@@ -196,41 +116,19 @@
 
 .coverage-row-pct {
     text-align: right;
-    font-variant-numeric: tabular-nums;
     color: var(--text);
 }
 
 .composition-row,
 .driver-row,
 .footer-row {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    padding-top: 8px;
-    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
-    font-variant-numeric: tabular-nums;
-}
-
-/* ── Data Management Actions ───────────────────────────────────── */
-
-.manage-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.manage-action-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 14px;
+    padding-top: var(--control-stack-gap-sm);
+    border-top: var(--control-border-subtle);
 }
 
 .manage-action-hint {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin-top: 10px;
+    margin-top: var(--section-gap-sm);
     margin-bottom: 0;
-    line-height: 1.5;
 }
 
 /* When the hint sits at the top of the card (inside the confirm dialog flow),
@@ -244,86 +142,42 @@
    doesn't get a tall empty space below the hint; the gap belongs on the
    buttons instead. */
 .manage-action-card .game-delete-confirm {
-    margin-top: 12px;
+    margin-top: var(--panel-gap);
 }
 
 /* Compact 2-column grid for the Advanced section so 5 destructive cards
    don't make the section feel like a wall. Falls back to single-column on
-   narrow screens where the responsive flex-row stays vertical anyway. */
+   narrow screens. */
 .manage-actions-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin-top: 12px;
+    --grid-columns: 1fr;
+    margin-top: var(--panel-gap);
 }
 @media (min-width: 600px) {
     .manage-actions-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    /* Override the responsive flex-row rule for the grid container. */
-    .manage-actions-grid {
-        flex-direction: unset;
-    }
-    .manage-actions-grid > .manage-action-card {
-        flex: unset;
+        --grid-columns: repeat(2, 1fr);
     }
 }
 
 .manage-action-progress {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin-top: 8px;
+    margin-top: var(--control-stack-gap-sm);
     font-style: italic;
-}
-
-.manage-action-result {
-    font-size: 0.85rem;
-    color: var(--success);
-    margin-top: 8px;
 }
 
 /* ── Advanced Toggle ──────────────────────────────────────────── */
 
 .advanced-toggle {
-    margin-top: 16px;
-}
-
-.advanced-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    cursor: pointer;
-    padding: 4px 0;
-    transition: color 0.2s;
-}
-
-.advanced-toggle-btn:hover {
-    color: var(--text);
-}
-
-.advanced-toggle-icon {
-    font-size: 0.7rem;
+    margin-top: var(--stack-gap-lg);
 }
 
 /* ── Progress Display ──────────────────────────────────────────── */
 
 .import-progress {
-    margin-top: 8px;
+    margin-top: var(--control-stack-gap-sm);
 }
 
 .import-progress-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 0.85rem;
+    --surface-radius: var(--radius);
+    --row-justify: space-between;
 }
 
 .import-progress-text {
@@ -332,80 +186,47 @@
 
 .import-progress-time {
     color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
 }
 
 /* ── Skeleton placeholders ────────────────────────────────────────── */
 
-.meta-skeleton-table {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
 .meta-skeleton-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    height: 1.6rem;
-    border-radius: 4px;
+    height: var(--skeleton-row-height);
 }
 
 .meta-skeleton-cell-wide {
     flex: 3;
-    height: 0.75rem;
-    border-radius: 3px;
-    background: var(--border);
+    height: var(--skeleton-cell-height);
 }
 
 .meta-skeleton-cell {
     flex: 1;
-    height: 0.75rem;
-    border-radius: 3px;
-    background: var(--border);
+    height: var(--skeleton-cell-height);
 }
 
 /* ── Coverage bar (reused in accordion expanded rows) ──────────── */
 
 .coverage-bar {
-    display: block;
-    width: 100%;
-    height: 6px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.coverage-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 2px;
-    transition: width 0.3s ease;
+    --meter-height: var(--meter-height-default);
 }
 
 /* ── Summary cards skeleton ──────────────────────────────────────── */
 
 .meta-skeleton-cards {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    --grid-gap: var(--cluster-gap-md);
 }
 
 .meta-skeleton-card {
-    height: 64px;
-    border-radius: var(--radius-sm);
-    background: var(--surface);
+    --panel-min-height: var(--panel-min-height-default);
 }
 
 .meta-skeleton-bar-wide {
-    width: 80%;
-    height: 0.8rem;
-    border-radius: 4px;
-    margin-bottom: 8px;
+    width: var(--skeleton-line-width-wide-default);
+    height: var(--skeleton-bar-height);
+    margin-bottom: var(--control-stack-gap-sm);
 }
 
 .meta-skeleton-bar {
-    width: 55%;
-    height: 0.75rem;
-    border-radius: 4px;
+    width: var(--skeleton-line-width-compact-default);
+    height: var(--skeleton-cell-height);
 }

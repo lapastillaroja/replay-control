@@ -164,13 +164,13 @@ pub fn App() -> impl IntoView {
                     </h1>
                 </header>
 
-                <CorruptionBanner />
-                <StorageStatusBanner />
-                <RomWatcherBanner />
-                <AssetHealthBanner />
-                <ReplayApiStatusBanner />
                 <div class="sticky-status-stack">
                     <NowPlayingBar />
+                    <CorruptionBanner />
+                    <StorageStatusBanner />
+                    <RomWatcherBanner />
+                    <AssetHealthBanner />
+                    <ReplayApiStatusBanner />
                     <MetadataBusyBanner />
                 </div>
 

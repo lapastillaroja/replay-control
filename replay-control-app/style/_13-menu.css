@@ -13,38 +13,26 @@
 }
 
 @media (min-width: 900px) {
-    .settings-page {
-        max-width: 1060px;
-    }
-
     .settings-layout {
         display: grid;
-        grid-template-columns: 200px 1fr;
-        gap: 32px;
+        width: 100%;
+        grid-template-columns: var(--wide-column-width-default) minmax(0, 1fr);
+        gap: var(--section-gap-compact);
         align-items: start;
     }
 
     .settings-sidebar {
         display: flex;
-        flex-direction: column;
-        gap: 2px;
         position: sticky;
-        top: 16px;
+        top: var(--stack-gap-lg);
     }
 
     .settings-sidebar-item {
-        padding: 8px 12px;
+        width: 100%;
         border-radius: var(--radius-sm);
-        font-size: 0.85rem;
         color: var(--text-secondary);
         text-decoration: none;
-        border-left: 3px solid transparent;
-        transition: color 0.15s, border-left-color 0.15s, background 0.15s;
-    }
-
-    .settings-sidebar-item:hover {
-        color: var(--text);
-        background: var(--surface-hover);
+        border-left: var(--indicator-size-default) solid transparent;
     }
 
     .settings-sidebar-item.active {
@@ -54,10 +42,15 @@
     }
 }
 
+.settings-content {
+    min-width: 0;
+    width: 100%;
+}
+
 /* ── Settings sections ───────────────────────────────────────── */
 
 .settings-section {
-    margin-bottom: 28px;
+    margin-bottom: var(--section-gap);
 }
 
 .settings-section:last-child {
@@ -65,22 +58,16 @@
 }
 
 .settings-section-header {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-secondary);
-    padding-bottom: 8px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--header-margin-bottom-tight);
+    border-bottom: var(--divider-border);
 }
 
 .settings-section-body {
-    padding-top: 4px;
+    padding-top: var(--control-gap-tight);
 }
 
 .settings-section-body > .menu-list {
-    margin-bottom: 16px;
+    margin-bottom: var(--stack-gap-lg);
 }
 
 .settings-section-body > .menu-list:last-child {
@@ -89,62 +76,33 @@
 
 /* Keep bottom border on last menu item when other content follows in the section */
 .settings-section-body > .menu-list:not(:last-child) .menu-item:last-child {
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--divider-border);
 }
 
 /* Inline settings (region, text size, locale, analytics) */
-.settings-inline-setting {
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border);
+.settings-page .text-size-btn {
+    width: var(--control-height);
+    height: var(--control-height);
 }
 
-.settings-inline-setting:last-child {
-    border-bottom: none;
-}
-
-.settings-setting-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 4px;
+.settings-page .form-input {
+    --input-padding: var(--input-padding-select-default);
+    --select-padding-right: var(--select-padding-right-default);
 }
 
 /* Menu list */
 .menu-list {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 24px;
-}
-
-.menu-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 12px;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.menu-item:last-child {
-    border-bottom: none;
-}
-
-.menu-item:hover {
-    background: var(--surface-hover);
+    /* Stitched list: items connect via their dividers, no inter-item gap. */
+    --stack-gap: var(--stack-gap-none);
+    margin-bottom: var(--section-gap-compact);
 }
 
 .menu-icon {
-    font-size: 1.25rem;
-}
-
-.menu-label {
-    font-size: 0.9rem;
-    font-weight: 500;
-    flex: 1;
+    font-size: var(--chrome-font-size-default);
 }
 
 .menu-chevron {
-    font-size: 1.25rem;
+    font-size: var(--chrome-font-size-default);
     color: var(--text-secondary);
     margin-left: auto;
 }
@@ -160,98 +118,19 @@
 
 /* Info grid (system info rows) */
 .info-grid {
-    background: var(--surface);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
     overflow: hidden;
-    margin-bottom: 16px;
-}
-
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-}
-
-.info-row:last-child {
-    border-bottom: none;
-}
-
-.info-label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-}
-
-.info-value {
-    font-size: 0.85rem;
-    font-weight: 500;
-}
-
-/* Version footer on Settings page */
-.settings-version {
-    text-align: center;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    opacity: 0.6;
-    padding: 24px 0 8px;
-}
-
-/* ── Update section ──────────────────────────────────────── */
-
-.update-banner {
-    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-    border-radius: var(--radius-sm);
-    padding: 16px;
-    margin-bottom: 16px;
-}
-
-.update-banner-title {
-    font-weight: 600;
-    font-size: 0.95rem;
-    margin-bottom: 12px;
-}
-
-.update-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-}
-
-.update-actions .form-btn {
-    width: auto;
-    padding: 10px 16px;
-    font-size: 0.85rem;
-    text-decoration: none;
-}
-
-.update-skip-link {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    text-decoration: underline;
-    cursor: pointer;
-    padding: 0;
-}
-
-.update-skip-link:hover {
-    color: var(--text-primary);
+    margin-bottom: var(--stack-gap-lg);
+    /* Bordered container only; rows own their inset (full-bleed). */
+    --panel-padding: 0;
 }
 
 .update-version {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
+    margin-bottom: var(--panel-gap);
 }
 
 .update-controls-row {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 12px;
+    --row-wrap: wrap;
+    margin-bottom: var(--panel-gap);
 }
 
 .update-controls-row .form-input {
@@ -268,25 +147,18 @@
 /* ── /updating page ──────────────────────────────────────── */
 
 .updating-page {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 24px;
-    text-align: center;
-    gap: 8px;
+    padding: var(--block-padding-lg);
+    gap: var(--control-gap);
 }
 
 .updating-page h1 {
-    font-size: 1.3rem;
-    margin-bottom: 12px;
+    font-size: var(--font-size-emphasis-default);
+    margin-bottom: var(--panel-gap);
 }
 
 .update-do-not-navigate {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
     font-style: italic;
 }
 
@@ -296,27 +168,25 @@
 }
 
 .analytics-details {
-    margin-top: 8px;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+    margin-top: var(--control-stack-gap-sm);
 }
 
 .analytics-details summary {
     cursor: pointer;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     user-select: none;
 }
 
 .analytics-fields {
-    margin: 6px 0 6px 16px;
+    margin: var(--control-gap-compact) 0 var(--control-gap-compact) var(--page-edge-padding);
     padding: 0;
 }
 
 .analytics-not-collected {
-    margin-top: 4px;
+    margin-top: var(--control-gap-tight);
     font-style: italic;
 }
 
 .analytics-section {
-    padding-top: 12px;
+    padding-top: var(--panel-gap);
 }

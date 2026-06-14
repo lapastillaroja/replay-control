@@ -158,15 +158,19 @@ pub fn MetadataBusyBanner() -> impl IntoView {
     view! {
         <Show when=move || is_busy() fallback=|| ()>
             <div class="metadata-busy-banner">
-                <span class="metadata-busy-spinner"></span>
-                {move || {
-                    let lbl = busy_label();
-                    if lbl.is_empty() {
-                        t(i18n.locale.get(), Key::MetadataBusyBanner).to_string()
-                    } else {
-                        lbl
-                    }
-                }}
+                <div class="metadata-busy-banner-row">
+                    <span class="busy-spinner"></span>
+                    <span>
+                        {move || {
+                            let lbl = busy_label();
+                            if lbl.is_empty() {
+                                t(i18n.locale.get(), Key::MetadataBusyBanner).to_string()
+                            } else {
+                                lbl
+                            }
+                        }}
+                    </span>
+                </div>
             </div>
         </Show>
     }

@@ -11,8 +11,8 @@
 
     .now-playing-bar {
         grid-template-columns: minmax(0, 1fr);
-        gap: 8px;
-        padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+        gap: var(--control-gap);
+        padding: var(--page-edge-padding-mobile) max(var(--page-edge-padding-compact), env(safe-area-inset-right)) var(--page-edge-padding-mobile) max(var(--page-edge-padding-compact), env(safe-area-inset-left));
     }
 
     .now-playing-controls {
@@ -23,22 +23,22 @@
     .now-playing-controls-row {
         justify-content: stretch;
         width: 100%;
-        gap: 6px;
+        gap: var(--control-gap-compact);
     }
 
     .now-playing-control {
         flex: 1 1 0;
         min-width: 0;
-        min-height: 44px;
-        padding: 6px 8px;
-        font-size: 0.74rem;
+        min-height: var(--control-height);
+        --button-padding: var(--control-padding-tight);
+        font-size: var(--tiny-text-font-size-default);
     }
 
     .now-playing-control-icon-only {
-        flex: 0 0 48px;
-        min-width: 48px;
-        min-height: 44px;
-        padding: 6px;
+        flex: 0 0 var(--control-height-large);
+        min-width: var(--control-height-large);
+        min-height: var(--control-height);
+        --button-padding: var(--control-padding-y);
     }
 
     .now-playing-control-reset {
@@ -62,39 +62,44 @@
 
 @media (max-width: 520px) and (orientation: portrait) {
     .now-playing-control-icon-only {
-        flex: 1 1 44px;
-        min-width: 44px;
+        flex: 1 1 var(--control-height);
+        min-width: var(--control-height);
         max-width: 54px;
     }
 }
 
 @media (max-width: 374px) and (orientation: portrait) {
     .now-playing-controls-row {
-        gap: 4px;
+        gap: var(--control-gap-tight);
     }
 
     .now-playing-control-icon-only {
-        flex-basis: 40px;
-        min-width: 40px;
+        flex-basis: var(--icon-button-size-touch);
+        min-width: var(--icon-button-size-touch);
     }
 }
 
 @media (min-width: 560px) {
     .now-playing-save-states {
-        grid-template-columns: 94px minmax(0, 1fr) minmax(154px, auto);
+        --grid-columns:
+            var(--save-states-column-width-default)
+            minmax(0, 1fr)
+            minmax(var(--save-states-column-width-default), auto);
     }
 
     .save-states-actions {
-        grid-template-columns: minmax(76px, 1fr) minmax(76px, 1fr);
+        --grid-columns:
+            minmax(var(--save-states-actions-column-min-default), 1fr)
+            minmax(var(--save-states-actions-column-min-default), 1fr);
     }
 
     .save-states-action {
         width: auto;
         min-width: 0;
-        padding: 6px 10px;
+        --button-padding: var(--control-padding-compact);
     }
 
-    .save-states-action span {
+    .save-states-action .visually-hidden {
         position: static;
         width: auto;
         height: auto;
@@ -123,25 +128,19 @@
     }
 
     .now-playing-control-icon-only {
-        flex: 0 0 44px;
-        min-width: 44px;
-        min-height: 40px;
+        flex: 0 0 var(--control-height);
+        min-width: var(--control-height);
+        min-height: var(--icon-button-size-touch);
     }
 
     .now-playing-save-states {
-        grid-template-columns: 96px minmax(0, 1fr) minmax(156px, auto);
-        align-items: stretch;
+        --grid-columns:
+            var(--save-states-summary-column-width-spacious)
+            minmax(0, 1fr)
+            minmax(var(--save-states-detail-column-width-spacious), auto);
         padding: 0;
         border: 0;
         background: transparent;
-    }
-
-    .save-states-step-group,
-    .save-states-actions {
-        display: grid;
-        grid-template-columns: 44px 44px;
-        grid-template-rows: 44px;
-        gap: var(--save-states-gap);
     }
 
     .save-states-step-group {
@@ -157,27 +156,28 @@
     .save-states-actions {
         grid-column: 3;
         grid-row: 1;
-        grid-template-columns: minmax(76px, 1fr) minmax(76px, 1fr);
+        --grid-columns:
+            minmax(var(--save-states-actions-column-min-default), 1fr)
+            minmax(var(--save-states-actions-column-min-default), 1fr);
     }
 
     .save-states-step,
     .save-states-action {
-        min-height: 44px;
-        padding: 6px;
+        min-height: var(--control-height);
     }
 
     .save-states-step {
-        width: 44px;
-        min-width: 44px;
+        width: var(--control-height);
+        min-width: var(--control-height);
     }
 
     .save-states-action {
         width: auto;
         min-width: 0;
-        padding: 6px 10px;
+        --button-padding: var(--control-padding-compact);
     }
 
-    .save-states-action span {
+    .save-states-action .visually-hidden {
         position: static;
         width: auto;
         height: auto;
@@ -191,30 +191,17 @@
 
 @media (min-width: 600px) {
     .manage-actions {
-        flex-direction: row;
+        --stack-direction: row;
+        --stack-wrap: wrap;
     }
     .manage-actions > .manage-action-card {
         flex: 1;
-    }
-
-    .metadata-import-form {
-        flex-direction: row;
-    }
-    .metadata-import-form .rename-input {
-        flex: 1;
-    }
-    .metadata-import-form .game-action-btn {
-        width: auto;
-        white-space: nowrap;
     }
 
     .skin-grid {
         grid-template-columns: repeat(3, 1fr);
     }
 
-    .discover-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
 }
 
 /* ── Tablet landscape / wide (768px) ──────────────────────────── */
@@ -223,7 +210,7 @@
     /* Content area — wider centered column */
     .page {
         max-width: 800px;
-        padding: 20px 24px;
+        padding: var(--page-padding-md);
     }
 
     /* Top bar — let it scroll naturally (not fixed) */
@@ -237,8 +224,8 @@
     }
 
     .system-card-icon {
-        width: 48px;
-        height: 48px;
+        width: var(--icon-size-xl);
+        height: var(--icon-size-xl);
     }
 
     /* Stats: 4 columns */
@@ -248,21 +235,21 @@
 
     /* Hero card: more breathing room */
     .hero-card {
-        padding: 24px;
-        gap: 20px;
+        padding: var(--block-padding-lg);
+        gap: var(--stack-gap-xl);
     }
 
     .hero-thumb {
-        height: 4.5rem;
-        max-width: 6rem;
+        height: var(--hero-thumb-height-spacious);
+        max-width: var(--hero-thumb-max-width-spacious);
     }
 
     .hero-thumb-placeholder {
-        height: 4.5rem;
+        height: var(--hero-thumb-height-spacious);
     }
 
     .hero-title {
-        font-size: 1.25rem;
+        font-size: var(--chrome-font-size-default);
     }
 
     /* Scroll cards: grid instead of horizontal scroll */
@@ -284,8 +271,8 @@
     }
 
     .game-actions {
-        flex-direction: row;
-        flex-wrap: wrap;
+        --stack-direction: row;
+        --stack-wrap: wrap;
     }
 
     .game-action-btn {
@@ -318,23 +305,19 @@
 
     /* ROM list / game list items: wider padding */
     .game-list-item {
-        padding: 10px 16px;
+        padding: var(--surface-inset-wide);
+    }
+
+    .search-page .game-list-item {
+        padding: var(--row-padding-y) var(--row-padding-x-compact);
     }
 
     /* Game list item: show system/genre badges on wider screens */
-    .game-list-badges {
-        display: flex;
-    }
-
     /* Discover grid: 3 columns */
-    .discover-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-
     /* Search page input: wider */
     .search-page-input {
-        font-size: 1.1rem;
-        padding: 14px 20px;
+        --search-page-input-font-size: var(--search-page-input-font-size-large);
+        --input-padding: var(--surface-inset-search);
     }
 
 }
@@ -357,7 +340,7 @@
 @media (min-width: 1024px) {
     .page {
         max-width: 960px;
-        padding: 24px 32px;
+        padding: var(--page-padding-lg);
     }
 
     /* Systems: 4 columns */
@@ -367,11 +350,6 @@
 
     /* Game detail: 4-column meta grid */
     .game-meta-grid {
-        grid-template-columns: repeat(4, 1fr);
-    }
-
-    /* Discover: 4 columns */
-    .discover-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 
@@ -387,22 +365,17 @@
 
     /* Stats row: all 4 in one row with bigger text */
     .stat-value {
-        font-size: 1.75rem;
-    }
-
-    /* Bottom nav: larger touch targets */
-    .nav-tab {
-        font-size: 0.75rem;
+        --stat-value-font-size: var(--stat-value-font-size-large);
     }
 
     .nav-icon {
-        font-size: 1.4rem;
+        font-size: var(--chrome-font-size-large);
     }
 
     /* Search groups: two-column layout */
     .search-groups {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
+        gap: var(--stack-gap-xl);
     }
 }

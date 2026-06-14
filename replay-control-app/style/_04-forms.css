@@ -2,87 +2,45 @@
    Forms — Fields, inputs, selects, checkboxes, buttons, status
    ================================================================ */
 
-.settings-page .page-title {
-    margin-bottom: 0;
-}
-
 .settings-form {
-    margin-top: 16px;
+    margin-top: var(--stack-gap-lg);
 }
 
 .form-field {
-    margin-bottom: 16px;
+    margin-bottom: var(--field-gap);
 }
 
 .form-label {
     display: block;
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    margin-bottom: 6px;
+    margin-bottom: var(--control-gap-compact);
 }
 
 .form-input {
-    width: 100%;
-    padding: 10px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    font-size: 0.9rem;
-    outline: none;
-    transition: border-color 0.2s;
-    font-family: inherit;
-}
-
-.form-input:focus {
-    border-color: var(--accent);
-}
-
-.form-input::placeholder {
-    color: var(--text-secondary);
+    --input-width: 100%;
+    --input-min-height-default: var(--control-height);
+    --input-padding: var(--surface-inset-sm);
 }
 
 .input-with-toggle {
     position: relative;
-    display: flex;
-    align-items: center;
 }
 .input-with-toggle .form-input {
-    padding-right: 44px;
+    padding-right: var(--input-trailing-padding-toggle);
 }
 .toggle-password {
     position: absolute;
-    right: 8px;
-    background: none;
-    border: none;
+    right: var(--control-inline-offset);
     color: var(--text-secondary);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 4px;
-    line-height: 1;
 }
 
 select.form-input {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    padding-right: 32px;
-    cursor: pointer;
+    --select-arrow-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    --select-padding-right: var(--input-trailing-padding-select);
 }
 
 select.form-input option {
-    background: var(--surface);
+    background: var(--control-bg, var(--surface));
     color: var(--text);
-}
-
-.form-field-check {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
 }
 
 .form-field-check .form-label {
@@ -90,24 +48,18 @@ select.form-input option {
 }
 
 .form-checkbox {
-    width: 18px;
-    height: 18px;
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
     accent-color: var(--accent);
     cursor: pointer;
 }
 
 .form-btn {
     width: 100%;
-    padding: 12px;
+    padding: var(--control-padding-y) var(--control-padding-x);
     background: var(--accent);
     border: none;
-    border-radius: var(--radius-sm);
-    color: #fff;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s;
-    font-family: inherit;
+    color: var(--text-on-accent);
 }
 
 .form-btn:hover:not(:disabled) {
@@ -120,100 +72,68 @@ select.form-input option {
 }
 
 .form-btn-secondary {
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--control-bg, var(--surface));
+    border: var(--control-border);
     color: var(--text);
 }
 
 .form-btn-secondary:hover:not(:disabled) {
-    background: var(--surface-hover);
+    background: var(--control-bg-hover, var(--surface-hover));
     border-color: var(--accent);
 }
 
 .form-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
+    margin-bottom: var(--control-stack-gap-sm);
 }
 
 .apply-section {
-    margin-top: 24px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+    margin-top: var(--section-gap-compact);
+    padding-top: var(--stack-gap-lg);
+    border-top: var(--control-border);
 }
 
 .status-msg {
-    padding: 10px 14px;
+    padding: var(--surface-inset-sm);
     border-radius: var(--radius-sm);
-    font-size: 0.85rem;
-    margin-bottom: 12px;
-}
-/* When the status message follows the action button (e.g. the reboot result),
-   it needs separation from the button above it — the default only has bottom
-   margin, leaving it flush against the button. */
-.apply-section .form-btn + .status-msg {
-    margin-top: 12px;
+    margin: var(--status-gap) 0 0;
 }
 
 .status-ok {
-    background: color-mix(in srgb, var(--success) 10%, transparent);
+    background: var(--feedback-success-subtle-bg);
     color: var(--success);
-    border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+    border: var(--feedback-success-subtle-border);
 }
 
 .status-err {
-    background: color-mix(in srgb, var(--error) 10%, transparent);
+    background: var(--feedback-error-subtle-bg);
     color: var(--error);
-    border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+    border: var(--feedback-error-subtle-border);
 }
 
 /* Text size toggle */
-.text-size-toggle {
-    display: flex;
-    gap: 8px;
-}
-
 .text-size-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border: 2px solid var(--border);
+    width: var(--control-height-large);
+    height: var(--control-height-large);
+    border: var(--control-border-strong);
     border-radius: var(--radius-sm);
-    background: var(--surface);
+    background: var(--control-bg, var(--surface));
     color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color var(--motion-base), background var(--motion-base), color var(--motion-base);
     font-weight: 600;
 }
 
 .text-size-btn.active {
     border-color: var(--accent);
     color: var(--accent);
-    background: var(--surface-hover);
+    background: var(--control-bg-hover, var(--surface-hover));
 }
 
 .text-size-btn-normal {
-    font-size: 0.9rem;
+    font-size: var(--font-size-regular-default);
 }
 
 .text-size-btn-large {
-    font-size: 1.3rem;
-}
-
-/* Settings hints and feedback */
-.settings-hint {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-    line-height: 1.5;
-}
-
-.settings-saved {
-    font-size: 0.85rem;
-    color: var(--success);
-    margin-top: 8px;
+    font-size: var(--font-size-emphasis-default);
 }
 
 /* ================================================================
@@ -221,39 +141,36 @@ select.form-input option {
    ================================================================ */
 
 .net-control-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 12px 14px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    margin-bottom: 16px;
+    --row-wrap: wrap;
+    padding: var(--surface-inset-md);
+    border-radius: var(--radius-sm);
+    background: var(--translucent-surface-active);
+    margin-bottom: var(--field-gap);
+    --net-control-dot-color: var(--status-dot-neutral);
+    --net-control-dot-animation: none;
 }
 
 .net-control-status-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: #6b7280;
+    --status-dot-size: 10px;
+    background: var(--net-control-dot-color);
+    animation: var(--net-control-dot-animation);
 }
 
-.net-control-status--ok .net-control-status-dot {
-    background: #34d399;
+.net-control-status--ok {
+    --net-control-dot-color: var(--status-dot-success);
 }
 
-.net-control-status--warn .net-control-status-dot {
-    background: #fbbf24;
+.net-control-status--warn {
+    --net-control-dot-color: var(--status-dot-warning);
 }
 
-.net-control-status--busy .net-control-status-dot {
-    background: #60a5fa;
-    animation: pulse 1.2s ease-in-out infinite;
+.net-control-status--busy {
+    --net-control-dot-color: var(--status-dot-busy);
+    --net-control-dot-animation: pulse 1.2s ease-in-out infinite;
 }
 
-.net-control-status--info .net-control-status-dot {
-    background: #38bdf8;
+.net-control-status--info {
+    --net-control-dot-color: var(--status-dot-info);
 }
 
 .net-control-reprobe {
@@ -261,18 +178,12 @@ select.form-input option {
 }
 
 .net-control-steps {
-    margin: 0 0 10px 1.2em;
+    margin: 0 0 var(--section-gap-sm) 1.2em;
     padding: 0;
 }
 
 .net-control-steps li {
-    margin-bottom: 4px;
-}
-
-.net-control-code-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
+    margin-bottom: var(--control-gap-tight);
 }
 
 .net-control-code-input {
@@ -287,41 +198,28 @@ select.form-input option {
 }
 
 .replayos-inline-controls {
-    display: grid;
-    grid-template-columns: minmax(86px, 0.35fr) minmax(0, 1fr) minmax(0, 1fr);
-    gap: 8px;
-    margin-top: 8px;
+    --grid-columns: minmax(var(--inline-control-min-width-default), 0.35fr)
+        minmax(0, 1fr) minmax(0, 1fr);
+    margin-top: var(--control-stack-gap-sm);
 }
 
 .replayos-duration-select {
-    min-width: 86px;
-}
-
-.replayos-button-stack {
-    display: grid;
-    gap: 8px;
-}
-
-.replayos-action-block {
-    display: grid;
-    gap: 8px;
+    min-width: var(--inline-control-min-width-default);
 }
 
 .replayos-action-status {
-    margin-top: 8px;
+    margin-top: 0;
 }
 
 @media (max-width: 560px) {
     .replayos-inline-controls {
-        grid-template-columns: 1fr;
+        --grid-columns: 1fr;
     }
 }
 
 .setup-manual-link {
-    display: inline-block;
-    margin: 2px 0 0 44px;
-    font-size: 0.78rem;
-    color: inherit;
-    opacity: 0.75;
-    text-decoration: underline;
+    --text-action-color: inherit;
+    --text-action-display: inline-block;
+    --text-action-opacity: 0.75;
+    margin: calc(var(--control-gap-tight) / 2) 0 0 var(--control-height);
 }

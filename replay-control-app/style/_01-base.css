@@ -17,6 +17,7 @@ html {
     --surface: #1a1d23;
     --surface-hover: #22262e;
     --border: #2a2e36;
+    --border-subtle: rgba(255, 255, 255, 0.04);
     --text: #e4e6ea;
     --text-secondary: #8b8f96;
     --accent: #6366f1;
@@ -24,13 +25,345 @@ html {
     --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
     --accent-glow: color-mix(in srgb, var(--accent) 20%, transparent);
     --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-glow-size-default: 60px;
+    --accent-glow-offset-corner-default: -10px;
+    --accent-glow-offset-top-default: -20px;
+    --accent-glow-blur-default: 24px;
+    --accent-glow-blur-compact-default: 20px;
+    --text-on-accent: #fff;
+    --text-on-success: #fff;
+    --text-on-danger: #fff;
+    --text-on-overlay: #fff;
+    --text-on-overlay-strong: rgba(255, 255, 255, 0.9);
+    --text-on-overlay-muted: rgba(255, 255, 255, 0.85);
+    --text-on-overlay-subtle: rgba(255, 255, 255, 0.6);
+    --text-on-overlay-faint: rgba(255, 255, 255, 0.4);
     --star: #f59e0b;
     --error: #ef4444;
     --success: #22c55e;
+    --feedback-danger-bg: #7f1d1d;
+    --feedback-danger-text: #fecaca;
+    --feedback-danger-strong: #f87171;
+    --feedback-warning-bg: #78350f;
+    --feedback-warning-text: #fde68a;
+    --feedback-warning-strong: #fef3c7;
+    --feedback-info-bg: #1e3a5f;
+    --feedback-info-text: #dbeafe;
+    --feedback-success-bg: #1f3d33;
+    --feedback-success-text: #d1fae5;
+    --feedback-attention-bg: #4a3514;
+    --feedback-attention-text: #fde7c4;
+    --feedback-on-dark-muted: rgba(255, 255, 255, 0.65);
+    --feedback-attention-muted: rgba(253, 231, 196, 0.78);
+    --feedback-success-subtle-bg: color-mix(in srgb, var(--success) 10%, transparent);
+    --feedback-success-subtle-border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+    --feedback-error-subtle-bg: color-mix(in srgb, var(--error) 10%, transparent);
+    --feedback-error-subtle-border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+    --status-dot-neutral: #6b7280;
+    --status-dot-success: #34d399;
+    --status-dot-warning: #fbbf24;
+    --status-dot-busy: #60a5fa;
+    --status-dot-info: #38bdf8;
     --radius: 12px;
     --radius-sm: 8px;
+    --radius-xs: 4px;
+    --radius-xxs: 2px;
+    --radius-media: 6px;
+    --thumbnail-radius: var(--radius-xs);
     --nav-height: 64px;
     --top-bar-height: 56px;
+    --space-1: 4px;
+    --space-2: 6px;
+    --space-3: 8px;
+    --space-4: 10px;
+    --space-5: 12px;
+    --space-6: 14px;
+    --space-7: 16px;
+    --space-8: 18px;
+    --space-9: 24px;
+    --space-10: 28px;
+    --space-11: 32px;
+    --indicator-size-default: 3px;
+    --border-width-default: 1px;
+    --border-width-strong: 2px;
+    --control-height: 44px;
+    --control-height-compact: 34px;
+    --square-size-large-default: 48px;
+    --control-height-large: var(--square-size-large-default);
+    --square-size-small-default: 28px;
+    --icon-button-size: 32px;
+    --icon-button-size-touch: 40px;
+    --icon-size-sm: 18px;
+    --icon-size-md: 22px;
+    --icon-size-lg: 36px;
+    --icon-size-xl: var(--square-size-large-default);
+    --icon-size-header-default: 2.8rem;
+    --icon-size-topbar-default: 38px;
+    --control-gap: var(--space-3);
+    --control-gap-compact: var(--space-2);
+    --control-gap-tight: var(--space-1);
+    --control-gap-mini: calc(var(--space-1) / 2);
+    --cluster-gap-md: var(--space-4);
+    --control-inline-offset: var(--space-3);
+    --control-stack-gap-sm: var(--space-3);
+    --control-padding-y: var(--space-2);
+    --control-padding-x: var(--space-6);
+    --control-padding-x-compact: var(--space-4);
+    --control-padding-x-tight: var(--space-3);
+    --input-trailing-padding-toggle: calc(var(--icon-button-size) + var(--space-5));
+    --input-trailing-padding-select: var(--icon-button-size);
+    --control-border: var(--border-width-default) solid var(--border);
+    --control-border-strong: var(--border-width-strong) solid var(--border);
+    --control-border-accent: var(--border-width-default) solid var(--accent-border);
+    --control-border-accent-strong: var(--border-width-strong) solid var(--accent-border);
+    --control-border-accent-underline: var(--border-width-strong) solid var(--accent);
+    --control-border-subtle: var(--border-width-default) solid var(--border-subtle);
+    --control-bg: var(--surface);
+    --control-bg-hover: var(--surface-hover);
+    --surface-shell-bg: var(--surface);
+    --divider-border: var(--border-width-default) solid var(--border);
+    --surface-radius: var(--radius-sm);
+    --focus-ring: 2px solid var(--accent);
+    --focus-ring-offset: 2px;
+    --motion-fast: 0.15s;
+    --motion-base: 0.2s;
+    --motion-slow: 0.3s;
+    --motion-loading: 0.18s;
+    --shadow-panel: 0 10px 28px rgba(0, 0, 0, 0.12);
+    --shadow-sticky: 0 8px 18px rgba(0, 0, 0, 0.18);
+    --shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.16);
+    --shadow-media: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-inset-bottom: inset 0 -3px 5px rgba(0, 0, 0, 0.25);
+    --shadow-accent-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+    --shadow-accent-selected: 0 0 0 1px var(--accent);
+    --text-shadow-overlay: 0 1px 4px rgba(0, 0, 0, 0.6);
+    --panel-padding: var(--space-6);
+    --panel-gap: var(--space-5);
+    --section-gap-sm: var(--space-4);
+    --section-gap: var(--space-10);
+    --section-gap-compact: var(--space-9);
+    --field-gap: var(--space-7);
+    --status-gap: var(--space-3);
+    --stack-gap-lg: var(--space-7);
+    --stack-gap-xl: var(--space-8);
+    --stack-gap-md: var(--space-6);
+    --stack-gap-xs: calc(var(--space-1) / 4);
+    --stack-gap-none: 0;
+    --row-padding-y: var(--space-5);
+    --row-padding-x: var(--space-6);
+    --row-padding-y-compact: var(--space-4);
+    --row-padding-x-compact: var(--space-5);
+    --row-padding-y-slim: var(--space-3);
+    --row-padding-y-tight: var(--space-2);
+    --row-padding-y-spacious: var(--space-6);
+    --row-gap-none: 0;
+    --row-gap: var(--panel-gap);
+    --row-divider: var(--divider-border);
+    --empty-block-padding-compact: var(--space-9);
+    --empty-block-padding-tight: var(--space-7);
+    --surface-padding-sm: var(--space-5);
+    --surface-padding-md: var(--space-7);
+    --surface-padding-lg: var(--space-11);
+    --block-padding-sm: var(--space-5);
+    --block-padding-md: var(--space-7);
+    --block-padding-lg: var(--space-9);
+    --panel-padding-card-lg: var(--surface-padding-lg);
+    --card-width-default: 8.125rem;
+    --panel-min-height-default: 64px;
+    --surface-inset-sm: var(--space-4) var(--space-6);
+    --surface-inset-md: var(--space-5) var(--space-7);
+    --surface-inset-wide: var(--space-4) var(--space-7);
+    --surface-inset-panel: var(--space-5) var(--space-6);
+    --surface-inset-hero: var(--space-8) var(--space-9);
+    --surface-inset-control-lg: var(--space-7) var(--space-5);
+    --surface-inset-search: var(--space-6) var(--space-8);
+    --input-padding-clear: var(--space-4) var(--space-11) var(--space-4) var(--space-6);
+    --input-padding-select-compact: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
+    --input-padding-select-default: var(--space-1) var(--space-5) var(--space-1) var(--space-3);
+    --select-padding-right-default: var(--space-6);
+    --select-arrow-offset-default: var(--space-5);
+    --page-padding-md: var(--space-8) var(--space-9);
+    --page-padding-lg: var(--space-9) var(--space-11);
+    --page-edge-padding: var(--space-7);
+    --page-edge-padding-compact: var(--space-5);
+    --page-edge-padding-mobile: var(--space-3);
+    --action-padding-sm: var(--control-padding-y) var(--space-5);
+    --action-padding-md: var(--control-padding-y) var(--space-6);
+    --action-padding-lg: var(--space-2) var(--space-7);
+    --action-padding-xl: var(--space-4) var(--space-8);
+    --action-padding-wide: var(--control-padding-y) var(--space-8);
+    --action-padding-xs: var(--space-1) var(--space-4);
+    --secondary-action-padding-wide: var(--space-3) var(--control-padding-x-wide);
+    --control-padding-x-wide: var(--space-9);
+    --compact-inline-padding: var(--space-1) var(--space-3);
+    --icon-padding-slim: var(--space-1);
+    --icon-action-padding: var(--compact-inline-padding);
+    --control-padding-compact: var(--control-padding-y) var(--control-padding-x-compact);
+    --control-padding-tight: var(--control-padding-y) var(--control-padding-x-tight);
+    --block-padding-y-tight: var(--space-1) 0;
+    --block-padding-y-small: var(--space-3) 0;
+    --compact-panel-padding: var(--space-3) var(--space-4);
+    --content-padding-inline: var(--panel-gap);
+    --content-padding-inline-slim: var(--space-1);
+    --chip-content-padding-start: var(--space-6);
+    --chip-content-padding-end: var(--space-4);
+    --chip-radius: 999px;
+    --chip-gap: var(--space-1);
+    --chip-padding-y: var(--space-2);
+    --chip-padding-x: var(--space-6);
+    --chip-padding-y-tight: var(--space-1);
+    --chip-padding-x-tight: var(--space-2);
+    --chip-padding-x-compact: var(--space-3);
+    --progress-badge-padding: var(--space-2) var(--space-4);
+    --badge-radius: var(--radius-xs);
+    --badge-padding: calc(var(--space-1) / 4) var(--space-2);
+    --font-size-tiny-default: 0.7rem;
+    --badge-font-size: var(--font-size-tiny-default);
+    --micro-font-size: var(--font-size-tiny-default);
+    --tiny-text-font-size-default: 0.74rem;
+    --font-size-small-default: 0.75rem;
+    --meter-height-default: 6px;
+    --meter-height-compact: 4px;
+    --meter-height-spacious: 8px;
+    --meter-height: var(--meter-height-default);
+    --meter-radius: 999px;
+    --meta-text-font-size: var(--font-size-small-default);
+    --meta-text-line-height: 1.35;
+    --font-size-compact-scale-default: 0.8rem;
+    --font-size-compact-default: 0.85rem;
+    --muted-copy-font-size: var(--font-size-compact-default);
+    --muted-copy-line-height: 1.5;
+    --value-text-font-size: var(--font-size-compact-default);
+    --font-size-base-default: 1rem;
+    --chrome-font-size-default: 1.25rem;
+    --chrome-font-size-large: var(--font-size-xlarge-default);
+    --font-size-regular-default: 0.9rem;
+    --text-action-font-size: var(--font-size-compact-default);
+    --secondary-action-font-size: var(--font-size-compact-scale-default);
+    --button-font-size: var(--font-size-regular-default);
+    --font-size-strong-default: 0.95rem;
+    --button-font-size-primary: var(--font-size-strong-default);
+    --font-size-emphasis-small-default: 0.78rem;
+    --inline-action-font-size-default: var(--font-size-base-default);
+    --input-font-size: var(--font-size-regular-default);
+    --font-size-large-default: 1.1rem;
+    --font-size-xlarge-default: 1.4rem;
+    --font-size-emphasis-default: 1.3rem;
+    --font-size-xxlarge-default: 1.5rem;
+    --badge-font-size-step: var(--font-size-small-default);
+    --badge-font-size-progress: var(--font-size-compact-scale-default);
+    --font-size-mini-default: 0.65rem;
+    --badge-font-size-skin: var(--font-size-mini-default);
+    --error-message-font-size-compact: var(--font-size-compact-scale-default);
+    --error-message-font-size-prominent: var(--font-size-regular-default);
+    --success-message-font-size-compact: var(--font-size-compact-scale-default);
+    --success-message-font-size-prominent: var(--font-size-compact-default);
+    --row-font-size: var(--font-size-compact-default);
+    --meta-text-font-size-info: var(--font-size-compact-default);
+    --meta-text-font-size-compact: var(--font-size-compact-scale-default);
+    --muted-copy-font-size-prominent: var(--font-size-regular-default);
+    --chip-font-size: var(--font-size-regular-default);
+    --search-page-input-font-size: var(--font-size-base-default);
+    --search-page-input-font-size-large: var(--font-size-large-default);
+    --preformatted-copy-font-size-compact: var(--font-size-compact-scale-default);
+    --compact-rhythm-default: 1.6;
+    --preformatted-copy-line-height-compact: var(--compact-rhythm-default);
+    --preformatted-copy-white-space-compact: pre;
+    --skeleton-title-height: var(--font-size-compact-default);
+    --skeleton-bar-height: var(--font-size-compact-scale-default);
+    --skeleton-cell-height: 0.75rem;
+    --skeleton-row-height: calc(var(--compact-rhythm-default) * var(--font-size-base-default));
+    --extent-medium-default: 5rem;
+    --skeleton-card-image-height: var(--extent-medium-default);
+    --skeleton-hero-thumb-height: var(--extent-medium-default);
+    --skeleton-hero-title-height: var(--font-size-large-default);
+    --skeleton-hero-system-height: var(--font-size-regular-default);
+    --skeleton-fav-thumb-height: 3.2rem;
+    --skeleton-fav-name-height: var(--font-size-compact-scale-default);
+    --skeleton-fav-system-height: var(--font-size-mini-default);
+    --skeleton-line-width-wide-default: 80%;
+    --skeleton-line-width-regular-default: 70%;
+    --skeleton-line-width-medium-default: 60%;
+    --skeleton-line-width-compact-default: 55%;
+    --skeleton-line-width-subtle-default: 50%;
+    --skeleton-line-width-short-default: 40%;
+    --skeleton-line-width-system-default: 35%;
+    --skeleton-line-width-system-compact-default: 30%;
+    --skeleton-detail-back-height: 1.5rem;
+    --skeleton-detail-title-height: var(--font-size-xlarge-default);
+    --skeleton-detail-cover-height: 14rem;
+    --extent-small-default: 2.5rem;
+    --skeleton-detail-launch-height: var(--extent-small-default);
+    --skeleton-detail-section-title-height: var(--font-size-base-default);
+    --font-size-nano-default: 0.6rem;
+    --skeleton-detail-meta-label-height: var(--font-size-nano-default);
+    --skeleton-detail-meta-value-height: var(--font-size-compact-default);
+    --hero-thumb-height-default: var(--extent-medium-default);
+    --hero-thumb-height-spacious: 4.5rem;
+    --hero-thumb-max-width-default: var(--extent-medium-default);
+    --hero-thumb-max-width-spacious: 6rem;
+    --scroll-card-thumb-height-default: var(--extent-medium-default);
+    --cover-media-height-default: 18.75rem;
+    --extent-large-default: 10rem;
+    --recommendation-thumb-width-default: 7.5rem;
+    --recommendation-thumb-height-default: 4.25rem;
+    --save-states-column-width-default: 94px;
+    --save-states-summary-column-width-spacious: 96px;
+    --save-states-detail-column-width-spacious: 156px;
+    --save-states-actions-column-min-default: 76px;
+    --inline-control-min-width-default: 86px;
+    --wide-column-width-default: 220px;
+    --now-playing-art-size-default: 50px;
+    --thumb-size-wide-default: 100px;
+    --boxart-picker-preview-width-default: 92px;
+    --boxart-picker-preview-height-default: var(--thumb-size-wide-default);
+    --boxart-picker-image-max-height-default: 130px;
+    --header-margin-bottom-tight: var(--space-1);
+    --header-margin-bottom-spacious: var(--space-5);
+    --subsection-title-margin: var(--space-7) 0 var(--space-3);
+    --message-margin-top-tight: var(--space-1);
+    --banner-padding-default: var(--space-3) var(--page-edge-padding);
+    --font-size-kicker-default: 0.72rem;
+    --secondary-meta-size-banner: var(--font-size-kicker-default);
+    --secondary-meta-size-list: var(--font-size-small-default);
+    --secondary-meta-size-summary: 0.82rem;
+    --secondary-meta-size-info: var(--font-size-compact-default);
+    --secondary-meta-size-emphasis: var(--font-size-regular-default);
+    --item-title-font-size-card: var(--font-size-regular-default);
+    --item-title-font-size-hero: var(--font-size-large-default);
+    --item-title-font-size-welcome: 1.15rem;
+    --item-title-font-size-scroll: var(--font-size-compact-scale-default);
+    --item-subtitle-font-size-hero: var(--font-size-regular-default);
+    --panel-padding-card-sm: var(--block-padding-sm);
+    --panel-padding-card-md: var(--block-padding-md);
+    --panel-padding-inline: var(--surface-inset-panel);
+    --stat-value-font-size-large: 1.75rem;
+    --stat-value-font-weight-default: 700;
+    --stat-value-color-default: var(--accent);
+    --item-title-font-size: var(--font-size-compact-default);
+    --item-title-font-weight: 500;
+    --item-subtitle-font-size: var(--font-size-small-default);
+    --overline-font-size-form: var(--font-size-compact-scale-default);
+    --overline-font-size-kicker: var(--font-size-kicker-default);
+    --overline-font-size-meta: var(--font-size-tiny-default);
+    --overline-font-size-section: var(--font-size-compact-default);
+    --bp-name-font-size-hero: var(--font-size-nano-default);
+    --bp-name-font-size-detail: var(--font-size-large-default);
+    --bp-abbrev-font-size-list: 0.55rem;
+    --overline-font-size: var(--font-size-small-default);
+    --overline-font-weight: 600;
+    --overline-letter-spacing: 0.05em;
+    --skeleton-radius: var(--space-1);
+    --status-dot-size: 8px;
+    --overlay-backdrop-bg: rgba(0, 0, 0, 0.5);
+    --lightbox-backdrop-bg: rgba(0, 0, 0, 0.9);
+    --translucent-surface: rgba(255, 255, 255, 0.05);
+    --translucent-surface-subtle: rgba(255, 255, 255, 0.03);
+    --translucent-surface-faint: rgba(255, 255, 255, 0.02);
+    --translucent-surface-active: rgba(255, 255, 255, 0.06);
+    --translucent-control: rgba(255, 255, 255, 0.1);
+    --translucent-control-hover: rgba(255, 255, 255, 0.2);
+    --sheet-radius: var(--space-7) var(--space-7) 0 0;
 }
 
 body {
@@ -44,7 +377,7 @@ body {
 }
 
 body:has(.initial-loading-shell:not(.is-hidden)) {
-    padding-top: 18px;
+    padding-top: var(--space-8);
 }
 
 html.font-large {
@@ -55,6 +388,17 @@ html.font-large {
 a, a:visited, a:hover, a:active {
     color: inherit;
     text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+button {
+    -webkit-tap-highlight-color: transparent;
 }
 
 .visually-hidden {
@@ -78,12 +422,12 @@ a, a:visited, a:hover, a:active {
     left: 0;
     right: 0;
     z-index: 9999;
-    padding: 4px max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+    padding: var(--space-1) max(var(--space-5), env(safe-area-inset-right)) 0 max(var(--space-5), env(safe-area-inset-left));
     background: color-mix(in srgb, var(--surface) 94%, black 6%);
-    border-bottom: 1px solid var(--border);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+    border-bottom: var(--divider-border);
+    box-shadow: var(--shadow-floating);
     opacity: 1;
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+    transition: opacity var(--motion-loading) ease, transform var(--motion-loading) ease, visibility var(--motion-loading) ease;
 }
 
 .initial-loading-shell.is-hidden {
@@ -95,7 +439,7 @@ a, a:visited, a:hover, a:active {
 
 .initial-loading-inner {
     display: grid;
-    gap: 5px;
+    gap: var(--control-gap-tight);
     max-width: 520px;
     margin: 0 auto;
 }
@@ -120,7 +464,7 @@ a, a:visited, a:hover, a:active {
 
 .initial-loading-text {
     color: var(--text-secondary);
-    font-size: 0.74rem;
+    font-size: var(--tiny-text-font-size-default);
     font-weight: 700;
     line-height: 1;
     text-transform: uppercase;
@@ -148,11 +492,11 @@ html.is-ios-standalone {
 /* PTR indicator styling — match the app's dark theme. */
 html.is-ios-standalone .ptr--ptr {
     background-color: var(--surface);
-    box-shadow: inset 0 -3px 5px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-inset-bottom);
 }
 
 html.is-ios-standalone .ptr--text,
 html.is-ios-standalone .ptr--icon {
     color: var(--text-secondary);
-    font-size: 1.4rem;
+    font-size: var(--font-size-xlarge-default);
 }

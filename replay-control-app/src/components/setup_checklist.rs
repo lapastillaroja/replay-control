@@ -354,7 +354,7 @@ fn SetupTaskRow(
                         if busy.get() {
                             view! {
                                 <span class="setup-task-status">
-                                    <span class="metadata-busy-spinner"></span>
+                                    <span class="busy-spinner"></span>
                                     {t(i18n.locale.get(), Key::SetupInProgress)}
                                 </span>
                             }.into_any()

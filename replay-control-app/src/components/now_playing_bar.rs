@@ -367,7 +367,7 @@ fn SaveStatesLoadedControls(
                 on:click=on_save
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Save />
-                <span>{move || t(i18n.locale.get(), Key::SaveStatesSave)}</span>
+                <span class="visually-hidden">{move || t(i18n.locale.get(), Key::SaveStatesSave)}</span>
             </button>
             <button
                 type="button"
@@ -377,7 +377,7 @@ fn SaveStatesLoadedControls(
                 on:click=on_load
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Load />
-                <span>{move || t(i18n.locale.get(), Key::SaveStatesLoad)}</span>
+                <span class="visually-hidden">{move || t(i18n.locale.get(), Key::SaveStatesLoad)}</span>
             </button>
         </div>
     }
@@ -395,7 +395,7 @@ fn SaveStatesSlotStepper(
         <div class="save-states-step-group">
             <button
                 type="button"
-                class="save-states-step"
+                class="now-playing-control now-playing-control-icon-only save-states-step"
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesPreviousSlot)
                 on:click=decrement
                 disabled=move || selected_slot.get() == 1
@@ -404,7 +404,7 @@ fn SaveStatesSlotStepper(
             </button>
             <button
                 type="button"
-                class="save-states-step"
+                class="now-playing-control now-playing-control-icon-only save-states-step"
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesNextSlot)
                 on:click=increment
                 disabled=move || selected_slot.get() == 18
@@ -448,7 +448,7 @@ fn SaveStatesActionsLoading() -> impl IntoView {
                 prop:disabled=true
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Save />
-                <span>{move || t(i18n.locale.get(), Key::SaveStatesSave)}</span>
+                <span class="visually-hidden">{move || t(i18n.locale.get(), Key::SaveStatesSave)}</span>
             </button>
             <button
                 type="button"
@@ -457,7 +457,7 @@ fn SaveStatesActionsLoading() -> impl IntoView {
                 prop:disabled=true
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Load />
-                <span>{move || t(i18n.locale.get(), Key::SaveStatesLoad)}</span>
+                <span class="visually-hidden">{move || t(i18n.locale.get(), Key::SaveStatesLoad)}</span>
             </button>
         </div>
     }

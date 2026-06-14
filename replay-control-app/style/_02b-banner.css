@@ -1,82 +1,49 @@
 /* ================================================================
-   Metadata Busy Banner — shown when import/thumbnail update is running
+   Status Banners — shared shell plus domain-specific colors
    ================================================================ */
+
+/* Metadata Busy Banner — shown when import/thumbnail update is running */
 
 .metadata-busy-banner {
-    display: flex;
-    position: relative;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 6px 16px;
-    background: #78350f;
-    color: #fef3c7;
-    font-size: 0.8rem;
-    text-align: center;
-    line-height: 1.4;
+    --banner-position: relative;
+    --banner-align-items: center;
+    --banner-justify-content: center;
+    --banner-gap: var(--control-gap);
+    --banner-padding: var(--action-padding-lg);
+    background: var(--feedback-warning-bg);
+    color: var(--feedback-warning-strong);
 }
 
-.metadata-busy-spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid #fef3c7;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: metadata-busy-spin 0.8s linear infinite;
-    flex-shrink: 0;
+.metadata-busy-banner-row {
+    --banner-row-flex-wrap: nowrap;
+    --banner-row-min-width: 0;
+    --banner-row-white-space: nowrap;
 }
 
-@keyframes metadata-busy-spin {
-    to { transform: rotate(360deg); }
-}
-
-/* ================================================================
-   Corruption Banner — shown when a database is flagged as corrupt
-   ================================================================ */
+/* Corruption Banner — shown when a database is flagged as corrupt */
 
 .corruption-banner {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    padding: 8px 16px;
-    background: #7f1d1d;
-    color: #fecaca;
-    font-size: 0.8rem;
-    text-align: center;
-    line-height: 1.4;
-}
-
-.corruption-banner-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    background: var(--feedback-danger-bg);
+    color: var(--feedback-danger-text);
 }
 
 .corruption-banner-btn {
-    padding: 3px 10px;
-    border: 1px solid #fecaca;
-    border-radius: 4px;
-    background: transparent;
-    color: #fecaca;
-    font-size: 0.75rem;
-    cursor: pointer;
+    --corruption-banner-btn-border: var(--feedback-danger-text);
+    --corruption-banner-btn-color: var(--feedback-danger-text);
+    --corruption-banner-btn-hover-bg: color-mix(in srgb, var(--feedback-danger-text) 15%, transparent);
+    --outline-action-border: var(--border-width-default) solid var(--corruption-banner-btn-border);
+    --outline-action-color: var(--corruption-banner-btn-color);
+    --outline-action-transition: background var(--motion-base), border-color var(--motion-base), color var(--motion-base);
 }
 
 .corruption-banner-btn:hover {
-    background: rgba(254, 202, 202, 0.15);
+    background: var(--corruption-banner-btn-hover-bg);
 }
 
 .corruption-banner-btn-danger {
-    border-color: #f87171;
-    color: #f87171;
-}
-
-.corruption-banner-btn-danger:hover {
-    background: rgba(248, 113, 113, 0.15);
+    --corruption-banner-btn-border: var(--feedback-danger-strong);
+    --corruption-banner-btn-color: var(--feedback-danger-strong);
+    --corruption-banner-btn-hover-bg: color-mix(in srgb, var(--feedback-danger-strong) 15%, transparent);
 }
 
 /* ================================================================
@@ -88,23 +55,8 @@
    ================================================================ */
 
 .asset-health-banner {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    padding: 8px 16px;
-    background: #78350f;
-    color: #fde68a;
-    font-size: 0.8rem;
-    text-align: center;
-    line-height: 1.4;
-}
-
-.asset-health-banner-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    background: var(--feedback-warning-bg);
+    color: var(--feedback-warning-text);
 }
 
 /* ================================================================
@@ -113,43 +65,28 @@
    last active storage, or when an active storage swap hits an error.
    ================================================================ */
 
-.system-status-banner {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    padding: 8px 16px;
-    font-size: 0.8rem;
-    text-align: center;
-    line-height: 1.4;
-}
-
 .system-status-banner--warning {
-    background: #1e3a5f;
-    color: #dbeafe;
+    --system-status-banner-bg: var(--feedback-info-bg);
+    --system-status-banner-color: var(--feedback-info-text);
 }
 
 .system-status-banner--info {
-    background: #1f3d33;
-    color: #d1fae5;
+    --system-status-banner-bg: var(--feedback-success-bg);
+    --system-status-banner-color: var(--feedback-success-text);
 }
 
-.system-status-banner-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
+.system-status-banner {
+    background: var(--system-status-banner-bg, var(--feedback-info-bg));
+    color: var(--system-status-banner-color, var(--feedback-info-text));
 }
 
 .system-status-banner-reason {
-    color: rgba(255, 255, 255, 0.65);
-    font-size: 0.72rem;
+    --secondary-meta-color: var(--feedback-on-dark-muted);
 }
 
 .system-status-banner-action {
-    color: inherit;
-    font-weight: 600;
-    text-decoration: underline;
+    --text-action-color: inherit;
+    --text-action-font-weight: 600;
 }
 
 /* ================================================================
@@ -159,26 +96,37 @@
    ================================================================ */
 
 .rom-watcher-banner {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    padding: 8px 16px;
-    background: #4a3514;
-    color: #fde7c4;
-    font-size: 0.8rem;
-    text-align: center;
-    line-height: 1.4;
-}
-
-.rom-watcher-banner-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    background: var(--feedback-attention-bg);
+    color: var(--feedback-attention-text);
 }
 
 .rom-watcher-banner-reason {
-    color: rgba(253, 231, 196, 0.78);
-    font-size: 0.72rem;
+    --secondary-meta-color: var(--feedback-attention-muted);
+}
+
+/* ================================================================
+   Update Banner — shown when a new Replay Control version is
+   available and the user can launch the updater or skip the release
+   ================================================================ */
+
+.update-banner {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    border: var(--border-width-default) solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--stack-gap-lg);
+}
+
+.update-banner-title {
+    --group-title-margin-bottom: var(--header-margin-bottom-spacious);
+}
+
+.update-actions {
+    --row-wrap: wrap;
+    margin-bottom: var(--control-stack-gap-sm);
+}
+
+.update-actions .form-btn {
+    width: auto;
+    padding: var(--surface-inset-wide);
+    text-decoration: none;
 }

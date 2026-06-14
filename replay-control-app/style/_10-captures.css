@@ -4,18 +4,14 @@
 
 /* User captures gallery — wrapping grid */
 .user-captures-gallery {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 8px 0;
+    padding: var(--block-padding-y-small);
 }
 
 .user-capture-thumb {
-    max-height: 10rem;
-    border-radius: 6px;
+    max-height: var(--extent-large-default);
+    --media-radius: var(--radius-media);
     flex-shrink: 0;
-    border: 1px solid var(--border);
-    cursor: pointer;
+    border: var(--control-border);
 }
 
 .user-capture-thumb:hover {
@@ -24,24 +20,19 @@
 
 /* Captures "View all" toggle */
 .captures-show-all {
-    margin-top: 4px;
+    margin-top: var(--control-gap-tight);
 }
 
 /* Lightbox overlay */
 .lightbox-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    background: rgba(0, 0, 0, 0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    --overlay-backdrop-bg: var(--lightbox-backdrop-bg);
 }
 
 .lightbox-img {
     max-width: 90vw;
     max-height: 85vh;
-    object-fit: contain;
+    --media-fit: contain;
+    --media-radius: 0;
 }
 
 .lightbox-img.pixelated {
@@ -50,43 +41,40 @@
 
 .lightbox-close {
     position: absolute;
-    top: 16px;
-    right: 16px;
-    color: white;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
+    top: var(--stack-gap-lg);
+    right: var(--stack-gap-lg);
+    --icon-action-padding: 0;
+    color: var(--text-on-overlay);
+}
+
+button.lightbox-close {
+    font-size: var(--font-size-xxlarge-default);
+    line-height: 1;
 }
 
 .lightbox-nav {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
+    color: var(--text-on-overlay);
+    --icon-action-bg: var(--translucent-control);
+    --icon-action-padding: var(--surface-inset-control-lg);
+    --icon-action-transition: background var(--motion-fast);
+}
+
+button.lightbox-nav {
     font-size: 2rem;
-    padding: 16px 12px;
-    cursor: pointer;
-    border-radius: 4px;
+    line-height: 1;
 }
 
 .lightbox-nav:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--translucent-control-hover);
 }
 
 .lightbox-prev {
-    left: 8px;
+    left: var(--control-inline-offset);
 }
 
 .lightbox-next {
-    right: 8px;
-}
-
-/* Screenshots gallery placeholder (future grid) */
-.game-screenshots-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 8px;
+    right: var(--control-inline-offset);
 }

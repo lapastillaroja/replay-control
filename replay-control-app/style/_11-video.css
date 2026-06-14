@@ -8,10 +8,7 @@
     padding-bottom: 56.25%;
     height: 0;
     overflow: hidden;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    margin-bottom: 12px;
-    background: var(--surface);
+    margin-bottom: var(--panel-gap);
 }
 
 .video-embed iframe {
@@ -27,16 +24,7 @@
     position: relative;
 }
 
-.video-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-}
-
 .video-item-title {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -45,44 +33,17 @@
 }
 
 .video-remove-btn {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    cursor: pointer;
-    padding: 2px 8px;
-    border-radius: 4px;
-    transition: all 0.15s;
-    flex-shrink: 0;
-    margin-left: 8px;
-}
-
-.video-remove-btn:hover {
-    border-color: var(--error);
-    color: var(--error);
+    --outline-action-padding: var(--compact-inline-padding);
+    --outline-action-transition: border-color var(--motion-fast), color var(--motion-fast);
+    margin-left: var(--control-inline-offset);
 }
 
 .video-list {
-    margin-bottom: 12px;
+    margin-bottom: var(--panel-gap);
 }
 
 .video-subsection {
-    margin-top: 12px;
-}
-
-.video-subsection-title {
-    margin: 16px 0 8px;
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-/* Add video form */
-.video-add-form {
-    display: flex;
-    gap: 8px;
+    margin-top: var(--panel-gap);
 }
 
 .video-add-form .form-input {
@@ -92,26 +53,12 @@
 .video-add-form .game-action-btn {
     width: auto;
     white-space: nowrap;
-    padding: 10px 20px;
-}
-
-.video-add-error {
-    font-size: 0.8rem;
-    color: var(--error);
-    margin-top: 4px;
-}
-
-.video-add-success {
-    font-size: 0.8rem;
-    color: var(--success);
-    margin-top: 4px;
+    padding: var(--action-padding-xl);
 }
 
 /* Video search buttons row */
 .video-search-buttons {
-    display: flex;
-    gap: 8px;
-    margin-top: 16px;
+    margin-top: var(--stack-gap-lg);
 }
 
 .video-search-buttons .game-action-btn {
@@ -126,23 +73,15 @@
 
 /* Video recommendations panel */
 .video-recommendations {
-    margin-top: 8px;
-}
-
-.recommendation-item {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    padding: 10px 0;
+    margin-top: var(--control-stack-gap-sm);
 }
 
 .recommendation-thumb {
     flex-shrink: 0;
-    width: 7.5rem;
-    height: 4.25rem;
-    object-fit: cover;
-    border-radius: 4px;
-    background: var(--surface);
+    width: var(--recommendation-thumb-width-default);
+    height: var(--recommendation-thumb-height-default);
+    --media-fit: cover;
+    background: var(--control-bg);
 }
 
 .recommendation-info {
@@ -151,55 +90,21 @@
     cursor: pointer;
 }
 
-.recommendation-title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
 .recommendation-meta {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin-top: 2px;
-}
-
-.recommendation-pin-btn {
-    flex-shrink: 0;
-    padding: 6px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    white-space: nowrap;
+    margin-top: var(--control-gap-tight);
 }
 
 .recommendation-pin-btn:hover {
-    border-color: var(--accent);
     background: var(--surface-hover);
 }
 
 .recommendation-pin-btn:disabled {
     opacity: 0.5;
-    cursor: default;
 }
 
 .recommendation-pin-btn.pinned {
     border-color: var(--success);
     color: var(--success);
-}
-
-.recommendation-item-wrapper {
-    border-bottom: 1px solid var(--border);
-}
-
-.recommendation-item-wrapper:last-child {
-    border-bottom: none;
 }
 
 .recommendation-thumb-wrapper {
@@ -213,12 +118,12 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 1.4rem;
-    color: rgba(255, 255, 255, 0.85);
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    font-size: var(--font-size-xlarge-default);
+    color: var(--text-on-overlay-muted);
+    text-shadow: var(--text-shadow-overlay);
     pointer-events: none;
 }
 
 .recommendation-player {
-    padding: 0 0 10px;
+    padding: 0 0 var(--section-gap-sm);
 }
