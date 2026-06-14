@@ -39,12 +39,13 @@ One section per page load, randomly picked from several types:
 | Games by Developer | "Games by Capcom" |
 | Hidden Gems | Highly rated games you haven't played yet |
 | Co-op Games | Best rated cooperative games |
+| Games on a Board | "Games on Neo Geo MVS" |
 
 Requires a minimum of 6 games to show. Falls back to a global "Top Rated" section if the chosen type has too few results. Minimum rating threshold: 3.5.
 
 ### Discover Pills
 
-A rotating set of 5 quick-link chips that let you browse by genre, system, developer, decade, or multiplayer mode.
+A rotating set of 5 quick-link chips that let you browse by genre, system, developer, decade, multiplayer mode, or arcade board (e.g. "More CPS-2 (Capcom)"). See [Arcade Boards](arcade-boards.md).
 
 ## Favorites Page
 

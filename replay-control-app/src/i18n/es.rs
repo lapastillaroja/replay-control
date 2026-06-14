@@ -308,6 +308,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailAlternateVersions => "Versiones alternativas",
         Key::GameDetailAlsoAvailableOn => "También disponible en",
         Key::GameDetailMoreLikeThis => "Más como este",
+        Key::GameDetailMoreOnBoard => "Más de esta placa",
         Key::GameDetailOtherVersions => "Otras versiones",
         Key::GameDetailMoreInSeries => "Más de esta saga",
         Key::GameDetailMoreOfSeries => "Más de {0}",
@@ -560,7 +561,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillGamesBy => "Juegos de {0}",
         Key::PillMultiplayer => "Multijugador",
         Key::PillCoOp => "Juegos cooperativos",
+        Key::PillBoard => "Más {0}",
         Key::SpotlightCoOp => "Juegos cooperativos",
+        Key::SpotlightBoard => "Juegos en {0}",
 
         // Analytics
         Key::AnalyticsTitle => "Estadísticas de uso anónimas",

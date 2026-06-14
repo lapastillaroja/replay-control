@@ -18,6 +18,7 @@ A summary card displays:
 - File size (Mbit/Kbit for cartridge systems, MB/GB for disc-based)
 - Developer, release year, genre
 - Player count and co-op support
+- For arcade games, the hardware **board** with its manufacturer (e.g. "CPS-2 (Capcom)") — a link to that board's page. See [Arcade Boards](arcade-boards.md).
 
 ## Launch on TV
 
@@ -76,6 +77,8 @@ Games distributed through special channels display a tag: SegaNet, Satellaview, 
 ## Related Games
 
 Genre-based recommendations: other games in your library that share the same genre. Displayed as a horizontal scroll of game cards at the bottom of the page.
+
+For arcade games, a **More on this board** row also appears — other games on the same hardware board, with a "See all" link to the board page. See [Arcade Boards](arcade-boards.md).
 
 ## Actions
 

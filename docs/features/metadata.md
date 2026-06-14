@@ -20,9 +20,11 @@ Games are identified by filename, with a CRC32 hash fallback for 9 cartridge sys
 
 ### Arcade Games
 
-Covers [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, and category.
+Covers [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, category, and the hardware **board** it ran on (CPS-2, Neo Geo MVS, Taito F3, …).
 
 Entries from the source metadata are retained, including categories such as gambling, slot machine, computer, handheld, and electromechanical, so ROMs from full MAME sets can still be identified.
+
+The board powers a dedicated browse-by-board experience — board pages, board search, and board recommendations. See [Arcade Boards](arcade-boards.md).
 
 ### Genre Taxonomy
 

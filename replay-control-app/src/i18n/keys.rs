@@ -283,6 +283,7 @@ pub enum Key {
     GameDetailAlternateVersions,
     GameDetailAlsoAvailableOn,
     GameDetailMoreLikeThis,
+    GameDetailMoreOnBoard,
     GameDetailOtherVersions,
     GameDetailMoreInSeries,
     GameDetailMoreOfSeries,
@@ -513,7 +514,9 @@ pub enum Key {
     PillGamesBy,
     PillMultiplayer,
     PillCoOp,
+    PillBoard,
     SpotlightCoOp,
+    SpotlightBoard,
 
     // Analytics
     AnalyticsTitle,

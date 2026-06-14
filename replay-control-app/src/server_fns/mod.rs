@@ -245,10 +245,15 @@ pub struct GameInfo {
     pub is_clone: Option<bool>,
     pub parent_rom: Option<String>,
     pub arcade_category: Option<String>,
-    /// Curated hardware-board label (e.g. "CPS-2", "Neo Geo MVS").
-    /// None for non-arcade systems and for arcade ROMs whose driver sourcefile
-    /// isn't mapped in `arcade_board`.
+    /// Curated hardware-board label (e.g. "CPS-2 (Capcom)"). None for
+    /// non-arcade systems and for arcade ROMs whose driver sourcefile isn't
+    /// mapped in `arcade_board`.
     pub arcade_board: Option<String>,
+    /// `ArcadeBoard::as_tag()` slug for the board above, used to link the
+    /// detail-page board value to `/board/<tag>`. Present whenever
+    /// `arcade_board` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arcade_board_tag: Option<String>,
 
     // --- Console-specific (None for arcade) ---
     pub region: Option<String>,
@@ -315,39 +320,42 @@ pub(crate) async fn build_game_detail(
     let is_arcade = systems::is_arcade_system(&entry.system);
 
     // Arcade-only fields from static arcade_db lookup.
-    let (rotation, parent_rom, arcade_category, arcade_display, arcade_board) = if is_arcade {
-        let stem = replay_control_core::title_utils::filename_stem(&entry.rom_filename);
-        match arcade_db::lookup_arcade_game(&entry.system, stem).await {
-            Some(info) => {
-                let rotation = match info.rotation {
-                    arcade_db::Rotation::Horizontal => "Horizontal",
-                    arcade_db::Rotation::Vertical => "Vertical",
-                    arcade_db::Rotation::Unknown => "Unknown",
-                };
-                let parent = if info.is_clone {
-                    Some(info.parent.to_string())
-                } else {
-                    None
-                };
-                let category = if info.category.is_empty() {
-                    None
-                } else {
-                    Some(info.category.to_string())
-                };
-                let board = info.board.map(|b| b.display_label());
-                (
-                    Some(rotation.to_string()),
-                    parent,
-                    category,
-                    Some(info.display_name),
-                    board,
-                )
+    let (rotation, parent_rom, arcade_category, arcade_display, arcade_board, arcade_board_tag) =
+        if is_arcade {
+            let stem = replay_control_core::title_utils::filename_stem(&entry.rom_filename);
+            match arcade_db::lookup_arcade_game(&entry.system, stem).await {
+                Some(info) => {
+                    let rotation = match info.rotation {
+                        arcade_db::Rotation::Horizontal => "Horizontal",
+                        arcade_db::Rotation::Vertical => "Vertical",
+                        arcade_db::Rotation::Unknown => "Unknown",
+                    };
+                    let parent = if info.is_clone {
+                        Some(info.parent.to_string())
+                    } else {
+                        None
+                    };
+                    let category = if info.category.is_empty() {
+                        None
+                    } else {
+                        Some(info.category.to_string())
+                    };
+                    let board = info.board.map(|b| b.display_label());
+                    let board_tag = info.board.map(|b| b.as_tag().to_string());
+                    (
+                        Some(rotation.to_string()),
+                        parent,
+                        category,
+                        Some(info.display_name),
+                        board,
+                        board_tag,
+                    )
+                }
+                None => (None, None, None, None, None, None),
             }
-            None => (None, None, None, None, None),
-        }
-    } else {
-        (None, None, None, None, None)
-    };
+        } else {
+            (None, None, None, None, None, None)
+        };
 
     let mut info = GameInfo {
         system: entry.system.clone(),
@@ -382,6 +390,7 @@ pub(crate) async fn build_game_detail(
         parent_rom,
         arcade_category,
         arcade_board,
+        arcade_board_tag,
         region: if entry.region.is_empty() {
             None
         } else {

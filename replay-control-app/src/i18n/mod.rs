@@ -87,7 +87,9 @@ pub fn key_from_str(s: &str) -> Option<Key> {
         "PillGamesBy" => Some(Key::PillGamesBy),
         "PillMultiplayer" => Some(Key::PillMultiplayer),
         "PillCoOp" => Some(Key::PillCoOp),
+        "PillBoard" => Some(Key::PillBoard),
         "SpotlightCoOp" => Some(Key::SpotlightCoOp),
+        "SpotlightBoard" => Some(Key::SpotlightBoard),
         _ => None,
     }
 }
@@ -146,7 +148,9 @@ mod tests {
             "PillGamesBy",
             "PillMultiplayer",
             "PillCoOp",
+            "PillBoard",
             "SpotlightCoOp",
+            "SpotlightBoard",
         ];
         for name in server_keys {
             assert!(

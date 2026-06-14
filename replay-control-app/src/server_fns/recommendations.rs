@@ -1,5 +1,7 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core::arcade_board::ArcadeBoard;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
 /// A recommended game card with display info and navigation link.
@@ -75,7 +77,7 @@ pub(crate) async fn compute_recommendations(
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
     let spotlight_type = {
         use rand::RngExt;
-        rand::rng().random_range(0u8..6)
+        rand::rng().random_range(0u8..7)
     };
 
     // Only collect recent + favorite keys when Hidden Gems is selected (type 4).
@@ -126,6 +128,7 @@ pub(crate) async fn compute_recommendations(
                 cached_decades.unwrap_or_else(|| LibraryDb::decade_list(conn).unwrap_or_default());
             let active_systems = cached_active_systems
                 .unwrap_or_else(|| LibraryDb::active_systems(conn).unwrap_or_default());
+            let top_boards = LibraryDb::top_boards(conn, 8).unwrap_or_default();
             // --- Spotlight: type was pre-rolled above ---
 
             // Exclude the favorites system from system spotlight candidates.
@@ -281,6 +284,31 @@ pub(crate) async fn compute_recommendations(
                         Some((games, "SpotlightCoOp".to_string(), vec![], href))
                     }
                 }
+                6 if !top_boards.is_empty() => {
+                    // Games on a board — pick a board from the user's most-represented.
+                    use rand::RngExt;
+                    let idx = rand::rng().random_range(0..top_boards.len());
+                    let tag = &top_boards[idx];
+                    ArcadeBoard::from_tag(tag).and_then(|board| {
+                        let games = LibraryDb::games_by_board(
+                            conn,
+                            tag,
+                            count * 3,
+                            &region_str,
+                            &region_secondary_str,
+                        )
+                        .unwrap_or_default();
+                        (games.len() >= spotlight_min).then(|| {
+                            let href = Some(format!("/board/{}", urlencoding::encode(tag)));
+                            (
+                                games,
+                                "SpotlightBoard".to_string(),
+                                vec![board.display_label()],
+                                href,
+                            )
+                        })
+                    })
+                }
                 _ => None, // Falls through to global top rated below
             };
 
@@ -347,6 +375,7 @@ pub(crate) async fn compute_recommendations(
                 top_developers,
                 decades,
                 active_systems,
+                top_boards,
                 spotlight_pool,
                 spotlight_title_key,
                 spotlight_title_args,
@@ -362,6 +391,7 @@ pub(crate) async fn compute_recommendations(
         top_developers,
         decades,
         active_systems,
+        top_boards,
         spotlight_pool,
         spotlight_title_key,
         spotlight_title_args,
@@ -381,8 +411,13 @@ pub(crate) async fn compute_recommendations(
     let random_picks = diversify_picks(random_pool, count);
 
     // --- Discover pills: build pool and pick 5 ---
-    let discover_pills =
-        build_discover_pills(&top_genres, &top_developers, &decades, &active_systems);
+    let discover_pills = build_discover_pills(
+        &top_genres,
+        &top_developers,
+        &decades,
+        &active_systems,
+        &top_boards,
+    );
 
     // --- Favorites picks (pool already randomized by SQL) ---
     let favorites_picks = favorites_info_for_picks.and_then(|fi| {
@@ -513,6 +548,7 @@ fn build_discover_pills(
     top_developers: &[String],
     decades: &[u16],
     active_systems: &[String],
+    top_boards: &[String],
 ) -> Vec<DiscoverPill> {
     use rand::RngExt;
 
@@ -627,6 +663,22 @@ fn build_discover_pills(
                 href: format!("/search?min_year={decade}&max_year={end}"),
             },
         ));
+    }
+
+    // Board pill: pick a random board from the user's most-represented.
+    if !top_boards.is_empty() {
+        let idx = rng.random_range(0..top_boards.len());
+        let tag = &top_boards[idx];
+        if let Some(board) = ArcadeBoard::from_tag(tag) {
+            candidates.push((
+                "board",
+                DiscoverPill {
+                    label_key: "PillBoard".to_string(),
+                    label_args: vec![board.display_label()],
+                    href: format!("/board/{}", urlencoding::encode(tag)),
+                },
+            ));
+        }
     }
 
     // NOTE: 4-Player pill deferred to Phase 3 — needs `min_players` search filter.

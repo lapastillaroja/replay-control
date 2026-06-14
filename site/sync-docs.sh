@@ -16,9 +16,10 @@ mkdir -p "$FEATURES_DIR"
 
 declare -A FEATURE_WEIGHTS=(
     ["getting-started"]=1 ["install"]=2 ["game-library"]=3 ["search"]=4
-    ["game-detail"]=5 ["game-series"]=6 ["recommendations"]=7 ["metadata"]=8 ["thumbnails"]=9
-    ["configuration"]=10 ["settings"]=11 ["updates"]=12 ["storage"]=13 ["benchmarks"]=14
-    ["libretro-core"]=15
+    ["game-detail"]=5 ["arcade-boards"]=6 ["game-series"]=7 ["recommendations"]=8
+    ["metadata"]=9 ["thumbnails"]=10
+    ["configuration"]=11 ["settings"]=12 ["updates"]=13 ["storage"]=14 ["benchmarks"]=15
+    ["libretro-core"]=16
 )
 
 for f in "$REPO_ROOT/docs/features/"*.md; do
@@ -51,8 +52,8 @@ mkdir -p "$ARCH_DIR"
 declare -A ARCH_WEIGHTS=(
     ["technical-foundation"]=101 ["design-decisions"]=102 ["startup-pipeline"]=103
     ["library-build-pipeline"]=104 ["database-schema"]=105 ["server-functions"]=106
-    ["connection-pooling"]=107 ["enrichment"]=108 ["rom-classification"]=109
-    ["activity-system"]=110
+    ["connection-pooling"]=107 ["enrichment"]=108 ["arcade-boards"]=109
+    ["rom-classification"]=110 ["activity-system"]=111
 )
 
 for f in "$REPO_ROOT/docs/architecture/"*.md; do

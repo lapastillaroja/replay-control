@@ -17,6 +17,7 @@ Replay Control documentation, organized into two sections:
 | [Metadata](features/metadata.md) | Embedded databases, LaunchBox import, ROM classification |
 | [Recommendations](features/recommendations.md) | Home page and favorites recommendations, spotlight rotation |
 | [Search](features/search.md) | Global search, developer search, developer game list |
+| [Arcade Boards](features/arcade-boards.md) | Board badge, board pages, board search, board recommendations |
 | [Storage](features/storage.md) | Storage detection, automatic updates, config boundary |
 | [Thumbnails](features/thumbnails.md) | Box art, screenshots, title screens, image matching |
 | [Settings](features/settings.md) | System configuration, user preferences |
@@ -36,6 +37,7 @@ Replay Control documentation, organized into two sections:
 | [Startup Pipeline](architecture/startup-pipeline.md) | Background initialization phases |
 | [Library Build Pipeline](architecture/library-build-pipeline.md) | Scan/rescan/rebuild design, deferred identity, temporary-table reconcile |
 | [Enrichment](architecture/enrichment.md) | Box art, genre, rating population |
+| [Arcade Boards](architecture/arcade-boards.md) | Board attribution, fused sourcefile table, board-merge priority |
 | [ROM Classification](architecture/rom-classification.md) | Filename parsing, tier assignment |
 | [Activity System](architecture/activity-system.md) | Mutual exclusion, progress broadcasting |
 | [Cross-Activity Coordination](architecture/cross-activity-coordination.md) | Write-path inventory, conflict matrix, known gaps |

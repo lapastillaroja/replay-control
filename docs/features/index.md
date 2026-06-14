@@ -17,6 +17,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - [Now Playing](now-playing.md) — Live indicator showing the active game on the appliance, with elapsed time and quick actions
 - [Search](search.md) — Fast cross-system search with filters, developer pages, and random game
 - [Game Detail](game-detail.md) — Box art, screenshots, game info, launch on TV, videos, manuals, series navigation, and variant management
+- [Arcade Boards](arcade-boards.md) — Browse, search, and get recommendations by arcade hardware board (CPS-2, Neo Geo MVS, …)
 - [Game Series](game-series.md) — Wikidata-powered series data with sequel/prequel navigation across systems
 - [Recommendations](recommendations.md) — Genre-diverse picks, top rated, multiplayer, curated spotlights, and discover pills
 

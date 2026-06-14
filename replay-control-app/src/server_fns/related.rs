@@ -31,6 +31,12 @@ pub struct RelatedGamesData {
     pub series_name: String,
     /// Games from the same system + genre. Empty if no genre or no matches.
     pub similar_games: Vec<RecommendedGame>,
+    /// Other games on the same arcade board (excludes the current title).
+    /// Empty for non-arcade games or boards with no siblings.
+    pub same_board: Vec<RecommendedGame>,
+    /// `/board/<tag>` link for the "more on this board" row's see-all.
+    /// Empty when `same_board` is empty.
+    pub same_board_href: String,
     /// Predecessor game in the sequel chain. `None` if no predecessor data.
     pub sequel_prev: Option<SequelLink>,
     /// Successor game in the sequel chain. `None` if no successor data.
@@ -126,8 +132,7 @@ pub async fn get_related_games(
 
     let is_arcade = replay_control_core::systems::is_arcade_system(&system);
 
-    let region_pref = state.region_preference();
-    let region_pref_str = region_pref.as_str().to_string();
+    let (region_pref_str, region_secondary_str) = super::region_strings(&state);
 
     let genre_fallback = {
         let g = super::search::lookup_genre(&system, &filename).await;
@@ -137,6 +142,7 @@ pub async fn get_related_games(
     let system_cl = system.clone();
     let filename_cl = filename.clone();
     let region_pref_str_cl = region_pref_str.clone();
+    let region_secondary_cl = region_secondary_str.clone();
 
     let db_data = state
         .library_reader
@@ -250,6 +256,23 @@ pub async fn get_related_games(
                 LibraryDb::sequel_info(conn, &system_cl, &base_title, &region_pref_str_cl)
                     .unwrap_or_default();
 
+            // Other games on the same arcade board (excluding this title).
+            let same_board_raw = current_entry
+                .and_then(|e| e.board)
+                .map(|board| {
+                    let tag = board.as_tag();
+                    let games = LibraryDb::games_by_board(
+                        conn,
+                        tag,
+                        12,
+                        &region_pref_str_cl,
+                        &region_secondary_cl,
+                    )
+                    .unwrap_or_default();
+                    (tag.to_string(), games)
+                })
+                .unwrap_or_default();
+
             (
                 variants,
                 translations_raw,
@@ -264,6 +287,7 @@ pub async fn get_related_games(
                 base_title,
                 all_system_roms,
                 sequel_chain,
+                same_board_raw,
             )
         })
         .await;
@@ -282,6 +306,7 @@ pub async fn get_related_games(
         base_title,
         all_system_roms,
         sequel_chain,
+        (same_board_tag, same_board_pool),
     )) = db_data
     else {
         return Ok(RelatedGamesData {
@@ -296,6 +321,8 @@ pub async fn get_related_games(
             series_siblings: Vec::new(),
             series_name: String::new(),
             similar_games: Vec::new(),
+            same_board: Vec::new(),
+            same_board_href: String::new(),
             sequel_prev: None,
             sequel_next: None,
             series_position: None,
@@ -473,6 +500,20 @@ pub async fn get_related_games(
     let similar_games: Vec<RecommendedGame> =
         similar_pool.iter().take(8).map(to_recommended).collect();
 
+    // Build "more on this board" row: other games on the same board, excluding
+    // the current title. Links to the dedicated /board/<tag> page.
+    let same_board: Vec<RecommendedGame> = same_board_pool
+        .iter()
+        .filter(|e| e.base_title != base_title)
+        .take(8)
+        .map(to_recommended)
+        .collect();
+    let same_board_href = if same_board.is_empty() {
+        String::new()
+    } else {
+        format!("/board/{}", urlencoding::encode(&same_board_tag))
+    };
+
     // Build sequel/prequel links.
     let sequel_prev = sequel_chain.follows_title.map(|title| {
         let (href, in_library) = match &sequel_chain.follows_entry {
@@ -536,6 +577,8 @@ pub async fn get_related_games(
         series_siblings,
         series_name,
         similar_games,
+        same_board,
+        same_board_href,
         sequel_prev,
         sequel_next,
         series_position,

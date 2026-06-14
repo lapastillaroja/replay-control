@@ -205,6 +205,7 @@ fn GameDetailContent(
     let arcade_category = StoredValue::new(game.arcade_category.clone());
     let has_category = game.arcade_category.is_some();
     let arcade_board = game.arcade_board.clone();
+    let arcade_board_tag = game.arcade_board_tag.clone();
 
     // Console-specific fields
     let region = game.region.clone();
@@ -474,11 +475,14 @@ fn GameDetailContent(
                 </Show>
 
                 // Arcade-specific fields
-                {arcade_board.map(|b| view! {
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailBoard)}</span>
-                        <span class="game-meta-value">{b}</span>
-                    </div>
+                {arcade_board.zip(arcade_board_tag).map(|(label, tag)| {
+                    let href = format!("/board/{}", urlencoding::encode(&tag));
+                    view! {
+                        <div class="game-meta-item">
+                            <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailBoard)}</span>
+                            <A href=href attr:class="game-meta-value game-meta-link">{label}</A>
+                        </div>
+                    }
                 })}
                 {rotation.map(|r| view! {
                     <div class="game-meta-item">
@@ -999,8 +1003,9 @@ fn RelatedGamesSection(
                         let has_cross_system = !data.cross_system.is_empty();
                         let has_series = !data.series_siblings.is_empty();
                         let has_similar = !data.similar_games.is_empty();
+                        let has_same_board = !data.same_board.is_empty();
                         let has_sequel_nav = data.sequel_prev.is_some() || data.sequel_next.is_some();
-                        if !has_variants && !has_translations && !has_hacks && !has_alternates && !has_specials && !has_arcade_versions && !has_aliases && !has_cross_system && !has_series && !has_similar && !has_sequel_nav {
+                        if !has_variants && !has_translations && !has_hacks && !has_alternates && !has_specials && !has_arcade_versions && !has_aliases && !has_cross_system && !has_series && !has_similar && !has_same_board && !has_sequel_nav {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
@@ -1090,6 +1095,13 @@ fn RelatedGamesSection(
                                         title_key=Key::GameDetailMoreLikeThis
                                     />
                                 </Show>
+                                <Show when=move || has_same_board>
+                                    <SimilarGamesRow
+                                        games=data.same_board.clone()
+                                        title_key=Key::GameDetailMoreOnBoard
+                                        see_all_href=data.same_board_href.clone()
+                                    />
+                                </Show>
                             }.into_any()
                         }
                     }
@@ -1154,22 +1166,35 @@ fn SimilarGamesRow(
     /// `GameDetailMoreOfSeries` (e.g. "More of Kirby"), overriding `title_key`.
     #[prop(default = String::new())]
     custom_title: String,
+    /// Optional "see all" target (e.g. `/board/<tag>`). Renders a link in the
+    /// section header when non-empty.
+    #[prop(default = String::new())]
+    see_all_href: String,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let has_custom = !custom_title.is_empty();
+    let see_all = StoredValue::new(see_all_href);
+    let has_see_all = move || !see_all.get_value().is_empty();
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">
-                {move || {
-                    let locale = i18n.locale.get();
-                    if has_custom {
-                        tf(locale, Key::GameDetailMoreOfSeries, &[&custom_title])
-                    } else {
-                        t(locale, title_key).to_string()
-                    }
-                }}
-            </h2>
+            <div class="game-section-header">
+                <h2 class="game-section-title">
+                    {move || {
+                        let locale = i18n.locale.get();
+                        if has_custom {
+                            tf(locale, Key::GameDetailMoreOfSeries, &[&custom_title])
+                        } else {
+                            t(locale, title_key).to_string()
+                        }
+                    }}
+                </h2>
+                <Show when=has_see_all>
+                    <A href=see_all.get_value() attr:class="search-see-all">
+                        {move || t(i18n.locale.get(), Key::CommonSeeAll)} " \u{2192}"
+                    </A>
+                </Show>
+            </div>
             <div class="scroll-card-row">
                 {games.into_iter().map(|game| {
                     let name = game.label.unwrap_or(game.display_name);

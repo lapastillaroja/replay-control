@@ -306,6 +306,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailAlternateVersions => "代替バージョン",
         Key::GameDetailAlsoAvailableOn => "他のシステムでも利用可能",
         Key::GameDetailMoreLikeThis => "似たゲーム",
+        Key::GameDetailMoreOnBoard => "この基板の他のゲーム",
         Key::GameDetailOtherVersions => "他のバージョン",
         Key::GameDetailMoreInSeries => "同シリーズの作品",
         Key::GameDetailMoreOfSeries => "{0}シリーズの作品",
@@ -554,7 +555,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillGamesBy => "{0}のゲーム",
         Key::PillMultiplayer => "マルチプレイ",
         Key::PillCoOp => "協力プレイ",
+        Key::PillBoard => "他の{0}",
         Key::SpotlightCoOp => "協力プレイ",
+        Key::SpotlightBoard => "{0}のゲーム",
 
         // Analytics
         Key::AnalyticsTitle => "匿名の使用統計",

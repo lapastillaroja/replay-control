@@ -59,3 +59,7 @@ Each developer has a dedicated page (`/developer/:name`) with:
 - **Content filters** -- hide hacks, hide translations, hide betas, hide clones, multiplayer only, co-op only, genre filter, minimum rating, year range
 - **Infinite scroll** with pagination
 - **Cross-system game list** with system badges on each card
+
+## Arcade Board Search
+
+When your query matches an arcade board name or shorthand (`cps`, `neo geo`, `mvs`, `naomi`, `f3`, …), a "Games on [board]" block appears, mirroring the developer block: the top-matched board's games plus any other matching boards as tappable links with counts. Each links to a dedicated board page that works just like the developer game list. See [Arcade Boards](arcade-boards.md).

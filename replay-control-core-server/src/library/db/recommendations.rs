@@ -531,6 +531,32 @@ impl LibraryDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Top arcade board tags by distinct-title count (descending). Returns the
+    /// raw `board` slug (`ArcadeBoard::as_tag()`), excluding empty boards and
+    /// clones/translations/hacks/specials to match the board-page counts.
+    pub fn top_boards(conn: &Connection, limit: usize) -> Result<Vec<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT board, COUNT(DISTINCT base_title) as cnt
+                 FROM game_library
+                 WHERE board != ''
+                   AND is_clone = 0
+                   AND is_translation = 0
+                   AND is_hack = 0
+                   AND is_special = 0
+                 GROUP BY board
+                 ORDER BY cnt DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare top_boards: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query top_boards: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Decades that have at least 10 games in the library.
     /// Returns decade start years (e.g., 1980, 1990, 2000).
     pub fn decade_list(conn: &Connection) -> Result<Vec<u16>> {
