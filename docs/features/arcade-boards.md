@@ -4,6 +4,8 @@ Browse and discover arcade games by the hardware they ran on.
 
 Most arcade games were built for a specific circuit board — Capcom's CPS-2, SNK's Neo Geo MVS, Taito's F3 System, Sega's System 16, and so on. Replay Control identifies the board behind each arcade game in your library and turns it into something you can browse, search, and get recommendations from.
 
+{{< screenshot "board-cps2.png" "Browsing every CPS-2 game in the library on its board page" >}}
+
 ## On a Game's Page
 
 Arcade games show their board in the info card, labelled with the manufacturer — for example **CPS-2 (Capcom)** or **Neo Geo MVS (SNK)**. The board is a link: tap it to open that board's page and see everything else in your library that ran on the same hardware.
@@ -21,6 +23,8 @@ Each board has its own page (`/board/:tag`) that works just like the developer p
 It's the easiest way to answer "what else do I have on this board?"
 
 ## Board Search
+
+{{< screenshot "search-board-cps.png" "Typing \"cps\" surfaces a Games on CPS-1 block plus the other matching CPS boards" >}}
 
 When your search query matches a board name or a common shorthand — `cps`, `neo geo`, `mvs`, `naomi`, `f3`, and so on — a **Games on [board]** block appears above the regular results, showing the top-matched board's games with box art. If the query matches more than one board (typing `cps` finds CPS-1, CPS-2, and CPS-3), the extras are listed below as tappable links with game counts. Each links straight to its board page.
 
