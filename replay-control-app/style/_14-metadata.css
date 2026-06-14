@@ -60,10 +60,7 @@
 }
 
 .system-accordion-list {
-    /* Bordered container only; rows own their inset (full-bleed dividers). */
-    --panel-padding: 0;
     --stack-gap: var(--stack-gap-none);
-    overflow: hidden;
 }
 
 .system-accordion-row {

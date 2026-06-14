@@ -68,9 +68,7 @@
 }
 
 .search-group {
-    padding: 0;
-    border-radius: var(--radius);
-    overflow: hidden;
+    --list-surface-radius: var(--radius);
 }
 
 /* Header text inset a touch past the result rows so the section label sits

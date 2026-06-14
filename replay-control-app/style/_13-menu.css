@@ -118,10 +118,7 @@
 
 /* Info grid (system info rows) */
 .info-grid {
-    overflow: hidden;
     margin-bottom: var(--stack-gap-lg);
-    /* Bordered container only; rows own their inset (full-bleed). */
-    --panel-padding: 0;
 }
 
 .update-version {

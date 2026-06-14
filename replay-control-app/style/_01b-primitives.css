@@ -91,8 +91,6 @@
     .skeleton-card,
     .logs-output,
     .logs-empty,
-    .system-accordion-list,
-    .info-grid,
     .game-meta-item,
     .setup-task,
     .scroll-card-item,
@@ -105,7 +103,6 @@
     .boxart-picker-sheet,
     .save-states-slot,
     .manual-link,
-    .search-group,
     .organize-panel,
     .video-embed
 ) {
@@ -114,6 +111,20 @@
     border-radius: var(--surface-radius);
     padding: var(--panel-padding);
     min-height: var(--panel-min-height, auto);
+}
+
+/* Bordered list surface: a container whose child rows are full-bleed and own
+   their own horizontal inset. Unlike the panel group above, it sets NO
+   padding — that's the whole point. A new "list of rows" container joins
+   here instead of joining the panel group and then having to remember to
+   zero its padding (the omission that produced the info-grid / accordion
+   double-padding bugs). Members set --list-surface-radius for a non-default
+   corner. */
+:where(.search-group, .info-grid, .system-accordion-list) {
+    background: var(--control-bg, var(--surface));
+    border: var(--control-border);
+    border-radius: var(--list-surface-radius, var(--surface-radius));
+    overflow: hidden;
 }
 
 :where(.organize-panel, .import-progress-bar, .boxart-picker-sheet) {
