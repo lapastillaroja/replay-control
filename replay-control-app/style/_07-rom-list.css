@@ -70,6 +70,10 @@
 /* ROM favorite button */
 .rom-fav-btn {
     color: var(--text-secondary);
+    /* Drop the icon button's left padding so the star's glyph aligns to the
+       row's content edge instead of sitting an extra 8px in (the row padding
+       already provides the inset from the surface edge). */
+    padding-left: 0;
 }
 
 .rom-fav-btn:hover {

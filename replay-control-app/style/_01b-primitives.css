@@ -582,7 +582,7 @@
     font-weight: var(--secondary-action-font-weight, 400);
 }
 
-:where(.load-more-btn, .manual-result-btn) {
+:where(.load-more-btn, .manual-result-btn, .recommendation-pin-btn) {
     --secondary-action-font-size: var(--font-size-compact-default);
 }
 

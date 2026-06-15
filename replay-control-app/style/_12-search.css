@@ -33,6 +33,8 @@
     --chip-padding-y: var(--chip-padding-y-tight);
     --chip-padding-x: var(--chip-padding-x-compact);
     --chip-font-size: var(--font-size-compact-scale-default);
+    /* Match the rating/genre selects' height so the filter row is uniform. */
+    min-height: var(--control-height-compact);
 }
 
 .filter-chip:hover {
@@ -102,7 +104,9 @@
 
 /* Recent searches */
 .recent-chip {
-    --chip-padding-y: var(--chip-padding-y-tight);
+    /* Inner text/remove parts carry the vertical padding; zero the chip's own
+       so it isn't doubled. */
+    --chip-padding-y: 0;
     --chip-padding-x: var(--chip-padding-x-tight);
     overflow: hidden;
 }
@@ -123,9 +127,10 @@
 /* Random game button */
 .random-game-btn {
     --inline-action-gap: var(--control-gap-tight);
-    --button-padding: var(--action-padding-xl);
+    /* Match the search controls' height; sized to its content. */
+    --button-padding: var(--space-1) var(--block-padding-sm);
+    min-height: var(--control-height-compact);
     align-self: flex-start;
-    min-width: 12rem;
     color: var(--text);
 }
 
@@ -138,7 +143,7 @@
 }
 
 .random-game-icon {
-    font-size: var(--font-size-large-default);
+    font-size: var(--font-size-regular-default);
 }
 
 /* Other developers matching list */
@@ -149,11 +154,12 @@
 .developer-match-heading {
     margin-top: var(--panel-gap);
     margin-bottom: var(--panel-gap);
-    padding-inline: var(--space-7);
 }
 
 .developer-match-item {
-    --row-padding-y: var(--row-padding-y-spacious);
+    /* Compact single-line nav rows with the standard list inset so the name
+       isn't crammed against the box edge. */
+    --row-padding-y: var(--row-padding-y-slim);
     --surface-radius: 0;
     --row-justify: space-between;
     border-bottom: none;
@@ -180,7 +186,10 @@
 
 /* Developer page: system filter chips */
 .system-filter-chips {
-    padding: 0 var(--block-padding-md) var(--block-padding-sm);
+    /* No horizontal padding so the first chip aligns to the page content column
+       (was 16px in, offsetting the whole strip from the back / count / rows). */
+    padding: 0 0 var(--block-padding-sm);
+    align-items: center;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -195,6 +204,8 @@
     --chip-padding-y: var(--chip-padding-y-tight);
     --chip-padding-x: var(--chip-padding-x-compact);
     --chip-font-size: var(--font-size-tiny-default);
+    /* Match the global filter-chip height so the two chip strips agree. */
+    min-height: var(--control-height-compact);
     flex-shrink: 0;
 }
 
