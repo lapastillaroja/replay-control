@@ -49,15 +49,6 @@
     .now-playing-save-states {
         width: 100%;
     }
-
-    .now-playing-bar-title {
-        display: -webkit-box;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: normal;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-    }
 }
 
 @media (max-width: 520px) and (orientation: portrait) {
