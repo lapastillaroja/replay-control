@@ -168,7 +168,7 @@ html {
     --block-padding-md: var(--space-7);
     --block-padding-lg: var(--space-9);
     --panel-padding-card-lg: var(--surface-padding-lg);
-    --card-width-default: 8.125rem;
+    --card-width-default: 9.25rem;
     --panel-min-height-default: 64px;
     --surface-inset-sm: var(--space-4) var(--space-6);
     --surface-inset-md: var(--space-5) var(--space-7);
@@ -274,8 +274,8 @@ html {
     --skeleton-cell-height: 0.75rem;
     --skeleton-row-height: calc(var(--compact-rhythm-default) * var(--font-size-base-default));
     --extent-medium-default: 5rem;
-    --skeleton-card-image-height: var(--extent-medium-default);
-    --skeleton-hero-thumb-height: var(--extent-medium-default);
+    --skeleton-card-image-height: var(--scroll-card-thumb-height-default);
+    --skeleton-hero-thumb-height: var(--scroll-card-thumb-height-default);
     --skeleton-hero-title-height: var(--font-size-large-default);
     --skeleton-hero-system-height: var(--font-size-regular-default);
     --skeleton-fav-thumb-height: 3.2rem;
@@ -298,11 +298,11 @@ html {
     --font-size-nano-default: 0.6rem;
     --skeleton-detail-meta-label-height: var(--font-size-nano-default);
     --skeleton-detail-meta-value-height: var(--font-size-compact-default);
-    --hero-thumb-height-default: var(--extent-medium-default);
-    --hero-thumb-height-spacious: 4.5rem;
-    --hero-thumb-max-width-default: var(--extent-medium-default);
-    --hero-thumb-max-width-spacious: 6rem;
-    --scroll-card-thumb-height-default: var(--extent-medium-default);
+    /* Hero (last played) box art matches the scroll-card art exactly. */
+    --hero-thumb-height-default: var(--scroll-card-thumb-height-default);
+    --hero-thumb-max-width-default: var(--card-thumb-max-width-default);
+    --scroll-card-thumb-height-default: 8.5rem;
+    --card-thumb-max-width-default: 7.5rem;
     --cover-media-height-default: 18.75rem;
     --extent-large-default: 10rem;
     --recommendation-thumb-width-default: 7.5rem;

@@ -64,7 +64,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Arcade (FBNeo)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
-        abbreviation: "ARC",
+        abbreviation: "FBN",
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
@@ -79,7 +79,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Arcade (MAME)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
-        abbreviation: "ARC",
+        abbreviation: "MAME",
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
@@ -95,7 +95,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Arcade (MAME 2003+)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
-        abbreviation: "ARC",
+        abbreviation: "2K3P",
         placeholder_color: "#1a1a2e",
         extensions: &["zip"],
         launchbox_platforms: &["Arcade"],
@@ -108,7 +108,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Arcade (Atomiswave/Naomi)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
-        abbreviation: "ARC",
+        abbreviation: "NAO",
         placeholder_color: "#1a1a2e",
         extensions: &["zip", "chd"],
         launchbox_platforms: &["Sammy Atomiswave", "Sega Naomi", "Sega Naomi 2"],
@@ -470,7 +470,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sega CD / Mega-CD",
         manufacturer: "Sega",
         category: SystemCategory::Console,
-        abbreviation: "SCD",
+        abbreviation: "MCD",
         placeholder_color: "#333355",
         extensions: &["chd", "cue", "iso", "m3u"],
         launchbox_platforms: &["Sega CD"],
@@ -770,6 +770,14 @@ pub fn find_system(folder_name: &str) -> Option<&'static System> {
 pub fn system_display_name(folder_name: &str) -> String {
     find_system(folder_name)
         .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| folder_name.to_string())
+}
+
+/// Short abbreviation for compact display (e.g. "SNES", "MD", "ZX"), or the
+/// folder name when the system is unknown. Mirrors [`system_display_name`].
+pub fn system_abbreviation(folder_name: &str) -> String {
+    find_system(folder_name)
+        .map(|s| s.abbreviation.to_string())
         .unwrap_or_else(|| folder_name.to_string())
 }
 

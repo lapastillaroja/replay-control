@@ -1198,11 +1198,12 @@ fn SimilarGamesRow(
             <div class="scroll-card-row">
                 {games.into_iter().map(|game| {
                     let name = game.label.unwrap_or(game.display_name);
+                    let system = systems::system_abbreviation(&game.system);
                     view! {
                         <GameScrollCard
                             href=game.href
                             name=name
-                            system=game.system_display
+                            system=system
                             system_folder=game.system
                             box_art_url=game.box_art_url
                         />

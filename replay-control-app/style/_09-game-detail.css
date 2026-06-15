@@ -148,7 +148,8 @@
 }
 
 .game-launch-cta {
-    padding: var(--panel-gap) var(--page-edge-padding);
+    /* Sit close to the cover — the section gap above already separates it. */
+    padding: 0 var(--page-edge-padding) var(--panel-gap);
 }
 
 .game-launch-action {

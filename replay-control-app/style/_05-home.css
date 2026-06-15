@@ -166,6 +166,9 @@
 /* Hero card (last played) */
 .hero-card {
     gap: var(--stack-gap-xl);
+    /* Tight vertical padding so the card hugs the (now larger) box art instead
+       of stacking it on top of the old, roomier feature-card padding. */
+    --text-action-padding: var(--space-3) var(--panel-padding-card-lg);
     --hero-card-strip-border: var(--indicator-size-default) solid var(--accent);
     border: var(--control-border-accent);
     border-left: var(--hero-card-strip-border);
@@ -220,10 +223,21 @@
     padding-bottom: var(--control-stack-gap-sm);
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+    /* Centre the capped cards within their (wider) grid tracks. */
+    justify-items: center;
 }
 
 .scroll-card-item {
     min-width: 0;
+    /* Box art is full-bleed to the top/sides; only the bottom is padded, below
+       the title. (Bottom space must live here, not on the line-clamped title —
+       padding-bottom there leaks a sliver of the clipped 3rd line.) */
+    --text-action-padding: 0 0 var(--space-2);
+    /* Card width = box-art width: landscape art fills it edge to edge, while
+       narrower portrait/square art centres on the card surface. */
+    max-width: var(--card-thumb-max-width-default);
+    /* Clip the full-bleed art to the card's rounded corners. */
+    overflow: hidden;
 }
 
 .scroll-card-item:hover {
@@ -233,26 +247,41 @@
 .scroll-card-thumb {
     height: var(--scroll-card-thumb-height-default);
     width: auto;
-    max-width: var(--thumb-size-wide-default);
-    margin-bottom: var(--control-stack-gap-sm);
+    /* Box-fit so square / portrait / landscape box art all scale without
+       distortion; contain letterboxes the rare wide art within the box. */
+    max-width: var(--card-thumb-max-width-default);
+    object-fit: contain;
+    margin-bottom: var(--space-2);
 }
 
 .scroll-card-thumb-placeholder {
     height: var(--scroll-card-thumb-height-default);
-    aspect-ratio: 0.7;
-    border-radius: var(--thumbnail-radius);
-    margin-bottom: var(--control-stack-gap-sm);
+    /* Fill the card width like landscape art; the card clip rounds the corners. */
+    width: 100%;
+    margin-bottom: var(--space-2);
 }
 
 .scroll-card-name {
-    margin-bottom: var(--control-gap-tight);
     width: 100%;
     text-align: center;
+    /* Inline padding only — bottom padding lives on the card (see above) to avoid
+       the -webkit-line-clamp padding-bottom leak. */
+    padding-inline: var(--space-2);
+    /* Reserve two lines so cards stay the same height; the system tag leads and
+       the title ellipsizes within the remaining space (2-line clamp from base). */
+    min-height: calc(2 * 1.35em);
+    /* Break overlong unbreakable tokens so a long name can't widen the card. */
+    overflow-wrap: anywhere;
 }
 
+/* Short system tag leading the title line — accent-colored so it reads as a
+   label, and placed first so the 2-line clamp can never trim it away. */
 .scroll-card-system {
-    text-align: center;
-    width: 100%;
+    color: var(--accent);
+    font-size: inherit;
+    font-weight: 600;
+    /* Clear gap before the title so the tag reads as a separate label. */
+    margin-right: 0.55em;
 }
 
 .stat-card {

@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use replay_control_core::systems::system_abbreviation;
 
 use crate::components::hero_card::GameScrollCard;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
@@ -39,11 +40,12 @@ pub fn GameSectionRow(section: GameSection) -> impl IntoView {
             </div>
             <div class="scroll-card-row">
                 {section.games.into_iter().map(|game| {
+                    let system = system_abbreviation(&game.system);
                     view! {
                         <GameScrollCard
                             href=game.href
                             name=game.display_name
-                            system=game.system_display
+                            system=system
                             system_folder=game.system
                             box_art_url=game.box_art_url
                         />

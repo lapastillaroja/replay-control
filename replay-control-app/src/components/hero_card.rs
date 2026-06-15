@@ -44,8 +44,12 @@ pub fn HeroCard(
 pub fn GameScrollCard(
     href: String,
     name: String,
+    /// Short system label shown as a prefix at the start of the title line
+    /// (e.g. "MD", "SNES"). Resolved by the caller; placing it first keeps it
+    /// always visible while the title clamps to two lines after it.
+    #[prop(default = String::new())]
     system: String,
-    /// System folder name for placeholder rendering (e.g., "nintendo_snes").
+    /// System folder name for the box-art placeholder (e.g. "nintendo_snes").
     #[prop(default = String::new())]
     system_folder: String,
     box_art_url: Option<String>,
@@ -53,6 +57,9 @@ pub fn GameScrollCard(
     let has_art = box_art_url.is_some();
     let placeholder_name = name.clone();
     let placeholder_folder = system_folder;
+    // The short system label leads the line so the 2-line clamp (which trims the
+    // end) can never hide it; the title flows after and ellipsizes if too long.
+    let sys_label = (!system.is_empty()).then_some(system);
 
     view! {
         <A href=href attr:class="scroll-card-item rom-name-link">
@@ -65,8 +72,12 @@ pub fn GameScrollCard(
                     </div>
                 }.into_any()
             }}
-            <div class="scroll-card-name">{name}</div>
-            <div class="scroll-card-system">{system}</div>
+            <div class="scroll-card-name">
+                {sys_label.map(|s| view! {
+                    <span class="scroll-card-system">{s}</span>
+                })}
+                {name}
+            </div>
         </A>
     }
 }

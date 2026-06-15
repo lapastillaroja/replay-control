@@ -233,19 +233,11 @@
         grid-template-columns: repeat(4, 1fr);
     }
 
-    /* Hero card: more breathing room */
+    /* Hero card: a touch more horizontal room; vertical padding stays tight so
+       the larger box art sets the (compact) card height. */
     .hero-card {
-        padding: var(--block-padding-lg);
+        padding: var(--space-3) var(--block-padding-lg);
         gap: var(--stack-gap-xl);
-    }
-
-    .hero-thumb {
-        height: var(--hero-thumb-height-spacious);
-        max-width: var(--hero-thumb-max-width-spacious);
-    }
-
-    .hero-thumb-placeholder {
-        height: var(--hero-thumb-height-spacious);
     }
 
     .hero-title {

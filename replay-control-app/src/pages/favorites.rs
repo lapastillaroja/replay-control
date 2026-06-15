@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
+use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
@@ -183,7 +184,7 @@ where
                         {move || recent_items().into_iter().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                             let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
-                            let system = f.fav.game.system_display.clone();
+                            let system = system_abbreviation(&f.fav.game.system);
                             let system_folder = f.fav.game.system.clone();
                             let box_art_url = f.box_art_url.clone();
                             view! {

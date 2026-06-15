@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
 use crate::components::game_section_row::GameSectionRow;
@@ -68,7 +69,7 @@ pub fn HomePage() -> impl IntoView {
                                         let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
                                         let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
                                         let art_url = item.box_art_url.clone();
-                                        let system = item.entry.game.system_display.clone();
+                                        let system = system_abbreviation(&item.entry.game.system);
                                         let system_folder = item.entry.game.system.clone();
                                         view! {
                                             <GameScrollCard href name system system_folder box_art_url=art_url />

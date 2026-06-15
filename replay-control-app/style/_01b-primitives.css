@@ -1367,7 +1367,7 @@
     --item-subtitle-font-size: var(--item-subtitle-font-size-hero);
 }
 
-:where(.rom-name, .fav-name, .scroll-card-system) {
+:where(.rom-name, .fav-name) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

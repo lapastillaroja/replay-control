@@ -39,6 +39,9 @@
     text-transform: capitalize;
     padding: 0 var(--bp-name-padding-inline);
     line-height: var(--bp-name-line-height);
+    /* Break overlong unbreakable tokens so the placeholder name can't widen the
+       card it sits in (e.g. a long spaceless title with no box art). */
+    overflow-wrap: anywhere;
 }
 
 /* Size variants */
