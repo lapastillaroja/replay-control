@@ -504,18 +504,20 @@
 }
 
 :where(.back-btn) {
-    background: none;
-    border: none;
+    background: var(--control-bg, var(--surface));
+    border: var(--control-border);
+    border-radius: var(--radius-sm);
     color: var(--back-btn-color, var(--text));
     padding: var(--back-btn-padding, var(--action-padding-sm));
     font-size: var(--font-size-compact-default);
     text-decoration: none;
     cursor: pointer;
     touch-action: manipulation;
-    transition: color var(--motion-fast);
+    transition: border-color var(--motion-fast), color var(--motion-fast);
 }
 
 :where(.back-btn):hover:not(:disabled) {
+    border-color: var(--accent);
     color: var(--back-btn-hover-color, var(--accent));
 }
 
