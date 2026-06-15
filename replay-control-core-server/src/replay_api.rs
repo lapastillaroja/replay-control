@@ -123,23 +123,41 @@ impl ReplayApiClient {
         self.get_json("get_status", &[]).await
     }
 
-    pub async fn get_replay_config(&self) -> Result<ReplayConfigSnapshot, ApiError> {
-        self.get_json("get_replay_config", &[]).await
+    /// Hardware / resource / display info, plus the running game's native
+    /// resolution (`get_info`, RePlayOS ≥ 1.7.4).
+    pub async fn get_info(&self) -> Result<InfoResponse, ApiError> {
+        self.get_json("get_info", &[]).await
+    }
+
+    /// Read a config domain (`get_config?type=…`). RePlayOS omits sensitive
+    /// `wifi_*`/`nfs_*`/password/token values from the `replay` config.
+    pub async fn get_config(&self, kind: ConfigKind) -> Result<ReplayConfigSnapshot, ApiError> {
+        self.get_json("get_config", &[("type", kind.as_str().to_string())])
+            .await
     }
 
     pub async fn get_media_status(&self) -> Result<MediaStatus, ApiError> {
         self.get_json("get_media_status", &[]).await
     }
 
-    /// Update one RePlayOS config option. RePlayOS owns validation,
-    /// persistence, and any side effects; callers sequence multi-key saves.
-    pub async fn set_replay_config(&self, option: &str, value: &str) -> Result<(), ApiError> {
-        self.get_json::<serde_json::Value>(
-            "set_replay_config",
-            &[("option", option.to_string()), ("value", value.to_string())],
-        )
-        .await
-        .map(|_| ())
+    /// Apply one or more config changes in a single atomic request
+    /// (`set_config?type=…&option=…&value=…`, up to 64 pairs). RePlayOS
+    /// validates the whole request before writing anything and owns
+    /// persistence and side effects, so there is no partial-apply state.
+    pub async fn set_config(
+        &self,
+        kind: ConfigKind,
+        changes: &[(&str, &str)],
+    ) -> Result<(), ApiError> {
+        let mut query = Vec::with_capacity(1 + changes.len() * 2);
+        query.push(("type", kind.as_str().to_string()));
+        for (option, value) in changes {
+            query.push(("option", (*option).to_string()));
+            query.push(("value", (*value).to_string()));
+        }
+        self.get_json::<serde_json::Value>("set_config", &query)
+            .await
+            .map(|_| ())
     }
 
     /// Launch a game. `game_file` is relative to the system folder. Works from
@@ -242,6 +260,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_info_parses_payload() {
+        let base = serve(
+            "200 OK",
+            r#"{"version":"RePlayOS v1.7.4","model":"Raspberry Pi 5","cpu_temperature_c":59.0,"available_ram_mb":1980,"display":"MORTACA DEV00, ATG","display_resolution":{"width":2560,"height":240,"refresh_hz":60.0}}"#,
+        );
+        let info = client_for(base).get_info().await.unwrap();
+        assert_eq!(info.model, "Raspberry Pi 5");
+        assert_eq!(info.display_resolution.unwrap().width, 2560);
+    }
+
+    #[tokio::test]
     async fn unauthorized_is_classified() {
         let base = serve("401 Unauthorized", r#"{"error":"Unauthorized"}"#);
         let err = client_for(base).get_version().await.unwrap_err();
@@ -268,10 +297,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_replay_config_accepts_success() {
-        let base = serve("200 OK", r#"{"ok":true}"#);
+    async fn set_config_accepts_success() {
+        let base = serve(
+            "200 OK",
+            r#"{"command":"set_config","type":"replay","created":false,"updated":true}"#,
+        );
         client_for(base)
-            .set_replay_config("rcheevos_username", "player")
+            .set_config(
+                ConfigKind::Replay,
+                &[
+                    ("rcheevos_username", "player"),
+                    ("rcheevos_password", "secret"),
+                ],
+            )
             .await
             .unwrap();
     }

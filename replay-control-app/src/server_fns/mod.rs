@@ -283,6 +283,11 @@ pub struct SystemInfo {
     pub total_favorites: usize,
     pub ethernet_ip: Option<String>,
     pub wifi_ip: Option<String>,
+    /// Device hardware basics, read from the OS. Populated only on the device
+    /// (`None` in standalone mode); rendered in the Settings "System" section.
+    pub model: Option<String>,
+    pub cpu_temperature_c: Option<f64>,
+    pub available_ram_mb: Option<u64>,
     /// Whether the app is running on the RePlayOS device or in standalone mode.
     /// Drives gating of device-only settings (Wi-Fi, NFS, reboot, …).
     pub mode: Mode,

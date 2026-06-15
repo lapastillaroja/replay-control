@@ -1,6 +1,6 @@
 //! Pure wire types for the official RePlayOS REST API.
 //!
-//! RePlayOS ≥ 1.7.3 serves `http://<device>:55356/api/v1` from the frontend
+//! RePlayOS ≥ 1.7.4 (minimum supported) serves `http://<device>:55356/api/v1` from the frontend
 //! process, gated on the `system_net_control` config option and authenticated
 //! with the `X-RePlay-Token` header (the "Net Control code"). The native
 //! client lives in `replay_control_core_server::replay_api`; this module holds
@@ -72,21 +72,17 @@ pub struct StatusResponse {
     pub core_file: Option<String>,
     #[serde(default)]
     pub core_info: Option<String>,
-    /// Newer RePlayOS builds may report `halt` here. Optional so public
-    /// RePlayOS 1.7.3 payloads continue to deserialize unchanged.
-    #[serde(default, alias = "state", alias = "play_status")]
-    pub status: Option<String>,
-    /// Tolerate boolean spellings if the API shape changes before the next
-    /// public RePlayOS release.
-    #[serde(default, alias = "halted")]
-    pub halt: Option<bool>,
+    /// CRT-photo freeze state (`halted` in `get_status`, official since 1.7.4).
+    /// Optional only because transient transition payloads omit it.
+    #[serde(default)]
+    pub halted: Option<bool>,
 }
 
 impl StatusResponse {
     /// Transient transition payload with the load-bearing fields missing —
     /// hold the previous state rather than interpreting it.
     pub fn is_degenerate(&self) -> bool {
-        self.view_id.is_none() && self.status.is_none() && self.halt.is_none()
+        self.view_id.is_none() && self.halted.is_none()
     }
 
     pub fn view_kind(&self) -> Option<View> {
@@ -100,22 +96,110 @@ impl StatusResponse {
     }
 
     pub fn is_halted(&self) -> bool {
-        self.halt.unwrap_or(false)
-            || self
-                .status
-                .as_deref()
-                .is_some_and(|status| status.eq_ignore_ascii_case("halt"))
-            || self
-                .view
-                .as_deref()
-                .is_some_and(|view| view.eq_ignore_ascii_case("halt"))
+        self.halted.unwrap_or(false)
     }
 }
 
-/// `get_version` payload, e.g. `{"version": "RePlayOS v1.7.3"}`.
+/// `get_version` payload, e.g. `{"version": "RePlayOS v1.7.4"}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VersionResponse {
     pub version: String,
+}
+
+/// Minimum RePlayOS version Replay Control supports as `(major, minor, patch)`.
+///
+/// 1.7.4 renamed the config endpoints (`get_replay_config` →
+/// `get_config?type=…`, old names now 404). A 1.7.3 device exposes the API and
+/// passes the bare `system_net_control` presence check, so it connects as
+/// `Active` — but every config read/write then 404s. Gating on this floor
+/// rejects such a device up front with a clear "update RePlayOS" verdict.
+pub const MIN_SUPPORTED: (u32, u32, u32) = (1, 7, 4);
+
+/// Parse a RePlayOS version string into a comparable `(major, minor, patch)`.
+///
+/// Tolerant by design: it scans for the first run of `\d+(\.\d+)*` anywhere in
+/// the string, so `"RePlayOS v1.7.4"`, `"v1.7.10"`, `"1.8"`, and
+/// `"RePlayOS v2.0.0-beta"` all parse. Missing minor/patch default to 0. A
+/// string with no numeric version (`""`, `"RePlayOS"`, `"unknown"`) returns
+/// `None`.
+pub fn parse_replayos_version(version: &str) -> Option<(u32, u32, u32)> {
+    // Find the first character that starts a numeric component.
+    let start = version.find(|c: char| c.is_ascii_digit())?;
+    let rest = &version[start..];
+    // Take the leading dotted-number run (stop at the first non-digit/non-dot).
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(rest.len());
+    let mut parts = rest[..end].split('.').filter(|p| !p.is_empty());
+
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let patch = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+/// Whether a reported RePlayOS version meets the [`MIN_SUPPORTED`] floor.
+///
+/// Fail-OPEN on unparseable input: if the version string carries no recognizable
+/// version number we treat the device as supported. RePlayOS could change its
+/// version string format in a future release, and locking working users out on
+/// a parse miss is worse than letting a config call surface its own error. Only
+/// a *successfully parsed* version below the floor is reported as unsupported.
+pub fn is_supported_replayos_version(version: &str) -> bool {
+    match parse_replayos_version(version) {
+        Some(parsed) => parsed >= MIN_SUPPORTED,
+        None => true,
+    }
+}
+
+/// [`MIN_SUPPORTED`] rendered as `"major.minor.patch"` for user-facing messages.
+/// The single source of truth for the displayed minimum version — derive it from
+/// the constant rather than hardcoding the number in copy.
+pub fn min_supported_version_str() -> String {
+    let (major, minor, patch) = MIN_SUPPORTED;
+    format!("{major}.{minor}.{patch}")
+}
+
+/// A `width × height @ refresh_hz` mode from `get_info`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Resolution {
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
+    pub refresh_hz: f64,
+}
+
+/// `get_info` payload (RePlayOS ≥ 1.7.4): hardware, resources, the connected
+/// display, and the running game's native resolution.
+///
+/// `game_resolution` is `null` at the menu (no core loaded). Fields are
+/// `#[serde(default)]` so partial payloads still deserialize.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct InfoResponse {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub eeprom: String,
+    #[serde(default)]
+    pub cpu_frequency_mhz: u32,
+    #[serde(default)]
+    pub gpu_frequency_mhz: u32,
+    #[serde(default)]
+    pub cpu_temperature_c: f64,
+    #[serde(default)]
+    pub available_ram_mb: u64,
+    #[serde(default)]
+    pub available_space_bytes: u64,
+    #[serde(default)]
+    pub display: String,
+    #[serde(default)]
+    pub display_resolution: Option<Resolution>,
+    #[serde(default)]
+    pub game_resolution: Option<Resolution>,
 }
 
 /// One disc entry in `get_media_status.images`.
@@ -163,11 +247,19 @@ pub struct DiscInfo {
     pub count: u32,
 }
 
-/// `get_replay_config` payload: `{"modification_num": N, "config": {...}}`.
+/// `get_config?type=…` payload: `{"modification_num": N, "config": {...}}`.
 ///
 /// `modification_num` is a session-local change counter (resets on frontend
 /// restart). The `wifi_*`/`nfs_*` families, passwords, and tokens are absent
 /// from `config` entirely — those stay readable only from replay.cfg.
+///
+/// NOTE: the official docs (replayos.com/rest_api) describe this body as
+/// `{"type","configured","config"}`, but the 1.7.4 device actually returns
+/// `modification_num` + `config` — verified on the dev Pi 2026-06-14. The only
+/// real 1.7.4 change was the endpoint rename (`get_replay_config` →
+/// `get_config?type=…`, old names now 404), not the body. The documented shape
+/// still deserializes (unknown fields ignored), so a future firmware that
+/// matches the docs is tolerated too.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReplayConfigSnapshot {
     #[serde(default)]
@@ -179,6 +271,25 @@ pub struct ReplayConfigSnapshot {
 impl ReplayConfigSnapshot {
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.config.get(key).and_then(|value| value.as_str())
+    }
+}
+
+/// Config domain selected by the `type=` query parameter of
+/// `get_config` / `set_config` (RePlayOS ≥ 1.7.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigKind {
+    Replay,
+    Core,
+    Game,
+}
+
+impl ConfigKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConfigKind::Replay => "replay",
+            ConfigKind::Core => "core",
+            ConfigKind::Game => "game",
+        }
     }
 }
 
@@ -206,9 +317,8 @@ impl ApiErrorBody {
 
 /// Commands accepted by `set_cmd`.
 ///
-/// `Halt` is the CRT-photo freeze-frame. Newer RePlayOS builds report it in
-/// `get_status`; older 1.7.3 builds accept the command but do not expose the
-/// state, so callers must tolerate missing halt status.
+/// `Halt` is the CRT-photo freeze-frame; its state is reported by
+/// `get_status.halted`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SetCommand {
     Reboot,
@@ -319,8 +429,15 @@ pub enum ReplayApiStatus {
     },
     /// Stored token rejected (the code was reset on the TV) — user re-onboards.
     Unauthorized,
-    /// RePlayOS too old for the API (< 1.7.3). Detected pre-onboarding by the
-    /// absence of the `system_net_control` key in replay.cfg.
+    /// RePlayOS can't be remote-controlled. Two causes:
+    /// - No Net Control API at all (RePlayOS older than 1.7.x or the feature
+    ///   off): detected pre-onboarding by the absence of the
+    ///   `system_net_control` key in replay.cfg (`version: None`).
+    /// - API present but the firmware is below the [`MIN_SUPPORTED`] floor
+    ///   (e.g. 1.7.3, whose config endpoints 404): detected after a successful
+    ///   `get_version` whose value parses below 1.7.4 (`version: Some(...)`).
+    ///
+    /// Either way the user must update RePlayOS on the TV.
     Unsupported {
         version: Option<String>,
     },
@@ -391,17 +508,28 @@ mod tests {
     }
 
     #[test]
-    fn status_tolerates_optional_halt_shape() {
-        let status: StatusResponse = serde_json::from_str(
-            r#"{"game_file":"/media/sd/roms/sega_smd/Sonic.md","view_id":2,"paused":true,"status":"halt"}"#,
-        )
-        .unwrap();
+    fn status_halted_field() {
+        let status: StatusResponse =
+            serde_json::from_str(r#"{"view_id":2,"halted":true}"#).unwrap();
         assert!(!status.is_degenerate());
         assert!(status.is_halted());
 
         let status: StatusResponse =
-            serde_json::from_str(r#"{"view_id":2,"halted":true}"#).unwrap();
-        assert!(status.is_halted());
+            serde_json::from_str(r#"{"view_id":2,"halted":false}"#).unwrap();
+        assert!(!status.is_halted());
+    }
+
+    #[test]
+    fn status_parses_real_1_7_4_menu_payload() {
+        // Captured from the dev Pi on RePlayOS 1.7.4 (menu, no game loaded):
+        // `halted` is now a real field and maps onto `halt` via the alias.
+        let status: StatusResponse = serde_json::from_str(
+            r#"{"system":"replay_menu","game_file":"","game_name":"","paused":false,"halted":false,"view":"system_options","view_id":1,"core_file":"replay_libretro.so","core_info":"RePlay Menu 2.3"}"#,
+        )
+        .unwrap();
+        assert!(!status.game_loaded());
+        assert!(!status.is_halted());
+        assert_eq!(status.view_kind(), Some(View::SystemOptions));
     }
 
     #[test]
@@ -414,13 +542,55 @@ mod tests {
 
     #[test]
     fn config_snapshot_models_nesting() {
+        // Real 1.7.4 `get_config?type=replay` body (verified on the dev Pi):
+        // {modification_num, config} — NOT the {type,configured,config} the docs claim.
         let snapshot: ReplayConfigSnapshot = serde_json::from_str(
-            r#"{"modification_num":3,"config":{"system_storage":"nfs","system_net_control":"true"}}"#,
+            r#"{"modification_num":0,"config":{"system_storage":"nfs","rcheevos_enabled":"true"}}"#,
         )
         .unwrap();
-        assert_eq!(snapshot.modification_num, 3);
+        assert_eq!(snapshot.modification_num, 0);
         assert_eq!(snapshot.get_str("system_storage"), Some("nfs"));
         assert_eq!(snapshot.get_str("missing"), None);
+    }
+
+    #[test]
+    fn config_snapshot_tolerates_documented_shape() {
+        // Defensive: if a future firmware matches the docs ({type, configured, config}),
+        // it still deserializes (unknown fields ignored, modification_num defaults to 0).
+        let snapshot: ReplayConfigSnapshot = serde_json::from_str(
+            r#"{"type":"replay","configured":true,"config":{"system_storage":"nfs"}}"#,
+        )
+        .unwrap();
+        assert_eq!(snapshot.get_str("system_storage"), Some("nfs"));
+    }
+
+    #[test]
+    fn info_parses_real_1_7_4_payload() {
+        // Captured from the dev Pi on RePlayOS 1.7.4 (game loaded).
+        let info: InfoResponse = serde_json::from_str(
+            r#"{"version":"RePlayOS v1.7.4","model":"Raspberry Pi 5","eeprom":"2025-11-05","cpu_frequency_mhz":2600,"gpu_frequency_mhz":1060,"cpu_temperature_c":59.0,"available_ram_mb":1980,"available_space_bytes":2918821920768,"display":"MORTACA DEV00, ATG","display_resolution":{"width":2560,"height":240,"refresh_hz":60.00},"game_resolution":{"width":320,"height":240,"refresh_hz":60.00}}"#,
+        )
+        .unwrap();
+        assert_eq!(info.model, "Raspberry Pi 5");
+        assert_eq!(info.cpu_temperature_c, 59.0);
+        assert_eq!(info.available_ram_mb, 1980);
+        assert_eq!(
+            info.display_resolution,
+            Some(Resolution {
+                width: 2560,
+                height: 240,
+                refresh_hz: 60.0
+            })
+        );
+        assert_eq!(info.game_resolution.map(|r| r.width), Some(320));
+    }
+
+    #[test]
+    fn info_game_resolution_null_at_menu() {
+        let info: InfoResponse =
+            serde_json::from_str(r#"{"version":"RePlayOS v1.7.4","game_resolution":null}"#)
+                .unwrap();
+        assert_eq!(info.game_resolution, None);
     }
 
     #[test]
@@ -482,12 +652,66 @@ mod tests {
     }
 
     #[test]
+    fn version_parses_standard_and_padded_forms() {
+        assert_eq!(parse_replayos_version("RePlayOS v1.7.4"), Some((1, 7, 4)));
+        assert_eq!(parse_replayos_version("v1.7.10"), Some((1, 7, 10)));
+        assert_eq!(parse_replayos_version("1.8.0"), Some((1, 8, 0)));
+        assert_eq!(parse_replayos_version("2.0.0"), Some((2, 0, 0)));
+        // Missing components default to 0.
+        assert_eq!(parse_replayos_version("RePlayOS v1.8"), Some((1, 8, 0)));
+        assert_eq!(parse_replayos_version("v2"), Some((2, 0, 0)));
+        // Trailing suffixes are ignored.
+        assert_eq!(
+            parse_replayos_version("RePlayOS v2.0.0-beta"),
+            Some((2, 0, 0))
+        );
+        assert_eq!(parse_replayos_version("1.7.4 (dev)"), Some((1, 7, 4)));
+    }
+
+    #[test]
+    fn version_parse_rejects_unparseable() {
+        assert_eq!(parse_replayos_version(""), None);
+        assert_eq!(parse_replayos_version("RePlayOS"), None);
+        assert_eq!(parse_replayos_version("unknown"), None);
+        assert_eq!(parse_replayos_version("v.x.y"), None);
+    }
+
+    #[test]
+    fn is_supported_at_exact_minimum() {
+        assert!(is_supported_replayos_version("RePlayOS v1.7.4"));
+    }
+
+    #[test]
+    fn is_supported_above_minimum() {
+        assert!(is_supported_replayos_version("RePlayOS v1.7.10"));
+        assert!(is_supported_replayos_version("RePlayOS v1.8.0"));
+        assert!(is_supported_replayos_version("RePlayOS v2.0.0"));
+    }
+
+    #[test]
+    fn is_unsupported_below_minimum() {
+        assert!(!is_supported_replayos_version("RePlayOS v1.7.3"));
+        assert!(!is_supported_replayos_version("RePlayOS v1.6.9"));
+        assert!(!is_supported_replayos_version("RePlayOS v1.0.0"));
+        assert!(!is_supported_replayos_version("v0.9"));
+    }
+
+    #[test]
+    fn unparseable_version_fails_open() {
+        // A version string we can't parse is treated as supported so a future
+        // format change doesn't lock users out.
+        assert!(is_supported_replayos_version("RePlayOS"));
+        assert!(is_supported_replayos_version(""));
+        assert!(is_supported_replayos_version("unknown"));
+    }
+
+    #[test]
     fn replay_api_status_serde_round_trip() {
         for status in [
             ReplayApiStatus::NotConfigured,
             ReplayApiStatus::PendingRestart,
             ReplayApiStatus::Active {
-                version: "RePlayOS v1.7.3".into(),
+                version: "RePlayOS v1.7.4".into(),
             },
             ReplayApiStatus::Unauthorized,
             ReplayApiStatus::Unsupported { version: None },

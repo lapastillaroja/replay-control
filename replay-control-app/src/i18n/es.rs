@@ -122,6 +122,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreEthernetIp => "IP Ethernet",
         Key::MoreWifiIp => "IP Wi-Fi",
         Key::MoreNotConnected => "No conectado",
+        Key::MoreModel => "Modelo",
+        Key::MoreCpuTemperature => "Temperatura de CPU",
+        Key::MoreAvailableRam => "RAM disponible",
 
         // App language (UI locale selector)
         Key::LocaleTitle => "Idioma de la app",

@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn halted_wins_over_paused() {
         let s = status(
-            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/g.md","game_name":"g.md","paused":true,"status":"halt","view":"game_play","view_id":2}"#,
+            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/g.md","game_name":"g.md","paused":true,"halted":true,"view":"game_play","view_id":2}"#,
         );
         assert!(matches!(
             classify(&s),

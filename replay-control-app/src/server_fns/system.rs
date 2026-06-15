@@ -58,6 +58,17 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 
     let (ethernet_ip, wifi_ip) = get_network_ips().await;
 
+    // OS hardware basics — only meaningful on the device; `None` in standalone.
+    let (model, cpu_temperature_c, available_ram_mb) = if state.mode.is_device() {
+        (
+            read_pi_model(),
+            read_cpu_temperature_c(),
+            read_available_ram_mb(),
+        )
+    } else {
+        (None, None, None)
+    };
+
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),
@@ -75,8 +86,38 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         total_favorites,
         ethernet_ip,
         wifi_ip,
+        model,
+        cpu_temperature_c,
+        available_ram_mb,
         mode: state.mode.clone(),
     })
+}
+
+/// Pi model name, e.g. "Raspberry Pi 5" (from the device tree).
+#[cfg(feature = "ssr")]
+fn read_pi_model() -> Option<String> {
+    std::fs::read_to_string("/proc/device-tree/model")
+        .ok()
+        .map(|s| s.trim_end_matches('\0').trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// CPU temperature in °C (from the thermal zone, reported in millidegrees).
+#[cfg(feature = "ssr")]
+fn read_cpu_temperature_c() -> Option<f64> {
+    std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")
+        .ok()
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .map(|milli| milli / 1000.0)
+}
+
+/// Available RAM in MB (from `MemAvailable` in /proc/meminfo, reported in kB).
+#[cfg(feature = "ssr")]
+fn read_available_ram_mb() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kb / 1024)
 }
 
 /// Lightweight mode probe for pages that need to gate device-only features

@@ -154,9 +154,16 @@
     text-overflow: ellipsis;
 }
 
+.now-playing-bar-meta > .now-playing-bar-system,
 .now-playing-bar-meta > .now-playing-bar-elapsed,
 .now-playing-bar-meta > .now-playing-bar-disc {
     flex-shrink: 0;
+}
+
+/* Short system tag — matches GameScrollCard's `.scroll-card-system`. */
+.now-playing-bar-meta > .now-playing-bar-system {
+    color: var(--accent);
+    font-weight: 600;
 }
 
 .now-playing-bar-meta > span + span::before {

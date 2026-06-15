@@ -796,6 +796,14 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
         return Err(ServerFnError::new(e.to_string()));
     }
 
+    // Write our own recents marker even though RePlayOS writes one on
+    // `load_game` too. Measured on the dev Pi (2026-06-14, NFS storage):
+    // RePlayOS's marker lands ~120 ms after launch when warm and ~670 ms cold,
+    // whereas this write is ~3 ms. Writing it here makes the just-launched game
+    // show up in recents / on the home page immediately instead of lagging that
+    // window (the launch redirect + invalidate below would otherwise rescan
+    // before RePlayOS's marker exists). `list_recents` dedupes the two markers
+    // by (system, rom_filename), so the overlap is harmless.
     let rom_filename = game_file
         .rsplit_once('/')
         .map(|(_, filename)| filename)

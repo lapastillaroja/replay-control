@@ -24,7 +24,9 @@ use std::sync::Arc;
 
 use replay_control_core::replay_api::ReplayApiStatus;
 #[cfg(feature = "ssr")]
-use replay_control_core::replay_api::SetCommand;
+use replay_control_core::replay_api::{
+    ConfigKind, SetCommand, is_supported_replayos_version, min_supported_version_str,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ReplayPlayerCommand {
@@ -204,7 +206,7 @@ pub async fn save_replayos_kiosk_mode(enabled: bool) -> Result<String, ServerFnE
 
     if let Err(error) = api
         .client()
-        .set_replay_config("system_kiosk_mode", value)
+        .set_config(ConfigKind::Replay, &[("system_kiosk_mode", value)])
         .await
     {
         api.report_error(&error);
@@ -236,6 +238,18 @@ pub async fn verify_replay_api_token(code: String) -> Result<ReplayApiStatus, Se
 
     let candidate = ReplayApiClient::local(Some(code.clone()));
     match candidate.get_version().await {
+        // Reject an old device (parsed version below 1.7.4) before storing the
+        // token, consistent with the probe. Unparseable versions fail open. The
+        // status flips to `Unsupported` so the UI matches the probe's verdict.
+        Ok(version) if !is_supported_replayos_version(&version.version) => {
+            api.set_status(ReplayApiStatus::Unsupported {
+                version: Some(version.version),
+            });
+            Err(ServerFnError::new(format!(
+                "This RePlayOS version is too old for remote control — update RePlayOS on the TV ({} or newer is required)",
+                min_supported_version_str(),
+            )))
+        }
         Ok(version) => {
             write_replay_api_token(&state.settings, &code)
                 .map_err(|e| ServerFnError::new(format!("Failed to store the code: {e}")))?;

@@ -173,6 +173,9 @@ pub fn SettingsPage() -> impl IntoView {
                                             <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(info.disk_available_bytes) />
                                             <InfoRow label=t(locale, Key::MoreEthernetIp) value=info.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
                                             <InfoRow label=t(locale, Key::MoreWifiIp) value=info.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                            {info.model.map(|model| view! { <InfoRow label=t(locale, Key::MoreModel) value=model /> })}
+                                            {info.cpu_temperature_c.map(|temp| view! { <InfoRow label=t(locale, Key::MoreCpuTemperature) value=format!("{temp:.0} °C") /> })}
+                                            {info.available_ram_mb.map(|mb| view! { <InfoRow label=t(locale, Key::MoreAvailableRam) value=format!("{mb} MB") /> })}
                                         </div>
                                     })
                                 })}

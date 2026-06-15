@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(feature = "ssr")]
-use replay_control_core::replay_api::{ReplayApiStatus, SetCommand};
+use replay_control_core::replay_api::{ConfigKind, ReplayApiStatus, SetCommand};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::config::ReplayConfig;
 
@@ -243,20 +243,17 @@ async fn apply_replay_api_config_change(
         ));
     }
 
-    let mut applied: Vec<&'static str> = Vec::new();
-    for (option, value) in writes {
-        if let Err(error) = api.client().set_replay_config(option, &value).await {
-            api.report_error(&error);
-            let prefix = if applied.is_empty() {
-                "No settings were saved".to_string()
-            } else {
-                format!("Saved {}, then stopped", applied.join(", "))
-            };
-            return Err(ServerFnError::new(format!(
-                "{prefix}: failed to save {option}: {error}. Review the settings and save again."
-            )));
-        }
-        applied.push(option);
+    // 1.7.4 `set_config` validates the whole request before writing anything,
+    // so a multi-key save is atomic — there is no partial-apply state to report.
+    let changes: Vec<(&str, &str)> = writes
+        .iter()
+        .map(|(option, value)| (*option, value.as_str()))
+        .collect();
+    if let Err(error) = api.client().set_config(ConfigKind::Replay, &changes).await {
+        api.report_error(&error);
+        return Err(ServerFnError::new(format!(
+            "No settings were saved: {error}. Review the settings and save again."
+        )));
     }
 
     // RePlayOS persists API config writes synchronously; refresh our mirror so

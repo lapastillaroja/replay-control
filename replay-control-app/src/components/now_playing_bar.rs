@@ -9,6 +9,7 @@ use crate::types::NowPlayingState;
 use crate::util::{confirm_action, format_elapsed_short};
 use replay_control_core::locale::Locale;
 use replay_control_core::replay_api::{DiscInfo, PlayState};
+use replay_control_core::systems::system_abbreviation;
 
 #[component]
 pub fn NowPlayingBar() -> impl IntoView {
@@ -22,7 +23,7 @@ pub fn NowPlayingBar() -> impl IntoView {
             {move || match now_playing.get() {
                 NowPlayingState::Playing {
                     system,
-                    system_display,
+                    system_display: _,
                     filename,
                     display_name,
                     box_art_url,
@@ -32,7 +33,6 @@ pub fn NowPlayingBar() -> impl IntoView {
                 } => view! {
                     <ActiveNowPlayingBar
                         system
-                        system_display
                         filename
                         display_name
                         box_art_url
@@ -51,7 +51,6 @@ pub fn NowPlayingBar() -> impl IntoView {
 #[component]
 fn ActiveNowPlayingBar(
     system: String,
-    system_display: String,
     filename: String,
     display_name: String,
     box_art_url: Option<String>,
@@ -70,6 +69,9 @@ fn ActiveNowPlayingBar(
     let placeholder_system = system.clone();
     let placeholder_name = display_name.clone();
     let state_class = play_state_class(play_state);
+    // Short system label, styled like GameScrollCard's tag (accent color +
+    // weight via `.now-playing-bar-system`).
+    let system_abbrev = system_abbreviation(&system);
     let elapsed_text = Memo::new(move |_| format_elapsed_short(elapsed.get()));
     let save_state_system = system.clone();
     let save_state_filename = filename.clone();
@@ -106,7 +108,7 @@ fn ActiveNowPlayingBar(
                     </div>
                     <div class="now-playing-bar-title">{display_name}</div>
                     <div class="now-playing-bar-meta">
-                        <span>{system_display}</span>
+                        <span class="now-playing-bar-system">{system_abbrev}</span>
                         <span>{move || t(i18n.locale.get(), play_state_label_key(play_state))}</span>
                         <span class="now-playing-bar-elapsed">{move || elapsed_text.get()}</span>
                         {move || disc.map(|disc| {

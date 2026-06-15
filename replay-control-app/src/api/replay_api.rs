@@ -16,7 +16,7 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use replay_control_core::replay_api::ReplayApiStatus;
+use replay_control_core::replay_api::{ReplayApiStatus, is_supported_replayos_version};
 use replay_control_core_server::replay_api::{ApiError, ReplayApiClient};
 use tokio::sync::broadcast;
 
@@ -107,8 +107,17 @@ impl ReplayApi {
             ReplayApiStatus::NotConfigured
         } else {
             match self.client.get_version().await {
-                Ok(version) => ReplayApiStatus::Active {
-                    version: version.version,
+                // A reachable, authorized device still fails the support gate if
+                // its version parses below the 1.7.4 floor (e.g. 1.7.3, whose
+                // config endpoints 404). Unparseable versions fail open — see
+                // `is_supported_replayos_version`.
+                Ok(version) if is_supported_replayos_version(&version.version) => {
+                    ReplayApiStatus::Active {
+                        version: version.version,
+                    }
+                }
+                Ok(version) => ReplayApiStatus::Unsupported {
+                    version: Some(version.version),
                 },
                 Err(ApiError::MissingToken) => ReplayApiStatus::NotConfigured,
                 Err(ApiError::Unauthorized) => ReplayApiStatus::Unauthorized,
@@ -209,7 +218,7 @@ mod tests {
 
     use super::*;
 
-    const VERSION_BODY: &str = r#"{"version":"RePlayOS v1.7.3"}"#;
+    const VERSION_BODY: &str = r#"{"version":"RePlayOS v1.7.4"}"#;
 
     fn api_with(
         base_url: String,
@@ -227,10 +236,50 @@ mod tests {
         assert_eq!(
             status,
             ReplayApiStatus::Active {
-                version: "RePlayOS v1.7.3".to_string()
+                version: "RePlayOS v1.7.4".to_string()
             }
         );
         assert!(api.status().is_active());
+    }
+
+    // Version-support gate. Browser e2e can't exercise these — the container
+    // runs in standalone mode (no `replay_api`), so the device API is never
+    // reachable there. They live here against the mock API instead.
+
+    #[tokio::test]
+    async fn probe_below_min_version_is_unsupported() {
+        // 1.7.3 has the API and a valid token, but its config endpoints 404.
+        let (api, _rx) = api_with(
+            mock_replay_api("200 OK", r#"{"version":"RePlayOS v1.7.3"}"#),
+            Some("123456"),
+        );
+        assert_eq!(
+            api.probe().await,
+            ReplayApiStatus::Unsupported {
+                version: Some("RePlayOS v1.7.3".to_string())
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_at_min_version_is_active() {
+        // VERSION_BODY is exactly 1.7.4 — the floor — and reaches Active above
+        // in `probe_reaches_active`; this asserts a newer build also passes.
+        let (api, _rx) = api_with(
+            mock_replay_api("200 OK", r#"{"version":"RePlayOS v1.8.0"}"#),
+            Some("123456"),
+        );
+        assert!(api.probe().await.is_active());
+    }
+
+    #[tokio::test]
+    async fn probe_unparseable_version_fails_open_to_active() {
+        // A version string we can't parse must not lock the user out.
+        let (api, _rx) = api_with(
+            mock_replay_api("200 OK", r#"{"version":"RePlayOS"}"#),
+            Some("123456"),
+        );
+        assert!(api.probe().await.is_active());
     }
 
     #[tokio::test]
@@ -290,7 +339,7 @@ mod tests {
     async fn report_error_maps_into_the_state_machine() {
         let (api, _rx) = api_with(refused_replay_api(), Some("123456"));
         api.set_status(ReplayApiStatus::Active {
-            version: "RePlayOS v1.7.3".into(),
+            version: "RePlayOS v1.7.4".into(),
         });
 
         // Call-specific failures don't change connection state.

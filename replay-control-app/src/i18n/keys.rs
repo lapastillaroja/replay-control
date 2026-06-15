@@ -114,6 +114,9 @@ pub enum Key {
     MoreEthernetIp,
     MoreWifiIp,
     MoreNotConnected,
+    MoreModel,
+    MoreCpuTemperature,
+    MoreAvailableRam,
 
     // App language (UI locale selector)
     LocaleTitle,
