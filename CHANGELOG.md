@@ -12,12 +12,19 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Browse every game on an arcade board.** A new board page lists all the games in your library that share a board, with the same system and content filters as the developer pages.
 - **Search understands arcade boards.** Typing a board name or shorthand — for example "cps", "neo geo", "naomi", or "f3" — surfaces a "Games on …" preview plus a list of other matching boards, each linking straight to its board page.
 - **Arcade boards turn up in your recommendations.** The home page mixes board shortcuts into the Discover pills (e.g. "More CPS-2 (Capcom)") and occasionally spotlights a board you own a lot of ("Games on Neo Geo MVS").
+- **Redesigned game cards.** Game cards across the app now lead with a short system tag in the accent color and show larger box art, making your library quicker to scan.
 - **Settings now shows device hardware.** The System section adds your Raspberry Pi model, CPU temperature, and available memory alongside the existing storage and network details (shown when running on the device).
 
 ### Changed
 
 - **RePlayOS 1.7.4 is now the minimum supported version**, following its updated Net Control configuration interface. RePlayOS settings changes are applied in a single request, and an older RePlayOS is detected and flagged with a prompt to update.
 - **The Now Playing bar shows the system shorthand.** The bottom row now uses the short system tag in the accent color (matching game cards) instead of the full system name.
+
+### Fixed
+
+- The Now Playing title stays on a single line in portrait orientation.
+- Restored the page back button's border.
+- Tidied control sizing and alignment across search, the favorite star, and buttons.
 
 ---
 
