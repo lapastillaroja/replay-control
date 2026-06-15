@@ -54,17 +54,17 @@ pub fn recognize(input: &str) -> RecognizedQuery {
 
     // Try board recognition from the start and end. A single board can only
     // be assigned once — additional matches are ignored.
-    if filters.board.is_none() {
-        if let Some((board, rest)) = try_strip_board_leading(&working) {
-            filters.board = Some(board);
-            working = rest;
-        }
+    if filters.board.is_none()
+        && let Some((board, rest)) = try_strip_board_leading(&working)
+    {
+        filters.board = Some(board);
+        working = rest;
     }
-    if filters.board.is_none() {
-        if let Some((board, rest)) = try_strip_board_trailing(&working) {
-            filters.board = Some(board);
-            working = rest;
-        }
+    if filters.board.is_none()
+        && let Some((board, rest)) = try_strip_board_trailing(&working)
+    {
+        filters.board = Some(board);
+        working = rest;
     }
 
     RecognizedQuery {
