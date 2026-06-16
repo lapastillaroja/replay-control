@@ -28,6 +28,7 @@ All filters are persisted in the URL, so you can share or bookmark filtered sear
 | Year Range | Filter by release year (min/max) |
 | Multiplayer | Show only multiplayer games (2+ players) |
 | Co-op | Show only cooperative games |
+| Has achievements | Show only games with a RetroAchievements set |
 | Hide Hacks | Exclude hack ROMs from results |
 | Hide Translations | Exclude fan translations |
 | Hide Betas | Exclude pre-release/beta ROMs |

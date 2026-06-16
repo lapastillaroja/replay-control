@@ -77,6 +77,10 @@ Choose between **Stable** (default) and **Beta** release channels. See [Auto-Upd
 
 Optional anonymous usage analytics. Opt in or out from the Settings page. When enabled, the app collects anonymous usage data to help improve the product. No personal information or game library contents are transmitted.
 
+## System Info
+
+The **System** section shows storage kind and path, disk totals, network IP addresses, and (on the device) your Raspberry Pi model, CPU temperature, and available RAM. All values refresh automatically every second while the Settings page is open, so temperature and memory stay current without a manual reload.
+
 ## Version Display
 
 The app version and git hash are shown in the Settings page footer.

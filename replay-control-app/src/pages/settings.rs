@@ -25,7 +25,7 @@ const SECTION_SYSTEM: &str = SECTIONS[4].0;
 #[component]
 pub fn SettingsPage() -> impl IntoView {
     let i18n = use_i18n();
-    let info = Resource::new(|| (), |_| server_fns::get_info());
+    let live_stats = Resource::new(|| (), |_| server_fns::get_live_stats());
     // Device-only settings (Wi-Fi, NFS, hostname, password, RetroAchievements,
     // reboot) are disabled off-device. Blocking so the gating is resolved in the
     // SSR HTML rather than flashing enabled then disabling after hydration.
@@ -37,6 +37,30 @@ pub fn SettingsPage() -> impl IntoView {
     let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
 
     let active_section = RwSignal::new(SECTION_APPEARANCE.to_string());
+
+    // Refresh live stats every second while this page is mounted (hydrate only).
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+        Effect::new(move || {
+            let cb = Closure::<dyn Fn()>::new(move || {
+                live_stats.refetch();
+            });
+            let id = web_sys::window()
+                .unwrap()
+                .set_interval_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    1000,
+                )
+                .unwrap();
+            cb.forget();
+            on_cleanup(move || {
+                if let Some(w) = web_sys::window() {
+                    w.clear_interval_with_handle(id);
+                }
+            });
+        });
+    }
 
     view! {
         <div class="page settings-page">
@@ -163,19 +187,19 @@ pub fn SettingsPage() -> impl IntoView {
                             <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                                 {move || Suspend::new(async move {
                                     let locale = i18n.locale.get();
-                                    let info = info.await?;
+                                    let stats = live_stats.await?;
                                     Ok::<_, ServerFnError>(view! {
                                         <div class="info-grid">
-                                            <InfoRow label=t(locale, Key::MoreStorage) value=info.storage_kind.to_uppercase() />
-                                            <InfoRow label=t(locale, Key::MorePath) value=info.storage_root.clone() />
-                                            <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(info.disk_total_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(info.disk_used_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(info.disk_available_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreEthernetIp) value=info.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                            <InfoRow label=t(locale, Key::MoreWifiIp) value=info.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                            {info.model.map(|model| view! { <InfoRow label=t(locale, Key::MoreModel) value=model /> })}
-                                            {info.cpu_temperature_c.map(|temp| view! { <InfoRow label=t(locale, Key::MoreCpuTemperature) value=format!("{temp:.0} °C") /> })}
-                                            {info.available_ram_mb.map(|mb| view! { <InfoRow label=t(locale, Key::MoreAvailableRam) value=format!("{mb} MB") /> })}
+                                            <InfoRow label=t(locale, Key::MoreStorage) value=stats.storage_kind.to_uppercase() />
+                                            <InfoRow label=t(locale, Key::MorePath) value=stats.storage_root.clone() />
+                                            <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(stats.disk_total_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(stats.disk_used_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(stats.disk_available_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreEthernetIp) value=stats.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                            <InfoRow label=t(locale, Key::MoreWifiIp) value=stats.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                            {stats.model.map(|model| view! { <InfoRow label=t(locale, Key::MoreModel) value=model /> })}
+                                            {stats.cpu_temperature_c.map(|temp| view! { <InfoRow label=t(locale, Key::MoreCpuTemperature) value=format!("{temp:.0} °C") /> })}
+                                            {stats.available_ram_mb.map(|mb| view! { <InfoRow label=t(locale, Key::MoreAvailableRam) value=format!("{mb} MB") /> })}
                                         </div>
                                     })
                                 })}

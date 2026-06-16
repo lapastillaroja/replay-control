@@ -258,6 +258,11 @@ pub struct GameInfo {
     // --- Console-specific (None for arcade) ---
     pub region: Option<String>,
 
+    /// RetroAchievements game id, or empty when the game has no
+    /// RetroAchievements set. Drives the "RetroAchievements" detail pill.
+    #[serde(default)]
+    pub retroachievements_id: String,
+
     // --- External metadata (from local cache, None if not yet fetched) ---
     pub description: Option<String>,
     pub rating: Option<f32>,
@@ -291,6 +296,24 @@ pub struct SystemInfo {
     /// Whether the app is running on the RePlayOS device or in standalone mode.
     /// Drives gating of device-only settings (Wi-Fi, NFS, reboot, …).
     pub mode: Mode,
+}
+
+/// Live-updating system stats for the settings page.
+///
+/// Skips library DB queries and library counts — only the fields that change at
+/// the OS level (disk, network, CPU temp, RAM). Used by `get_live_stats()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemLiveStats {
+    pub storage_kind: String,
+    pub storage_root: String,
+    pub disk_total_bytes: u64,
+    pub disk_used_bytes: u64,
+    pub disk_available_bytes: u64,
+    pub ethernet_ip: Option<String>,
+    pub wifi_ip: Option<String>,
+    pub model: Option<String>,
+    pub cpu_temperature_c: Option<f64>,
+    pub available_ram_mb: Option<u64>,
 }
 
 // Re-export types for use in components.
@@ -401,6 +424,7 @@ pub(crate) async fn build_game_detail(
         } else {
             Some(entry.region.clone())
         },
+        retroachievements_id: entry.retroachievements_id.clone(),
         description: None,
         rating: entry.rating,
         publisher: None,

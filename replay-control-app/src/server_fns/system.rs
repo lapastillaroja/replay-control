@@ -1,5 +1,10 @@
 use super::*;
 
+#[cfg(feature = "ssr")]
+use replay_control_core::systems::visible_systems;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::storage::DiskUsage;
+
 /// A recent entry enriched with box art URL for the home page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentWithArt {
@@ -29,6 +34,43 @@ const RUST_LOG_INFO: &str = "info";
 const RUST_LOG_DEBUG: &str =
     "info,replay_control_app=debug,replay_control_core=debug,replay_control_core_server=debug";
 
+/// Shared OS-level stats gather used by both `get_info` and `get_live_stats`.
+///
+/// Runs disk usage and network IP probes concurrently (both spawn subprocesses
+/// and are independent). Skips library DB queries — callers layer those on top.
+#[cfg(feature = "ssr")]
+async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
+    let storage = state.storage();
+    let (disk_result, (ethernet_ip, wifi_ip)) =
+        tokio::join!(storage.disk_usage(), get_network_ips());
+    let disk = disk_result.unwrap_or(DiskUsage {
+        total_bytes: 0,
+        available_bytes: 0,
+        used_bytes: 0,
+    });
+    let (model, cpu_temperature_c, available_ram_mb) = if state.mode.is_device() {
+        (
+            read_pi_model(),
+            read_cpu_temperature_c(),
+            read_available_ram_mb(),
+        )
+    } else {
+        (None, None, None)
+    };
+    SystemLiveStats {
+        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
+        storage_root: storage.root.display().to_string(),
+        disk_total_bytes: disk.total_bytes,
+        disk_used_bytes: disk.used_bytes,
+        disk_available_bytes: disk.available_bytes,
+        ethernet_ip,
+        wifi_ip,
+        model,
+        cpu_temperature_c,
+        available_ram_mb,
+    }
+}
+
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     #[cfg(feature = "ssr")]
@@ -42,32 +84,10 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         .and_then(Result::ok)
         .unwrap_or_default();
     let total_favorites = state.cache.get_favorites_count(&storage).await;
-
-    let disk =
-        storage
-            .disk_usage()
-            .await
-            .unwrap_or(replay_control_core_server::storage::DiskUsage {
-                total_bytes: 0,
-                available_bytes: 0,
-                used_bytes: 0,
-            });
+    let live = gather_live_stats(&state).await;
 
     let systems_with_games = system_meta.iter().filter(|s| s.rom_count > 0).count();
     let total_games: usize = system_meta.iter().map(|s| s.rom_count).sum();
-
-    let (ethernet_ip, wifi_ip) = get_network_ips().await;
-
-    // OS hardware basics — only meaningful on the device; `None` in standalone.
-    let (model, cpu_temperature_c, available_ram_mb) = if state.mode.is_device() {
-        (
-            read_pi_model(),
-            read_cpu_temperature_c(),
-            read_available_ram_mb(),
-        )
-    } else {
-        (None, None, None)
-    };
 
     #[cfg(feature = "ssr")]
     tracing::debug!(
@@ -75,22 +95,32 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         "get_info complete"
     );
     Ok(SystemInfo {
-        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
-        storage_root: storage.root.display().to_string(),
-        disk_total_bytes: disk.total_bytes,
-        disk_used_bytes: disk.used_bytes,
-        disk_available_bytes: disk.available_bytes,
-        total_systems: replay_control_core::systems::visible_systems().count(),
+        storage_kind: live.storage_kind,
+        storage_root: live.storage_root,
+        disk_total_bytes: live.disk_total_bytes,
+        disk_used_bytes: live.disk_used_bytes,
+        disk_available_bytes: live.disk_available_bytes,
+        total_systems: visible_systems().count(),
         systems_with_games,
         total_games,
         total_favorites,
-        ethernet_ip,
-        wifi_ip,
-        model,
-        cpu_temperature_c,
-        available_ram_mb,
+        ethernet_ip: live.ethernet_ip,
+        wifi_ip: live.wifi_ip,
+        model: live.model,
+        cpu_temperature_c: live.cpu_temperature_c,
+        available_ram_mb: live.available_ram_mb,
         mode: state.mode.clone(),
     })
+}
+
+/// Lightweight variant of `get_info` for the settings page live-refresh loop.
+///
+/// Skips library DB queries (no game/system counts) — reads only the OS-level
+/// fields that change at runtime: disk usage, network IPs, CPU temp, RAM.
+#[server(prefix = "/sfn")]
+pub async fn get_live_stats() -> Result<SystemLiveStats, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(gather_live_stats(&state).await)
 }
 
 /// Pi model name, e.g. "Raspberry Pi 5" (from the device tree).
