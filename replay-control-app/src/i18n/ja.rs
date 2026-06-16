@@ -125,6 +125,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreModel => "モデル",
         Key::MoreCpuTemperature => "CPU 温度",
         Key::MoreAvailableRam => "使用可能 RAM",
+        Key::MoreUptime => "稼働時間",
 
         // App language (UI locale selector)
         Key::LocaleTitle => "アプリの言語",
@@ -242,6 +243,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRotation => "画面の向き",
         Key::GameDetailParentRom => "オリジナル版",
         Key::GameDetailBoard => "基板",
+        Key::GameDetailRetroAchievements => "RetroAchievements",
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
 
@@ -512,6 +514,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterHideClones => "クローンを非表示",
         Key::FilterMultiplayer => "マルチプレイ",
         Key::FilterCoOp => "協力プレイ",
+        Key::FilterHasAchievements => "実績あり",
         Key::FilterRatingAny => "評価を問わない",
 
         // Developer page

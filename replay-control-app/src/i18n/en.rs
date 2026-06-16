@@ -125,6 +125,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreModel => "Model",
         Key::MoreCpuTemperature => "CPU temperature",
         Key::MoreAvailableRam => "Available RAM",
+        Key::MoreUptime => "Uptime",
 
         // App language (UI locale selector)
         Key::LocaleTitle => "App Language",
@@ -242,6 +243,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRotation => "Orientation",
         Key::GameDetailParentRom => "Original Version",
         Key::GameDetailBoard => "Board",
+        Key::GameDetailRetroAchievements => "RetroAchievements",
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
 
@@ -508,6 +510,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterHideClones => "Hide Clones",
         Key::FilterMultiplayer => "Multiplayer",
         Key::FilterCoOp => "Co-op",
+        Key::FilterHasAchievements => "Has achievements",
         Key::FilterRatingAny => "Any Rating",
 
         // Developer page

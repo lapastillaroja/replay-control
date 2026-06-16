@@ -157,7 +157,15 @@ pub fn format_size(bytes: u64) -> String {
 pub fn format_elapsed_short(secs: u64) -> String {
     let minutes = secs / 60;
     let hours = minutes / 60;
-    if hours > 0 {
+    let days = hours / 24;
+    if days > 0 {
+        let hours_part = hours % 24;
+        if hours_part == 0 {
+            format!("{days}d")
+        } else {
+            format!("{days}d {hours_part}h")
+        }
+    } else if hours > 0 {
         let mins_part = minutes % 60;
         if mins_part == 0 {
             format!("{hours}h")
@@ -319,6 +327,13 @@ mod tests {
         assert_eq!(format_elapsed_short(59 * 60), "59m");
         assert_eq!(format_elapsed_short(3600), "1h");
         assert_eq!(format_elapsed_short(3600 + 90), "1h 1m");
+    }
+
+    #[test]
+    fn elapsed_days() {
+        assert_eq!(format_elapsed_short(86400), "1d");
+        assert_eq!(format_elapsed_short(86400 + 3600), "1d 1h");
+        assert_eq!(format_elapsed_short(2 * 86400 + 3 * 3600), "2d 3h");
     }
 
     #[test]

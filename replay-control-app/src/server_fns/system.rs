@@ -68,6 +68,7 @@ async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
         model,
         cpu_temperature_c,
         available_ram_mb,
+        uptime_seconds: read_uptime_seconds(),
     }
 }
 
@@ -148,6 +149,20 @@ fn read_available_ram_mb() -> Option<u64> {
     let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
     let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb / 1024)
+}
+
+/// OS uptime in whole seconds (first field of /proc/uptime).
+#[cfg(feature = "ssr")]
+fn read_uptime_seconds() -> u64 {
+    std::fs::read_to_string("/proc/uptime")
+        .ok()
+        .and_then(|s| {
+            s.split_whitespace()
+                .next()
+                .and_then(|n| n.parse::<f64>().ok())
+        })
+        .map(|f| f as u64)
+        .unwrap_or(0)
 }
 
 /// Lightweight mode probe for pages that need to gate device-only features

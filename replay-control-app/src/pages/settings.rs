@@ -4,7 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
-use crate::util::format_size;
+use crate::util::{format_elapsed_short, format_size};
 use replay_control_core::update::UpdateState;
 
 /// Section definitions: (ID, i18n key) — single source of truth for sidebar + scroll-spy.
@@ -200,6 +200,7 @@ pub fn SettingsPage() -> impl IntoView {
                                             {stats.model.map(|model| view! { <InfoRow label=t(locale, Key::MoreModel) value=model /> })}
                                             {stats.cpu_temperature_c.map(|temp| view! { <InfoRow label=t(locale, Key::MoreCpuTemperature) value=format!("{temp:.0} °C") /> })}
                                             {stats.available_ram_mb.map(|mb| view! { <InfoRow label=t(locale, Key::MoreAvailableRam) value=format!("{mb} MB") /> })}
+                                            <InfoRow label=t(locale, Key::MoreUptime) value=format_elapsed_short(stats.uptime_seconds) />
                                         </div>
                                     })
                                 })}

@@ -117,6 +117,7 @@ pub enum Key {
     MoreModel,
     MoreCpuTemperature,
     MoreAvailableRam,
+    MoreUptime,
 
     // App language (UI locale selector)
     LocaleTitle,
@@ -226,6 +227,7 @@ pub enum Key {
     GameDetailRotation,
     GameDetailParentRom,
     GameDetailBoard,
+    GameDetailRetroAchievements,
     GameDetailGenre,
     GameDetailDeveloper,
     GameDetailEmulation,
@@ -473,6 +475,7 @@ pub enum Key {
     FilterHideClones,
     FilterMultiplayer,
     FilterCoOp,
+    FilterHasAchievements,
     FilterRatingAny,
 
     // Developer page

@@ -314,6 +314,7 @@ pub struct SystemLiveStats {
     pub model: Option<String>,
     pub cpu_temperature_c: Option<f64>,
     pub available_ram_mb: Option<u64>,
+    pub uptime_seconds: u64,
 }
 
 // Re-export types for use in components.
