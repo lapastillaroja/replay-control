@@ -134,6 +134,7 @@ pub async fn get_roms_page(
     #[server(default)] genre: String,
     #[server(default)] multiplayer_only: bool,
     #[server(default)] coop_only: bool,
+    #[server(default)] has_achievements: bool,
     #[server(default)] min_rating: Option<f32>,
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
@@ -179,6 +180,7 @@ pub async fn get_roms_page(
                 min_year,
                 max_year,
                 board: recognized_board,
+                has_achievements,
             };
             LibraryDb::search_game_library_ranked(
                 conn,

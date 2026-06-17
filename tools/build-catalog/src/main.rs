@@ -74,6 +74,11 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             -- ArcadeBoard::as_tag() resolved at insert time from the upstream's
             -- sourcefile; empty when the parser couldn't recognize it.
             board TEXT NOT NULL DEFAULT '',
+            -- RetroAchievements game id + the RA hash that matched, resolved at
+            -- insert time by md5(lowercase rom_name) against the RA Arcade hash
+            -- set (rc_hash hashes the romset NAME). Empty when unmatched.
+            ra_id TEXT NOT NULL DEFAULT '',
+            ra_hash TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (rom_name, source)
         );
 
@@ -95,7 +100,12 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             rating TEXT NOT NULL DEFAULT '',
             normalized_genre TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT ''
+            source TEXT NOT NULL DEFAULT '',
+            -- RetroAchievements game id (from GetGameList, title-matched per
+            -- system); empty when the game has no RA achievement set. Facts only
+            -- (see retroachievements plan §3/§4) — achievement text/badges are
+            -- never bundled.
+            ra_id TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX idx_cg_system ON canonical_game(system);
 
@@ -875,12 +885,16 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
 
     let mut total_inserted = 0u32;
     let mut total_bios = 0u32;
+    let mut total_ra = 0u32;
+
+    // RA "Arcade" hash → ra_id. Matched per row by md5(lowercase rom_name).
+    let arcade_ra = load_arcade_ra_hash_map(sources_dir);
 
     let mut stmt = conn.prepare(
         "INSERT INTO arcade_game \
          (rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-          is_clone, is_bios, parent, category, normalized_genre, board) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+          is_clone, is_bios, parent, category, normalized_genre, board, ra_id, ra_hash) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
     )?;
     let mut stmt_rd = conn
         .prepare("INSERT INTO arcade_release_date (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
@@ -910,6 +924,15 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
                 total_bios += 1;
             }
             let norm_genre = normalize_arcade_genre(&entry.category);
+            // RA Arcade match: rc_hash for Arcade is md5(lowercase romset_name).
+            let ra_hash = md5_hex(&entry.rom_name.to_lowercase());
+            let (ra_id, ra_hash) = match arcade_ra.get(&ra_hash) {
+                Some(id) => (id.as_str(), ra_hash.as_str()),
+                None => ("", ""),
+            };
+            if !ra_id.is_empty() {
+                total_ra += 1;
+            }
             stmt.execute(params![
                 entry.rom_name,
                 source,
@@ -925,6 +948,8 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
                 entry.category,
                 norm_genre,
                 entry.board,
+                ra_id,
+                ra_hash,
             ])?;
             total_inserted += 1;
 
@@ -939,8 +964,8 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     }
 
     eprintln!(
-        "Arcade DB: Inserted {} rows ({} BIOS)",
-        total_inserted, total_bios
+        "Arcade DB: Inserted {} rows ({} BIOS, {} RetroAchievements matches)",
+        total_inserted, total_bios, total_ra
     );
     eprintln!("Arcade DB: Inserted {} release date rows", rd_count);
 
@@ -1824,6 +1849,106 @@ fn normalize_title_for_tgdb(title: &str) -> String {
 // Console DB insertion
 // =============================================================================
 
+/// One RetroAchievements entry from `data/retroachievements/<system>.json`.
+///
+/// These files are committed (refreshed by `scripts/retroachievements-gamelist-extract.py`,
+/// which needs a RetroAchievements API key — see `data/retroachievements/README.md`),
+/// mirroring the wikidata/shmups committed-data pattern. When a per-system file is
+/// absent this path is a no-op and `canonical_game.ra_id` stays empty.
+#[derive(serde::Deserialize)]
+struct RaEntry {
+    title: String,
+    ra_id: String,
+}
+
+/// Load the RetroAchievements title→id map for one system, keyed by
+/// `title_utils::normalize_title_for_metadata` so it matches canonical game
+/// display names the same way the runtime scan matcher does.
+///
+/// Returns an empty map (and is silent) when the per-system file is missing.
+fn load_retroachievements_map(sources_dir: &Path, system_name: &str) -> HashMap<String, String> {
+    let path = sources_dir
+        .join("retroachievements")
+        .join(format!("{system_name}.json"));
+    // A missing file is the expected "no RA extract for this system" case — a
+    // clean no-op. But a file that IS present yet unreadable or malformed is a
+    // real defect (corrupt extract / bad JSON): fail the build loudly rather
+    // than silently shipping a catalog with no RA data. Matches main()'s
+    // panic-on-fatal style (`.expect(...)` on every build step).
+    if !path.exists() {
+        return HashMap::new();
+    }
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("RetroAchievements: failed to read {}: {e}", path.display()));
+    let entries: Vec<RaEntry> = serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("RetroAchievements: failed to parse {}: {e}", path.display()));
+    let mut map = HashMap::new();
+    for entry in entries {
+        if entry.ra_id.is_empty() {
+            continue;
+        }
+        let key = title_utils::normalize_title_for_metadata(&entry.title);
+        if key.is_empty() {
+            continue;
+        }
+        map.insert(key, entry.ra_id);
+    }
+    eprintln!(
+        "RetroAchievements: {} entries loaded for {system_name}",
+        map.len()
+    );
+    map
+}
+
+/// One RetroAchievements "Arcade" entry from `data/retroachievements/arcade.json`.
+///
+/// Arcade is matched by hash, not title: RA's `rc_hash` for the Arcade console is
+/// `md5(lowercase romset_name)`, so each entry carries the RA `hashes` list and
+/// `build-catalog` compares it against `md5(arcade_game.rom_name)`.
+#[derive(serde::Deserialize)]
+struct ArcadeRaEntry {
+    ra_id: String,
+    #[serde(default)]
+    hashes: Vec<String>,
+}
+
+/// Hex MD5 of a string — RA's Arcade hash is `md5(lowercase romset_name)`.
+fn md5_hex(input: &str) -> String {
+    use md5::{Digest, Md5};
+    let digest = Md5::new().chain_update(input.as_bytes()).finalize();
+    let mut out = String::with_capacity(32);
+    for byte in digest {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+/// Load the RA Arcade `hash → ra_id` map from `data/retroachievements/arcade.json`.
+///
+/// Missing file is a clean no-op; a present-but-broken file panics (same policy
+/// as [`load_retroachievements_map`]). Keys are lowercased RA hashes.
+fn load_arcade_ra_hash_map(sources_dir: &Path) -> HashMap<String, String> {
+    let path = sources_dir.join("retroachievements").join("arcade.json");
+    if !path.exists() {
+        return HashMap::new();
+    }
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("RetroAchievements: failed to read {}: {e}", path.display()));
+    let entries: Vec<ArcadeRaEntry> = serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("RetroAchievements: failed to parse {}: {e}", path.display()));
+    let mut map = HashMap::new();
+    for entry in entries {
+        if entry.ra_id.is_empty() {
+            continue;
+        }
+        for hash in entry.hashes {
+            map.insert(hash.to_lowercase(), entry.ra_id.clone());
+        }
+    }
+    eprintln!("RetroAchievements: {} arcade hashes loaded", map.len());
+    map
+}
+
 fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
     let nointro_dir = upstream(sources_dir).join("no-intro");
     let maxusers_dir = upstream(sources_dir).join("libretro-meta").join("maxusers");
@@ -1865,6 +1990,9 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     let mut stmt_alt = conn.prepare(
         "INSERT INTO rom_alternate (canonical_game_id, system, alternate_name) VALUES (?1, ?2, ?3)",
     )?;
+    let mut stmt_ra =
+        conn.prepare("UPDATE canonical_game SET ra_id = ?1 WHERE id = ?2 AND ra_id = ''")?;
+    let mut total_ra_matches = 0usize;
 
     for sys in GAME_DB_SYSTEMS {
         if sys.nointro_dats.is_empty() {
@@ -2137,6 +2265,19 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
             }
         }
 
+        // RetroAchievements: title-match the system's RA extract (if present)
+        // against the canonical games we just inserted and stamp their ids.
+        let ra_map = load_retroachievements_map(sources_dir, sys.folder_name);
+        if !ra_map.is_empty() {
+            for (game, &canonical_game_id) in canonical_game.iter().zip(canonical_game_ids.iter()) {
+                let key = title_utils::normalize_title_for_metadata(&game.display_name);
+                if let Some(ra_id) = ra_map.get(&key) {
+                    let updated = stmt_ra.execute(params![ra_id, canonical_game_id])?;
+                    total_ra_matches += updated;
+                }
+            }
+        }
+
         // Insert ROM entries (deduplicated by stem)
         let mut seen_stems: HashSet<&str> = HashSet::new();
 
@@ -2163,8 +2304,8 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     }
 
     eprintln!(
-        "Game DB: Total {} ROM entries, {} canonical games, {} TGDB matches",
-        total_roms, total_games, total_tgdb_matches
+        "Game DB: Total {} ROM entries, {} canonical games, {} TGDB matches, {} RetroAchievements matches",
+        total_roms, total_games, total_tgdb_matches, total_ra_matches
     );
 
     // Insert console release dates
@@ -2805,6 +2946,47 @@ fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<Stri
         context.update(b"\n");
     }
 
+    // RetroAchievements ids are a catalog-bundled enrichment input: a refreshed
+    // RA extract changes them with no schema change, and the per-storage stamp
+    // mismatch must still force a re-enrich so the new ids reach game_library.
+    context.update(b"canonical_game_retroachievements\n");
+    let mut stmt = conn.prepare(
+        "SELECT cg.system, re.filename_stem, cg.ra_id
+         FROM canonical_game cg
+         JOIN rom_entry re ON re.canonical_game_id = cg.id
+         WHERE cg.ra_id != ''
+         ORDER BY cg.system, re.filename_stem, cg.id",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        for idx in 0..3 {
+            let value: String = row.get(idx)?;
+            context.update(value.as_bytes());
+            context.update(b"\0");
+        }
+        context.update(b"\n");
+    }
+
+    // Arcade RA ids are the same kind of catalog-bundled input (hash-matched
+    // rather than title-matched). Roll them in so a refreshed arcade extract
+    // also invalidates the per-storage stamp and re-enriches arcade systems.
+    context.update(b"arcade_game_retroachievements\n");
+    let mut stmt = conn.prepare(
+        "SELECT rom_name, source, ra_id
+         FROM arcade_game
+         WHERE ra_id != ''
+         ORDER BY rom_name, source",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        for idx in 0..3 {
+            let value: String = row.get(idx)?;
+            context.update(value.as_bytes());
+            context.update(b"\0");
+        }
+        context.update(b"\n");
+    }
+
     let digest = context.finish();
     let mut out = String::new();
     for byte in digest.as_ref() {
@@ -3143,6 +3325,37 @@ mod tests {
 
         let before = catalog_enrichment_inputs_version(&conn).unwrap();
         conn.execute("UPDATE canonical_game SET publisher = 'new publisher'", [])
+            .unwrap();
+        let after = catalog_enrichment_inputs_version(&conn).unwrap();
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn catalog_enrichment_inputs_version_changes_when_ra_id_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO canonical_game \
+             (system, display_name, ra_id) \
+             VALUES ('nintendo_snes', 'Super Mario World', '')",
+            [],
+        )
+        .unwrap();
+        let canonical_game_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO rom_entry \
+             (system, filename_stem, canonical_game_id, normalized_title) \
+             VALUES ('nintendo_snes', 'Super Mario World', ?1, 'super mario world')",
+            [canonical_game_id],
+        )
+        .unwrap();
+
+        // Refreshing the RA extract assigns an id with no schema change; the
+        // version must change so the per-storage stamp goes stale and re-enrich
+        // runs on next boot.
+        let before = catalog_enrichment_inputs_version(&conn).unwrap();
+        conn.execute("UPDATE canonical_game SET ra_id = '228'", [])
             .unwrap();
         let after = catalog_enrichment_inputs_version(&conn).unwrap();
 

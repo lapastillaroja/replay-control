@@ -261,7 +261,7 @@ pub struct GameInfo {
     /// RetroAchievements game id, or empty when the game has no
     /// RetroAchievements set. Drives the "RetroAchievements" detail pill.
     #[serde(default)]
-    pub retroachievements_id: String,
+    pub ra_id: String,
 
     // --- External metadata (from local cache, None if not yet fetched) ---
     pub description: Option<String>,
@@ -425,7 +425,7 @@ pub(crate) async fn build_game_detail(
         } else {
             Some(entry.region.clone())
         },
-        retroachievements_id: entry.retroachievements_id.clone(),
+        ra_id: entry.ra_id.clone(),
         description: None,
         rating: entry.rating,
         publisher: None,

@@ -16,6 +16,9 @@ pub struct CanonicalGame {
     pub normalized_genre: String,
     pub description: String,
     pub source: String,
+    /// RetroAchievements game id (title-matched per system at catalog-build
+    /// time); empty when the game has no RA achievement set.
+    pub ra_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -47,6 +50,7 @@ fn row_to_canonical_game(row: &rusqlite::Row<'_>) -> rusqlite::Result<CanonicalG
         normalized_genre: row.get(8)?,
         description: row.get(9)?,
         source: row.get(10)?,
+        ra_id: row.get(11)?,
     })
 }
 
@@ -70,16 +74,19 @@ fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
             normalized_genre: row.get(11)?,
             description: row.get(12)?,
             source: row.get(13)?,
+            ra_id: row.get(14)?,
         },
     })
 }
 
 const ENTRY_COLS: &str = "re.filename_stem, re.region, re.crc32, \
      cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
-     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
+     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source, \
+     cg.ra_id";
 
 const CANONICAL_COLS: &str = "cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
-     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
+     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source, \
+     cg.ra_id";
 
 /// Look up game metadata by filename stem (without extension) for a system.
 pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry> {
@@ -235,6 +242,7 @@ pub async fn lookup_by_normalized_titles_batch(
                     normalized_genre: row.get(9)?,
                     description: row.get(10)?,
                     source: row.get(11)?,
+                    ra_id: row.get(12)?,
                 };
                 Ok((norm, cg))
             })?;
@@ -516,7 +524,8 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre, description, source FROM canonical_game WHERE system = ?1",
+                 normalized_genre, description, source, ra_id \
+                 FROM canonical_game WHERE system = ?1",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], |row| {
                 let id = row.get::<_, i64>(0)? as u32;
@@ -533,6 +542,7 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
                     normalized_genre: row.get(9)?,
                     description: row.get(10)?,
                     source: row.get(11)?,
+                    ra_id: row.get(12)?,
                 };
                 Ok((id, game))
             })?;

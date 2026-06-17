@@ -46,6 +46,11 @@ pub struct ArcadeGameInfo {
     /// catalog-build time from the upstream MAME driver sourcefile. `None`
     /// for unmapped or non-arcade rows.
     pub board: Option<ArcadeBoard>,
+    /// RetroAchievements game id, resolved at catalog-build time by matching
+    /// `md5(lowercase rom_name)` against RA's Arcade hash set. Empty when the
+    /// romset has no RA set. (The matched hash itself stays in the catalog as
+    /// `arcade_game.ra_hash` and is not read at runtime.)
+    pub ra_id: String,
 }
 
 /// Single-source row as stored in the `arcade_game` table.
@@ -65,6 +70,7 @@ struct SourceRow {
     category: String,
     normalized_genre: String,
     board: Option<ArcadeBoard>,
+    ra_id: String,
 }
 
 fn rotation_from_str(s: &str) -> Rotation {
@@ -109,13 +115,17 @@ fn row_to_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRow> {
         category: row.get(11)?,
         normalized_genre: row.get(12)?,
         board: ArcadeBoard::from_tag(&board_tag),
+        ra_id: row.get(14)?,
     })
 }
 
-/// Column name list driving both the SELECT projection (`ARCADE_COLS`) and
-/// the runtime schema check at `catalog_pool::init_catalog`. Single source
-/// of truth — adding/removing/renaming a column here is the one edit that
-/// flows to both sites. Keep `ARCADE_COLS` below in lockstep.
+/// Full `arcade_game` column set, driving the runtime schema check at
+/// `catalog_pool::init_catalog` (an exact column-set match). This must list
+/// **every** column the table has — including `ra_hash`, which the runtime
+/// never reads but the catalog stores as RA reference data.
+///
+/// `ARCADE_COLS` below is the SELECT *projection* and is intentionally a subset
+/// (it omits `ra_hash`); `row_to_source_row` reads by that projection's order.
 pub(crate) const ARCADE_COL_NAMES: &[&str] = &[
     "rom_name",
     "source",
@@ -131,10 +141,12 @@ pub(crate) const ARCADE_COL_NAMES: &[&str] = &[
     "category",
     "normalized_genre",
     "board",
+    "ra_id",
+    "ra_hash",
 ];
 
 const ARCADE_COLS: &str = "rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-     is_clone, is_bios, parent, category, normalized_genre, board";
+     is_clone, is_bios, parent, category, normalized_genre, board, ra_id";
 
 /// Merge a `rom_name`'s per-source rows into a single `ArcadeGameInfo`,
 /// walking the system's priority list first and falling back to any
@@ -156,6 +168,7 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         category: String::new(),
         normalized_genre: String::new(),
         board: None,
+        ra_id: String::new(),
     };
     let mut got_bool_decision = false;
 
@@ -189,6 +202,9 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         }
         if info.normalized_genre.is_empty() {
             info.normalized_genre = row.normalized_genre.clone();
+        }
+        if info.ra_id.is_empty() {
+            info.ra_id = row.ra_id.clone();
         }
         if !got_bool_decision {
             info.is_clone = row.is_clone;

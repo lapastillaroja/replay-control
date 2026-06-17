@@ -148,6 +148,7 @@ pub async fn global_search(
     hide_clones: bool,
     #[server(default)] multiplayer_only: bool,
     #[server(default)] coop_only: bool,
+    #[server(default)] has_achievements: bool,
     #[server(default)] min_rating: Option<f32>,
     genre: String,
     per_system_limit: usize,
@@ -202,6 +203,7 @@ pub async fn global_search(
                 min_year,
                 max_year,
                 board: None,
+                has_achievements,
             };
             LibraryDb::search_game_library_ranked(
                 conn,
@@ -448,6 +450,7 @@ pub async fn get_developer_games(
     #[server(default)] min_rating: Option<f32>,
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
+    #[server(default)] has_achievements: bool,
 ) -> Result<DeveloperPageData, ServerFnError> {
     use replay_control_core::systems as sys_db;
     use replay_control_core_server::library_db::SearchFilter;
@@ -483,6 +486,7 @@ pub async fn get_developer_games(
                 min_year,
                 max_year,
                 board: None,
+                has_achievements,
             };
             let (entries, total) = LibraryDb::search_game_library(
                 conn,
@@ -703,6 +707,7 @@ pub async fn get_board_games(
     #[server(default)] min_rating: Option<f32>,
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
+    #[server(default)] has_achievements: bool,
 ) -> Result<BoardPageData, ServerFnError> {
     use replay_control_core::arcade_board::ArcadeBoard;
     use replay_control_core::systems as sys_db;
@@ -755,6 +760,7 @@ pub async fn get_board_games(
                 min_year,
                 max_year,
                 board: board_enum,
+                has_achievements,
             };
             let (entries, total) = LibraryDb::search_game_library(
                 conn,

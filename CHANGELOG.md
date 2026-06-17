@@ -4,11 +4,13 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [0.8.0]
+## [0.8.0-beta.1]
+
+> Beta release — RetroAchievements library flagging is new; please report anything off.
 
 ### Highlights
 
-- **RetroAchievements games are now flagged in your library.** Games that have a RetroAchievements achievement set show a 🏆 indicator on their detail page. A new **Has achievements** filter in global search and system game lists lets you browse only the games in your library that have an achievement set.
+- **RetroAchievements games are now flagged in your library.** Games that have a RetroAchievements achievement set show a 🏆 indicator on their detail page, including **arcade** games. A new **Has achievements** filter lets you browse only the games in your library that have an achievement set — in global search and on the system, developer, and board game lists.
 - **Settings system info refreshes live.** The System section in Settings now updates every second while you have the page open — CPU temperature, available RAM, network IP addresses, disk space, and OS uptime all stay current in real time.
 
 ---

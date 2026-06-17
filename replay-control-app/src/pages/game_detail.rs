@@ -210,6 +210,9 @@ fn GameDetailContent(
     // Console-specific fields
     let region = game.region.clone();
 
+    // RetroAchievements support flag (non-empty id means a known RA set exists).
+    let has_achievements = !game.ra_id.is_empty();
+
     // External metadata
     let description = StoredValue::new(game.description.clone());
     let has_description = game.description.is_some();
@@ -471,6 +474,12 @@ fn GameDetailContent(
                     <div class="game-meta-item">
                         <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRating)}</span>
                         <span class="game-meta-value">{rating_display.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || has_achievements>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRetroAchievements)}</span>
+                        <span class="game-meta-value">"\u{1F3C6}"</span>
                     </div>
                 </Show>
 

@@ -135,6 +135,10 @@ data/*
 !data/shmups-wiki/games.json
 !data/community/
 !data/community/*.json
+# RetroAchievements per-system hash/id facts — committed like the arcade sources
+# (the extract needs an API key, so release/CI builds use the committed snapshot).
+# Whole folder is tracked (nothing under it is ignored by default).
+!data/retroachievements
 # Hand-curated arcade sources (e.g. Flycast Naomi/Atomiswave CSV) live in data/arcade/
 # and ARE tracked in git.
 !data/arcade

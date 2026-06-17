@@ -22,7 +22,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
     identity_state, release_date, release_precision, release_region_used, cooperative, \
-    normalized_title, normalized_title_alt, board";
+    normalized_title, normalized_title_alt, board, ra_id";
 
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
@@ -111,6 +111,9 @@ pub struct SearchFilter<'a> {
     /// Restrict results to a single arcade board. Hits the partial index
     /// `idx_gl_board` for an indexed lookup; ignored when `None`.
     pub board: Option<replay_control_core::arcade_board::ArcadeBoard>,
+    /// Restrict results to games that have a RetroAchievements set
+    /// (`ra_id != ''`). Ignored when `false`.
+    pub has_achievements: bool,
 }
 
 impl LibraryDb {
@@ -466,10 +469,10 @@ impl LibraryDb {
                  box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                  scan_token, identity_state,
                  release_date, release_precision, release_region_used, cooperative,
-                 normalized_title, normalized_title_alt, board)
+                 normalized_title, normalized_title_alt, board, ra_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27,
-                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)
+                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     rom_path = excluded.rom_path,
                     display_name = excluded.display_name,
@@ -503,7 +506,8 @@ impl LibraryDb {
                     cooperative = excluded.cooperative,
                     normalized_title = excluded.normalized_title,
                     normalized_title_alt = excluded.normalized_title_alt,
-                    board = excluded.board",
+                    board = excluded.board,
+                    ra_id = excluded.ra_id",
             )
             .map_err(|e| Error::Other(format!("Prepare game_library upsert: {e}")))?;
 
@@ -551,6 +555,7 @@ impl LibraryDb {
                 &rom.normalized_title,
                 &rom.normalized_title_alt,
                 rom.board.map(|b| b.as_tag()).unwrap_or_default(),
+                &rom.ra_id,
             ])
             .map_err(|e| Error::Other(format!("Upsert game_library failed: {e}")))?;
         }
@@ -2640,6 +2645,12 @@ impl LibraryDb {
             param_values.push(board.as_tag().to_string());
             let idx = param_values.len();
             where_clauses.push(format!("board = ?{idx}"));
+        }
+
+        // RetroAchievements filter. Restricts to games that have a known
+        // RetroAchievements set.
+        if filter.has_achievements {
+            where_clauses.push("ra_id != ''".to_string());
         }
 
         // Rating filter (parameterized).
@@ -4734,6 +4745,51 @@ mod tests {
         for r in &results {
             assert!(r.rating.unwrap() >= 4.5);
         }
+    }
+
+    #[test]
+    fn search_with_has_achievements_filter() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut supported = make_game_entry("snes", "WithRa.sfc", false);
+        supported.ra_id = "228".to_string();
+        let unsupported = make_game_entry("snes", "NoRa.sfc", false);
+        LibraryDb::save_system_entries(&mut conn, "snes", &[supported, unsupported], None).unwrap();
+
+        let (results, total) = LibraryDb::search_game_library(
+            &conn,
+            Some("snes"),
+            None,
+            &[],
+            &SearchFilter {
+                has_achievements: true,
+                ..SearchFilter::default()
+            },
+            0,
+            usize::MAX,
+        )
+        .unwrap();
+
+        // Only the row with a non-empty ra_id is returned.
+        assert_eq!(total, 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rom_filename, "WithRa.sfc");
+        assert_eq!(results[0].ra_id, "228");
+    }
+
+    #[test]
+    fn ra_id_round_trips_through_save_and_load() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut entry = make_game_entry("snes", "RoundTrip.sfc", false);
+        entry.ra_id = "4321".to_string();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[entry], None).unwrap();
+
+        let loaded = LibraryDb::lookup_game_entries(&conn, &[("snes", "RoundTrip.sfc")]).unwrap();
+        let stored = loaded
+            .get(&("snes".to_string(), "RoundTrip.sfc".to_string()))
+            .expect("entry should load");
+        assert_eq!(stored.ra_id, "4321");
     }
 
     #[test]

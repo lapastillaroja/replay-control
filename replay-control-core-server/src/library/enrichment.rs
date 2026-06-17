@@ -1094,6 +1094,7 @@ mod tests {
             normalized_title: String::new(),
             normalized_title_alt: String::new(),
             board: None,
+            ra_id: String::new(),
         }
     }
 

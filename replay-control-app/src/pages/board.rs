@@ -48,6 +48,7 @@ pub fn BoardPage() -> impl IntoView {
             let mr = filters.min_rating.get();
             let miny = filters.min_year.get();
             let maxy = filters.max_year.get();
+            let ha = filters.has_achievements.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
                 filters_initialized.set_value(true);
@@ -66,6 +67,7 @@ pub fn BoardPage() -> impl IntoView {
                     min_rating: mr,
                     min_year: miny,
                     max_year: maxy,
+                    has_achievements: ha,
                 },
             );
         });
@@ -95,11 +97,12 @@ pub fn BoardPage() -> impl IntoView {
                 filters.min_rating.get(),
                 filters.min_year.get(),
                 filters.max_year.get(),
+                filters.has_achievements.get(),
             )
         },
-        move |(board_tag, system, hh, ht, hb, hc, gf, mp, mr, miny, maxy)| {
+        move |(board_tag, system, hh, ht, hb, hc, gf, mp, mr, miny, maxy, ha)| {
             server_fns::get_board_games(
-                board_tag, system, 0, PAGE_SIZE, hh, ht, hb, hc, mp, gf, mr, miny, maxy,
+                board_tag, system, 0, PAGE_SIZE, hh, ht, hb, hc, mp, gf, mr, miny, maxy, ha,
             )
         },
     );
@@ -129,6 +132,7 @@ pub fn BoardPage() -> impl IntoView {
         let mr = filters.min_rating.get_untracked();
         let miny = filters.min_year.get_untracked();
         let maxy = filters.max_year.get_untracked();
+        let ha = filters.has_achievements.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) = server_fns::get_board_games(
                 board_tag,
@@ -144,6 +148,7 @@ pub fn BoardPage() -> impl IntoView {
                 mr,
                 miny,
                 maxy,
+                ha,
             )
             .await
             {
@@ -348,6 +353,7 @@ struct BoardUrlParams<'a> {
     min_rating: Option<f32>,
     min_year: Option<u16>,
     max_year: Option<u16>,
+    has_achievements: bool,
 }
 
 #[cfg(feature = "hydrate")]
@@ -383,6 +389,9 @@ fn update_board_url(board_tag: &str, p: &BoardUrlParams<'_>) {
         }
         if let Some(y) = p.max_year {
             params.push(format!("max_year={y}"));
+        }
+        if p.has_achievements {
+            params.push("has_achievements=true".to_string());
         }
         let qs = if params.is_empty() {
             String::new()

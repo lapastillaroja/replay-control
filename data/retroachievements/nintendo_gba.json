@@ -1,0 +1,3767 @@
+[
+ {
+  "num_achievements": 8,
+  "ra_id": "29874",
+  "title": "~Demo~ WarioWare, Inc.: Trial Version"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "9977",
+  "title": "~Hack~ ~Demo~ Zelda: Sacred Paradox"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "14655",
+  "title": "~Hack~ A Grand Day Out"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "33618",
+  "title": "~Hack~ Acko's Mach-Bike Race"
+ },
+ {
+  "num_achievements": 180,
+  "ra_id": "26735",
+  "title": "~Hack~ Andaron Saga"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "30883",
+  "title": "~Hack~ Andaron Saga [Subset - Secrets Hunt]"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "30881",
+  "title": "~Hack~ Andaron Saga: Randomizer"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "18820",
+  "title": "~Hack~ Bandit Emblem"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "18821",
+  "title": "~Hack~ Bases and Bandits"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "24089",
+  "title": "~Hack~ Castlevania: Aria of Sorrow - Magician Mode"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "14177",
+  "title": "~Hack~ Castlevania: Aria of Sorrow - Persephone"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "5764",
+  "title": "~Hack~ Castlevania: Aria of Sorrow Alter"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "22834",
+  "title": "~Hack~ Castlevania: Aria of Sorrow Reprise"
+ },
+ {
+  "num_achievements": 72,
+  "ra_id": "24470",
+  "title": "~Hack~ Castlevania: Maria of Sorrow"
+ },
+ {
+  "num_achievements": 102,
+  "ra_id": "9374",
+  "title": "~Hack~ Castlevania: Revenge of the Findesiecle"
+ },
+ {
+  "num_achievements": 58,
+  "ra_id": "18655",
+  "title": "~Hack~ Castlevania: Serenade Under the Moon"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "24367",
+  "title": "~Hack~ Doom II: The Way ID Did"
+ },
+ {
+  "num_achievements": 83,
+  "ra_id": "7825",
+  "title": "~Hack~ Dragon Ball Z Team Training"
+ },
+ {
+  "num_achievements": 71,
+  "ra_id": "6956",
+  "title": "~Hack~ Final Fantasy I & II: Mod of Balance"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "22571",
+  "title": "~Hack~ Fire Emblem Wars"
+ },
+ {
+  "num_achievements": 9,
+  "ra_id": "33600",
+  "title": "~Hack~ Fire Emblem: A Star Wars Story"
+ },
+ {
+  "num_achievements": 9,
+  "ra_id": "7762",
+  "title": "~Hack~ Fire Emblem: Gilmore Girls"
+ },
+ {
+  "num_achievements": 65,
+  "ra_id": "22464",
+  "title": "~Hack~ Fire Emblem: Project Ember"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "32931",
+  "title": "~Hack~ Fire Emblem: Project Ember [Subset - Reverse Recruitment]"
+ },
+ {
+  "num_achievements": 100,
+  "ra_id": "29689",
+  "title": "~Hack~ Fire Emblem: Sacred Echoes"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "26633",
+  "title": "~Hack~ Fire Emblem: Storge"
+ },
+ {
+  "num_achievements": 214,
+  "ra_id": "4873",
+  "title": "~Hack~ Fire Emblem: Vision Quest"
+ },
+ {
+  "num_achievements": 77,
+  "ra_id": "7066",
+  "title": "~Hack~ Fire Emblem: Void's Blitzarre Adventure"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "33583",
+  "title": "~Hack~ Freezai's Mountain"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "21683",
+  "title": "~Hack~ Gacha Hack"
+ },
+ {
+  "num_achievements": 71,
+  "ra_id": "21686",
+  "title": "~Hack~ Golden Sun: Dawn of Djinn"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "33038",
+  "title": "~Hack~ GRAVITY: Sylux's Crusade"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "16160",
+  "title": "~Hack~ Hypno's Lullaby"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "11737",
+  "title": "~Hack~ Iron Emblem"
+ },
+ {
+  "num_achievements": 76,
+  "ra_id": "5494",
+  "title": "~Hack~ Mega Man Battle Network 6: Cybeast Falzar - MegaRock Patch"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "28593",
+  "title": "~Hack~ Metroid: Juicy Mission lite"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "19681",
+  "title": "~Hack~ Metroid: Return to Zebes"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "28618",
+  "title": "~Hack~ Metroid: Salt Mission"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "18543",
+  "title": "~Hack~ Metroid: Scrolls 6"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "18336",
+  "title": "~Hack~ Metroid: So Little Bubble"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "18335",
+  "title": "~Hack~ Metroid: SR387"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "12962",
+  "title": "~Hack~ Metroid: Subzero"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "17853",
+  "title": "~Hack~ Mintroid"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "33582",
+  "title": "~Hack~ PokeEscape"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "17723",
+  "title": "~Hack~ Pokemblem"
+ },
+ {
+  "num_achievements": 172,
+  "ra_id": "38619",
+  "title": "~Hack~ Pokemblem [Subset - Challenge Runs]"
+ },
+ {
+  "num_achievements": 173,
+  "ra_id": "9595",
+  "title": "~Hack~ Pokémon Adventure: Red Chapter"
+ },
+ {
+  "num_achievements": 139,
+  "ra_id": "5245",
+  "title": "~Hack~ Pokémon AshGray Version"
+ },
+ {
+  "num_achievements": 75,
+  "ra_id": "30709",
+  "title": "~Hack~ Pokémon Battle Ultimate"
+ },
+ {
+  "num_achievements": 100,
+  "ra_id": "5554",
+  "title": "~Hack~ Pokémon Dark Rising"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "2224",
+  "title": "~Hack~ Pokémon DarkViolet Version"
+ },
+ {
+  "num_achievements": 104,
+  "ra_id": "14776",
+  "title": "~Hack~ Pokémon Dreams"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "9045",
+  "title": "~Hack~ Pokémon Edicion Naranja"
+ },
+ {
+  "num_achievements": 116,
+  "ra_id": "32839",
+  "title": "~Hack~ Pokémon Emerald Imperium"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "15621",
+  "title": "~Hack~ Pokémon Emerald Kaizo"
+ },
+ {
+  "num_achievements": 83,
+  "ra_id": "21360",
+  "title": "~Hack~ Pokémon Emerald Rogue"
+ },
+ {
+  "num_achievements": 260,
+  "ra_id": "30137",
+  "title": "~Hack~ Pokémon Emerald Rogue V2"
+ },
+ {
+  "num_achievements": 67,
+  "ra_id": "32921",
+  "title": "~Hack~ Pokémon Emerald Rogue V2 [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "30894",
+  "title": "~Hack~ Pokémon Emerald Seaglass"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "17757",
+  "title": "~Hack~ Pokémon Emerald Version: Party Randomizer"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "20222",
+  "title": "~Hack~ Pokémon Emerald Version: Party Randomizer [Subset - Battle Frontier]"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "15623",
+  "title": "~Hack~ Pokémon FireRed Backwards"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "14408",
+  "title": "~Hack~ Pokémon FireRed: Rocket Edition"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "15988",
+  "title": "~Hack~ Pokémon FireRed: VR Missions"
+ },
+ {
+  "num_achievements": 99,
+  "ra_id": "6353",
+  "title": "~Hack~ Pokémon Glazed"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "16222",
+  "title": "~Hack~ Pokémon Grand Dad Version"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "34108",
+  "title": "~Hack~ Pokémon Lazarus"
+ },
+ {
+  "num_achievements": 180,
+  "ra_id": "38562",
+  "title": "~Hack~ Pokémon Lazarus [Subset - Monotype Challenge]"
+ },
+ {
+  "num_achievements": 74,
+  "ra_id": "4964",
+  "title": "~Hack~ Pokémon Liquid Crystal Version"
+ },
+ {
+  "num_achievements": 90,
+  "ra_id": "33063",
+  "title": "~Hack~ Pokémon Odyssey"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "28350",
+  "title": "~Hack~ Pokémon Puffy Pink"
+ },
+ {
+  "num_achievements": 157,
+  "ra_id": "17361",
+  "title": "~Hack~ Pokémon Radical Red"
+ },
+ {
+  "num_achievements": 122,
+  "ra_id": "32844",
+  "title": "~Hack~ Pokémon Recharged Emerald"
+ },
+ {
+  "num_achievements": 91,
+  "ra_id": "29758",
+  "title": "~Hack~ Pokémon Recharged Yellow"
+ },
+ {
+  "num_achievements": 84,
+  "ra_id": "31892",
+  "title": "~Hack~ Pokémon Scorched Silver"
+ },
+ {
+  "num_achievements": 69,
+  "ra_id": "5106",
+  "title": "~Hack~ Pokémon Snakewood"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "5552",
+  "title": "~Hack~ Pokémon Sweet Version"
+ },
+ {
+  "num_achievements": 102,
+  "ra_id": "18985",
+  "title": "~Hack~ Pokémon Sword and Shield Ultimate Plus"
+ },
+ {
+  "num_achievements": 138,
+  "ra_id": "9877",
+  "title": "~Hack~ Pokémon Theta Emerald Renev"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "6643",
+  "title": "~Hack~ Pokémon Ultra Violet Version"
+ },
+ {
+  "num_achievements": 129,
+  "ra_id": "17530",
+  "title": "~Hack~ Pokémon Unbound"
+ },
+ {
+  "num_achievements": 844,
+  "ra_id": "24224",
+  "title": "~Hack~ Pokémon Unbound [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 90,
+  "ra_id": "34877",
+  "title": "~Hack~ Pokémon Uncanny Version"
+ },
+ {
+  "num_achievements": 77,
+  "ra_id": "11613",
+  "title": "~Hack~ Pokémon Vega"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "16195",
+  "title": "~Hack~ Pokémon WaterBlue Version"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "33566",
+  "title": "~Hack~ Pokémon: Cave Escape"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "33574",
+  "title": "~Hack~ Pokémon: Maxie's Island"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "28319",
+  "title": "~Hack~ Pokémon: National History Museum"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "14483",
+  "title": "~Hack~ Pokémon: Orange Islands"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "30146",
+  "title": "~Hack~ Pokémon: Pit of 100 Trials"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "25856",
+  "title": "~Hack~ Pokémon: Too Many Types"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "37577",
+  "title": "~Hack~ Pokémon: Too Many Types 2"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "28320",
+  "title": "~Hack~ Pokescape: A Pokémon Escape Room"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "26958",
+  "title": "~Hack~ Rhythm Tengoku: Tempo Up!"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "17561",
+  "title": "~Hack~ Samus Goes to the Fridge to Get a Glass of Milk"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "29082",
+  "title": "~Hack~ SMA2 Micro-Hack: The Return to Dinosaur Land"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "33398",
+  "title": "~Hack~ Super Mariomon"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "9842",
+  "title": "~Hack~ Super Metroid: GBA Edition"
+ },
+ {
+  "num_achievements": 61,
+  "ra_id": "15933",
+  "title": "~Hack~ The Last Promise"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "37048",
+  "title": "~Hack~ The Szechuan Sword: A PostModern Strategy Game"
+ },
+ {
+  "num_achievements": 118,
+  "ra_id": "24387",
+  "title": "~Hack~ The Ultimate Doom"
+ },
+ {
+  "num_achievements": 99,
+  "ra_id": "24366",
+  "title": "~Hack~ Ultimate Doom: The Way ID Did"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "25058",
+  "title": "~Hack~ Wario Land 4: Burning Nightmares"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "17910",
+  "title": "~Hack~ Wario Land 4: Parallel World"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "33610",
+  "title": "~Hack~ Yet Another Vanilla SMA2 Hack"
+ },
+ {
+  "num_achievements": 9,
+  "ra_id": "10577",
+  "title": "~Homebrew~ ~Demo~ Goodboy Galaxy: Chapter Zero"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "25306",
+  "title": "~Homebrew~ ~Demo~ Neo Racing Genesis"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "16286",
+  "title": "~Homebrew~ ~Demo~ Sonyc"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "29025",
+  "title": "~Homebrew~ Apotris"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "14458",
+  "title": "~Homebrew~ Battle Picross"
+ },
+ {
+  "num_achievements": 9,
+  "ra_id": "38188",
+  "title": "~Homebrew~ Bloxorz"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "27590",
+  "title": "~Homebrew~ Bridge Quest"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "7447",
+  "title": "~Homebrew~ BulletGBA"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "9331",
+  "title": "~Homebrew~ Butano Fighter"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "24913",
+  "title": "~Homebrew~ Celeste Advance"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "16209",
+  "title": "~Homebrew~ Celeste Classic"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "34096",
+  "title": "~Homebrew~ Celeste Classic 2: Lani's Trek"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "25945",
+  "title": "~Homebrew~ Coin Fall"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "37882",
+  "title": "~Homebrew~ Crypt Sweeper"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "30462",
+  "title": "~Homebrew~ Discrete Orange"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "8010",
+  "title": "~Homebrew~ Flappy Bird"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "24138",
+  "title": "~Homebrew~ Funny Bird Game 2"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "28158",
+  "title": "~Homebrew~ GBA Microjam '23"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "33564",
+  "title": "~Homebrew~ Getting Around It with Pheasant Birdy"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "38061",
+  "title": "~Homebrew~ Gold Miner"
+ },
+ {
+  "num_achievements": 125,
+  "ra_id": "27584",
+  "title": "~Homebrew~ Goodboy Galaxy"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "23900",
+  "title": "~Homebrew~ Google Dino Advance"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "25111",
+  "title": "~Homebrew~ Kadu Bird"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "30907",
+  "title": "~Homebrew~ Knight Owls"
+ },
+ {
+  "num_achievements": 105,
+  "ra_id": "23791",
+  "title": "~Homebrew~ Luggage Retrieval Officer"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "33774",
+  "title": "~Homebrew~ Luigi MasterMind"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "16387",
+  "title": "~Homebrew~ Luigi Puzzle"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "14777",
+  "title": "~Homebrew~ Luminesweeper"
+ },
+ {
+  "num_achievements": 9,
+  "ra_id": "28390",
+  "title": "~Homebrew~ MarioBreak!"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "28291",
+  "title": "~Homebrew~ MeteoRain"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "21682",
+  "title": "~Homebrew~ Minicraft"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "9222",
+  "title": "~Homebrew~ Misfortune Advance"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "24331",
+  "title": "~Homebrew~ Mooncat's Trio"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "30145",
+  "title": "~Homebrew~ Notenogram"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "17919",
+  "title": "~Homebrew~ Picross Advance"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "17755",
+  "title": "~Homebrew~ Ping-Pong Diplomacy Advance"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "2578",
+  "title": "~Homebrew~ Pocket Meat"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "19895",
+  "title": "~Homebrew~ Popeye Meets Ali Baba's Forty Thieves"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "33742",
+  "title": "~Homebrew~ Portal Advance"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "28941",
+  "title": "~Homebrew~ Radicorn"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "29046",
+  "title": "~Homebrew~ Scrolls of Fire"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "22659",
+  "title": "~Homebrew~ Sips"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "5364",
+  "title": "~Homebrew~ Snakes"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "14466",
+  "title": "~Homebrew~ Sudoku Micro"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "22291",
+  "title": "~Homebrew~ Super Block Jump"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "14392",
+  "title": "~Homebrew~ Super Mario: The Last GBA Quest"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "8038",
+  "title": "~Homebrew~ Sushi the Cat"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "16307",
+  "title": "~Homebrew~ Tetrigram"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "30940",
+  "title": "~Homebrew~ Thinking With Boxes"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "25187",
+  "title": "~Homebrew~ Toadally Awesome Game"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "6776",
+  "title": "~Homebrew~ Touhou Kaisekiki: Arabasiri"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "9544",
+  "title": "~Homebrew~ Varooom 3D"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "8208",
+  "title": "~Homebrew~ Waimanu: Grinding Blocks Adventure"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "37695",
+  "title": "~Homebrew~ With the Last Moonbeam"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "21442",
+  "title": "~Prototype~ Dark Eden"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "21948",
+  "title": "~Prototype~ Mario Kart XXL"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "17714",
+  "title": "~Prototype~ Metal Slug: Super Vehicle-001"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "19894",
+  "title": "~Prototype~ Quake"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "12748",
+  "title": "~Prototype~ Resident Evil 2"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "21440",
+  "title": "~Prototype~ Sea Boy"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "35439",
+  "title": "~Prototype~ SpongeBob SquarePants: SuperSponge"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "17942",
+  "title": "~Unlicensed~ Crash Advance IV"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "13635",
+  "title": "~Unlicensed~ Rockman & Crystal"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "18426",
+  "title": "~Unlicensed~ Super Mario DX"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "6250",
+  "title": "007: NightFire"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "12963",
+  "title": "3 Game Pack!: The Game of Life + Payday + Yahtzee"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "5563",
+  "title": "3 Games in One!: Yars' Revenge + Asteroids + Pong"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "13127",
+  "title": "3-In-1 Pack: Risk + Battleship + Clue"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "531",
+  "title": "Ace Combat Advance"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "9848",
+  "title": "Action Man: Robot Atak"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "6100",
+  "title": "Activision Anthology"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "7643",
+  "title": "Advance Guardian Heroes"
+ },
+ {
+  "num_achievements": 92,
+  "ra_id": "506",
+  "title": "Advance Wars"
+ },
+ {
+  "num_achievements": 72,
+  "ra_id": "2593",
+  "title": "Advance Wars 2: Black Hole Rising"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "5081",
+  "title": "Aladdin"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "5068",
+  "title": "Alien Hominid"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "6378",
+  "title": "Alienators: Evolution Continues"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "8404",
+  "title": "American Idol"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "4716",
+  "title": "An American Tail: Fievel's Gold Rush"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "9766",
+  "title": "Angelic Layer"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "5544",
+  "title": "Animal Snap: Rescue Them 2 by 2"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "8046",
+  "title": "Army Men Advance"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "5689",
+  "title": "Army Men: Operation Green"
+ },
+ {
+  "num_achievements": 77,
+  "ra_id": "11675",
+  "title": "Astérix & Obélix XXL"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "2203",
+  "title": "Astro Boy: Omega Factor"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "9057",
+  "title": "Atlantis: The Lost Empire"
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "9052",
+  "title": "Atomic Betty"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "7644",
+  "title": "Avatar: The Last Airbender"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "5502",
+  "title": "Avatar: The Last Airbender - The Burning Earth"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "6653",
+  "title": "Azumanga Daioh Advance"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "5441",
+  "title": "Baldur's Gate: Dark Alliance"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "3702",
+  "title": "Ballistic: Ecks vs. Sever"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "744",
+  "title": "Banjo-Kazooie: Grunty's Revenge"
+ },
+ {
+  "num_achievements": 111,
+  "ra_id": "4072",
+  "title": "Banjo-Pilot"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "8066",
+  "title": "Barbie and the Magic of Pegasus"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "8064",
+  "title": "Barbie as The Island Princess"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "8075",
+  "title": "Barbie: The Princess and the Pauper"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "5287",
+  "title": "Batman Begins"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "2428",
+  "title": "Batman: Vengeance"
+ },
+ {
+  "num_achievements": 61,
+  "ra_id": "7766",
+  "title": "Battle B-Daman"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "14163",
+  "title": "Beyblade V-Force: Ultimate Blader Jam"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "7679",
+  "title": "Big Mutha Truckers"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "9008",
+  "title": "Bionicle"
+ },
+ {
+  "num_achievements": 69,
+  "ra_id": "6864",
+  "title": "Bionicle Heroes"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "8878",
+  "title": "bit Generations: Coloris"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "8869",
+  "title": "bit Generations: Dialhex"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "7451",
+  "title": "bit Generations: Dotstream"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "8817",
+  "title": "bit Generations: Orbital"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "8799",
+  "title": "bit Generations: Soundvoyager"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "4060",
+  "title": "Black Belt Challenge"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "2170",
+  "title": "Bleach Advance: Kurenai ni Somaru Soul Society"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "569",
+  "title": "Boktai 2: Solar Boy Django"
+ },
+ {
+  "num_achievements": 67,
+  "ra_id": "568",
+  "title": "Boktai: The Sun is in Your Hand"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "509",
+  "title": "Bomberman Tournament"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "6946",
+  "title": "Bookworm"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "9641",
+  "title": "Boulder Dash EX"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "24942",
+  "title": "Boulder Dash EX [Subset - Classic Mode]"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "4872",
+  "title": "Breath of Fire"
+ },
+ {
+  "num_achievements": 126,
+  "ra_id": "2430",
+  "title": "Breath of Fire 2"
+ },
+ {
+  "num_achievements": 14,
+  "ra_id": "7427",
+  "title": "Britney's Dance Beat"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "7438",
+  "title": "Broken Sword: The Shadow of the Templars"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "11587",
+  "title": "Brother Bear"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "4916",
+  "title": "Bubble Bobble: Old & New"
+ },
+ {
+  "num_achievements": 86,
+  "ra_id": "6224",
+  "title": "Buffy the Vampire Slayer: Wrath of the Darkhul King"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "13110",
+  "title": "Car Battler Joe"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "7221",
+  "title": "Cars"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "7299",
+  "title": "Cars: Mater-National Championship"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "6927",
+  "title": "Cartoon Network Speedway"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "510",
+  "title": "Castlevania: Aria of Sorrow"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "16272",
+  "title": "Castlevania: Aria of Sorrow [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "22865",
+  "title": "Castlevania: Aria of Sorrow [Subset - NOSOUL/NOUSE]"
+ },
+ {
+  "num_achievements": 109,
+  "ra_id": "745",
+  "title": "Castlevania: Circle of the Moon"
+ },
+ {
+  "num_achievements": 93,
+  "ra_id": "2353",
+  "title": "Castlevania: Harmony of Dissonance"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "7220",
+  "title": "Catz"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "7216",
+  "title": "Charlotte's Web"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "6917",
+  "title": "Chicken Little"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "27042",
+  "title": "Chobits: Atashi dake no Hito"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "7211",
+  "title": "Chocobo Land: A Game of Dice"
+ },
+ {
+  "num_achievements": 153,
+  "ra_id": "17760",
+  "title": "Choro Q Advance 2"
+ },
+ {
+  "num_achievements": 145,
+  "ra_id": "4050",
+  "title": "ChuChu Rocket!"
+ },
+ {
+  "num_achievements": 108,
+  "ra_id": "6377",
+  "title": "CIMA: The Enemy"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "7099",
+  "title": "Cinnamon: Fuwafuwa Daisakusen"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "7100",
+  "title": "Cinnamon: Yume no Daibouken"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "7091",
+  "title": "Cinnamoroll: Koko ni Iru yo"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "8701",
+  "title": "Classic NES Series: Castlevania"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "8677",
+  "title": "Classic NES Series: Donkey Kong"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "8673",
+  "title": "Classic NES Series: Excitebike"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "18464",
+  "title": "Classic NES Series: Metroid"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "3201",
+  "title": "Classic NES Series: Super Mario Bros."
+ },
+ {
+  "num_achievements": 97,
+  "ra_id": "748",
+  "title": "Classic NES Series: The Legend of Zelda"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "749",
+  "title": "Classic NES Series: Zelda II: The Adventure of Link"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "5532",
+  "title": "Codename: Kids Next Door - Operation S.O.D.A."
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "2424",
+  "title": "Contra Advance: The Alien Wars EX"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "5535",
+  "title": "Crash Bandicoot 2: N-Tranced"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "17408",
+  "title": "Crash Bandicoot Blast!"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "3618",
+  "title": "Crash Bandicoot Purple: Ripto's Rampage"
+ },
+ {
+  "num_achievements": 74,
+  "ra_id": "526",
+  "title": "Crash Bandicoot: The Huge Adventure"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "5127",
+  "title": "Crash Nitro Kart"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "6141",
+  "title": "Crash of the Titans"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "6346",
+  "title": "Crazy Frog Racer"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "6006",
+  "title": "Crazy Taxi: Catch a Ride"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "6622",
+  "title": "Cubix: Robots for Everyone - Clash 'n Bash"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "6607",
+  "title": "Curious George"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "6409",
+  "title": "Danny Phantom: The Ultimate Enemy"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "5776",
+  "title": "Daredevil"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "6226",
+  "title": "Deal or No Deal"
+ },
+ {
+  "num_achievements": 81,
+  "ra_id": "4881",
+  "title": "DemiKids: Dark Version"
+ },
+ {
+  "num_achievements": 78,
+  "ra_id": "5913",
+  "title": "DemiKids: Light Version"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "6759",
+  "title": "Denki Blocks!"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "5619",
+  "title": "Densetsu no Stafy"
+ },
+ {
+  "num_achievements": 65,
+  "ra_id": "3652",
+  "title": "Densetsu no Stafy 2"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "7270",
+  "title": "Densetsu no Stafy 3"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "6193",
+  "title": "Dexter's Laboratory: Deesaster Strikes"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "5030",
+  "title": "Digimon Battle Spirit"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "5491",
+  "title": "Digimon Battle Spirit 2"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "6670",
+  "title": "Digimon Racing"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "7092",
+  "title": "Disney Princess"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "18025",
+  "title": "Disney Sports: Basketball"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "5709",
+  "title": "Disney's Extreme Skate Adventure"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "5008",
+  "title": "DK: King of Swing"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "6187",
+  "title": "Dogz 2"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "4926",
+  "title": "Dokapon: Monster Hunter"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "6289",
+  "title": "Donald Duck Advance!"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "750",
+  "title": "Donkey Kong Country"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "751",
+  "title": "Donkey Kong Country 2"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "752",
+  "title": "Donkey Kong Country 3"
+ },
+ {
+  "num_achievements": 83,
+  "ra_id": "528",
+  "title": "Doom"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "2531",
+  "title": "Doom II"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "8915",
+  "title": "Dora the Explorer: Dora's World Adventure"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "12786",
+  "title": "Dora the Explorer: The Search for Pirate Pig's Treasure"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "2138",
+  "title": "Double Dragon Advance"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "4970",
+  "title": "Dr. Mario & Puzzle League"
+ },
+ {
+  "num_achievements": 100,
+  "ra_id": "7767",
+  "title": "Dr. Sudoku"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "753",
+  "title": "Dragon Ball GT: Transformation"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "754",
+  "title": "Dragon Ball Z: Buu's Fury"
+ },
+ {
+  "num_achievements": 79,
+  "ra_id": "755",
+  "title": "Dragon Ball Z: Collectible Card Game"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "756",
+  "title": "Dragon Ball Z: Supersonic Warriors"
+ },
+ {
+  "num_achievements": 31,
+  "ra_id": "757",
+  "title": "Dragon Ball Z: Taiketsu"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "758",
+  "title": "Dragon Ball Z: The Legacy of Goku"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "759",
+  "title": "Dragon Ball Z: The Legacy of Goku II"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "1376",
+  "title": "Dragon Ball: Advanced Adventure"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "8315",
+  "title": "Dragon Quest Monsters: Caravan Heart"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "9720",
+  "title": "Drake & Josh"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "760",
+  "title": "Drill Dozer"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "2527",
+  "title": "Driver 2 Advance"
+ },
+ {
+  "num_achievements": 117,
+  "ra_id": "6003",
+  "title": "Dual Blades"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "3701",
+  "title": "Duke Nukem Advance"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "5985",
+  "title": "Dungeons & Dragons: Eye of the Beholder"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "5705",
+  "title": "E.T.: The Extra-Terrestrial"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "761",
+  "title": "Earthworm Jim"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "4894",
+  "title": "Ed, Edd n Eddy: Jawbreakers!"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "8184",
+  "title": "Ed, Edd n Eddy: The Mis-Edventures"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "5959",
+  "title": "Egg Mania"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "6101",
+  "title": "Elf Bowling 1 & 2"
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "7128",
+  "title": "Elf: The Movie"
+ },
+ {
+  "num_achievements": 14,
+  "ra_id": "29225",
+  "title": "EZ-Talk: Shokyuu Hen 1 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "29226",
+  "title": "EZ-Talk: Shokyuu Hen 2 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "29227",
+  "title": "EZ-Talk: Shokyuu Hen 3 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 14,
+  "ra_id": "29228",
+  "title": "EZ-Talk: Shokyuu Hen 4 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 14,
+  "ra_id": "29229",
+  "title": "EZ-Talk: Shokyuu Hen 5 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "29230",
+  "title": "EZ-Talk: Shokyuu Hen 6 - Jay no English Adventure"
+ },
+ {
+  "num_achievements": 75,
+  "ra_id": "6083",
+  "title": "F-Zero: Climax"
+ },
+ {
+  "num_achievements": 41,
+  "ra_id": "5343",
+  "title": "F-Zero: GP Legend"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "507",
+  "title": "F-Zero: Maximum Velocity"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "12971",
+  "title": "Famicom Mini Vol. 16: Dig Dug"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "19447",
+  "title": "Famicom Mini Vol. 21: Super Mario Bros. 2"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "11156",
+  "title": "Famicom Mini Vol. 24: Hikari Shinwa - Palutena no Kagami"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "8260",
+  "title": "FIFA 06"
+ },
+ {
+  "num_achievements": 72,
+  "ra_id": "7754",
+  "title": "FIFA 07"
+ },
+ {
+  "num_achievements": 41,
+  "ra_id": "13204",
+  "title": "FIFA 2005"
+ },
+ {
+  "num_achievements": 69,
+  "ra_id": "762",
+  "title": "Final Fantasy I & II: Dawn of Souls"
+ },
+ {
+  "num_achievements": 348,
+  "ra_id": "27657",
+  "title": "Final Fantasy I & II: Dawn of Souls [Subset - FF1 Solo Class]"
+ },
+ {
+  "num_achievements": 95,
+  "ra_id": "763",
+  "title": "Final Fantasy IV: Advance"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "37814",
+  "title": "Final Fantasy IV: Advance [Subset - LLIEG]"
+ },
+ {
+  "num_achievements": 138,
+  "ra_id": "519",
+  "title": "Final Fantasy Tactics Advance"
+ },
+ {
+  "num_achievements": 172,
+  "ra_id": "764",
+  "title": "Final Fantasy V: Advance"
+ },
+ {
+  "num_achievements": 167,
+  "ra_id": "24371",
+  "title": "Final Fantasy V: Advance [Subset - Four Job Fiesta]"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "26438",
+  "title": "Final Fantasy V: Advance [Subset - Low Level Game]"
+ },
+ {
+  "num_achievements": 85,
+  "ra_id": "765",
+  "title": "Final Fantasy VI: Advance"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "3706",
+  "title": "Final Fight One"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "8042",
+  "title": "Finding Nemo"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "8377",
+  "title": "Finding Nemo: The Continuing Adventures"
+ },
+ {
+  "num_achievements": 70,
+  "ra_id": "4879",
+  "title": "Fire Emblem: Fuuin no Tsurugi"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "31454",
+  "title": "Fire Emblem: Fuuin no Tsurugi [Subset - Trial Map Characters]"
+ },
+ {
+  "num_achievements": 87,
+  "ra_id": "554",
+  "title": "Fire Emblem: The Blazing Blade"
+ },
+ {
+  "num_achievements": 114,
+  "ra_id": "2482",
+  "title": "Fire Emblem: The Sacred Stones"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "9054",
+  "title": "Fortress"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "7336",
+  "title": "Foster's Home for Imaginary Friends"
+ },
+ {
+  "num_achievements": 13,
+  "ra_id": "9358",
+  "title": "Frogger Advance: The Great Quest"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "2524",
+  "title": "Frogger's Adventures 2: The Lost Wand"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "9301",
+  "title": "Frogger's Adventures: Temple of the Frog"
+ },
+ {
+  "num_achievements": 67,
+  "ra_id": "766",
+  "title": "Game & Watch Gallery 4"
+ },
+ {
+  "num_achievements": 90,
+  "ra_id": "11843",
+  "title": "Game Boy Advance Video Series"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "6030",
+  "title": "Garfield and his Nine Lives"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "6194",
+  "title": "Gauntlet: Dark Legacy"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "7217",
+  "title": "Gekido Advance: Kintaro's Revenge"
+ },
+ {
+  "num_achievements": 78,
+  "ra_id": "5521",
+  "title": "Genso Suikoden Card Stories"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "512",
+  "title": "Ghost Rider"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "2591",
+  "title": "Global Star: Sudoku Fever"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "6406",
+  "title": "Godzilla: Domination!"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "4991",
+  "title": "Goemon: New Age Shutsudou"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "767",
+  "title": "Golden Sun"
+ },
+ {
+  "num_achievements": 97,
+  "ra_id": "2592",
+  "title": "Golden Sun: The Lost Age"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "7437",
+  "title": "Gradius Galaxies"
+ },
+ {
+  "num_achievements": 41,
+  "ra_id": "1416",
+  "title": "Grand Theft Auto Advance"
+ },
+ {
+  "num_achievements": 95,
+  "ra_id": "8162",
+  "title": "GT Advance 2: Rally Racing"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "7027",
+  "title": "GT Advance 3: Pro Concept Racing"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "8209",
+  "title": "GT Advance: Championship Racing"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "6209",
+  "title": "Guilty Gear X Advance Edition"
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "12924",
+  "title": "Gumby vs. the Astrobots"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "5077",
+  "title": "Gunstar Super Heroes"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "7945",
+  "title": "Guru Logic Champ"
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "7760",
+  "title": "Gyakuten Saiban"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "12794",
+  "title": "Gyakuten Saiban 2"
+ },
+ {
+  "num_achievements": 98,
+  "ra_id": "7857",
+  "title": "Gyakuten Saiban 3"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "9704",
+  "title": "Hachiemon"
+ },
+ {
+  "num_achievements": 61,
+  "ra_id": "13634",
+  "title": "Hagane no Renkinjutsushi: Meisou no Rondo"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "10897",
+  "title": "Hajime no Ippo: The Fighting"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "10775",
+  "title": "Hamepane: Tokyo Mew Mew"
+ },
+ {
+  "num_achievements": 31,
+  "ra_id": "12713",
+  "title": "Hamtaro: Ham-Ham Games"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "5987",
+  "title": "Hamtaro: Ham-Ham Heartbreak"
+ },
+ {
+  "num_achievements": 97,
+  "ra_id": "9596",
+  "title": "Hamtaro: Rainbow Rescue"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "12714",
+  "title": "Happy Feet"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "4197",
+  "title": "Harry Potter and the Chamber of Secrets"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "4198",
+  "title": "Harry Potter and the Goblet of Fire"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "4200",
+  "title": "Harry Potter and the Prisoner of Azkaban"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "4201",
+  "title": "Harry Potter and the Sorcerer's Stone"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "5778",
+  "title": "Harry Potter: Quidditch World Cup"
+ },
+ {
+  "num_achievements": 150,
+  "ra_id": "4853",
+  "title": "Harvest Moon: Friends of Mineral Town"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "8207",
+  "title": "Heidi: The Game"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "5085",
+  "title": "Herbie: Fully Loaded"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "9360",
+  "title": "Hey Arnold! The Movie"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "9295",
+  "title": "Hi Hi Puffy AmiYumi: Kaznapped!"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "5707",
+  "title": "Hot Wheels: Burnin' Rubber"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "6403",
+  "title": "Hot Wheels: Stunt Track Challenge"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "7374",
+  "title": "Hot Wheels: Velocity X"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "9296",
+  "title": "Hot Wheels: World Race"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "6947",
+  "title": "I Spy Challenger!"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "9829",
+  "title": "Ice Age"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "5690",
+  "title": "IK+"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "5254",
+  "title": "Invader"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "4690",
+  "title": "Iridion 3D"
+ },
+ {
+  "num_achievements": 120,
+  "ra_id": "4691",
+  "title": "Iridion II"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "2520",
+  "title": "It's Mr Pants"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "4692",
+  "title": "Jackie Chan Adventures: Legend of the Dark Hand"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "6950",
+  "title": "Jet Grind Radio"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "6290",
+  "title": "Jimmy Neutron: Boy Genius"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "8149",
+  "title": "Jurassic Park Institute Tour: Dinosaur Rescue"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "6876",
+  "title": "Kao the Kangaroo"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "3703",
+  "title": "Kid's Cards"
+ },
+ {
+  "num_achievements": 104,
+  "ra_id": "27354",
+  "title": "Kidou Senshi Gundam: Seed Destiny"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "17340",
+  "title": "Kim Possible 2: Drakken's Demise"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "9718",
+  "title": "Kim Possible: Revenge of Monkey Fist"
+ },
+ {
+  "num_achievements": 90,
+  "ra_id": "768",
+  "title": "Kingdom Hearts: Chain of Memories"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "769",
+  "title": "Kirby & The Amazing Mirror"
+ },
+ {
+  "num_achievements": 70,
+  "ra_id": "770",
+  "title": "Kirby: Nightmare in Dream Land"
+ },
+ {
+  "num_achievements": 140,
+  "ra_id": "38017",
+  "title": "Kirby: Nightmare in Dream Land [Subset - Single Ability Runs]"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "5530",
+  "title": "Klonoa 2: Dream Champ Tournament"
+ },
+ {
+  "num_achievements": 121,
+  "ra_id": "4753",
+  "title": "Klonoa Heroes: Densetsu no Star Medal"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "3653",
+  "title": "Klonoa: Empire of Dreams"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "2543",
+  "title": "Konami Krazy Racers"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "6986",
+  "title": "Konjiki no Gash Bell!! Unare! Yuujou no Zakeru 2"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "7306",
+  "title": "Kotoba no Puzzle: Mojipittan Advance"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "5377",
+  "title": "Kuru Kuru Kururin"
+ },
+ {
+  "num_achievements": 69,
+  "ra_id": "13772",
+  "title": "Kururin Paradise"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "3681",
+  "title": "Lady Sia"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "9293",
+  "title": "LEGO Bionicle"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "6393",
+  "title": "LEGO Island 2: The Brickster's Revenge"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "9664",
+  "title": "LEGO Racers 2"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "5720",
+  "title": "LEGO Star Wars II: The Original Trilogy"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "5719",
+  "title": "LEGO Star Wars: The Video Game"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "16683",
+  "title": "Lilo and Stitch"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "16684",
+  "title": "Lilo and Stitch 2: Hamsterviel Havoc"
+ },
+ {
+  "num_achievements": 10,
+  "ra_id": "6738",
+  "title": "Love Hina Advance: Shukufuku no Kane wa Naru Kana"
+ },
+ {
+  "num_achievements": 86,
+  "ra_id": "5240",
+  "title": "Lufia: The Ruins of Lore"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "6834",
+  "title": "Lunar Legend"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "12957",
+  "title": "Madagascar: Operation Penguin"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "13941",
+  "title": "Magi Nation"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "8378",
+  "title": "Magical Quest 2 Starring Mickey & Minnie"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "572",
+  "title": "Magical Quest 3 Starring Mickey & Donald"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "8679",
+  "title": "Magical Quest Starring Mickey & Minnie"
+ },
+ {
+  "num_achievements": 101,
+  "ra_id": "8301",
+  "title": "Magical Vacation"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "9949",
+  "title": "Mahjong Keiji"
+ },
+ {
+  "num_achievements": 85,
+  "ra_id": "771",
+  "title": "Mario & Luigi: Superstar Saga"
+ },
+ {
+  "num_achievements": 93,
+  "ra_id": "20230",
+  "title": "Mario & Luigi: Superstar Saga [Subset - Perfect Dodges]"
+ },
+ {
+  "num_achievements": 70,
+  "ra_id": "532",
+  "title": "Mario Golf: Advance Tour"
+ },
+ {
+  "num_achievements": 94,
+  "ra_id": "533",
+  "title": "Mario Kart: Super Circuit"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "5093",
+  "title": "Mario Party Advance"
+ },
+ {
+  "num_achievements": 68,
+  "ra_id": "2445",
+  "title": "Mario Pinball Land"
+ },
+ {
+  "num_achievements": 58,
+  "ra_id": "2171",
+  "title": "Mario Tennis: Power Tour"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "529",
+  "title": "Mario vs. Donkey Kong"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "4061",
+  "title": "Max Payne"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "5706",
+  "title": "Mech Platoon"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "7365",
+  "title": "Medabots AX: Metabee Version"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "5884",
+  "title": "Medabots AX: Rokusho Version"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "4723",
+  "title": "Medabots: Metabee Version"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "7367",
+  "title": "Medabots: Rokusho Version"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "5657",
+  "title": "Medal of Honor: Infiltrator"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "8324",
+  "title": "Medal of Honor: Underground"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "16098",
+  "title": "Medarot G: Kabuto Version"
+ },
+ {
+  "num_achievements": 74,
+  "ra_id": "2179",
+  "title": "Mega Man & Bass"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "4909",
+  "title": "Mega Man Battle Chip Challenge"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "575",
+  "title": "Mega Man Battle Network"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "773",
+  "title": "Mega Man Battle Network 2"
+ },
+ {
+  "num_achievements": 79,
+  "ra_id": "774",
+  "title": "Mega Man Battle Network 3: Blue Version"
+ },
+ {
+  "num_achievements": 89,
+  "ra_id": "775",
+  "title": "Mega Man Battle Network 3: White Version"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "30129",
+  "title": "Mega Man Battle Network 3: White Version [Subset - Omega S-Ranks]"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "29784",
+  "title": "Mega Man Battle Network 3: White Version [Subset - Powerless]"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "776",
+  "title": "Mega Man Battle Network 4: Blue Moon"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "777",
+  "title": "Mega Man Battle Network 4: Red Sun"
+ },
+ {
+  "num_achievements": 88,
+  "ra_id": "779",
+  "title": "Mega Man Battle Network 5: Team Protoman"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "780",
+  "title": "Mega Man Battle Network 6: Cybeast Falzar"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "781",
+  "title": "Mega Man Battle Network 6: Cybeast Gregar"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "782",
+  "title": "Mega Man Zero"
+ },
+ {
+  "num_achievements": 31,
+  "ra_id": "22099",
+  "title": "Mega Man Zero [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "783",
+  "title": "Mega Man Zero 2"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "30059",
+  "title": "Mega Man Zero 2 [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "625",
+  "title": "Mega Man Zero 3"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "31768",
+  "title": "Mega Man Zero 3 [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "784",
+  "title": "Mega Man Zero 4"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "32800",
+  "title": "Mega Man Zero 4 [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "514",
+  "title": "Metal Slug Advance"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "785",
+  "title": "Metroid Fusion"
+ },
+ {
+  "num_achievements": 91,
+  "ra_id": "10111",
+  "title": "Metroid Fusion [Subset - Japanese Content]"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "534",
+  "title": "Metroid: Zero Mission"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "12958",
+  "title": "Micro Machines"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "3620",
+  "title": "Mighty Beanz: Pocket Puzzles"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "786",
+  "title": "Mobile Suit Gundam Seed: Battle Assault"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "5344",
+  "title": "Monopoly"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "6086",
+  "title": "Monster House"
+ },
+ {
+  "num_achievements": 103,
+  "ra_id": "7181",
+  "title": "Monster Rancher Advance 2"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "7069",
+  "title": "Monster Truck Madness"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "4749",
+  "title": "Monster Trucks"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "25262",
+  "title": "Monster! Bass Fishing"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "6879",
+  "title": "Monsters, Inc."
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "2172",
+  "title": "Mortal Kombat: Deadly Alliance"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "2427",
+  "title": "Mortal Kombat: Tournament Edition"
+ },
+ {
+  "num_achievements": 181,
+  "ra_id": "2595",
+  "title": "Mother 1+2"
+ },
+ {
+  "num_achievements": 132,
+  "ra_id": "677",
+  "title": "Mother 3"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "30988",
+  "title": "Mother 3 [Subset - Melody Master]"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "6011",
+  "title": "Mr. Driller 2"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "20424",
+  "title": "Ms. Pac-Man Maze Madness"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "9864",
+  "title": "Mucha Lucha! Mascaritas of the Lost Code"
+ },
+ {
+  "num_achievements": 17,
+  "ra_id": "2597",
+  "title": "My Little Pony: Crystal Princess - The Runaway Rainbow"
+ },
+ {
+  "num_achievements": 79,
+  "ra_id": "7973",
+  "title": "Namco Museum: 50th Anniversary"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "9300",
+  "title": "Nancy Drew: Message in a Haunted Mansion"
+ },
+ {
+  "num_achievements": 69,
+  "ra_id": "15470",
+  "title": "Naruto RPG: Uketsugareshi Hi no Ishi"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "787",
+  "title": "Naruto: Ninja Council"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "548",
+  "title": "Naruto: Ninja Council 2"
+ },
+ {
+  "num_achievements": 19,
+  "ra_id": "11777",
+  "title": "Need for Speed: Carbon - Own the City"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "7088",
+  "title": "Need for Speed: Most Wanted"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "7752",
+  "title": "Need for Speed: Porsche Unleashed"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "11661",
+  "title": "Need for Speed: Underground"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "8644",
+  "title": "Need for Speed: Underground 2"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "6948",
+  "title": "Nicktoons Racing"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "6609",
+  "title": "Nicktoons Unite!"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "6407",
+  "title": "Nicktoons: Battle for Volcano Island"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "4334",
+  "title": "Nicktoons: Freeze Frame Frenzy"
+ },
+ {
+  "num_achievements": 8,
+  "ra_id": "29880",
+  "title": "NiGHTS into Dreams: Score Attack"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "4740",
+  "title": "Ninja Five-O"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "20086",
+  "title": "Nintendo e-Reader [Subset - Kirby Puzzle]"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "5007",
+  "title": "Nintendo e-Reader [Subset - Mario Party-e]"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "20209",
+  "title": "Nintendo e-Reader [Subset - Pokémon-e TCG]"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "9815",
+  "title": "Oddworld: Munch's Oddysee"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "2598",
+  "title": "One Piece"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "5079",
+  "title": "One Piece: Going Baseball, Kaizoku Yakyuu"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "5311",
+  "title": "Onimusha Tactics"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "12833",
+  "title": "Open Season"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "9746",
+  "title": "Over the Hedge"
+ },
+ {
+  "num_achievements": 71,
+  "ra_id": "5520",
+  "title": "Pac-Man Collection"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "7274",
+  "title": "Pac-Man Pinball Advance"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "2532",
+  "title": "Pac-Man World"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "6775",
+  "title": "Pac-Man World 2"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "2537",
+  "title": "Piglet's Big Game"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "9284",
+  "title": "Pirates of the Caribbean: Dead Man's Chest"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "13425",
+  "title": "Play Novel: Silent Hill"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "6087",
+  "title": "Pocky & Rocky with Becky"
+ },
+ {
+  "num_achievements": 197,
+  "ra_id": "668",
+  "title": "Pokémon Emerald Version"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "22853",
+  "title": "Pokémon Emerald Version [Subset - Mudkip vs. The World (ft. Castform)]"
+ },
+ {
+  "num_achievements": 221,
+  "ra_id": "24186",
+  "title": "Pokémon Emerald Version [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 61,
+  "ra_id": "515",
+  "title": "Pokémon FireRed Version"
+ },
+ {
+  "num_achievements": 179,
+  "ra_id": "23905",
+  "title": "Pokémon FireRed Version [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 225,
+  "ra_id": "24875",
+  "title": "Pokémon FireRed Version | Pokémon LeafGreen Version [Subset - Shiny Pokémon+]"
+ },
+ {
+  "num_achievements": 128,
+  "ra_id": "788",
+  "title": "Pokémon LeafGreen Version"
+ },
+ {
+  "num_achievements": 136,
+  "ra_id": "33006",
+  "title": "Pokémon LeafGreen Version [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 128,
+  "ra_id": "2816",
+  "title": "Pokémon Mystery Dungeon: Red Rescue Team"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "789",
+  "title": "Pokémon Pinball: Ruby & Sapphire"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "790",
+  "title": "Pokémon Ruby Version"
+ },
+ {
+  "num_achievements": 186,
+  "ra_id": "24099",
+  "title": "Pokémon Ruby Version [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "791",
+  "title": "Pokémon Sapphire Version"
+ },
+ {
+  "num_achievements": 187,
+  "ra_id": "17887",
+  "title": "Pokémon Sapphire Version [Subset - Professor Oak Challenge]"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "9099",
+  "title": "Postman Pat and the Greendale Rocket"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "5281",
+  "title": "Power Rangers S.P.D."
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "4693",
+  "title": "Prince of Persia: The Sands of Time"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "8416",
+  "title": "Puyo Pop"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "6401",
+  "title": "Puyo Pop Fever"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "7132",
+  "title": "Quad Desert Fury"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "18626",
+  "title": "Rapala Pro Fishing"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "9620",
+  "title": "Ratatouille"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "5509",
+  "title": "Rayman 3"
+ },
+ {
+  "num_achievements": 58,
+  "ra_id": "4106",
+  "title": "Rayman Advance"
+ },
+ {
+  "num_achievements": 70,
+  "ra_id": "9367",
+  "title": "Rayman: Hoodlum's Revenge"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "2538",
+  "title": "Rayman: Raving Rabbids"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "12877",
+  "title": "Rescue Heroes: Billy Blazes!"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "4033",
+  "title": "Rhythm Tengoku"
+ },
+ {
+  "num_achievements": 15,
+  "ra_id": "9364",
+  "title": "Ripping Friends: The World's Most Manly Men!"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "2509",
+  "title": "River City Ransom EX"
+ },
+ {
+  "num_achievements": 76,
+  "ra_id": "5512",
+  "title": "Riviera: The Promised Land"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "8398",
+  "title": "Robopon 2: Cross Version"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "5031",
+  "title": "Robotech: The Macross Saga"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "5139",
+  "title": "Rock n' Roll Racing"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "13048",
+  "title": "Rugrats: I Gotta Go Party"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "5988",
+  "title": "Sabre Wulf"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "14230",
+  "title": "Samurai Deeper Kyo"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "7152",
+  "title": "Santa Claus Jr. Advance"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "2481",
+  "title": "Santa Claus Saves the Earth"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "6623",
+  "title": "Scooby-Doo 2: Monsters Unleashed"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "6770",
+  "title": "Scooby-Doo and the Cyber Chase"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "6771",
+  "title": "Scooby-Doo! Mystery Mayhem"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "6772",
+  "title": "Scooby-Doo! Unmasked"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "6949",
+  "title": "Scrabble Blast!"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "6161",
+  "title": "Scurge: Hive"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "9208",
+  "title": "Sea Trader: Rise of Taipan"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "2530",
+  "title": "Sega Rally Championship"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "7079",
+  "title": "Serious Sam Advance"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "527",
+  "title": "Shaman King: Master of Spirits"
+ },
+ {
+  "num_achievements": 55,
+  "ra_id": "4092",
+  "title": "Shaman King: Master of Spirits 2"
+ },
+ {
+  "num_achievements": 53,
+  "ra_id": "33567",
+  "title": "Shantae Advance: Risky Revolution"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "5345",
+  "title": "Shark Tale"
+ },
+ {
+  "num_achievements": 138,
+  "ra_id": "9205",
+  "title": "Shin Megami Tensei"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "6814",
+  "title": "Shin-chan: Aventuras en Cineland"
+ },
+ {
+  "num_achievements": 72,
+  "ra_id": "4707",
+  "title": "Shining Force: Resurrection of the Dark Dragon"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "29072",
+  "title": "Shining Force: Resurrection of the Dark Dragon [Subset - NG+]"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "4703",
+  "title": "Shining Soul"
+ },
+ {
+  "num_achievements": 52,
+  "ra_id": "7095",
+  "title": "Shining Soul II"
+ },
+ {
+  "num_achievements": 77,
+  "ra_id": "6227",
+  "title": "Shrek 2"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "9768",
+  "title": "Shrek 2: Beg for Mercy!"
+ },
+ {
+  "num_achievements": 58,
+  "ra_id": "2161",
+  "title": "Shrek: Hassle at the Castle"
+ },
+ {
+  "num_achievements": 26,
+  "ra_id": "4895",
+  "title": "Shrek: Swamp Kart Speedway"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "25605",
+  "title": "Shrek: Swamp Kart Speedway [Subset - 36 Endings]"
+ },
+ {
+  "num_achievements": 89,
+  "ra_id": "5179",
+  "title": "Sigma Star Saga"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "18189",
+  "title": "Sitting Ducks"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "14399",
+  "title": "Slime Morimori Dragon Quest: Shougeki no Shippo Dan"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "12920",
+  "title": "Smashing Drive"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "792",
+  "title": "Snood"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "13126",
+  "title": "Snood 2: On Vacation"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "9946",
+  "title": "Soccer Mania"
+ },
+ {
+  "num_achievements": 58,
+  "ra_id": "793",
+  "title": "Sonic Advance"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "557",
+  "title": "Sonic Advance 2"
+ },
+ {
+  "num_achievements": 63,
+  "ra_id": "794",
+  "title": "Sonic Advance 3"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "2188",
+  "title": "Sonic Battle"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "14362",
+  "title": "Sonic Battle [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 103,
+  "ra_id": "5255",
+  "title": "Sonic Pinball Party"
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "6818",
+  "title": "Sonic the Hedgehog: Genesis"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "5443",
+  "title": "Space Channel 5: Ulala's Cosmic Attack"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "5284",
+  "title": "Spider-Man"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "6679",
+  "title": "Spider-Man 2"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "8206",
+  "title": "Spider-Man 3"
+ },
+ {
+  "num_achievements": 47,
+  "ra_id": "14851",
+  "title": "Spider-Man: Battle for New York"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "5286",
+  "title": "Spider-Man: Mysterio's Menace"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "2346",
+  "title": "Spirits & Spells"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "7697",
+  "title": "SpongeBob SquarePants: Battle for Bikini Bottom"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "7698",
+  "title": "SpongeBob SquarePants: Creature from the Krusty Krab"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "9616",
+  "title": "SpongeBob SquarePants: Lights, Camera, Pants!"
+ },
+ {
+  "num_achievements": 49,
+  "ra_id": "4996",
+  "title": "SpongeBob SquarePants: Revenge of the Flying Dutchman"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "5501",
+  "title": "SpongeBob SquarePants: SuperSponge"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "24054",
+  "title": "SpongeBob's Atlantis SquarePantis"
+ },
+ {
+  "num_achievements": 11,
+  "ra_id": "6688",
+  "title": "Spy Muppets: License to Croak"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "796",
+  "title": "Spyro 2: Season of Flame"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "4205",
+  "title": "Spyro Orange: The Cortex Conspiracy"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "4204",
+  "title": "Spyro: Attack of the Rhynocs"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "4203",
+  "title": "Spyro: Season of Ice"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "6845",
+  "title": "Star Wars - Episode II: Attack of the Clones"
+ },
+ {
+  "num_achievements": 73,
+  "ra_id": "6663",
+  "title": "Star Wars - Episode III: Revenge of the Sith"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "5577",
+  "title": "Star Wars Trilogy: Apprentice of the Force"
+ },
+ {
+  "num_achievements": 51,
+  "ra_id": "808",
+  "title": "Street Fighter Alpha 3"
+ },
+ {
+  "num_achievements": 34,
+  "ra_id": "2590",
+  "title": "Stuntman"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "2588",
+  "title": "Summon Night: Swordcraft Story"
+ },
+ {
+  "num_achievements": 81,
+  "ra_id": "2589",
+  "title": "Summon Night: Swordcraft Story 2"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "5710",
+  "title": "Super Dodge Ball Advance"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "1420",
+  "title": "Super Ghouls 'n Ghosts"
+ },
+ {
+  "num_achievements": 81,
+  "ra_id": "505",
+  "title": "Super Mario Advance"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "5234",
+  "title": "Super Mario Advance 3: Yoshi's Island"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "5225",
+  "title": "Super Mario Advance 3: Yoshi's Island [Subset - Low Score]"
+ },
+ {
+  "num_achievements": 83,
+  "ra_id": "20277",
+  "title": "Super Mario Advance 4: Super Mario Bros. 3"
+ },
+ {
+  "num_achievements": 94,
+  "ra_id": "7442",
+  "title": "Super Mario Advance 4: Super Mario Bros. 3 [Subset - World-e]"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "37604",
+  "title": "Super Mario Advance Series [Subset - Mario Bros]"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "4969",
+  "title": "Super Mario World: Super Mario Advance 2"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "2587",
+  "title": "Super Monkey Ball Jr."
+ },
+ {
+  "num_achievements": 25,
+  "ra_id": "535",
+  "title": "Super Puzzle Fighter II Turbo"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "5176",
+  "title": "Super Robot Taisen: Original Generation"
+ },
+ {
+  "num_achievements": 48,
+  "ra_id": "9383",
+  "title": "Super Robot Taisen: Original Generation 2"
+ },
+ {
+  "num_achievements": 100,
+  "ra_id": "6236",
+  "title": "Super Robot Wars J"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "2585",
+  "title": "Super Street Fighter II Turbo Revival"
+ },
+ {
+  "num_achievements": 127,
+  "ra_id": "4206",
+  "title": "Sword of Mana"
+ },
+ {
+  "num_achievements": 119,
+  "ra_id": "29844",
+  "title": "Sword of Mana [Subset - Black Enemy Variants]"
+ },
+ {
+  "num_achievements": 87,
+  "ra_id": "5029",
+  "title": "Tactics Ogre: The Knight of Lodis"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "6878",
+  "title": "Tang Tang"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "2507",
+  "title": "Teen Titans 2: The Brotherhood's Revenge"
+ },
+ {
+  "num_achievements": 29,
+  "ra_id": "2506",
+  "title": "Teenage Mutant Ninja Turtles"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "8065",
+  "title": "Teenage Mutant Ninja Turtles 2: Battle Nexus"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "2169",
+  "title": "Tekken Advance"
+ },
+ {
+  "num_achievements": 35,
+  "ra_id": "503",
+  "title": "Tetris Worlds"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "8652",
+  "title": "The Adventures of Jimmy Neutron: Boy Genius vs. Jimmy Negatron"
+ },
+ {
+  "num_achievements": 18,
+  "ra_id": "7959",
+  "title": "The Barbie Diaries: High School Mystery"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "6114",
+  "title": "The Bible Game"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "5271",
+  "title": "The Fairly OddParents! Breakin' Da Rules"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "6582",
+  "title": "The Fairly OddParents! Enter the Cleft"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "6118",
+  "title": "The Grim Adventures of Billy & Mandy"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "13464",
+  "title": "The Hobbit: The Prelude to the Lord of the Rings"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "5910",
+  "title": "The Incredibles"
+ },
+ {
+  "num_achievements": 20,
+  "ra_id": "31452",
+  "title": "The Itsudemo Puzzle: Massugu Soroete Straws"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "4738",
+  "title": "The King of Fighters EX: Neo Blood"
+ },
+ {
+  "num_achievements": 46,
+  "ra_id": "5312",
+  "title": "The King of Fighters EX2: Howling Blood"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "5315",
+  "title": "The Legend of Spyro: A New Beginning"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "6953",
+  "title": "The Legend of Spyro: The Eternal Night"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "580",
+  "title": "The Legend of Zelda: A Link to the Past & Four Swords"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "12899",
+  "title": "The Legend of Zelda: A Link to the Past & Four Swords [Subset - Bonus]"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "559",
+  "title": "The Legend of Zelda: The Minish Cap"
+ },
+ {
+  "num_achievements": 61,
+  "ra_id": "14087",
+  "title": "The Lion King 1½"
+ },
+ {
+  "num_achievements": 43,
+  "ra_id": "5870",
+  "title": "The Lord of the Rings: The Fellowship of the Ring"
+ },
+ {
+  "num_achievements": 57,
+  "ra_id": "7191",
+  "title": "The Lord of the Rings: The Return of the King"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "7202",
+  "title": "The Lord of the Rings: The Two Towers"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "5747",
+  "title": "The Lost Vikings"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "17807",
+  "title": "The Muppets: On With the Show!"
+ },
+ {
+  "num_achievements": 44,
+  "ra_id": "9957",
+  "title": "The Pinball of the Dead"
+ },
+ {
+  "num_achievements": 24,
+  "ra_id": "7159",
+  "title": "The Polar Express"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "4675",
+  "title": "The Powerpuff Girls: Him and Seek"
+ },
+ {
+  "num_achievements": 30,
+  "ra_id": "7158",
+  "title": "The Santa Clause 3: The Escape Clause"
+ },
+ {
+  "num_achievements": 27,
+  "ra_id": "9339",
+  "title": "The Scorpion King: Sword of Osiris"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "2540",
+  "title": "The Simpsons: Road Rage"
+ },
+ {
+  "num_achievements": 62,
+  "ra_id": "5854",
+  "title": "The Sims 2"
+ },
+ {
+  "num_achievements": 72,
+  "ra_id": "7492",
+  "title": "The Sims 2: Pets"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "6184",
+  "title": "The Sims: Bustin' Out"
+ },
+ {
+  "num_achievements": 14,
+  "ra_id": "4073",
+  "title": "The SpongeBob SquarePants Movie"
+ },
+ {
+  "num_achievements": 90,
+  "ra_id": "5057",
+  "title": "The Urbz: Sims in the City"
+ },
+ {
+  "num_achievements": 71,
+  "ra_id": "5080",
+  "title": "Tim Burton's The Nightmare Before Christmas: The Pumpkin King"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "2155",
+  "title": "TMNT"
+ },
+ {
+  "num_achievements": 41,
+  "ra_id": "5119",
+  "title": "Tokyo Xtreme Racer Advance"
+ },
+ {
+  "num_achievements": 75,
+  "ra_id": "7751",
+  "title": "Tom Clancy's Rainbow Six Rogue Spear"
+ },
+ {
+  "num_achievements": 166,
+  "ra_id": "9802",
+  "title": "Tomato Adventure"
+ },
+ {
+  "num_achievements": 12,
+  "ra_id": "8582",
+  "title": "Tomb Raider: The Prophecy"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "9803",
+  "title": "Tonka: On the Job"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "516",
+  "title": "Tony Hawk's Pro Skater 2"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "798",
+  "title": "Tony Hawk's Pro Skater 3"
+ },
+ {
+  "num_achievements": 38,
+  "ra_id": "7385",
+  "title": "Tony Hawk's Underground"
+ },
+ {
+  "num_achievements": 37,
+  "ra_id": "6056",
+  "title": "Totally Spies!"
+ },
+ {
+  "num_achievements": 23,
+  "ra_id": "8587",
+  "title": "Turbo Turtle Adventure"
+ },
+ {
+  "num_achievements": 56,
+  "ra_id": "9051",
+  "title": "Tweety & the Magic Gems"
+ },
+ {
+  "num_achievements": 54,
+  "ra_id": "9088",
+  "title": "Ty the Tasmanian Tiger 3: Night of the Quinkan"
+ },
+ {
+  "num_achievements": 21,
+  "ra_id": "32715",
+  "title": "Ultimate Muscle: The Kinnikuman Legacy - The Path of the Superhero"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "6408",
+  "title": "Ultimate Spider-Man"
+ },
+ {
+  "num_achievements": 16,
+  "ra_id": "17701",
+  "title": "Urban Yeti!"
+ },
+ {
+  "num_achievements": 77,
+  "ra_id": "6183",
+  "title": "V-Rally 3"
+ },
+ {
+  "num_achievements": 70,
+  "ra_id": "6739",
+  "title": "Virtua Tennis"
+ },
+ {
+  "num_achievements": 47,
+  "ra_id": "9326",
+  "title": "Virtual Kasparov"
+ },
+ {
+  "num_achievements": 36,
+  "ra_id": "7731",
+  "title": "Wade Hixton's Counter Punch"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "800",
+  "title": "Wario Land 4"
+ },
+ {
+  "num_achievements": 47,
+  "ra_id": "802",
+  "title": "WarioWare, Inc.: Mega Microgame$!"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "801",
+  "title": "WarioWare: Twisted!"
+ },
+ {
+  "num_achievements": 6,
+  "ra_id": "3700",
+  "title": "Who Wants to Be a Millionaire"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "29837",
+  "title": "Who Wants to Be a Millionaire: 2nd Edition"
+ },
+ {
+  "num_achievements": 7,
+  "ra_id": "26278",
+  "title": "Who Wants to Be a Millionaire: Junior"
+ },
+ {
+  "num_achievements": 42,
+  "ra_id": "8561",
+  "title": "Winx Club"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "9226",
+  "title": "Wolfenstein 3D"
+ },
+ {
+  "num_achievements": 66,
+  "ra_id": "9552",
+  "title": "World Championship Poker"
+ },
+ {
+  "num_achievements": 31,
+  "ra_id": "6192",
+  "title": "Worms Blast"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "651",
+  "title": "Worms World Party"
+ },
+ {
+  "num_achievements": 79,
+  "ra_id": "6145",
+  "title": "X-Bladez: Inline Skater"
+ },
+ {
+  "num_achievements": 32,
+  "ra_id": "7854",
+  "title": "X-Men: Reign of Apocalypse"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "6220",
+  "title": "X-Men: The Official Game"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "12820",
+  "title": "Yoshi Topsy-Turvy"
+ },
+ {
+  "num_achievements": 45,
+  "ra_id": "5089",
+  "title": "Yu Yu Hakusho: Ghost Files - Spirit Detective"
+ },
+ {
+  "num_achievements": 60,
+  "ra_id": "5564",
+  "title": "Yu Yu Hakusho: Ghost Files - Tournament Tactics"
+ },
+ {
+  "num_achievements": 40,
+  "ra_id": "5116",
+  "title": "Yu-Gi-Oh! 7 Trials to Glory: World Championship Tournament 2005"
+ },
+ {
+  "num_achievements": 33,
+  "ra_id": "5118",
+  "title": "Yu-Gi-Oh! Destiny Board Traveler"
+ },
+ {
+  "num_achievements": 28,
+  "ra_id": "5537",
+  "title": "Yu-Gi-Oh! Dungeon Dice Monsters"
+ },
+ {
+  "num_achievements": 41,
+  "ra_id": "2190",
+  "title": "Yu-Gi-Oh! GX: Duel Academy"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "4710",
+  "title": "Yu-Gi-Oh! Reshef of Destruction"
+ },
+ {
+  "num_achievements": 39,
+  "ra_id": "5004",
+  "title": "Yu-Gi-Oh! The Eternal Duelist Soul"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "5117",
+  "title": "Yu-Gi-Oh! The Sacred Cards"
+ },
+ {
+  "num_achievements": 88,
+  "ra_id": "5131",
+  "title": "Yu-Gi-Oh! Ultimate Masters: World Championship Tournament 2006"
+ },
+ {
+  "num_achievements": 80,
+  "ra_id": "5114",
+  "title": "Yu-Gi-Oh! World Championship Tournament 2004"
+ },
+ {
+  "num_achievements": 79,
+  "ra_id": "2412",
+  "title": "Yu-Gi-Oh! Worldwide Edition: Stairway to the Destined Duel"
+ },
+ {
+  "num_achievements": 64,
+  "ra_id": "7015",
+  "title": "Zatch Bell! Electric Arena"
+ },
+ {
+  "num_achievements": 50,
+  "ra_id": "5581",
+  "title": "Zoids Legacy"
+ },
+ {
+  "num_achievements": 59,
+  "ra_id": "2518",
+  "title": "Zone of the Enders: The Fist of Mars"
+ },
+ {
+  "num_achievements": 22,
+  "ra_id": "6620",
+  "title": "Zooo: Action Puzzle Game"
+ }
+]

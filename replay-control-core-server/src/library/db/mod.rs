@@ -163,6 +163,11 @@ pub struct GameEntry {
     /// in `ArcadeBoard::from_sourcefile`. Populated at scan time from
     /// `arcade_db::ArcadeGameInfo::board`.
     pub board: Option<ArcadeBoard>,
+    /// RetroAchievements game id (from the built-in catalog's
+    /// `CanonicalGame.ra_id`). Empty when the game has no
+    /// RetroAchievements set. Used by the "has achievements" search filter and
+    /// the game-detail RetroAchievements pill.
+    pub ra_id: String,
 }
 
 /// Durable identity state for ROM hash matching.
@@ -459,6 +464,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         normalized_title TEXT NOT NULL DEFAULT '',
         normalized_title_alt TEXT NOT NULL DEFAULT '',
         board TEXT NOT NULL DEFAULT '',
+        ra_id TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (system, rom_filename)
     );
     CREATE INDEX IF NOT EXISTS idx_gl_board ON game_library(system, board) WHERE board != '';
@@ -688,6 +694,21 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "normalized_title",
     "normalized_title_alt",
     "board",
+    "ra_id",
+];
+
+/// Column set of `game_library_meta`. Must match [`CREATE_GAME_LIBRARY_META_SQL`].
+/// Drives the drift-rebuild check so a meta-shape change self-heals on its own,
+/// not only as a side-effect of a `game_library` rebuild.
+const GAME_LIBRARY_META_COLUMNS: &[&str] = &[
+    "system",
+    "dir_mtime_secs",
+    "scanned_at",
+    "rom_count",
+    "total_size_bytes",
+    "discovery_state",
+    "enrichment_state",
+    "thumbnail_state",
 ];
 
 const LIBRARY_THUMBNAIL_JOB_COLUMNS: &[&str] = &[
@@ -819,10 +840,11 @@ impl LibraryDb {
         }
 
         let conn = crate::sqlite::open_connection(db_path, "library.db")?;
-        // Migrations first: ALTER existing user data before init_tables runs
-        // its column-set divergence check. Otherwise a v3→v4 user library
-        // would be dropped on the version that adds new columns.
-        Self::run_migrations(&conn)?;
+        // No schema migrations: `game_library` and the other derived tables are
+        // fully reproducible (filesystem scans + catalog + LaunchBox import), so
+        // `init_tables` drops and recreates any table whose column set drifts
+        // from the current shape. A schema change therefore self-heals via a
+        // rebuild rather than a hand-written ALTER ladder.
         Self::init_tables(&conn)?;
 
         if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
@@ -830,7 +852,6 @@ impl LibraryDb {
             drop(conn);
             crate::sqlite::delete_db_files(db_path);
             let conn = crate::sqlite::open_connection(db_path, "library.db")?;
-            Self::run_migrations(&conn)?;
             Self::init_tables(&conn)?;
             Self::recover_running_states(&conn)?;
             Self::backfill_missing_game_library_system_stats(&conn)?;
@@ -956,16 +977,15 @@ impl LibraryDb {
 
     /// Create all tables if they don't exist.
     ///
-    /// On column-set mismatch, drop the four rebuildable derived tables
-    /// (`game_library`, `game_library_meta`, `game_metadata`,
-    /// `game_release_date`) so `CREATE TABLE IF NOT EXISTS` recreates
-    /// them at the new shape. Their content comes from filesystem scans,
-    /// LaunchBox import, and build-time seed — all reproducible, so the
-    /// drop is a cache flush, not data loss.
-    ///
-    /// Real *additive* schema upgrades (new column on an existing table
-    /// the user has populated and we don't want to wipe) should go
-    /// through `run_migrations` instead.
+    /// This is the **only** library schema mechanism — there are no ALTER
+    /// migrations. On column-set mismatch, the rebuildable derived tables
+    /// (`game_library` and friends) are dropped so `CREATE TABLE IF NOT EXISTS`
+    /// recreates them at the new shape. Their content comes from filesystem
+    /// scans, LaunchBox import, and build-time seed — all reproducible, so the
+    /// drop is a cache flush, not data loss (favorites live on the filesystem;
+    /// user data lives in separate, non-dropped tables). The next scan rebuilds
+    /// the dropped tables, which re-hashes ROMs and re-enriches from the
+    /// current catalog. A schema change therefore self-heals into fresh data.
     pub fn init_tables(conn: &Connection) -> Result<()> {
         if Self::table_needs_rebuild(conn, "game_library", GAME_LIBRARY_COLUMNS) {
             let _ = conn.execute_batch(
@@ -976,6 +996,9 @@ impl LibraryDb {
                  DROP TABLE IF EXISTS game_library;
                  DROP TABLE IF EXISTS game_library_meta;",
             );
+        }
+        if Self::table_needs_rebuild(conn, "game_library_meta", GAME_LIBRARY_META_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_library_meta;");
         }
         if Self::table_needs_rebuild(conn, "game_release_date", GAME_RELEASE_DATE_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS game_release_date;");
@@ -1143,197 +1166,6 @@ impl LibraryDb {
         Ok(())
     }
 
-    /// Current schema version. Bump when adding a new `migrate_v{N-1}_v{N}`
-    /// step in [`Self::run_migrations`].
-    ///
-    /// History:
-    /// - **v1**: original shape (game_library + per-storage game_metadata,
-    ///   thumbnail_index, data_sources, game_release_date, game_series).
-    /// - **v2**: external_metadata.db redesign — drops game_metadata,
-    ///   thumbnail_index, and data_sources (now per-host in
-    ///   external_metadata.db).
-    /// - **v3**: adds game_description (per-storage description + publisher
-    ///   denormalized from external metadata so the
-    ///   game-detail server fn can stay on the library pool).
-    /// - **v4**: adds `game_library.normalized_title` and
-    ///   `game_library.normalized_title_alt`, populated at scan time so the
-    ///   enrichment matcher does hashmap lookups instead of normalizing each
-    ///   ROM filename per pass.
-    /// - **v5**: adds `game_library.hash_size_bytes` so cached CRC32 results
-    ///   are validated by mtime + size without a post-upgrade rehash storm.
-    /// - **v6**: renames `game_description` to `game_detail_metadata` and
-    ///   adds derived `library_game_resource`.
-    /// - **v7**: adds per-row `identity_state` for resumable hash matching.
-    /// - **v8**: adds per-system discovery/enrichment/thumbnail state.
-    /// - **v9**: adds durable per-ROM thumbnail download jobs.
-    pub const SCHEMA_VERSION: i64 = 9;
-
-    /// Run pending migrations.
-    ///
-    /// Reads the stored version from `schema_version`, applies each
-    /// migration step in order, stamps on success. Destructive `DROP TABLE`
-    /// migrations are explicit per step (logged at info above the SQL).
-    ///
-    /// `init_tables` runs first and only creates tables that exist in the
-    /// **current** v2 shape — so on first open of an existing v1 DB, the old
-    /// tables are still present (init_tables left them alone), and this
-    /// function drops them with the v1→v2 step below.
-    pub fn run_migrations(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_version (
-                version INTEGER PRIMARY KEY,
-                applied_at INTEGER NOT NULL
-            )",
-        )
-        .map_err(|e| Error::Other(format!("create schema_version: {e}")))?;
-
-        let current: i64 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM schema_version",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(|e| Error::Other(format!("read schema_version: {e}")))?;
-
-        // Downgrade guard: refuse to open a DB stamped with a newer schema
-        // than this binary knows. Continuing would silently treat new-shape
-        // rows as old-shape and corrupt them on subsequent writes.
-        if current > Self::SCHEMA_VERSION {
-            return Err(Error::Other(format!(
-                "Library DB schema (v{current}) is newer than this binary (v{}). \
-                 Upgrade the binary or restore an older DB.",
-                Self::SCHEMA_VERSION
-            )));
-        }
-
-        if current >= Self::SCHEMA_VERSION {
-            return Ok(());
-        }
-
-        // ── v1 → v2 ───────────────────────────────────────────────
-        // Drop tables now relocated to external_metadata.db. Their content
-        // is reproducible from the LaunchBox XML + libretro repos + on-disk
-        // images, so a destructive drop is safe.
-        if current < 2 {
-            tracing::info!(
-                "Library DB v1 → v2: dropping game_metadata + thumbnail_index + data_sources \
-                 (now lives in external_metadata.db)"
-            );
-            conn.execute_batch(
-                "DROP TABLE IF EXISTS thumbnail_index;
-                 DROP TABLE IF EXISTS data_sources;
-                 DROP TABLE IF EXISTS game_metadata;
-                 DROP INDEX IF EXISTS idx_data_sources_type;",
-            )
-            .map_err(|e| Error::Other(format!("v1→v2 drop tables: {e}")))?;
-        }
-
-        // ── v2 → v3 ───────────────────────────────────────────────
-        // game_description is created by `init_tables` (which runs before
-        // run_migrations), so this step is just a version stamp on
-        // existing v2 DBs. The next enrichment pass populates the table.
-        if current < 3 {
-            tracing::info!(
-                "Library DB v2 → v3: game_description ready; next enrichment populates it"
-            );
-        }
-
-        // ── v3 → v4 ───────────────────────────────────────────────
-        // Add `normalized_title` and `normalized_title_alt` to game_library
-        // via ALTER (preserves user data). Run BEFORE init_tables so its
-        // column-set divergence check sees the upgraded schema and skips
-        // the destructive rebuild. Empty defaults are repopulated by the
-        // next scan or by the TITLE_NORM_VERSION reconcile.
-        //
-        // Skipped on fresh installs (current == 0) where the table doesn't
-        // exist yet — init_tables will create it at the v4 shape directly.
-        if (1..4).contains(&current) {
-            tracing::info!("Library DB v3 → v4: adding normalized_title columns");
-            conn.execute_batch(
-                "ALTER TABLE game_library ADD COLUMN normalized_title     TEXT NOT NULL DEFAULT '';
-                 ALTER TABLE game_library ADD COLUMN normalized_title_alt TEXT NOT NULL DEFAULT '';",
-            )
-            .map_err(|e| Error::Other(format!("v3→v4 alter game_library: {e}")))?;
-        }
-
-        // ── v4 → v5 ───────────────────────────────────────────────
-        // Add the optional hash-size column without forcing a full rehash on
-        // existing libraries. Rows with NULL size and matching mtime reuse the
-        // old cached CRC once, then get populated on the next save.
-        if (1..5).contains(&current) {
-            tracing::info!("Library DB v4 → v5: adding hash_size_bytes column");
-            conn.execute_batch("ALTER TABLE game_library ADD COLUMN hash_size_bytes INTEGER;")
-                .map_err(|e| Error::Other(format!("v4→v5 alter game_library: {e}")))?;
-        }
-
-        if (1..6).contains(&current) {
-            tracing::info!(
-                "Library DB v5 → v6: migrating game_description to game_detail_metadata"
-            );
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS game_detail_metadata (
-                    system TEXT NOT NULL,
-                    rom_filename TEXT NOT NULL,
-                    description TEXT,
-                    publisher TEXT,
-                    PRIMARY KEY (system, rom_filename)
-                );",
-            )
-            .map_err(|e| Error::Other(format!("v5→v6 create game_detail_metadata: {e}")))?;
-            if crate::sqlite::table_exists(conn, "game_description") {
-                conn.execute_batch(
-                    "INSERT OR REPLACE INTO game_detail_metadata
-                        (system, rom_filename, description, publisher)
-                     SELECT system, rom_filename, description, publisher
-                     FROM game_description;
-                     DROP TABLE IF EXISTS game_description;",
-                )
-                .map_err(|e| Error::Other(format!("v5→v6 migrate game_description: {e}")))?;
-            }
-        }
-
-        if (1..7).contains(&current) {
-            tracing::info!("Library DB v6 → v7: adding identity_state column");
-            conn.execute_batch(
-                "ALTER TABLE game_library
-                     ADD COLUMN identity_state INTEGER NOT NULL DEFAULT 0;",
-            )
-            .map_err(|e| Error::Other(format!("v6→v7 alter game_library: {e}")))?;
-        }
-
-        if (1..8).contains(&current) {
-            tracing::info!("Library DB v7 → v8: adding per-system phase state columns");
-            conn.execute_batch(
-                "ALTER TABLE game_library_meta
-                     ADD COLUMN discovery_state INTEGER NOT NULL DEFAULT 0;
-                 ALTER TABLE game_library_meta
-                     ADD COLUMN enrichment_state INTEGER NOT NULL DEFAULT 0;
-                 ALTER TABLE game_library_meta
-                     ADD COLUMN thumbnail_state INTEGER NOT NULL DEFAULT 0;",
-            )
-            .map_err(|e| Error::Other(format!("v7→v8 alter game_library_meta: {e}")))?;
-        }
-
-        if (1..9).contains(&current) {
-            tracing::info!("Library DB v8 → v9: durable thumbnail job table ready");
-        }
-
-        let now = unix_now();
-        conn.execute(
-            "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
-            rusqlite::params![Self::SCHEMA_VERSION, now],
-        )
-        .map_err(|e| Error::Other(format!("stamp schema_version: {e}")))?;
-
-        if current > 0 {
-            tracing::info!(
-                "Library DB migrated from v{current} to v{}",
-                Self::SCHEMA_VERSION
-            );
-        }
-        Ok(())
-    }
-
     /// Returns `true` if the table needs to be dropped and recreated.
     /// Wraps `crate::sqlite::table_columns_diverge` with library-specific
     /// rebuild-intent logging.
@@ -1354,7 +1186,7 @@ impl LibraryDb {
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
     ///   identity_state, release_date, release_precision, release_region_used, cooperative,
-    ///   normalized_title, normalized_title_alt, board
+    ///   normalized_title, normalized_title_alt, board, ra_id
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -1411,6 +1243,7 @@ impl LibraryDb {
                 .get::<_, Option<String>>(32)
                 .unwrap_or_default()
                 .and_then(|tag| ArcadeBoard::from_tag(&tag)),
+            ra_id: row.get::<_, String>(33).unwrap_or_default(),
         })
     }
 }
@@ -1469,6 +1302,7 @@ mod tests {
             normalized_title: String::new(),
             normalized_title_alt: String::new(),
             board: None,
+            ra_id: String::new(),
         }
     }
 

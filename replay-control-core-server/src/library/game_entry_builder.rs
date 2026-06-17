@@ -23,7 +23,7 @@ struct CatalogLookup {
 
 /// Intermediate metadata extracted from game/arcade databases and filename tags.
 ///
-/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative, board, retroachievements_id)
+/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative, board, ra_id)
 type RomMetadata = (
     Option<String>,
     String,
@@ -99,7 +99,7 @@ fn build_single_entry(
         release_year,
         cooperative,
         board,
-        retroachievements_id,
+        ra_id,
     ) = if is_arcade {
         build_arcade_metadata(stem, batch)
     } else {
@@ -198,7 +198,7 @@ fn build_single_entry(
         normalized_title: String::new(),
         normalized_title_alt: String::new(),
         board,
-        retroachievements_id,
+        ra_id,
     })
 }
 
@@ -340,8 +340,9 @@ fn build_arcade_metadata(stem: &str, batch: &CatalogLookup) -> Option<RomMetadat
                 year,
                 false,
                 info.board,
-                // Arcade RetroAchievements matching is deferred.
-                String::new(),
+                // Arcade RA id: hash-matched at catalog-build time from the
+                // romset name (md5), carried straight through from arcade_db.
+                info.ra_id,
             ))
         }
         None => Some((
@@ -405,7 +406,7 @@ fn build_console_metadata(
                 year,
                 cooperative,
                 None,
-                g.retroachievements_id.clone(),
+                g.ra_id.clone(),
             ))
         }
         None => Some((
@@ -656,7 +657,7 @@ mod tests {
             normalized_genre: "Action".to_string(),
             description: "Curated collection".to_string(),
             source: "community".to_string(),
-            retroachievements_id: String::new(),
+            ra_id: String::new(),
         }
     }
 
@@ -675,7 +676,7 @@ mod tests {
         let rom = rom_entry("commodore_ami", "AmigaVision.hdf", Some("AmigaVision"));
         let hash_results = HashMap::new();
 
-        let (_, _, _, _, _, developer, _, _, _, _) = build_console_metadata(
+        let (_, _, _, _, _, developer, ..) = build_console_metadata(
             &rom,
             "AmigaVision.hdf",
             "AmigaVision",

@@ -1534,12 +1534,16 @@ impl BackgroundManager {
     }
 
     /// Phase: detect changes in bundled enrichment inputs (catalog DB
-    /// rows + Shmups Wiki page index + matcher) and re-run per-system
-    /// enrichment when the per-storage stamp is stale. The composite
-    /// version comes from
+    /// rows + Shmups Wiki page index + matcher) and rescan affected systems
+    /// when the per-storage stamp is stale. The composite version comes from
     /// [`replay_control_core_server::library::enrichment::enrichment_inputs_version`]
-    /// so every input that affects enrichment output is rolled into one
+    /// so every input that affects scan/enrichment output is rolled into one
     /// stamp.
+    ///
+    /// A rescan (not just a re-enrich) is required because several catalog-
+    /// derived per-ROM fields — `ra_id`, `board`, `developer`,
+    /// normalized titles — are populated by the scan path, not enrichment, so
+    /// re-enriching alone would leave them stale after a catalog refresh.
     async fn phase_enrichment_inputs_reconcile(state: &AppState) {
         use replay_control_core_server::library::enrichment;
         use replay_control_core_server::library_db::library_meta;
@@ -1568,24 +1572,46 @@ impl BackgroundManager {
             return;
         }
 
+        // The catalog's enrichment inputs changed (e.g. a refreshed
+        // RetroAchievements extract or detail metadata). Rescan every system
+        // rather than re-enrich: `force_rehash: false` reuses the cached CRC32s
+        // (no ROM re-streaming on NFS), while `skip_unchanged_startup: false`
+        // rebuilds each system's `game_library` rows against the new catalog
+        // even when its ROMs are unchanged — the steady-state case for a
+        // catalog-only refresh.
         tracing::info!(
-            "Enrichment inputs version changed; enriching {} system(s)",
+            "Enrichment inputs version changed; rescanning {} system(s)",
             with_games.len()
         );
-        let mut failed = false;
-        for system in &with_games {
-            if let Err(e) = state
-                .cache
-                .enrich_system_cache_with_cancellation(state, system.clone(), None)
-                .await
-            {
-                tracing::warn!("Enrichment failed for {system}: {e}");
-                failed = true;
+        let storage = state.storage();
+        let generation = state.storage_generation();
+        let region_pref = state.region_preference();
+        let region_secondary = state.region_preference_secondary();
+        match Self::populate_all_systems(
+            state,
+            &storage,
+            region_pref,
+            region_secondary,
+            PopulateProgress::Startup,
+            ScanOptions {
+                force_rehash: false,
+                skip_unchanged_startup: false,
+            },
+            generation,
+        )
+        .await
+        {
+            Ok(()) => {}
+            Err(e) if Self::is_storage_changed(&e) => {
+                tracing::info!("Enrichment reconcile rescan cancelled because storage changed");
+                return;
             }
-        }
-        if failed {
-            tracing::warn!("Enrichment inputs version not stamped; startup will retry enrichment");
-            return;
+            Err(e) => {
+                tracing::warn!(
+                    "Enrichment reconcile rescan failed: {e}; inputs version not stamped, startup will retry"
+                );
+                return;
+            }
         }
 
         let version = current_version.clone();
@@ -1601,7 +1627,7 @@ impl BackgroundManager {
             .await;
         match write_result {
             Ok(Ok(())) => {
-                tracing::info!("Enrichment applied inputs version {current_version}")
+                tracing::info!("Enrichment reconcile stamped inputs version {current_version}")
             }
             Ok(Err(e)) => tracing::warn!("Enrichment inputs version write failed: {e}"),
             Err(e) => tracing::warn!("Enrichment inputs version write failed: {e}"),
@@ -1921,14 +1947,31 @@ impl BackgroundManager {
                     state.ensure_storage_generation(generation)?;
                     report_system(state, progress, i, sys.display_name, true);
                     let enrich_started = Instant::now();
-                    state
+                    // Per-system enrichment is best-effort: a transient failure
+                    // (e.g. a flaky box-art lookup) must not abort the whole
+                    // rebuild and block later systems — mirror the scan step's
+                    // preserve-cached-state policy and move on. Scan-derived
+                    // fields (ra_id, board, developer) are already persisted by
+                    // the scan above, so they're unaffected. Storage swaps still
+                    // abort (the caller redoes the pass on the new storage).
+                    if let Err(e) = state
                         .cache
                         .enrich_system_cache_with_cancellation(
                             state,
                             sys.folder_name.to_string(),
                             scan_inputs.cancellation(),
                         )
-                        .await?;
+                        .await
+                    {
+                        if Self::is_storage_changed(&e) {
+                            return Err(e);
+                        }
+                        tracing::warn!(
+                            "L2 populate: {} enrichment skipped (preserving cached state): {e}",
+                            sys.folder_name
+                        );
+                        continue;
+                    }
                     let enrich_ms = enrich_started.elapsed().as_millis();
                     if !roms.is_empty() && rom_hash::is_hash_eligible(sys.folder_name) {
                         identity_jobs.push(IdentityJob {
