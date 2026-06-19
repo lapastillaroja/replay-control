@@ -4,6 +4,22 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.8.0-beta.2]
+
+> Beta release — clearer RetroAchievements availability and Amiga naming improvements.
+
+### Highlights
+
+- **RetroAchievements now tells you when a game can't be tracked on RePlay.** Games with an achievement set still show the 🏆, but the game detail page now adds a note when RePlay can't actually award achievements for it — either because the system's emulator doesn't support achievements (for example PlayStation, PC Engine CD, and arcade MAME) or because RePlay can't yet read achievements from compressed disc images (`.chd`). Multi-disc playlists are judged by the disc they contain, so a `.chd`-backed set is flagged correctly. This keeps expectations clear instead of implying every flagged game is earnable today.
+
+### Fixed
+
+- **Amiga game names are now clean and readable.** WHDLoad titles come from the curated whdload_db name list (e.g. "SuperFrog" instead of "SuperFrog_v1.1_0485 (Europe)"). IPF and TOSEC titles strip version suffixes, crack tags, and bracket markers so "Batman - The Movie v1.0 [cr QTX][h BTL]" becomes "Batman - The Movie". Regional variants that exist in your library as distinct games — PAL vs US, or country-specific releases — now carry a clean region suffix so they stay distinguishable: "Nitro" and "Nitro (US)", "Batman - The Movie (PAL)" and "Batman - The Movie (US)".
+- **Multi-disk TOSEC playlists show the right variant name.** M3u files for games with distinct editions or variants — like "A320 Airbus (Updated)" vs the base release — now each get their own display name instead of both resolving to the same disk-1 label.
+- **Per-system metadata coverage counts content-matched games as verified.** The "Verified" coverage row now includes games identified by their RetroAchievements content hash (discs), not just No-Intro CRC matches (cartridges).
+
+---
+
 ## [0.8.0-beta.1]
 
 > Beta release — RetroAchievements library flagging is new; please report anything off.
