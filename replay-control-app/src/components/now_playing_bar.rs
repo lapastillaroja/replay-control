@@ -523,7 +523,7 @@ fn format_save_state_absolute_time(locale: Locale, modified_unix_secs: u64) -> S
         let day = date.get_date();
         let hours = date.get_hours();
         let minutes = date.get_minutes();
-        return format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}");
+        format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}")
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -536,7 +536,7 @@ fn format_save_state_absolute_time(locale: Locale, modified_unix_secs: u64) -> S
 fn now_unix_secs() -> Option<u64> {
     #[cfg(target_arch = "wasm32")]
     {
-        return Some((js_sys::Date::now() / 1000.0) as u64);
+        Some((js_sys::Date::now() / 1000.0) as u64)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
