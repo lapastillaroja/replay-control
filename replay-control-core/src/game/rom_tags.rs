@@ -1219,7 +1219,7 @@ fn is_language_code(s: &str) -> bool {
 ///
 /// Only matches exact two-letter uppercase codes to avoid conflicts with
 /// mixed-case language codes like "en", "fr", "de".
-fn is_tosec_country_code(tag: &str) -> bool {
+pub(crate) fn is_tosec_country_code(tag: &str) -> bool {
     matches!(
         tag,
         "US" | "GB"

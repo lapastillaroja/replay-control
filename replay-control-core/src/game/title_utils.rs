@@ -22,6 +22,116 @@
 /// deferred bump.
 pub const TITLE_NORM_VERSION: u32 = 1;
 
+/// Detect a TOSEC-format filename stem and derive a human-readable display name
+/// that preserves edition/variant tags while discarding metadata noise.
+///
+/// TOSEC stems follow `Title (Year)(Publisher)(Tags…)` convention. When the
+/// first parenthesized group is a 4-digit year this function:
+///   - Extracts the base title (text before the first `(`) and strips any
+///     trailing TOSEC version suffix and inverts trailing articles.
+///   - Skips groups 0 (year) and 1 (publisher).
+///   - Skips disk/tape/side counts, language codes (`en-it`), multi-language
+///     markers (`M3`), hardware IDs (`AGA`, `ECS`), and bare years.
+///   - Appends all remaining groups (region codes, edition tags like `Updated`,
+///     `Simulator`, `Rev A`) as `(tag)` suffixes.
+///
+/// Returns `None` when the stem doesn't look like TOSEC format, letting the
+/// caller fall back to its own logic.
+///
+/// # Examples
+/// `"A320 Airbus (1991)(Thalion)(Updated)"` → `Some("A320 Airbus (Updated)")`
+/// `"A320 Airbus (1991)(Thalion)"` → `Some("A320 Airbus")`
+/// `"Nitro (1990)(Psygnosis)(US)"` → `Some("Nitro (US)")`
+/// `"Super Mario World (USA)"` → `None` (not TOSEC — first group is not a year)
+pub fn tosec_display_name(stem: &str) -> Option<String> {
+    const HARDWARE: &[&str] = &["AGA", "ECS", "OCS", "CD32", "CDTV"];
+
+    // Collect paren groups and detect TOSEC by a 4-digit year in group 0.
+    let mut groups: Vec<&str> = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in stem.char_indices() {
+        match ch {
+            '(' => {
+                if depth == 0 {
+                    start = i + 1;
+                }
+                depth += 1;
+            }
+            ')' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    groups.push(&stem[start..i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    let first = groups.first()?;
+    if first.len() != 4 || !first.chars().all(|c| c.is_ascii_digit()) {
+        return None; // Not TOSEC format
+    }
+
+    // Base title: text before the first '(' with version and article cleaned up.
+    let base_end = stem.find('(')?;
+    let raw_base = stem[..base_end].trim_end();
+    let base = strip_version(raw_base);
+    // Article inversion: "Killing Game Show, The" → "The Killing Game Show"
+    let base = tosec_uninvert_article(base).unwrap_or_else(|| base.to_string());
+
+    // Skip group 0 (year) and group 1 (publisher); append qualifying edition tags.
+    // Country codes (US, GB, JP, …) are intentionally excluded: display_name_with_tags
+    // reads them from the filename and appends the expanded form (e.g. GB → UK), so
+    // including them here would produce double region suffixes like "(GB) (UK)".
+    let mut suffix = String::new();
+    for g in groups.iter().skip(2) {
+        if !HARDWARE.contains(g)
+            && !tosec_is_metadata_group(g)
+            && !crate::rom_tags::is_tosec_country_code(g)
+        {
+            suffix.push(' ');
+            suffix.push('(');
+            suffix.push_str(g);
+            suffix.push(')');
+        }
+    }
+
+    Some(format!("{base}{suffix}"))
+}
+
+/// Un-invert a trailing article in a TOSEC base title.
+/// `"Killing Game Show, The"` → `Some("The Killing Game Show")`
+fn tosec_uninvert_article(s: &str) -> Option<String> {
+    const ARTICLES: &[&str] = &[
+        "The", "A", "An", "Les", "La", "Le", "Der", "Die", "Das", "El",
+    ];
+    let (before, article) = s.rsplit_once(", ")?;
+    let article = article.trim();
+    if ARTICLES.iter().any(|a| a.eq_ignore_ascii_case(article)) {
+        Some(format!("{article} {before}"))
+    } else {
+        None
+    }
+}
+
+/// Returns true for TOSEC paren groups that are metadata noise, not worth
+/// including in a display name: disk/tape counts, language codes, multi-lang
+/// markers, and bare years.
+fn tosec_is_metadata_group(g: &str) -> bool {
+    if g.starts_with("Disk ") || g.starts_with("Side ") || g.starts_with("Tape ") {
+        return true;
+    }
+    if g.len() == 4 && g.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    // Language codes: all lowercase letters/hyphens (e.g. "en", "de", "en-it")
+    if !g.is_empty() && g.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
+        return true;
+    }
+    // Multi-language marker: "M3", "M4", etc.
+    g.len() >= 2 && g.starts_with('M') && g[1..].chars().all(|c| c.is_ascii_digit())
+}
+
 /// Strip parenthesized tags and trailing whitespace from a name for fuzzy matching.
 /// `"Indiana Jones and the Fate of Atlantis (Spanish)"` -> `"Indiana Jones and the Fate of Atlantis"`
 /// `"Dark Seed"` -> `"Dark Seed"` (unchanged)
@@ -743,5 +853,76 @@ mod tests {
             );
         }
         const _: () = assert!(TITLE_NORM_VERSION >= 1);
+    }
+
+    // --- tosec_display_name ---
+
+    #[test]
+    fn tosec_display_name_base_only() {
+        assert_eq!(
+            tosec_display_name("A320 Airbus (1991)(Thalion)"),
+            Some("A320 Airbus".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_with_edition_tag() {
+        assert_eq!(
+            tosec_display_name("A320 Airbus (1991)(Thalion)(Updated)"),
+            Some("A320 Airbus (Updated)".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_skips_country_code() {
+        // Country codes are handled by display_name_with_tags (with expansion,
+        // e.g. GB → UK). Including them here would produce "(GB) (UK)" doubles.
+        assert_eq!(
+            tosec_display_name("Nitro (1990)(Psygnosis)(US)"),
+            Some("Nitro".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_skips_disk_count() {
+        assert_eq!(
+            tosec_display_name("A320 Airbus (1991)(Thalion)(Disk 1 of 2)(StartDisk-PilotLog)"),
+            Some("A320 Airbus (StartDisk-PilotLog)".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_skips_hardware() {
+        assert_eq!(
+            tosec_display_name("Agony (1992)(Psygnosis)(AGA)"),
+            Some("Agony".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_skips_language_code() {
+        assert_eq!(
+            tosec_display_name("Game (1993)(Pub)(de)"),
+            Some("Game".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_skips_multi_lang_marker() {
+        assert_eq!(
+            tosec_display_name("Game (1993)(Pub)(M3)"),
+            Some("Game".to_string())
+        );
+    }
+
+    #[test]
+    fn tosec_display_name_not_tosec_returns_none() {
+        // No-Intro format — first group is a region, not a year
+        assert_eq!(tosec_display_name("Super Mario World (USA)"), None);
+    }
+
+    #[test]
+    fn tosec_display_name_no_parens_returns_none() {
+        assert_eq!(tosec_display_name("Some Game"), None);
     }
 }

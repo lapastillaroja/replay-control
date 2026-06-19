@@ -109,17 +109,19 @@ impl GameRef {
 /// stem processing (article inversion, version stripping) when the catalog
 /// has no match.
 fn compute_console_display_name(resolved: Option<&str>, rom_filename: &str) -> String {
-    let base_name: String = match resolved {
-        Some(name) => name.to_string(),
-        None => {
-            let stem = title_utils::filename_stem(rom_filename);
+    let stem = title_utils::filename_stem(rom_filename);
+    // TOSEC stems carry variant info (edition/region) that catalog fuzzy-match
+    // can't preserve — two m3u files with the same base title collapse to the
+    // same disk-1 entry. Derive from the stem instead.
+    let base_name: String = title_utils::tosec_display_name(stem)
+        .or_else(|| resolved.map(|s| s.to_string()))
+        .unwrap_or_else(|| {
             let base = strip_filename_tags(stem);
             let name = if base.is_empty() { stem } else { base };
             let uninverted = uninvert_article(name);
             let name = uninverted.as_deref().unwrap_or(name);
             title_utils::strip_version(name).to_string()
-        }
-    };
+        });
     let mut display = rom_tags::display_name_with_tags(&base_name, rom_filename);
     if let Some(label) = rom_tags::extract_disc_label(rom_filename) {
         display.push_str(" [");
