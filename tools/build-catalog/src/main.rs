@@ -100,12 +100,7 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             rating TEXT NOT NULL DEFAULT '',
             normalized_genre TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT '',
-            -- RetroAchievements game id (from GetGameList, title-matched per
-            -- system); empty when the game has no RA achievement set. Facts only
-            -- (see retroachievements plan §3/§4) — achievement text/badges are
-            -- never bundled.
-            ra_id TEXT NOT NULL DEFAULT ''
+            source TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX idx_cg_system ON canonical_game(system);
 
@@ -116,11 +111,29 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             region TEXT NOT NULL DEFAULT '',
             crc32 INTEGER NOT NULL DEFAULT 0,
             canonical_game_id INTEGER NOT NULL REFERENCES canonical_game(id),
-            normalized_title TEXT NOT NULL DEFAULT ''
+            normalized_title TEXT NOT NULL DEFAULT '',
+            -- No-Intro full-file MD5 (per dump). Used to join this dump to RA's
+            -- ra_hash for whole-file cart systems (ra_hash == file md5).
+            md5 TEXT NOT NULL DEFAULT '',
+            -- RetroAchievements game id for THIS dump (hash-matched at build time
+            -- for whole-file carts; empty otherwise). Per-dump → 100% precise;
+            -- never title-derived. Header carts + discs match at scan time.
+            ra_id TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX idx_re_stem ON rom_entry(system, filename_stem);
         CREATE INDEX idx_re_crc  ON rom_entry(system, crc32);
         CREATE INDEX idx_re_norm ON rom_entry(system, normalized_title);
+
+        -- RetroAchievements hash → game id, per system, for RUNTIME matching
+        -- (header carts NES/SNES/N64 and discs, whose RA hash must be computed
+        -- from the actual ROM bytes at scan time). Carries every RA hash from the
+        -- extract; whole-file carts also resolve via rom_entry.md5 at build time.
+        CREATE TABLE ra_hash (
+            system TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            ra_id TEXT NOT NULL,
+            PRIMARY KEY (system, hash)
+        );
         -- Drives the canonical_game → rom_entry join in game_db::descriptions
         -- (and any future cg-side query that enumerates rom entries without a
         -- full scan).
@@ -1178,6 +1191,7 @@ struct NoIntroEntry {
     rom_filename: String,
     region: String,
     crc32: u32,
+    md5: String,
 }
 
 struct TgdbEntry {
@@ -1217,6 +1231,7 @@ struct RomEntryBuild {
     filename_stem: String,
     region: String,
     crc32: u32,
+    md5: String,
     game_id: usize,
 }
 
@@ -1299,6 +1314,7 @@ fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
     let mut current_region = String::new();
     let mut current_rom_name = String::new();
     let mut current_crc: u32 = 0;
+    let mut current_md5 = String::new();
 
     for line in BufReader::new(file).lines() {
         let line = match line {
@@ -1317,6 +1333,7 @@ fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
             current_region.clear();
             current_rom_name.clear();
             current_crc = 0;
+            current_md5.clear();
             continue;
         }
         if trimmed == ")" && in_game {
@@ -1330,6 +1347,7 @@ fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
                     rom_filename: current_rom_name.clone(),
                     region: current_region.clone(),
                     crc32: current_crc,
+                    md5: current_md5.clone(),
                 });
             }
             continue;
@@ -1355,6 +1373,9 @@ fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
             }
             if let Some(crc_str) = extract_word_after(trimmed, "crc ") {
                 current_crc = u32::from_str_radix(&crc_str, 16).unwrap_or(0);
+            }
+            if let Some(md5_str) = extract_word_after(trimmed, "md5 ") {
+                current_md5 = md5_str.to_lowercase();
             }
             if trimmed.ends_with(')') {
                 in_rom = false;
@@ -1853,60 +1874,12 @@ fn normalize_title_for_tgdb(title: &str) -> String {
 ///
 /// These files are committed (refreshed by `scripts/retroachievements-gamelist-extract.py`,
 /// which needs a RetroAchievements API key — see `data/retroachievements/README.md`),
-/// mirroring the wikidata/shmups committed-data pattern. When a per-system file is
-/// absent this path is a no-op and `canonical_game.ra_id` stays empty.
+/// mirroring the wikidata/shmups committed-data pattern. Each entry carries RA's
+/// `hashes` (the `ra_hash` values) — the build input for hash-based matching across
+/// every realm (whole-file carts, header carts, discs, arcade). When a per-system
+/// file is absent the RA pass is a clean no-op for that system.
 #[derive(serde::Deserialize)]
 struct RaEntry {
-    title: String,
-    ra_id: String,
-}
-
-/// Load the RetroAchievements title→id map for one system, keyed by
-/// `title_utils::normalize_title_for_metadata` so it matches canonical game
-/// display names the same way the runtime scan matcher does.
-///
-/// Returns an empty map (and is silent) when the per-system file is missing.
-fn load_retroachievements_map(sources_dir: &Path, system_name: &str) -> HashMap<String, String> {
-    let path = sources_dir
-        .join("retroachievements")
-        .join(format!("{system_name}.json"));
-    // A missing file is the expected "no RA extract for this system" case — a
-    // clean no-op. But a file that IS present yet unreadable or malformed is a
-    // real defect (corrupt extract / bad JSON): fail the build loudly rather
-    // than silently shipping a catalog with no RA data. Matches main()'s
-    // panic-on-fatal style (`.expect(...)` on every build step).
-    if !path.exists() {
-        return HashMap::new();
-    }
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("RetroAchievements: failed to read {}: {e}", path.display()));
-    let entries: Vec<RaEntry> = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("RetroAchievements: failed to parse {}: {e}", path.display()));
-    let mut map = HashMap::new();
-    for entry in entries {
-        if entry.ra_id.is_empty() {
-            continue;
-        }
-        let key = title_utils::normalize_title_for_metadata(&entry.title);
-        if key.is_empty() {
-            continue;
-        }
-        map.insert(key, entry.ra_id);
-    }
-    eprintln!(
-        "RetroAchievements: {} entries loaded for {system_name}",
-        map.len()
-    );
-    map
-}
-
-/// One RetroAchievements "Arcade" entry from `data/retroachievements/arcade.json`.
-///
-/// Arcade is matched by hash, not title: RA's `rc_hash` for the Arcade console is
-/// `md5(lowercase romset_name)`, so each entry carries the RA `hashes` list and
-/// `build-catalog` compares it against `md5(arcade_game.rom_name)`.
-#[derive(serde::Deserialize)]
-struct ArcadeRaEntry {
     ra_id: String,
     #[serde(default)]
     hashes: Vec<String>,
@@ -1934,7 +1907,7 @@ fn load_arcade_ra_hash_map(sources_dir: &Path) -> HashMap<String, String> {
     }
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("RetroAchievements: failed to read {}: {e}", path.display()));
-    let entries: Vec<ArcadeRaEntry> = serde_json::from_str(&raw)
+    let entries: Vec<RaEntry> = serde_json::from_str(&raw)
         .unwrap_or_else(|e| panic!("RetroAchievements: failed to parse {}: {e}", path.display()));
     let mut map = HashMap::new();
     for entry in entries {
@@ -1949,13 +1922,227 @@ fn load_arcade_ra_hash_map(sources_dir: &Path) -> HashMap<String, String> {
     map
 }
 
-fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
-    let nointro_dir = upstream(sources_dir).join("no-intro");
-    let maxusers_dir = upstream(sources_dir).join("libretro-meta").join("maxusers");
-    let genre_dir = upstream(sources_dir).join("libretro-meta").join("genre");
-    let tgdb_path = upstream(sources_dir).join("thegamesdb-latest.json");
+/// Insert Amiga identification data (TOSEC disk images + Redump CD32) as plain
+/// `canonical_game` + `rom_entry` rows. Amiga has no No-Intro DAT and no
+/// RetroAchievements console, so this is identification only: at scan time the
+/// app matches user files by CRC first (TOSEC/Redump carry crc32) and falls back
+/// to filename (TOSEC rom names are the same on disk). Full TOSEC is ingested —
+/// including cracked/variant dumps — because the Amiga scene is crack-heavy and
+/// users' on-disk files are frequently those exact variants.
+/// (folder_name, TGDB platform ids, &[(DAT filename, provenance source tag)]).
+struct AmigaSystemSpec {
+    system: &'static str,
+    tgdb_platform_ids: &'static [u32],
+    /// `(DAT filename under upstream/amiga/, provenance source tag)`.
+    dats: &'static [(&'static str, &'static str)],
+}
 
-    let (tgdb, tgdb_regional_dates) = if tgdb_path.exists() {
+fn insert_amiga_games(
+    conn: &Connection,
+    sources_dir: &Path,
+    tgdb_data: &TgdbData,
+) -> rusqlite::Result<()> {
+    let amiga_dir = upstream(sources_dir).join("amiga");
+    // commodore_ami loads all three naming conventions seen on disk — WHDLoad
+    // (.lha, the RePlayOS default), No-Intro (.ipf), TOSEC (.adf) — so a user's
+    // files match whichever convention they use. First DAT wins on a stem clash
+    // (WHDLoad preferred). Metadata (genre/dev/year) comes from TGDB, since the
+    // identification DATs carry none.
+    let systems = &[
+        AmigaSystemSpec {
+            system: "commodore_ami",
+            tgdb_platform_ids: &[4911],
+            dats: &[
+                ("Commodore - Amiga (WHDLoad).dat", "whdload"),
+                ("Commodore - Amiga (No-Intro IPF).dat", "nointro"),
+                ("Commodore - Amiga (TOSEC).dat", "tosec"),
+            ],
+        },
+        AmigaSystemSpec {
+            system: "commodore_amicd",
+            tgdb_platform_ids: &[4947],
+            dats: &[("Commodore - CD32.dat", "redump")],
+        },
+    ];
+    let mut stmt_cg = conn.prepare(
+        "INSERT INTO canonical_game (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre, description, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '', ?11)"
+    )?;
+    let mut stmt_re = conn.prepare(
+        "INSERT OR IGNORE INTO rom_entry (system, filename_stem, region, crc32, canonical_game_id, normalized_title, md5) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+    )?;
+    let mut total = 0usize;
+    let mut total_tgdb = 0usize;
+    for AmigaSystemSpec {
+        system,
+        tgdb_platform_ids: platform_ids,
+        dats,
+    } in systems
+    {
+        // Dedup stems across ALL of a system's DATs so the same game in two
+        // naming conventions doesn't double-insert; first DAT in the list wins.
+        let mut seen_stems: HashSet<String> = HashSet::new();
+        for (dat, source) in *dats {
+            let path = amiga_dir.join(dat);
+            if !path.exists() {
+                eprintln!("Amiga DB: {} not found, skipping", path.display());
+                continue;
+            }
+            let entries = parse_nointro_dat(&path);
+            let mut inserted = 0usize;
+            for entry in &entries {
+                let stem = entry
+                    .rom_filename
+                    .rfind('.')
+                    .map(|i| &entry.rom_filename[..i])
+                    .unwrap_or(&entry.rom_filename)
+                    .to_string();
+                if !seen_stems.insert(stem.clone()) {
+                    continue;
+                }
+                // Region/tag-stripped name ("1000cc Turbo (Europe)" → "1000cc
+                // Turbo") for both display and the TGDB match, mirroring the
+                // console pass — TGDB titles have no region tags.
+                let display_name = clean_display_name(&entry.name);
+                // Enrich from TGDB by the clean name; the DATs supply no
+                // genre/dev/year of their own. Default = "no match" (all-empty).
+                let matched = tgdb_lookup(&display_name, platform_ids, tgdb_data);
+                total_tgdb += matched.is_some() as usize;
+                let m = matched.unwrap_or_default();
+                let norm_genre = normalize_console_genre(&m.genre);
+                stmt_cg.execute(params![
+                    system,
+                    display_name,
+                    m.year as i64,
+                    m.genre,
+                    m.developer,
+                    m.publisher,
+                    m.players as i64,
+                    m.coop.map(|b| b as i64),
+                    m.rating,
+                    norm_genre,
+                    source,
+                ])?;
+                let cg_id = conn.last_insert_rowid();
+                let norm_title = normalize_title(&stem);
+                stmt_re.execute(params![
+                    system,
+                    stem,
+                    entry.region,
+                    entry.crc32 as i64,
+                    cg_id,
+                    norm_title,
+                    entry.md5,
+                ])?;
+                inserted += 1;
+            }
+            total += inserted;
+            eprintln!("Amiga DB: {system} - {inserted} games from {dat}");
+        }
+    }
+    eprintln!("Amiga DB: Total {total} games inserted ({total_tgdb} TGDB metadata matches)");
+    Ok(())
+}
+
+/// Populate the catalog's RetroAchievements linkage from the committed extracts.
+///
+/// Two outputs, both hash-based (never title-matched — title matching mis-binds
+/// hacks/subsets; see retroachievements plan §10.7):
+///
+/// 1. The `ra_hash(system, hash, ra_id)` table — every RA hash for every cart/disc
+///    system. This is the RUNTIME lookup table: header carts (NES/SNES/N64) and
+///    discs compute their `rc_hash` from ROM bytes at scan time and resolve it here.
+/// 2. `rom_entry.ra_id` for whole-file cart dumps — stamped at build time by joining
+///    `rom_entry.md5 == ra_hash.hash` (for whole-file systems the RA hash *is* the
+///    file md5). Header carts' full-file md5 never equals their header-stripped RA
+///    hash, so they stay empty here and resolve at runtime instead — correct.
+///
+/// Arcade is excluded: it is matched separately in `insert_arcade_games` by
+/// `md5(romset name)` and stamped directly onto `arcade_game.ra_id`.
+fn populate_retroachievements(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
+    let ra_dir = sources_dir.join("retroachievements");
+    let Ok(read_dir) = std::fs::read_dir(&ra_dir) else {
+        eprintln!(
+            "RetroAchievements: {} not found — skipping RA linkage",
+            ra_dir.display()
+        );
+        return Ok(());
+    };
+
+    let mut stmt_rh =
+        conn.prepare("INSERT OR IGNORE INTO ra_hash (system, hash, ra_id) VALUES (?1, ?2, ?3)")?;
+    let mut total_hashes = 0usize;
+
+    for dir_entry in read_dir.flatten() {
+        let path = dir_entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(system) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // Arcade has its own md5(romset)-based path; it never resolves via ra_hash.
+        if system == "arcade" {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!("RetroAchievements: failed to read {}: {e}", path.display())
+        });
+        let entries: Vec<RaEntry> = serde_json::from_str(&raw).unwrap_or_else(|e| {
+            panic!("RetroAchievements: failed to parse {}: {e}", path.display())
+        });
+        let mut system_hashes = 0usize;
+        for entry in entries {
+            if entry.ra_id.is_empty() {
+                continue;
+            }
+            for hash in entry.hashes {
+                let inserted =
+                    stmt_rh.execute(params![system, hash.to_lowercase(), entry.ra_id])?;
+                system_hashes += inserted;
+            }
+        }
+        total_hashes += system_hashes;
+        eprintln!("RetroAchievements: {system_hashes} hashes loaded for {system}");
+    }
+
+    let stamped = stamp_whole_file_rom_entry_ra_ids(conn)?;
+    eprintln!(
+        "RetroAchievements: {total_hashes} hashes in ra_hash; {stamped} whole-file rom_entry.ra_id stamped"
+    );
+    Ok(())
+}
+
+/// Whole-file carts: stamp `rom_entry.ra_id` where the dump's full-file md5 equals
+/// an RA hash for that system (for whole-file systems the RA hash *is* the file
+/// md5). Header carts/discs have md5 ≠ RA hash, so they stay empty and match at
+/// runtime instead. Returns the number of rows stamped.
+fn stamp_whole_file_rom_entry_ra_ids(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE rom_entry SET ra_id = (
+             SELECT h.ra_id FROM ra_hash h
+             WHERE h.system = rom_entry.system AND h.hash = rom_entry.md5
+         )
+         WHERE md5 != '' AND EXISTS (
+             SELECT 1 FROM ra_hash h
+             WHERE h.system = rom_entry.system AND h.hash = rom_entry.md5
+         )",
+        [],
+    )
+}
+
+/// TheGamesDB data loaded once and shared by the console and Amiga insert passes
+/// (the JSON dump is ~145 MB — parse it once, not per pass).
+struct TgdbData {
+    games: HashMap<(String, u32), TgdbEntry>,
+    regional_dates: TgdbRegionalDatesMap,
+    developers: HashMap<u32, String>,
+    publishers: HashMap<u32, String>,
+    genres: HashMap<u32, String>,
+}
+
+fn load_tgdb_data(sources_dir: &Path) -> TgdbData {
+    let tgdb_path = upstream(sources_dir).join("thegamesdb-latest.json");
+    let (games, regional_dates) = if tgdb_path.exists() {
         eprintln!("Game DB: Loading TheGamesDB JSON dump...");
         let parsed = parse_tgdb_json(&tgdb_path);
         eprintln!("Game DB: TheGamesDB loaded {} entries", parsed.0.len());
@@ -1964,16 +2151,92 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         eprintln!("Game DB: TheGamesDB JSON not found, skipping metadata enrichment");
         (HashMap::new(), HashMap::new())
     };
-
-    let tgdb_developers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-developers.json"));
-    let tgdb_publishers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-publishers.json"));
-    let tgdb_genres = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-genres.json"));
+    let developers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-developers.json"));
+    let publishers = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-publishers.json"));
+    let genres = load_tgdb_name_map(&upstream(sources_dir).join("tgdb-genres.json"));
     eprintln!(
         "Game DB: TGDB lookups: {} devs, {} pubs, {} genres",
-        tgdb_developers.len(),
-        tgdb_publishers.len(),
-        tgdb_genres.len()
+        developers.len(),
+        publishers.len(),
+        genres.len()
     );
+    TgdbData {
+        games,
+        regional_dates,
+        developers,
+        publishers,
+        genres,
+    }
+}
+
+/// Metadata resolved from a TGDB title match.
+#[derive(Default)]
+struct TgdbMatch {
+    year: u16,
+    players: u8,
+    genre: String,
+    developer: String,
+    publisher: String,
+    coop: Option<bool>,
+    rating: String,
+    alternates: Vec<String>,
+}
+
+/// Look up TGDB metadata for a display name across the given platform ids
+/// (first match wins). Shared by the console and Amiga passes; the console pass
+/// additionally collects regional release dates separately.
+fn tgdb_lookup(display_name: &str, platform_ids: &[u32], tgdb: &TgdbData) -> Option<TgdbMatch> {
+    let norm = normalize_title_for_tgdb(display_name);
+    for &platform_id in platform_ids {
+        if let Some(e) = tgdb.games.get(&(norm.clone(), platform_id)) {
+            let genre = if e.genre_ids.is_empty() {
+                String::new()
+            } else {
+                tgdb.genres
+                    .get(&e.genre_ids[0])
+                    .cloned()
+                    .unwrap_or_else(|| tgdb_genre_name(e.genre_ids[0]).to_string())
+            };
+            let developer = e
+                .developer_ids
+                .first()
+                .and_then(|id| tgdb.developers.get(id))
+                .map(|n| normalize_developer(n))
+                .unwrap_or_default();
+            let publisher = e
+                .publisher_ids
+                .first()
+                .and_then(|id| tgdb.publishers.get(id))
+                .cloned()
+                .unwrap_or_default();
+            return Some(TgdbMatch {
+                year: e.year,
+                players: e.players,
+                genre,
+                developer,
+                publisher,
+                coop: e.coop,
+                rating: e.rating.clone(),
+                alternates: e.alternates.clone(),
+            });
+        }
+    }
+    None
+}
+
+fn insert_console_games(
+    conn: &Connection,
+    sources_dir: &Path,
+    tgdb_data: &TgdbData,
+) -> rusqlite::Result<()> {
+    let nointro_dir = upstream(sources_dir).join("no-intro");
+    let maxusers_dir = upstream(sources_dir).join("libretro-meta").join("maxusers");
+    let genre_dir = upstream(sources_dir).join("libretro-meta").join("genre");
+
+    // TGDB metadata matching goes through `tgdb_lookup`; this function only needs
+    // the games map (system-presence check) and regional dates directly.
+    let tgdb = &tgdb_data.games;
+    let tgdb_regional_dates = &tgdb_data.regional_dates;
 
     let mut total_roms = 0usize;
     let mut total_games = 0usize;
@@ -1985,14 +2248,11 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
         "INSERT INTO canonical_game (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre, description, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, '', ?11)"
     )?;
     let mut stmt_re = conn.prepare(
-        "INSERT OR IGNORE INTO rom_entry (system, filename_stem, region, crc32, canonical_game_id, normalized_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        "INSERT OR IGNORE INTO rom_entry (system, filename_stem, region, crc32, canonical_game_id, normalized_title, md5) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
     )?;
     let mut stmt_alt = conn.prepare(
         "INSERT INTO rom_alternate (canonical_game_id, system, alternate_name) VALUES (?1, ?2, ?3)",
     )?;
-    let mut stmt_ra =
-        conn.prepare("UPDATE canonical_game SET ra_id = ?1 WHERE id = ?2 AND ra_id = ''")?;
-    let mut total_ra_matches = 0usize;
 
     for sys in GAME_DB_SYSTEMS {
         if sys.nointro_dats.is_empty() {
@@ -2118,34 +2378,16 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                 }
             }
 
-            for &platform_id in sys.tgdb_platform_ids {
-                if let Some(tgdb_entry) = tgdb.get(&(tgdb_normalized.clone(), platform_id)) {
-                    year = tgdb_entry.year;
-                    tgdb_players = tgdb_entry.players;
-                    if !tgdb_entry.genre_ids.is_empty() {
-                        tgdb_genre = tgdb_genres
-                            .get(&tgdb_entry.genre_ids[0])
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                tgdb_genre_name(tgdb_entry.genre_ids[0]).to_string()
-                            });
-                    }
-                    tgdb_alternates = tgdb_entry.alternates.clone();
-                    if let Some(&dev_id) = tgdb_entry.developer_ids.first()
-                        && let Some(name) = tgdb_developers.get(&dev_id)
-                    {
-                        tgdb_developer = normalize_developer(name);
-                    }
-                    if let Some(&pub_id) = tgdb_entry.publisher_ids.first()
-                        && let Some(name) = tgdb_publishers.get(&pub_id)
-                    {
-                        tgdb_publisher = name.clone();
-                    }
-                    tgdb_coop = tgdb_entry.coop;
-                    tgdb_rating = tgdb_entry.rating.clone();
-                    tgdb_match_count += 1;
-                    break;
-                }
+            if let Some(m) = tgdb_lookup(&display_name, sys.tgdb_platform_ids, tgdb_data) {
+                year = m.year;
+                tgdb_players = m.players;
+                tgdb_genre = m.genre;
+                tgdb_alternates = m.alternates;
+                tgdb_developer = m.developer;
+                tgdb_publisher = m.publisher;
+                tgdb_coop = m.coop;
+                tgdb_rating = m.rating;
+                tgdb_match_count += 1;
             }
 
             // Players and genre: prefer libretro (CRC-based), fall back to TGDB
@@ -2225,6 +2467,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                     filename_stem: stem.to_string(),
                     region: entry.region.clone(),
                     crc32: entry.crc32,
+                    md5: entry.md5.clone(),
                     game_id,
                 });
             }
@@ -2265,18 +2508,9 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
             }
         }
 
-        // RetroAchievements: title-match the system's RA extract (if present)
-        // against the canonical games we just inserted and stamp their ids.
-        let ra_map = load_retroachievements_map(sources_dir, sys.folder_name);
-        if !ra_map.is_empty() {
-            for (game, &canonical_game_id) in canonical_game.iter().zip(canonical_game_ids.iter()) {
-                let key = title_utils::normalize_title_for_metadata(&game.display_name);
-                if let Some(ra_id) = ra_map.get(&key) {
-                    let updated = stmt_ra.execute(params![ra_id, canonical_game_id])?;
-                    total_ra_matches += updated;
-                }
-            }
-        }
+        // RetroAchievements ids are stamped later, by hash, in
+        // populate_retroachievements() — never title-matched here (title matching
+        // mis-binds hacks/subsets; see retroachievements plan §10.7).
 
         // Insert ROM entries (deduplicated by stem)
         let mut seen_stems: HashSet<&str> = HashSet::new();
@@ -2295,6 +2529,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
                 entry.crc32 as i64,
                 canonical_game_id,
                 norm_title,
+                entry.md5,
             ])?;
         }
 
@@ -2304,8 +2539,8 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     }
 
     eprintln!(
-        "Game DB: Total {} ROM entries, {} canonical games, {} TGDB matches, {} RetroAchievements matches",
-        total_roms, total_games, total_tgdb_matches, total_ra_matches
+        "Game DB: Total {} ROM entries, {} canonical games, {} TGDB matches",
+        total_roms, total_games, total_tgdb_matches
     );
 
     // Insert console release dates
@@ -2910,84 +3145,128 @@ fn is_mediawiki_path_safe(byte: u8) -> bool {
         )
 }
 
+/// Fold every column of every row of `sql` (type-agnostically) into `context`,
+/// prefixed by `label`. Lets the version digest cover whole tables without
+/// hand-coding per-column reads or worrying about INTEGER vs TEXT columns.
+fn fold_query(
+    context: &mut ring::digest::Context,
+    conn: &Connection,
+    label: &str,
+    sql: &str,
+) -> rusqlite::Result<()> {
+    use rusqlite::types::Value;
+    context.update(label.as_bytes());
+    context.update(b"\n");
+    let mut stmt = conn.prepare(sql)?;
+    let ncols = stmt.column_count();
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        for idx in 0..ncols {
+            match row.get::<_, Value>(idx)? {
+                Value::Null => context.update(&[0x01]),
+                Value::Integer(i) => context.update(i.to_string().as_bytes()),
+                Value::Real(f) => context.update(f.to_string().as_bytes()),
+                Value::Text(s) => context.update(s.as_bytes()),
+                Value::Blob(b) => context.update(&b),
+            }
+            context.update(&[0x00]);
+        }
+        context.update(b"\n");
+    }
+    Ok(())
+}
+
+/// Content fingerprint of every catalog table that determines `game_library`
+/// output. The per-storage `enrichment_inputs_version` stamp is compared against
+/// this on boot; any mismatch triggers a reconcile rescan (see background.rs
+/// `phase_enrichment_inputs_reconcile`). It must therefore move whenever ANY
+/// scan/enrichment input changes — identification (`rom_entry` / `arcade_game`),
+/// metadata (`canonical_game`), RA linkage (`ra_hash` + per-dump `ra_id`),
+/// aliases, series, release dates, or media resources. Hashing only a subset
+/// (as an earlier version did) lets an identification-only catalog change — e.g.
+/// new Amiga DATs adding `rom_entry` rows with no description/RA — slip through
+/// and silently fail to re-identify a user's library.
 fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<String> {
-    let mut context = ring::digest::Context::new(&ring::digest::SHA256);
-    context.update(b"catalog_game_resource\n");
-    let mut stmt = conn.prepare(
-        "SELECT system, normalized_title, resource_type, source, resource_id, url, title, languages, mime_type
+    let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    // Console metadata (enrichment writes these onto game_library rows).
+    fold_query(
+        &mut ctx,
+        conn,
+        "canonical_game",
+        "SELECT system, display_name, year, genre, developer, publisher, players, coop,
+                rating, normalized_genre, description, source
+         FROM canonical_game ORDER BY system, display_name, year, id",
+    )?;
+    // Console identification: which dump maps to which game, its CRC/md5, and its
+    // per-dump RA id. The cg.display_name join captures dump→game re-mappings.
+    fold_query(
+        &mut ctx,
+        conn,
+        "rom_entry",
+        "SELECT re.system, re.filename_stem, re.region, re.crc32, re.md5,
+                re.normalized_title, re.ra_id, cg.display_name
+         FROM rom_entry re JOIN canonical_game cg ON cg.id = re.canonical_game_id
+         ORDER BY re.system, re.filename_stem, re.crc32",
+    )?;
+    // Arcade identification + metadata + RA linkage.
+    fold_query(
+        &mut ctx,
+        conn,
+        "arcade_game",
+        "SELECT rom_name, source, display_name, year, manufacturer, players, rotation,
+                status, is_clone, is_bios, parent, category, normalized_genre, board,
+                ra_id, ra_hash
+         FROM arcade_game ORDER BY rom_name, source",
+    )?;
+    // RA runtime lookup table (header carts + discs).
+    fold_query(
+        &mut ctx,
+        conn,
+        "ra_hash",
+        "SELECT system, hash, ra_id FROM ra_hash ORDER BY system, hash",
+    )?;
+    // Aliases, series grouping, release dates, and media resources are all
+    // enrichment inputs mirrored onto game_library rows.
+    fold_query(
+        &mut ctx,
+        conn,
+        "rom_alternate",
+        "SELECT ra.system, ra.alternate_name, cg.display_name
+         FROM rom_alternate ra JOIN canonical_game cg ON cg.id = ra.canonical_game_id
+         ORDER BY ra.system, ra.alternate_name, cg.display_name",
+    )?;
+    fold_query(
+        &mut ctx,
+        conn,
+        "series_entry",
+        "SELECT system, normalized_title, game_title, series_name, series_order,
+                follows, followed_by
+         FROM series_entry ORDER BY system, normalized_title, game_title",
+    )?;
+    fold_query(
+        &mut ctx,
+        conn,
+        "console_release_date",
+        "SELECT system, base_title, region, release_date, precision, source
+         FROM console_release_date ORDER BY system, base_title, region",
+    )?;
+    fold_query(
+        &mut ctx,
+        conn,
+        "arcade_release_date",
+        "SELECT rom_name, year, source FROM arcade_release_date ORDER BY rom_name, source",
+    )?;
+    fold_query(
+        &mut ctx,
+        conn,
+        "catalog_game_resource",
+        "SELECT system, normalized_title, resource_type, source, resource_id, url, title,
+                languages, mime_type
          FROM catalog_game_resource
          ORDER BY system, normalized_title, resource_type, source, resource_id",
     )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        for idx in 0..9 {
-            let value: String = row.get(idx)?;
-            context.update(value.as_bytes());
-            context.update(b"\0");
-        }
-        context.update(b"\n");
-    }
 
-    context.update(b"canonical_game_detail_metadata\n");
-    let mut stmt = conn.prepare(
-        "SELECT cg.system, re.filename_stem, cg.description, cg.publisher
-         FROM canonical_game cg
-         JOIN rom_entry re ON re.canonical_game_id = cg.id
-         WHERE cg.description != '' OR cg.publisher != ''
-         ORDER BY cg.system, re.filename_stem, cg.id",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        for idx in 0..4 {
-            let value: String = row.get(idx)?;
-            context.update(value.as_bytes());
-            context.update(b"\0");
-        }
-        context.update(b"\n");
-    }
-
-    // RetroAchievements ids are a catalog-bundled enrichment input: a refreshed
-    // RA extract changes them with no schema change, and the per-storage stamp
-    // mismatch must still force a re-enrich so the new ids reach game_library.
-    context.update(b"canonical_game_retroachievements\n");
-    let mut stmt = conn.prepare(
-        "SELECT cg.system, re.filename_stem, cg.ra_id
-         FROM canonical_game cg
-         JOIN rom_entry re ON re.canonical_game_id = cg.id
-         WHERE cg.ra_id != ''
-         ORDER BY cg.system, re.filename_stem, cg.id",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        for idx in 0..3 {
-            let value: String = row.get(idx)?;
-            context.update(value.as_bytes());
-            context.update(b"\0");
-        }
-        context.update(b"\n");
-    }
-
-    // Arcade RA ids are the same kind of catalog-bundled input (hash-matched
-    // rather than title-matched). Roll them in so a refreshed arcade extract
-    // also invalidates the per-storage stamp and re-enriches arcade systems.
-    context.update(b"arcade_game_retroachievements\n");
-    let mut stmt = conn.prepare(
-        "SELECT rom_name, source, ra_id
-         FROM arcade_game
-         WHERE ra_id != ''
-         ORDER BY rom_name, source",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        for idx in 0..3 {
-            let value: String = row.get(idx)?;
-            context.update(value.as_bytes());
-            context.update(b"\0");
-        }
-        context.update(b"\n");
-    }
-
-    let digest = context.finish();
+    let digest = ctx.finish();
     let mut out = String::new();
     for byte in digest.as_ref() {
         out.push_str(&format!("{byte:02x}"));
@@ -3090,8 +3369,12 @@ fn main() {
     let conn = Connection::open(&args.output).expect("Failed to open SQLite database");
     create_schema(&conn).expect("Failed to create schema");
 
+    let tgdb_data = load_tgdb_data(&sources_dir);
     insert_arcade_games(&conn, &sources_dir).expect("Failed to insert arcade games");
-    insert_console_games(&conn, &sources_dir).expect("Failed to insert console games");
+    insert_console_games(&conn, &sources_dir, &tgdb_data).expect("Failed to insert console games");
+    insert_amiga_games(&conn, &sources_dir, &tgdb_data).expect("Failed to insert Amiga games");
+    populate_retroachievements(&conn, &sources_dir)
+        .expect("Failed to populate RetroAchievements linkage");
     community::insert_community_entries(&conn, &sources_dir)
         .expect("Failed to insert community entries");
     insert_series(&conn, &sources_dir).expect("Failed to insert series");
@@ -3332,13 +3615,64 @@ mod tests {
     }
 
     #[test]
+    fn stamp_whole_file_rom_entry_ra_ids_matches_by_md5() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO canonical_game (system, display_name) VALUES ('nintendo_gb', 'Tetris')",
+            [],
+        )
+        .unwrap();
+        let cg = conn.last_insert_rowid();
+        // Whole-file cart: its full-file md5 equals the RA hash → should be stamped.
+        conn.execute(
+            "INSERT INTO rom_entry (system, filename_stem, canonical_game_id, md5) \
+             VALUES ('nintendo_gb', 'Tetris (World)', ?1, 'abc123')",
+            [cg],
+        )
+        .unwrap();
+        // A dump with no md5 (or a non-matching one) must stay empty — precision.
+        conn.execute(
+            "INSERT INTO rom_entry (system, filename_stem, canonical_game_id, md5) \
+             VALUES ('nintendo_gb', 'Tetris (Headerless)', ?1, 'nomatch')",
+            [cg],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ra_hash (system, hash, ra_id) VALUES ('nintendo_gb', 'abc123', '999')",
+            [],
+        )
+        .unwrap();
+
+        let stamped = stamp_whole_file_rom_entry_ra_ids(&conn).unwrap();
+        assert_eq!(stamped, 1);
+
+        let matched: String = conn
+            .query_row(
+                "SELECT ra_id FROM rom_entry WHERE filename_stem = 'Tetris (World)'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(matched, "999");
+        let unmatched: String = conn
+            .query_row(
+                "SELECT ra_id FROM rom_entry WHERE filename_stem = 'Tetris (Headerless)'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(unmatched, "");
+    }
+
+    #[test]
     fn catalog_enrichment_inputs_version_changes_when_ra_id_changes() {
         let conn = Connection::open_in_memory().unwrap();
         create_schema(&conn).unwrap();
         conn.execute(
             "INSERT INTO canonical_game \
-             (system, display_name, ra_id) \
-             VALUES ('nintendo_snes', 'Super Mario World', '')",
+             (system, display_name) \
+             VALUES ('nintendo_snes', 'Super Mario World')",
             [],
         )
         .unwrap();
@@ -3351,11 +3685,11 @@ mod tests {
         )
         .unwrap();
 
-        // Refreshing the RA extract assigns an id with no schema change; the
-        // version must change so the per-storage stamp goes stale and re-enrich
-        // runs on next boot.
+        // Refreshing the RA extract assigns an id (per-dump, on rom_entry) with no
+        // schema change; the version must change so the per-storage stamp goes
+        // stale and re-enrich runs on next boot.
         let before = catalog_enrichment_inputs_version(&conn).unwrap();
-        conn.execute("UPDATE canonical_game SET ra_id = '228'", [])
+        conn.execute("UPDATE rom_entry SET ra_id = '228'", [])
             .unwrap();
         let after = catalog_enrichment_inputs_version(&conn).unwrap();
 
