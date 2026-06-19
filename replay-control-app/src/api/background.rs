@@ -4,7 +4,7 @@ use replay_control_core_server::library_db::{IdentityState, LibraryDb};
 use replay_control_core_server::roms::{RomEntry, StorageProbe};
 use replay_control_core_server::storage::StorageLocation;
 use replay_control_core_server::update as update_io;
-use replay_control_core_server::{game_entry_builder, rom_hash};
+use replay_control_core_server::{game_db, game_entry_builder, rc_hash_disc, rom_hash};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -17,6 +17,14 @@ use super::activity::{
 use super::db_pools::{LIBRARY_MAINTENANCE_WRITE_TIMEOUT, LibraryReadPool};
 use super::library::{ScanCancellation, ScanInputs, ScanOptions};
 use crate::types::RomWatcherStatus;
+
+/// A system whose ROMs get runtime hashing + RA-id resolution in the identity
+/// phase: cart systems (CRC + header rc_hash) or disc systems (boot-file
+/// rc_hash). Both go through the same identity-job machinery; only the inner
+/// hash dispatch differs.
+fn is_hash_identifiable(system: &str) -> bool {
+    rom_hash::is_hash_eligible(system) || rc_hash_disc::is_disc_rc_hash_system(system)
+}
 
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PIPELINE_ACTIVITY_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -283,6 +291,7 @@ impl BackgroundManager {
 
             Self::phase_cache_verification(state).await;
             Self::phase_enrichment_inputs_reconcile(state).await;
+            Self::phase_reresolve_rc_hash_ra_ids(state).await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
             state.cache.resume_pending_thumbnail_downloads(state).await;
@@ -322,7 +331,7 @@ impl BackgroundManager {
     ) -> Result<ScanInputs, replay_control_core::error::Error> {
         state.ensure_storage_generation(generation)?;
 
-        let cached_hashes = if rom_hash::is_hash_eligible(system) {
+        let cached_hashes = if is_hash_identifiable(system) {
             let system_owned = system.to_string();
             match state
                 .library_reader
@@ -609,7 +618,7 @@ impl BackgroundManager {
                 work_system_done: false,
             };
         }
-        if !rom_hash::is_hash_eligible(&job.system) {
+        if !is_hash_identifiable(&job.system) {
             return IdentityJobOutcome::Skipped {
                 rows_done: 0,
                 work_system_done: false,
@@ -622,7 +631,9 @@ impl BackgroundManager {
             .roms
             .iter()
             .filter(|rom| {
-                !rom.is_m3u && rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
+                !rom.is_m3u
+                    && (rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
+                        || rc_hash_disc::is_disc_rc_hash_system(&job.system))
             })
             .map(|rom| rom.game.rom_filename.clone())
             .collect();
@@ -630,6 +641,10 @@ impl BackgroundManager {
         let mut rows_done = 0usize;
         let mut updated_rows = 0usize;
         let mut claimed_any = false;
+        // Filenames attempted in this run. `claim_identity_batch` re-claims Failed
+        // rows, so without this a deterministically-failing file would be claimed
+        // -> Failed -> re-claimed forever (see the forward-progress guard below).
+        let mut attempted: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         loop {
             if !Self::wait_for_identity_window(state, generation, &job.system).await {
@@ -672,6 +687,22 @@ impl BackgroundManager {
                 break;
             }
             claimed_any = true;
+
+            // Forward-progress guard: if a batch is entirely rows we've already
+            // attempted this run, the claim is just re-serving Failed rows that
+            // can't resolve (e.g. a .cue whose .bin is missing). Stop rather than
+            // spin — they stay Failed and retry on the next scan, not in a tight
+            // loop that floods the log (which previously filled log2ram and
+            // crashed the service).
+            if claimed.iter().all(|f| attempted.contains(f)) {
+                tracing::warn!(
+                    "Identity phase: {} made no progress; {} unresolved row(s) re-claimed — stopping to avoid a reclaim loop",
+                    job.system,
+                    claimed.len()
+                );
+                break;
+            }
+            attempted.extend(claimed.iter().cloned());
 
             let claimed_set: std::collections::HashSet<&str> =
                 claimed.iter().map(String::as_str).collect();
@@ -849,6 +880,34 @@ impl BackgroundManager {
             return IdentityJobOutcome::Failed {
                 work_system_done: true,
             };
+        }
+
+        // Refresh this system's coverage stats now that the identity phase has
+        // set ra_id / rc_hash. Stats are otherwise refreshed only on
+        // enrichment-complete (which runs *before* hashing) and by the startup
+        // `phase_reresolve` (next boot), so without this the metadata page shows
+        // stale RA coverage (often 0) for a freshly-hashed system until restart.
+        if updated_rows > 0 {
+            let sys = job.system.clone();
+            match state
+                .library_writer
+                .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                    LibraryDb::refresh_game_library_system_stats(conn, &sys)
+                })
+                .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "Identity phase: stats refresh failed for {}: {e}",
+                        job.system
+                    )
+                }
+                Err(e) => tracing::warn!(
+                    "Identity phase: stats writer unavailable for {}: {e}",
+                    job.system
+                ),
+            }
         }
 
         tracing::info!(
@@ -1533,6 +1592,74 @@ impl BackgroundManager {
         }
     }
 
+    /// Phase: re-resolve header-cart `ra_id` (NES/SNES/N64) from each row's
+    /// persisted `rc_hash` against the current catalog `ra_hash` table.
+    ///
+    /// Runs every startup and is idempotent (writes only changed rows). The
+    /// enrichment-inputs reconcile rescan skips systems whose ROM files are
+    /// unchanged, so a catalog-only RA refresh would otherwise never update a
+    /// header cart's `ra_id` — its value is scan-derived (rc_hash → ra_hash),
+    /// not catalog-lookup-derived like genre. Needs no file I/O: the `rc_hash`
+    /// is already stored, so this is a catalog batch lookup + targeted UPDATE.
+    async fn phase_reresolve_rc_hash_ra_ids(state: &AppState) {
+        let systems =
+            super::library_systems::active_systems(&state.library_reader, "reresolve_rc_hash")
+                .await;
+        for system in systems {
+            if !rom_hash::needs_rc_hash(&system) && !rc_hash_disc::is_disc_rc_hash_system(&system) {
+                continue;
+            }
+            let sys_read = system.clone();
+            let Some(pairs) =
+                try_read_or_skip(&state.library_reader, "reresolve_rc_hash", move |conn| {
+                    LibraryDb::rc_hash_pairs(conn, &sys_read)
+                })
+                .await
+            else {
+                continue;
+            };
+            if pairs.is_empty() {
+                continue;
+            }
+            let hashes: Vec<String> = pairs.iter().map(|(_, h)| h.clone()).collect();
+            // `None` = the catalog query failed. Skip the write entirely: turning
+            // a failed lookup into empty `ra_id`s would WIPE good data for every
+            // row (a transient catalog error is not "no RA set"). `Some(empty)`
+            // is fine — it legitimately clears rows whose RA set went away.
+            let Some(ra_map) = game_db::lookup_ra_id_by_rc_hash_batch(&system, &hashes).await
+            else {
+                tracing::warn!("reresolve_rc_hash: {system}: catalog lookup failed; skipping");
+                continue;
+            };
+            let updates: Vec<(String, String)> = pairs
+                .into_iter()
+                .map(|(rom, h)| (rom, ra_map.get(&h).cloned().unwrap_or_default()))
+                .collect();
+            let sys_write = system.clone();
+            let result = state
+                .library_writer
+                .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
+                    let changed = LibraryDb::set_ra_ids(conn, &sys_write, &updates)?;
+                    // This phase runs AFTER the startup stats refresh, so when it
+                    // changes ra_id it must re-refresh the system's stats — the
+                    // metadata page reads RA coverage from game_library_system_stats.
+                    if changed > 0 {
+                        LibraryDb::refresh_game_library_system_stats(conn, &sys_write)?;
+                    }
+                    Ok::<_, replay_control_core::error::Error>(changed)
+                })
+                .await;
+            match result {
+                Ok(Ok(changed)) if changed > 0 => {
+                    tracing::info!("reresolve_rc_hash: {system}: {changed} ra_id(s) updated")
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => tracing::warn!("reresolve_rc_hash: {system}: {e}"),
+                Err(e) => tracing::warn!("reresolve_rc_hash: {system}: writer unavailable: {e}"),
+            }
+        }
+    }
+
     /// Phase: detect changes in bundled enrichment inputs (catalog DB
     /// rows + Shmups Wiki page index + matcher) and rescan affected systems
     /// when the per-storage stamp is stale. The composite version comes from
@@ -1973,7 +2100,7 @@ impl BackgroundManager {
                         continue;
                     }
                     let enrich_ms = enrich_started.elapsed().as_millis();
-                    if !roms.is_empty() && rom_hash::is_hash_eligible(sys.folder_name) {
+                    if !roms.is_empty() && is_hash_identifiable(sys.folder_name) {
                         identity_jobs.push(IdentityJob {
                             system: sys.folder_name.to_string(),
                             roms: roms.clone(),
@@ -3162,7 +3289,7 @@ impl AppState {
                                     )
                                 }
                             }
-                            if !roms.is_empty() && rom_hash::is_hash_eligible(system) {
+                            if !roms.is_empty() && is_hash_identifiable(system) {
                                 BackgroundManager::spawn_identity_jobs(
                                     state.clone(),
                                     storage.clone(),

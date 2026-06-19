@@ -463,6 +463,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowUnlicensed => "sin licencia",
         Key::MetadataRowSpecial => "especiales",
         Key::MetadataRowVerified => "verificados",
+        Key::MetadataRowRetroAchievements => "RetroAchievements",
+        Key::MetadataRowNoRetroAchievements => "RetroAchievements no compatible",
         Key::MetadataRowCoOp => "coop.",
         Key::MetadataRowDrivers => "Controladores:",
         Key::MetadataDriverWorking => "funcionan",

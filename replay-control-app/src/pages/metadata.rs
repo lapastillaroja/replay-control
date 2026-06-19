@@ -10,6 +10,7 @@ use crate::server_fns::{
     SystemStatsRefreshState, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
+use replay_control_core::systems::system_has_retroachievements;
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 type OverviewRes = Resource<Result<MetadataLibraryOverview, ServerFnError>>;
@@ -1175,6 +1176,19 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
             <CoverageBarRow cov field=CoverageField::BoxArt />
             <CoverageBarRow cov field=CoverageField::Manuals />
             <CoverageBarRow cov field=CoverageField::Videos />
+            // CRC identification — only for systems that hash-identify at all.
+            <Show when=move || cov.with_value(|c| c.verified_count > 0) fallback=|| ()>
+                <CoverageBarRow cov field=CoverageField::CrcVerified />
+            </Show>
+            // RetroAchievements — shown for every RA-supported system (even at
+            // 0%, e.g. discs pre-resolution). Systems RA doesn't cover get a
+            // footer note instead (see footer_row_view), never a bar.
+            <Show
+                when=move || cov.with_value(|c| system_has_retroachievements(&c.system))
+                fallback=|| ()
+            >
+                <CoverageBarRow cov field=CoverageField::RaId />
+            </Show>
 
             <div class="composition-row">
                 {move || composition_text(cov, i18n.locale.get())}
@@ -1202,6 +1216,8 @@ enum CoverageField {
     BoxArt,
     Manuals,
     Videos,
+    CrcVerified,
+    RaId,
 }
 
 #[component]
@@ -1225,6 +1241,12 @@ fn CoverageBarRow(cov: StoredValue<SystemCoverage>, field: CoverageField) -> imp
         CoverageField::BoxArt => (c.with_thumbnail, c.total_games, Key::MetadataRowBoxArt),
         CoverageField::Manuals => (c.with_manual, c.total_games, Key::MetadataRowManuals),
         CoverageField::Videos => (c.with_video, c.total_games, Key::MetadataRowVideos),
+        CoverageField::CrcVerified => (c.verified_count, c.total_games, Key::MetadataRowVerified),
+        CoverageField::RaId => (
+            c.with_ra_id,
+            c.total_games,
+            Key::MetadataRowRetroAchievements,
+        ),
     });
     let value = pct(count, total);
     let width = format!("width:{value}%");
@@ -1428,13 +1450,10 @@ fn footer_row_view(
         if let Some(yr) = format_year_range(c.min_year, c.max_year) {
             parts.push(yr);
         }
-        if c.verified_count > 0 {
-            parts.push(format!(
-                "{}/{} {}",
-                format_number(c.verified_count),
-                format_number(c.total_games),
-                t(locale, Key::MetadataRowVerified),
-            ));
+        // RA-supported systems show the % bar above (even at 0%). Systems RA
+        // doesn't cover (Amiga, C64, DOS, …) get this explicit note instead.
+        if !system_has_retroachievements(&c.system) {
+            parts.push(t(locale, Key::MetadataRowNoRetroAchievements).to_string());
         }
         if c.coop_count > 0 {
             parts.push(format!(

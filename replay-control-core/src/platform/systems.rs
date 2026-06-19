@@ -44,6 +44,18 @@ pub struct System {
     /// no thumbnail source is known for this system.
     #[serde(skip)]
     pub thumbnail_repos: &'static [&'static str],
+    /// Whether the library resolves RetroAchievements for this system, so the
+    /// metadata page shows RA coverage (a %, even 0%) rather than an
+    /// "unsupported" note. True for the carts/discs carried in the catalog
+    /// `ra_hash` table (discs resolve at scan time via boot-file rc_hash) and
+    /// every arcade board (Neo Geo included, matched by romset md5).
+    ///
+    /// False for systems we don't match RA for — both those RA genuinely has no
+    /// console for (Amiga, C64, DOS, X68000, …) and a few RA *does* cover but we
+    /// don't yet ingest (Atari, PC Engine HuCard, Neo Geo Pocket, DS). Reflects
+    /// our pipeline's capability, not RA's full console list.
+    #[serde(skip)]
+    pub has_retroachievements: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -73,6 +85,7 @@ pub static SYSTEMS: &[System] = &[
         // FBNeo primary, MAME fallback — each libretro-thumbnails repo has
         // some box arts the other lacks, so two-repo lookup is intentional.
         thumbnail_repos: &["FBNeo - Arcade Games", "MAME"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "arcade_mame",
@@ -89,6 +102,7 @@ pub static SYSTEMS: &[System] = &[
         // libretro-thumbnails uses display names as filenames, so the manifest
         // builder translates MAME codenames via arcade_db.
         thumbnail_repos: &["MAME", "FBNeo - Arcade Games"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "arcade_mame_2k3p",
@@ -102,6 +116,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["MAME"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "arcade_dc",
@@ -116,6 +131,7 @@ pub static SYSTEMS: &[System] = &[
         // GD-ROM / flash-based, not ROM chips.
         uses_megabit: false,
         thumbnail_repos: &["Atomiswave", "Sega - Naomi", "Sega - Naomi 2"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "arcade_stv",
@@ -135,6 +151,7 @@ pub static SYSTEMS: &[System] = &[
         // Cartridge-based Saturn-derived arcade hardware.
         uses_megabit: true,
         thumbnail_repos: &["MAME"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "atari_2600",
@@ -148,6 +165,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Atari - 2600"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "atari_5200",
@@ -161,6 +179,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Atari - 5200"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "atari_7800",
@@ -176,6 +195,7 @@ pub static SYSTEMS: &[System] = &[
         // Slug renamed upstream from "Atari - 7800 ProSystem"; revisit when
         // catalog-build-time slug resolution lands.
         thumbnail_repos: &["Atari - 7800"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "atari_jaguar",
@@ -189,6 +209,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Atari - Jaguar"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "atari_lynx",
@@ -202,6 +223,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Atari - Lynx"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "amstrad_cpc",
@@ -215,6 +237,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Amstrad - CPC"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "commodore_ami",
@@ -231,6 +254,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Commodore - Amiga"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "commodore_amicd",
@@ -245,6 +269,7 @@ pub static SYSTEMS: &[System] = &[
         uses_megabit: false,
         // commodore_amicd covers CD32 + CDTV hardware
         thumbnail_repos: &["Commodore - CD32", "Commodore - CDTV"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "commodore_c64",
@@ -261,6 +286,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Commodore - 64"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "ibm_pc",
@@ -276,6 +302,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["DOS"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "microsoft_msx",
@@ -291,6 +318,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Microsoft - MSX", "Microsoft - MSX2"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nec_pce",
@@ -305,6 +333,7 @@ pub static SYSTEMS: &[System] = &[
         // HuCards were credit-card-format cartridges with ROM chips, 2-20 Mbit.
         uses_megabit: true,
         thumbnail_repos: &["NEC - PC Engine - TurboGrafx 16"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "nec_pcecd",
@@ -318,6 +347,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["NEC - PC Engine CD - TurboGrafx-CD"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_ds",
@@ -332,6 +362,7 @@ pub static SYSTEMS: &[System] = &[
         // DS era used MB sizing, not Mbit.
         uses_megabit: false,
         thumbnail_repos: &["Nintendo - Nintendo DS"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "nintendo_gb",
@@ -345,6 +376,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Game Boy"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_gba",
@@ -358,6 +390,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Game Boy Advance"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_gbc",
@@ -371,6 +404,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Game Boy Color"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_n64",
@@ -384,6 +418,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Nintendo 64"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_nes",
@@ -397,6 +432,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Nintendo Entertainment System"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "nintendo_snes",
@@ -410,6 +446,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Super Nintendo Entertainment System"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "panasonic_3do",
@@ -423,6 +460,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["The 3DO Company - 3DO"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "philips_cdi",
@@ -438,6 +476,7 @@ pub static SYSTEMS: &[System] = &[
         // Slug renamed upstream from "Philips - CDi"; revisit when
         // catalog-build-time slug resolution lands.
         thumbnail_repos: &["Philips - CD-i"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "scummvm",
@@ -451,6 +490,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["ScummVM"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "sega_32x",
@@ -464,6 +504,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Sega - 32X", "Sega - Mega-CD - Sega CD"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_cd",
@@ -477,6 +518,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sega - Mega-CD - Sega CD"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_dc",
@@ -490,6 +532,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sega - Dreamcast"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_gg",
@@ -503,6 +546,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Sega - Game Gear"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_sg",
@@ -516,6 +560,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Sega - SG-1000"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_smd",
@@ -529,6 +574,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Sega - Mega Drive - Genesis"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_sms",
@@ -542,6 +588,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Sega - Master System - Mark III"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sega_st",
@@ -555,6 +602,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sega - Saturn"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "sharp_x68k",
@@ -570,6 +618,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sharp - X68000"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "sinclair_zx",
@@ -585,6 +634,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sinclair - ZX Spectrum"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "snk_ng",
@@ -599,6 +649,7 @@ pub static SYSTEMS: &[System] = &[
         // "330 MEGA" on KOF labels — largest cartridges ever made.
         uses_megabit: true,
         thumbnail_repos: &["SNK - Neo Geo"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "snk_ngcd",
@@ -612,6 +663,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["SNK - Neo Geo CD"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "snk_ngp",
@@ -625,6 +677,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["SNK - Neo Geo Pocket"],
+        has_retroachievements: false,
     },
     System {
         folder_name: "sony_psx",
@@ -640,6 +693,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: false,
         thumbnail_repos: &["Sony - PlayStation"],
+        has_retroachievements: true,
     },
     System {
         folder_name: "alpha_player",
@@ -661,6 +715,7 @@ pub static SYSTEMS: &[System] = &[
         hidden: true,
         uses_megabit: false,
         thumbnail_repos: &[],
+        has_retroachievements: false,
     },
 ];
 
@@ -795,6 +850,12 @@ pub fn system_thumbnail_repos(folder_name: &str) -> Option<&'static [&'static st
 /// Uses the system registry rather than hardcoded folder name lists.
 pub fn is_arcade_system(folder_name: &str) -> bool {
     find_system(folder_name).is_some_and(System::is_arcade)
+}
+
+/// Whether the library resolves RetroAchievements for `folder_name` (see
+/// [`System::has_retroachievements`]). Unknown systems return `false`.
+pub fn system_has_retroachievements(folder_name: &str) -> bool {
+    find_system(folder_name).is_some_and(|s| s.has_retroachievements)
 }
 
 /// Which upstream curates a given arcade ROM's metadata.

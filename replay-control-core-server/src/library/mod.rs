@@ -21,6 +21,8 @@ pub mod manuals;
 #[cfg(feature = "library")]
 pub mod matching;
 #[cfg(feature = "library")]
+pub mod rc_hash_disc;
+#[cfg(feature = "library")]
 pub mod search_recognizer;
 #[cfg(feature = "library")]
 pub mod thumbnails;

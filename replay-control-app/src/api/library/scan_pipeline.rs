@@ -176,9 +176,13 @@ impl LibraryService {
         HashMap<String, replay_control_core_server::rom_hash::HashResult>,
         HashStats,
     ) {
+        use replay_control_core_server::rc_hash_disc;
         use replay_control_core_server::rom_hash::{self, HashResult};
 
-        if !rom_hash::is_hash_eligible(system) {
+        // Disc systems (PSX, Sega CD) RA-hash via the boot-file recipe; carts via
+        // the No-Intro CRC path. Anything else has no hash identification.
+        let is_disc = rc_hash_disc::is_disc_rc_hash_system(system);
+        if !rom_hash::is_hash_eligible(system) && !is_disc {
             return (HashMap::new(), HashStats::default());
         }
 
@@ -200,17 +204,30 @@ impl LibraryService {
         let input_ms = input_started.elapsed().as_millis();
 
         let hash_started = Instant::now();
-        let hash_result = rom_hash::hash_and_identify_with_options_and_cancel(
-            system,
-            &rom_files,
-            &scan_inputs.cached_hashes,
-            &storage.root,
-            rom_hash::HashOptions {
-                force_rehash: scan_inputs.options.force_rehash,
-            },
-            hash_cancel.clone(),
-        )
-        .await;
+        let hash_options = rom_hash::HashOptions {
+            force_rehash: scan_inputs.options.force_rehash,
+        };
+        let hash_result = if is_disc {
+            rc_hash_disc::hash_and_identify_discs(
+                system,
+                &rom_files,
+                &scan_inputs.cached_hashes,
+                &storage.root,
+                hash_options,
+                hash_cancel.clone(),
+            )
+            .await
+        } else {
+            rom_hash::hash_and_identify_with_options_and_cancel(
+                system,
+                &rom_files,
+                &scan_inputs.cached_hashes,
+                &storage.root,
+                hash_options,
+                hash_cancel.clone(),
+            )
+            .await
+        };
         let hash_ms = hash_started.elapsed().as_millis();
         let stats = hash_result.stats;
         log_hash_stats(system, stats);

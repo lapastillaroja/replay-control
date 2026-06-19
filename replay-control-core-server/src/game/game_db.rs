@@ -16,9 +16,6 @@ pub struct CanonicalGame {
     pub normalized_genre: String,
     pub description: String,
     pub source: String,
-    /// RetroAchievements game id (title-matched per system at catalog-build
-    /// time); empty when the game has no RA achievement set.
-    pub ra_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -33,6 +30,10 @@ pub struct GameEntry {
     pub canonical_name: String,
     pub region: String,
     pub crc32: u32,
+    /// RetroAchievements game id for THIS dump (per-`rom_entry`, hash-matched at
+    /// catalog-build time for whole-file cart systems). Empty when unmatched;
+    /// header carts + discs resolve `ra_id` at scan time via the `ra_hash` table.
+    pub ra_id: String,
     pub game: CanonicalGame,
 }
 
@@ -50,7 +51,6 @@ fn row_to_canonical_game(row: &rusqlite::Row<'_>) -> rusqlite::Result<CanonicalG
         normalized_genre: row.get(8)?,
         description: row.get(9)?,
         source: row.get(10)?,
-        ra_id: row.get(11)?,
     })
 }
 
@@ -62,6 +62,7 @@ fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         canonical_name: row.get(0)?,
         region: row.get(1)?,
         crc32: row.get::<_, i64>(2)? as u32,
+        ra_id: row.get(14)?,
         game: CanonicalGame {
             display_name: row.get(3)?,
             year: row.get::<_, i64>(4)? as u16,
@@ -74,7 +75,6 @@ fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
             normalized_genre: row.get(11)?,
             description: row.get(12)?,
             source: row.get(13)?,
-            ra_id: row.get(14)?,
         },
     })
 }
@@ -82,11 +82,10 @@ fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
 const ENTRY_COLS: &str = "re.filename_stem, re.region, re.crc32, \
      cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
      cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source, \
-     cg.ra_id";
+     re.ra_id";
 
 const CANONICAL_COLS: &str = "cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
-     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source, \
-     cg.ra_id";
+     cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
 
 /// Look up game metadata by filename stem (without extension) for a system.
 pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry> {
@@ -107,31 +106,61 @@ pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry>
     }
 }
 
+/// Run a `WHERE col IN (SELECT value FROM json_each(?2))` batch query against the
+/// catalog and collect the rows into a `HashMap` (first row per key wins).
+///
+/// `values_json` is the JSON array bound as `?2`; `system` is bound as `?1`.
+/// Returns `None` only when the catalog query itself fails (pool/SQL error),
+/// distinct from `Some(empty)` ("queried OK, nothing matched"). Backs every
+/// `*_batch` lookup so the json_each plumbing lives in exactly one place.
+async fn batch_lookup<K, V, F>(
+    system: &str,
+    values_json: String,
+    sql: String,
+    map_row: F,
+) -> Option<HashMap<K, V>>
+where
+    K: Eq + std::hash::Hash + Send + 'static,
+    V: Send + 'static,
+    F: Fn(&rusqlite::Row<'_>) -> rusqlite::Result<(K, V)> + Send + 'static,
+{
+    let system = system.to_string();
+    crate::catalog_pool::with_catalog(move |conn| {
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(rusqlite::params![system, values_json], |row| map_row(row))?;
+        let mut map: HashMap<K, V> = HashMap::new();
+        for row in rows {
+            let (k, v) = row?;
+            map.entry(k).or_insert(v);
+        }
+        Ok(map)
+    })
+    .await
+}
+
+/// `rom_entry JOIN canonical_game` SELECT body keyed by a `rom_entry` column, for
+/// the batch lookups that return [`GameEntry`].
+fn entry_join_sql(filter_col: &str) -> String {
+    format!(
+        "SELECT {ENTRY_COLS} FROM rom_entry re \
+         JOIN canonical_game cg ON cg.id = re.canonical_game_id \
+         WHERE re.system = ?1 AND re.{filter_col} IN (SELECT value FROM json_each(?2))"
+    )
+}
+
 /// Batch lookup by filename stems for a system. Returns entries keyed by the
 /// `canonical_name` (filename stem) that was found.
 pub async fn lookup_games_batch(system: &str, stems: &[&str]) -> HashMap<String, GameEntry> {
-    {
-        if stems.is_empty() {
-            return HashMap::new();
-        }
-        let system = system.to_string();
-        let stems_json = serde_json::to_string(stems).unwrap_or_else(|_| "[]".into());
-        return crate::catalog_pool::with_catalog(move |conn| {
-            let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entry re \
-                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
-                 WHERE re.system = ?1 \
-                   AND re.filename_stem IN (SELECT value FROM json_each(?2))"
-            ))?;
-            let rows = stmt.query_map(rusqlite::params![system, stems_json], |row| {
-                let entry = row_to_game_entry(row)?;
-                Ok((entry.canonical_name.clone(), entry))
-            })?;
-            rows.collect::<rusqlite::Result<HashMap<_, _>>>()
-        })
-        .await
-        .unwrap_or_default();
+    if stems.is_empty() {
+        return HashMap::new();
     }
+    let stems_json = serde_json::to_string(stems).unwrap_or_else(|_| "[]".into());
+    batch_lookup(system, stems_json, entry_join_sql("filename_stem"), |row| {
+        let entry = row_to_game_entry(row)?;
+        Ok((entry.canonical_name.clone(), entry))
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Look up game metadata by CRC32 hash for a system.
@@ -153,37 +182,50 @@ pub async fn lookup_by_crc(system: &str, crc32: u32) -> Option<GameEntry> {
     }
 }
 
-/// Batch CRC32 lookup. Returns entries keyed by their crc32.
+/// Batch CRC32 lookup. Returns entries keyed by their crc32 (first match wins).
 pub async fn lookup_by_crcs_batch(system: &str, crcs: &[u32]) -> HashMap<u32, GameEntry> {
-    {
-        if crcs.is_empty() {
-            return HashMap::new();
-        }
-        let system = system.to_string();
-        let crcs_i64: Vec<i64> = crcs.iter().map(|c| *c as i64).collect();
-        let crcs_json = serde_json::to_string(&crcs_i64).unwrap_or_else(|_| "[]".into());
-        return crate::catalog_pool::with_catalog(move |conn| {
-            let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM rom_entry re \
-                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
-                 WHERE re.system = ?1 \
-                   AND re.crc32 IN (SELECT value FROM json_each(?2))"
-            ))?;
-            let rows = stmt.query_map(rusqlite::params![system, crcs_json], |row| {
-                let entry = row_to_game_entry(row)?;
-                Ok((entry.crc32, entry))
-            })?;
-            // Deduplicate: first match per crc32 wins.
-            let mut map: HashMap<u32, GameEntry> = HashMap::new();
-            for row in rows {
-                let (k, v) = row?;
-                map.entry(k).or_insert(v);
-            }
-            Ok(map)
-        })
-        .await
-        .unwrap_or_default();
+    if crcs.is_empty() {
+        return HashMap::new();
     }
+    let crcs_i64: Vec<i64> = crcs.iter().map(|c| *c as i64).collect();
+    let crcs_json = serde_json::to_string(&crcs_i64).unwrap_or_else(|_| "[]".into());
+    batch_lookup(system, crcs_json, entry_join_sql("crc32"), |row| {
+        let entry = row_to_game_entry(row)?;
+        Ok((entry.crc32, entry))
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Batch lookup of RetroAchievements ids by runtime-computed `rc_hash`.
+///
+/// Header carts (NES/SNES/N64) and discs can't be RA-matched at build time
+/// (their RA hash is computed from the actual ROM bytes, header-stripped /
+/// boot-file), so the catalog ships an `ra_hash(system, hash, ra_id)` table and
+/// the scan computes the hash, then resolves it here. Keyed by the lowercase hash
+/// that matched. Whole-file carts are matched at build time via `rom_entry.ra_id`
+/// and don't use this path.
+///
+/// Returns `None` when the catalog query itself failed (pool unavailable / SQL
+/// error) — distinct from `Some(empty)`, which means "queried OK, nothing
+/// matched". Callers MUST keep that distinction: writing `ra_id = ""` for a
+/// failed lookup would clear good data (a transient catalog hiccup is not the
+/// same as "this dump has no RA set").
+pub async fn lookup_ra_id_by_rc_hash_batch(
+    system: &str,
+    hashes: &[String],
+) -> Option<HashMap<String, String>> {
+    if hashes.is_empty() {
+        return Some(HashMap::new());
+    }
+    let hashes_json = serde_json::to_string(hashes).unwrap_or_else(|_| "[]".into());
+    let sql = "SELECT hash, ra_id FROM ra_hash \
+               WHERE system = ?1 AND hash IN (SELECT value FROM json_each(?2))"
+        .to_string();
+    batch_lookup(system, hashes_json, sql, |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })
+    .await
 }
 
 /// Look up a canonical game by normalized title for a system.
@@ -242,7 +284,6 @@ pub async fn lookup_by_normalized_titles_batch(
                     normalized_genre: row.get(9)?,
                     description: row.get(10)?,
                     source: row.get(11)?,
-                    ra_id: row.get(12)?,
                 };
                 Ok((norm, cg))
             })?;
@@ -524,7 +565,7 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
         return crate::catalog_pool::with_catalog(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre, description, source, ra_id \
+                 normalized_genre, description, source \
                  FROM canonical_game WHERE system = ?1",
             )?;
             let rows = stmt.query_map(rusqlite::params![system], |row| {
@@ -542,7 +583,6 @@ pub async fn system_games_by_id(system: &str) -> HashMap<u32, CanonicalGame> {
                     normalized_genre: row.get(9)?,
                     description: row.get(10)?,
                     source: row.get(11)?,
-                    ra_id: row.get(12)?,
                 };
                 Ok((id, game))
             })?;
@@ -584,6 +624,35 @@ pub async fn console_release_dates() -> Vec<(String, String, String, String, Str
 mod tests {
     use super::*;
     use crate::catalog_pool::{init_test_catalog, using_stub_data};
+
+    #[tokio::test]
+    async fn lookup_ra_id_by_rc_hash_batch_resolves_known_hash() {
+        init_test_catalog().await;
+        // Stub catalog seeds one ra_hash row: nintendo_snes / aaaa… → 999.
+        let hashes = vec![
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            "deadbeefdeadbeefdeadbeefdeadbeef".to_string(),
+        ];
+        // Some(map) = query succeeded; None would mean the catalog lookup failed.
+        let map = lookup_ra_id_by_rc_hash_batch("nintendo_snes", &hashes)
+            .await
+            .expect("catalog query should succeed against the stub catalog");
+        assert_eq!(
+            map.get("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .map(String::as_str),
+            Some("999"),
+            "known rc_hash should resolve to its ra_id"
+        );
+        assert!(
+            !map.contains_key("deadbeefdeadbeefdeadbeefdeadbeef"),
+            "unknown rc_hash should not resolve"
+        );
+        // Wrong system: query succeeds but matches nothing — Some(empty), not None.
+        let other = lookup_ra_id_by_rc_hash_batch("nintendo_nes", &hashes)
+            .await
+            .expect("catalog query should succeed");
+        assert!(other.is_empty(), "hash belongs to a different system");
+    }
 
     #[tokio::test]
     async fn supported_systems_not_empty() {

@@ -11,6 +11,7 @@ use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::{self, RegionPreference};
 use replay_control_core::systems::{self, System};
+use replay_control_core::title_utils::filename_stem;
 
 /// Probe budget: number of attempts and inter-attempt delay. Constants so
 /// tests can reason about the worst-case wall time.
@@ -118,9 +119,8 @@ pub async fn list_roms(
     let roms_root = storage.roms_dir();
 
     let raw = walk_raw_roms_blocking(system_dir, roms_root.clone(), system).await?;
+    let raw = resolve_m3u_containers_blocking(raw, roms_root, system).await;
     let mut roms = materialize_rom_entry(system, raw).await;
-
-    roms = apply_m3u_dedup_blocking(roms, roms_root).await;
 
     roms.sort_by(|a, b| {
         let a_name = a
@@ -261,30 +261,24 @@ async fn walk_raw_roms_blocking(
     })
 }
 
-async fn apply_m3u_dedup_blocking(roms: Vec<RomEntry>, roms_root: PathBuf) -> Vec<RomEntry> {
-    let dedup = move || {
-        let mut roms = roms;
-        // catch_unwind so a panic inside apply_m3u_dedup doesn't erase the
-        // whole input list. Silently returning `Vec::new()` on panic would
-        // make every system look empty on any dedup bug — far worse than
-        // the original symptom (at worst, some disc files not deduped).
-        // AssertUnwindSafe: we don't care about `roms`' post-panic state
-        // beyond "it's a valid Vec we can return".
+async fn resolve_m3u_containers_blocking(
+    raw: Vec<RawRom>,
+    roms_root: PathBuf,
+    system: &'static System,
+) -> Vec<RawRom> {
+    let resolve = move || {
+        let mut raw = raw;
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            apply_m3u_dedup(&mut roms, &roms_root);
+            resolve_m3u_containers(&mut raw, &roms_root, system);
         }));
-        roms
+        raw
     };
-    {
-        tokio::task::spawn_blocking(dedup)
-            .await
-            .unwrap_or_else(|e| {
-                // JoinError here is task-cancel during runtime shutdown —
-                // no useful recovery, and we've already lost the input.
-                tracing::warn!("m3u dedup task join failed: {e}");
-                Vec::new()
-            })
-    }
+    tokio::task::spawn_blocking(resolve)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("m3u container resolution task join failed: {e}");
+            Vec::new()
+        })
 }
 
 /// Mark each ROM entry's `is_favorite` flag using the favorites on disk.
@@ -1083,13 +1077,10 @@ async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntr
     let mut out: Vec<RomEntry> = Vec::with_capacity(raw.len());
 
     if is_arcade {
-        let stems: Vec<&str> = raw
-            .iter()
-            .map(|r| replay_control_core::title_utils::filename_stem(&r.rom_filename))
-            .collect();
+        let stems: Vec<&str> = raw.iter().map(|r| filename_stem(&r.rom_filename)).collect();
         let mut batch = arcade_db::lookup_arcade_games_batch(system.folder_name, &stems).await;
         for r in raw {
-            let stem = replay_control_core::title_utils::filename_stem(&r.rom_filename);
+            let stem = filename_stem(&r.rom_filename);
             let resolved = batch
                 .remove(stem)
                 .map(|info| info.display_name)
@@ -1130,6 +1121,163 @@ async fn materialize_rom_entry(system: &System, raw: Vec<RawRom>) -> Vec<RomEntr
     }
 
     out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum M3uContainerKind {
+    DiscPlaylist,
+    FolderLauncher,
+    BinaryPlaylist,
+}
+
+fn classify_m3u_container(system: &System, m3u_path: &Path) -> M3uContainerKind {
+    if system.folder_name == "scummvm" {
+        M3uContainerKind::FolderLauncher
+    } else if is_binary_m3u(m3u_path) {
+        M3uContainerKind::BinaryPlaylist
+    } else {
+        M3uContainerKind::DiscPlaylist
+    }
+}
+
+fn raw_abs_path(raw: &RawRom, storage_root: &Path) -> PathBuf {
+    storage_root.join(raw.rom_path.trim_start_matches('/'))
+}
+
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+fn m3u_reference_candidates(line: &str, m3u_parent: &Path, roms_root: &Path) -> Vec<PathBuf> {
+    let normalized = line.replace('\\', "/");
+    let mut candidates = Vec::new();
+
+    if let Some(after_roms) = normalized.split("/roms/").nth(1) {
+        candidates.push(roms_root.join(after_roms));
+    }
+
+    candidates.push(m3u_parent.join(&normalized));
+
+    if let Some(filename) = Path::new(&normalized).file_name() {
+        candidates.push(m3u_parent.join(filename));
+    }
+
+    candidates
+}
+
+fn m3u_reference_alternates(line: &str) -> Vec<String> {
+    let normalized = line.replace('\\', "/");
+    let lower = normalized.to_lowercase();
+    if lower.ends_with(".svm") {
+        vec![format!("{}.scummvm", &normalized[..normalized.len() - 4])]
+    } else if lower.ends_with(".scummvm") {
+        vec![format!("{}.svm", &normalized[..normalized.len() - 8])]
+    } else {
+        Vec::new()
+    }
+}
+
+fn matching_raw_indices_for_m3u_reference(
+    line: &str,
+    m3u_parent: &Path,
+    roms_root: &Path,
+    path_index: &HashMap<String, usize>,
+) -> Vec<usize> {
+    let mut indices = Vec::new();
+    for candidate_line in std::iter::once(line.to_string()).chain(m3u_reference_alternates(line)) {
+        for candidate in m3u_reference_candidates(&candidate_line, m3u_parent, roms_root) {
+            if let Some(idx) = path_index.get(&path_key(&candidate)).copied()
+                && !indices.contains(&idx)
+            {
+                indices.push(idx);
+            }
+        }
+    }
+    indices
+}
+
+fn resolve_m3u_containers(raw: &mut Vec<RawRom>, roms_root: &Path, system: &System) {
+    if !raw.iter().any(|rom| rom.is_m3u) {
+        return;
+    }
+
+    let storage_root = roms_root.parent().unwrap_or(Path::new("/"));
+    let raw_paths: Vec<PathBuf> = raw
+        .iter()
+        .map(|rom| raw_abs_path(rom, storage_root))
+        .collect();
+    let path_index: HashMap<String, usize> = raw_paths
+        .iter()
+        .enumerate()
+        .map(|(idx, path)| (path_key(path), idx))
+        .collect();
+    let mut consumed_indices: HashSet<usize> = HashSet::new();
+
+    for m3u_idx in 0..raw.len() {
+        if !raw[m3u_idx].is_m3u {
+            continue;
+        }
+
+        let m3u_path = raw_paths[m3u_idx].clone();
+        let Some(m3u_parent) = m3u_path.parent() else {
+            continue;
+        };
+        let lines = parse_m3u_raw_lines(&m3u_path);
+        if lines.is_empty() {
+            continue;
+        }
+
+        let kind = classify_m3u_container(system, &m3u_path);
+        let mut child_indices = HashSet::new();
+        let mut child_dirs: Vec<PathBuf> = Vec::new();
+
+        for line in &lines {
+            for child_idx in
+                matching_raw_indices_for_m3u_reference(line, m3u_parent, roms_root, &path_index)
+            {
+                if child_idx == m3u_idx {
+                    continue;
+                }
+                child_indices.insert(child_idx);
+                if kind == M3uContainerKind::FolderLauncher
+                    && let Some(parent) = raw_paths[child_idx].parent()
+                    && !child_dirs.iter().any(|dir| dir == parent)
+                {
+                    child_dirs.push(parent.to_path_buf());
+                }
+            }
+        }
+
+        if kind == M3uContainerKind::FolderLauncher {
+            for child_dir in &child_dirs {
+                for (idx, path) in raw_paths.iter().enumerate() {
+                    if idx != m3u_idx && path.starts_with(child_dir) {
+                        child_indices.insert(idx);
+                    }
+                }
+            }
+        }
+
+        if child_indices.is_empty() {
+            consumed_indices.insert(m3u_idx);
+            continue;
+        }
+
+        let extra_size: u64 = if kind == M3uContainerKind::FolderLauncher {
+            child_dirs.iter().map(|dir| dir_total_size(dir)).sum()
+        } else {
+            child_indices.iter().map(|idx| raw[*idx].size_bytes).sum()
+        };
+        raw[m3u_idx].size_bytes += extra_size;
+        consumed_indices.extend(child_indices);
+    }
+
+    let mut idx = 0;
+    raw.retain(|_| {
+        let keep = !consumed_indices.contains(&idx);
+        idx += 1;
+        keep
+    });
 }
 
 /// Parse an M3U file and return the list of referenced filenames (just the
@@ -1623,6 +1771,35 @@ mod tests {
         // Only the M3U should remain; the .dim should be hidden
         assert_eq!(roms.len(), 1);
         assert!(roms[0].is_m3u);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn m3u_container_consumes_resolved_path_not_same_basename_elsewhere() {
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        let game_a = psx_dir.join("Game A");
+        let game_b = psx_dir.join("Game B");
+        fs::create_dir_all(&game_a).unwrap();
+        fs::create_dir_all(&game_b).unwrap();
+
+        fs::write(game_a.join("Game A.m3u"), "Disc 1.chd\n").unwrap();
+        fs::write(game_a.join("Disc 1.chd"), [0u8; 100]).unwrap();
+        fs::write(game_b.join("Disc 1.chd"), [0u8; 300]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let roms = list_roms(&storage, "sony_psx", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 2, "Expected M3U + unrelated same-name disc");
+        let m3u = roms.iter().find(|r| r.is_m3u).unwrap();
+        let m3u_own_size = fs::metadata(game_a.join("Game A.m3u")).unwrap().len();
+        assert_eq!(m3u.size_bytes, m3u_own_size + 100);
+        assert!(roms.iter().any(|rom| {
+            rom.game
+                .rom_path
+                .ends_with("roms/sony_psx/Game B/Disc 1.chd")
+        }));
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -79,6 +79,7 @@ struct GameLibrarySystemStats {
     resource_count: usize,
     coop_count: usize,
     verified_count: usize,
+    ra_id_count: usize,
     driver_status_json: Option<String>,
     refresh_state: StatsRefreshState,
     updated_at: Option<i64>,
@@ -118,6 +119,7 @@ struct OverviewStatsRow {
     resource_count: usize,
     coop_count: usize,
     verified_count: usize,
+    ra_id_count: usize,
     driver_status_json: Option<String>,
     refresh_state: StatsRefreshState,
     updated_at: Option<i64>,
@@ -318,7 +320,7 @@ impl LibraryDb {
                         player_count_distribution_json, rating_known_count, description_count,
                         boxart_count, snap_count, title_screen_count, manual_count, video_count,
                         resource_count, coop_count, verified_count, driver_status_json,
-                        refresh_state, updated_at
+                        refresh_state, updated_at, ra_id_count
                  FROM game_library_system_stats
                  ORDER BY system",
             )
@@ -357,6 +359,7 @@ impl LibraryDb {
                     driver_status_json: row.get(28)?,
                     refresh_state: StatsRefreshState::from_i64(row.get::<_, i64>(29)?),
                     updated_at: row.get(30)?,
+                    ra_id_count: row.get::<_, i64>(31).unwrap_or(0) as usize,
                 })
             })
             .map_err(|e| Error::Other(format!("query load_game_library_system_stats: {e}")))?;
@@ -383,7 +386,8 @@ impl LibraryDb {
                         thumbnail_total_size_bytes, thumbnail_file_count,
                         thumbnail_boxart_file_count, thumbnail_snap_file_count,
                         thumbnail_title_file_count, manual_count, video_count, resource_count,
-                        coop_count, verified_count, driver_status_json, refresh_state, updated_at
+                        coop_count, verified_count, driver_status_json, refresh_state, updated_at,
+                        ra_id_count
                  FROM game_library_system_stats
                  WHERE rom_count > 0",
             )
@@ -427,6 +431,7 @@ impl LibraryDb {
                     driver_status_json: row.get(33)?,
                     refresh_state: StatsRefreshState::from_i64(row.get::<_, i64>(34)?),
                     updated_at: row.get(35)?,
+                    ra_id_count: row.get::<_, i64>(36).unwrap_or(0) as usize,
                 })
             })
             .map_err(|e| Error::Other(format!("query library overview stats: {e}")))?;
@@ -488,6 +493,7 @@ impl LibraryDb {
                 special_count: row.special_count,
                 coop_count: row.coop_count,
                 verified_count: row.verified_count,
+                with_ra_id: row.ra_id_count,
                 min_year: row.release_year_min,
                 max_year: row.release_year_max,
                 driver_status,
@@ -547,6 +553,7 @@ impl LibraryDb {
         let boxart_count = count_where(conn, system, "box_art_url IS NOT NULL")?;
         let coop_count = count_where(conn, system, "cooperative = 1")?;
         let verified_count = count_where(conn, system, "hash_matched_name IS NOT NULL")?;
+        let ra_id_count = count_where(conn, system, "ra_id != ''")?;
         let (release_year_min, release_year_max) = conn
             .query_row(
                 "SELECT MIN(CAST(substr(release_date, 1, 4) AS INTEGER)),
@@ -625,6 +632,7 @@ impl LibraryDb {
             resource_count,
             coop_count,
             verified_count,
+            ra_id_count,
             driver_status_json: driver_status_json(conn, system)?,
             refresh_state: StatsRefreshState::Fresh,
             updated_at: Some(unix_now()),
@@ -648,11 +656,11 @@ impl LibraryDb {
                 player_count_distribution_json, rating_known_count, description_count,
                 boxart_count, snap_count, title_screen_count, manual_count, video_count,
                 resource_count, coop_count, verified_count, driver_status_json,
-                refresh_state, updated_at
+                refresh_state, updated_at, ra_id_count
              )
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                      ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)
+                     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)
              ON CONFLICT(system) DO UPDATE SET
                 rom_count = excluded.rom_count,
                 total_size_bytes = excluded.total_size_bytes,
@@ -683,7 +691,8 @@ impl LibraryDb {
                 verified_count = excluded.verified_count,
                 driver_status_json = excluded.driver_status_json,
                 refresh_state = excluded.refresh_state,
-                updated_at = excluded.updated_at",
+                updated_at = excluded.updated_at,
+                ra_id_count = excluded.ra_id_count",
             params![
                 stats.system,
                 stats.rom_count as i64,
@@ -716,6 +725,7 @@ impl LibraryDb {
                 stats.driver_status_json,
                 stats.refresh_state.as_i64(),
                 stats.updated_at,
+                stats.ra_id_count as i64,
             ],
         )
         .map_err(|e| Error::Other(format!("upsert game_library_system_stats: {e}")))?;
@@ -896,6 +906,7 @@ mod tests {
         mario.cooperative = true;
         mario.identity_state = IdentityState::CompleteMatched;
         mario.hash_matched_name = Some("Super Mario World".into());
+        mario.ra_id = "228".into();
         let zelda = super::super::tests::make_game_entry("snes", "Zelda.sfc", false);
 
         LibraryDb::save_system_entries(&mut conn, "snes", &[mario, zelda], None).unwrap();
@@ -933,6 +944,7 @@ mod tests {
         assert_eq!(coverage.with_description, 1);
         assert_eq!(coverage.coop_count, 1);
         assert_eq!(coverage.verified_count, 1);
+        assert_eq!(coverage.with_ra_id, 1);
         assert_eq!(coverage.min_year, Some(1991));
         assert_eq!(coverage.max_year, Some(1991));
 

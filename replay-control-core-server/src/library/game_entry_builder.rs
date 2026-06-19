@@ -4,10 +4,12 @@
 //! baked-in game databases and filename tags. No I/O — all inputs are passed in.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::arcade_db::ArcadeGameInfo;
 use crate::game_db::{CanonicalGame, GameEntry as CatalogGameEntry};
 use crate::library_db::{GameEntry, IdentityState};
+use crate::rc_hash_disc;
 use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, game_db};
@@ -180,12 +182,10 @@ fn build_single_entry(
         hash_mtime: hash.map(|h| h.mtime_secs),
         hash_size_bytes: hash.map(|h| h.size_bytes),
         hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
-        identity_state: if r.is_m3u
-            || !crate::rom_hash::is_file_hash_eligible(&r.game.system, rom_filename)
-        {
+        identity_state: if !is_identity_applicable(&r.game.system, rom_filename) {
             IdentityState::NotApplicable
         } else if let Some(hash) = hash {
-            IdentityState::from_hash_match(hash.matched_name.as_deref())
+            identity_state_from_hash(hash)
         } else {
             IdentityState::Pending
         },
@@ -199,7 +199,43 @@ fn build_single_entry(
         normalized_title_alt: String::new(),
         board,
         ra_id,
+        rc_hash: hash.and_then(|h| h.rc_hash.clone()),
     })
+}
+
+/// Whether a ROM file participates in hash identification (gets a CRC/rc_hash and
+/// an `ra_id`). Disc systems accept disc images/playlists; every other system
+/// uses the cartridge No-Intro eligibility. Disc files that aren't hash-eligible
+/// here would be marked `NotApplicable` and never hashed.
+fn is_identity_applicable(system: &str, rom_filename: &str) -> bool {
+    if rc_hash_disc::is_disc_rc_hash_system(system) {
+        is_disc_identity_candidate(rom_filename)
+    } else {
+        crate::rom_hash::is_file_hash_eligible(system, rom_filename)
+    }
+}
+
+fn is_disc_identity_candidate(rom_filename: &str) -> bool {
+    let ext = Path::new(rom_filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "m3u" | "chd" | "cue" | "bin" | "iso" | "img" | "gdi"
+    )
+}
+
+/// Terminal identity state from a computed hash. Matched when it resolved to a
+/// catalog name OR an `ra_id` — discs match via `ra_id` with no No-Intro name,
+/// so checking `matched_name` alone would mis-label a hash-matched disc.
+fn identity_state_from_hash(hash: &HashResult) -> IdentityState {
+    if hash.matched_name.is_some() || hash.ra_id.is_some() {
+        IdentityState::CompleteMatched
+    } else {
+        IdentityState::from_hash_match(None)
+    }
 }
 
 /// Populate `normalized_title` (and arcade clone-parent `normalized_title_alt`)
@@ -375,6 +411,32 @@ fn build_console_metadata(
         .get(rom_filename)
         .and_then(|hr| hr.matched_name.as_ref())
         .and_then(|name| batch.by_stem.get(name.as_str()).cloned());
+    // ra_id is per-dump and only trustworthy from a CONTENT match (CRC32 or
+    // runtime rc_hash) — never from stem/filename resolution. This is a
+    // deliberate precision-over-coverage choice: a flag shown must be correct.
+    //
+    //   - Header carts (NES/SNES/N64): resolved at scan time via the runtime
+    //     rc_hash → ra_hash lookup, carried on `HashResult::ra_id`.
+    //   - Whole-file carts: resolved from the CRC-matched `rom_entry` (`hash_entry`).
+    //
+    // Note `hash_entry` requires a CRC content match, so a merely RENAMED dump
+    // still resolves here (its bytes/CRC are unchanged) and keeps its ra_id. The
+    // ONLY time `ra_id` is dropped is when the content hash did NOT match and we
+    // fall back to `batch.by_stem.get(stem)` below — i.e. the user's file bytes
+    // aren't the verified dump. Carrying that row's ra_id would re-introduce the
+    // title-match false positives this design exists to eliminate, so we don't.
+    let ra_id = hash_results
+        .get(rom_filename)
+        .and_then(|hr| hr.ra_id.clone())
+        .or_else(|| {
+            hash_entry
+                .as_ref()
+                .map(|e| e.ra_id.clone())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_default();
+    // Filename/stem fallback (content NOT verified) — intentionally does not
+    // contribute `ra_id` (see above); it only supplies display/genre metadata.
     let entry = hash_entry.or_else(|| batch.by_stem.get(stem).cloned());
     let game = entry.map(|e| e.game).or_else(|| {
         let normalized = game_db::normalize_filename(stem);
@@ -406,9 +468,13 @@ fn build_console_metadata(
                 year,
                 cooperative,
                 None,
-                g.ra_id.clone(),
+                ra_id,
             ))
         }
+        // No catalog title row for display/genre — but `ra_id` was resolved
+        // independently from the content hash (rc_hash/CRC → ra_hash) and must
+        // survive. Hash-matched discs in particular often lack a canonical_game
+        // row yet still carry a verified RA id.
         None => Some((
             None,
             String::new(),
@@ -419,7 +485,7 @@ fn build_console_metadata(
             None,
             false,
             None,
-            String::new(),
+            ra_id,
         )),
     }
 }
@@ -657,7 +723,6 @@ mod tests {
             normalized_genre: "Action".to_string(),
             description: "Curated collection".to_string(),
             source: "community".to_string(),
-            ra_id: String::new(),
         }
     }
 
@@ -670,6 +735,7 @@ mod tests {
                 canonical_name: "AmigaVision".to_string(),
                 region: String::new(),
                 crc32: 0,
+                ra_id: String::new(),
                 game: canonical_game("AmigaVision Project"),
             },
         );

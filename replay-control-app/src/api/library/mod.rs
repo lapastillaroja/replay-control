@@ -755,6 +755,8 @@ mod tests {
                 hash_mtime: mtime_secs,
                 hash_size_bytes: None,
                 matched_name: Some("Super Mario World (USA)".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
         let scan_inputs = ScanInputs::new(
@@ -954,6 +956,8 @@ mod tests {
                 mtime_secs: 123,
                 size_bytes: 11,
                 matched_name: None,
+                ra_id: None,
+                rc_hash: None,
             },
         );
 

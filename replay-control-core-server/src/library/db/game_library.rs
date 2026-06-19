@@ -22,7 +22,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
     identity_state, release_date, release_precision, release_region_used, cooperative, \
-    normalized_title, normalized_title_alt, board, ra_id";
+    normalized_title, normalized_title_alt, board, ra_id, rc_hash";
 
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
@@ -469,10 +469,10 @@ impl LibraryDb {
                  box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                  scan_token, identity_state,
                  release_date, release_precision, release_region_used, cooperative,
-                 normalized_title, normalized_title_alt, board, ra_id)
+                 normalized_title, normalized_title_alt, board, ra_id, rc_hash)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27,
-                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36)
+                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     rom_path = excluded.rom_path,
                     display_name = excluded.display_name,
@@ -507,7 +507,8 @@ impl LibraryDb {
                     normalized_title = excluded.normalized_title,
                     normalized_title_alt = excluded.normalized_title_alt,
                     board = excluded.board,
-                    ra_id = excluded.ra_id",
+                    ra_id = excluded.ra_id,
+                    rc_hash = excluded.rc_hash",
             )
             .map_err(|e| Error::Other(format!("Prepare game_library upsert: {e}")))?;
 
@@ -556,6 +557,7 @@ impl LibraryDb {
                 &rom.normalized_title_alt,
                 rom.board.map(|b| b.as_tag()).unwrap_or_default(),
                 &rom.ra_id,
+                &rom.rc_hash,
             ])
             .map_err(|e| Error::Other(format!("Upsert game_library failed: {e}")))?;
         }
@@ -909,7 +911,7 @@ impl LibraryDb {
 
         let mut stmt = conn
             .prepare(
-                "SELECT rom_filename, crc32, hash_mtime, hash_size_bytes, hash_matched_name
+                "SELECT rom_filename, crc32, hash_mtime, hash_size_bytes, hash_matched_name, rc_hash, ra_id
                  FROM game_library
                  WHERE system = ?1
                    AND crc32 IS NOT NULL
@@ -932,6 +934,12 @@ impl LibraryDb {
                             hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
                             hash_size_bytes: row.get::<_, Option<i64>>(3)?.map(|s| s as u64),
                             matched_name: row.get(4)?,
+                            // rc_hash is nullable; carry it forward so a rescan can
+                            // re-resolve ra_id without re-reading the ROM.
+                            rc_hash: row.get::<_, Option<String>>(5)?,
+                            // ra_id fallback (empty → None) for the preserve-on-
+                            // lookup-failure path.
+                            ra_id: Some(row.get::<_, String>(6)?).filter(|s| !s.is_empty()),
                         },
                     ))
                 },
@@ -1230,7 +1238,9 @@ impl LibraryDb {
                          hash_matched_name = ?10,
                          identity_state = ?11,
                          normalized_title = ?12,
-                         normalized_title_alt = ?13
+                         normalized_title_alt = ?13,
+                         ra_id = ?16,
+                         rc_hash = ?17
                      WHERE system = ?1
                        AND rom_filename = ?2
                        AND identity_state = ?14
@@ -1262,6 +1272,8 @@ impl LibraryDb {
                         &entry.normalized_title_alt,
                         super::IdentityState::Running.as_i64(),
                         entry.size_bytes as i64,
+                        &entry.ra_id,
+                        &entry.rc_hash,
                     ])
                     .map_err(|e| Error::Other(format!("Update identity entry: {e}")))?;
             }
@@ -1269,6 +1281,60 @@ impl LibraryDb {
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         Ok(updated)
+    }
+
+    /// `(rom_filename, rc_hash)` for every row carrying a runtime `rc_hash`
+    /// (header carts: NES/SNES/N64). Lets a catalog refresh re-resolve `ra_id`
+    /// from the persisted hash without re-reading the ROM.
+    pub fn rc_hash_pairs(conn: &Connection, system: &str) -> Result<Vec<(String, String)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, rc_hash FROM game_library
+                 WHERE system = ?1 AND rc_hash IS NOT NULL AND rc_hash != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare rc_hash_pairs: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::Other(format!("Query rc_hash_pairs: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| Error::Other(format!("read rc_hash_pairs: {e}")))?);
+        }
+        Ok(out)
+    }
+
+    /// Set `ra_id` for the given `(rom_filename, ra_id)` pairs, writing only rows
+    /// whose value actually changes. Used to re-resolve header-cart `ra_id` from
+    /// `rc_hash` after a catalog refresh, independent of the scan cache. Returns
+    /// the number of rows changed.
+    pub fn set_ra_ids(
+        conn: &mut Connection,
+        system: &str,
+        pairs: &[(String, String)],
+    ) -> Result<usize> {
+        if pairs.is_empty() {
+            return Ok(0);
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+        let mut changed = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library SET ra_id = ?3
+                     WHERE system = ?1 AND rom_filename = ?2 AND ra_id != ?3",
+                )
+                .map_err(|e| Error::Other(format!("Prepare set_ra_ids: {e}")))?;
+            for (rom_filename, ra_id) in pairs {
+                changed += stmt
+                    .execute(params![system, rom_filename, ra_id])
+                    .map_err(|e| Error::Other(format!("set_ra_ids update: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(changed)
     }
 
     /// Mark rows claimed by an identity worker but not successfully updated.
@@ -4790,6 +4856,49 @@ mod tests {
             .get(&("snes".to_string(), "RoundTrip.sfc".to_string()))
             .expect("entry should load");
         assert_eq!(stored.ra_id, "4321");
+    }
+
+    #[test]
+    fn rc_hash_pairs_and_set_ra_ids_reresolve() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // A header cart with a persisted rc_hash but no ra_id yet (the stale
+        // state a catalog-only refresh must heal without re-reading the ROM).
+        let mut nes = make_game_entry("nes", "MegaMan2.nes", false);
+        nes.rc_hash = Some("0527a0ee512f69e08b8db6dc97964632".into());
+        nes.ra_id = String::new();
+        // A row with no rc_hash must be ignored by rc_hash_pairs.
+        let plain = make_game_entry("nes", "NoHash.nes", false);
+        LibraryDb::save_system_entries(&mut conn, "nes", &[nes, plain], None).unwrap();
+
+        let pairs = LibraryDb::rc_hash_pairs(&conn, "nes").unwrap();
+        assert_eq!(
+            pairs,
+            vec![(
+                "MegaMan2.nes".to_string(),
+                "0527a0ee512f69e08b8db6dc97964632".to_string()
+            )]
+        );
+
+        // Re-resolve: write the ra_id back (only the changed row).
+        let changed =
+            LibraryDb::set_ra_ids(&mut conn, "nes", &[("MegaMan2.nes".into(), "1451".into())])
+                .unwrap();
+        assert_eq!(changed, 1);
+
+        let loaded = LibraryDb::lookup_game_entries(&conn, &[("nes", "MegaMan2.nes")]).unwrap();
+        assert_eq!(
+            loaded
+                .get(&("nes".to_string(), "MegaMan2.nes".to_string()))
+                .unwrap()
+                .ra_id,
+            "1451"
+        );
+        // Idempotent: re-applying the same value changes nothing.
+        let again =
+            LibraryDb::set_ra_ids(&mut conn, "nes", &[("MegaMan2.nes".into(), "1451".into())])
+                .unwrap();
+        assert_eq!(again, 0);
     }
 
     #[test]

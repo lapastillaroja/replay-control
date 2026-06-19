@@ -10,7 +10,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Highlights
 
-- **RetroAchievements games are now flagged in your library.** Games that have a RetroAchievements achievement set show a 🏆 indicator on their detail page, including **arcade** games. A new **Has achievements** filter lets you browse only the games in your library that have an achievement set — in global search and on the system, developer, and board game lists.
+- **RetroAchievements games are flagged in your library — matched precisely by content.** Games with a RetroAchievements achievement set show a 🏆 indicator on their detail page, and a **Has achievements** filter lets you browse only those games (in global search and on the system, developer, and board lists). Matching is by content rather than title, so the flag is correct for the exact dump you own and reaches cartridge, arcade, **and disc** systems — PlayStation, Sega CD, Sega Saturn, Dreamcast, 3DO, and more.
+- **Disc games are recognized by their boot content.** A disc is identified by the same fingerprint RetroAchievements uses, so the specific version you have is flagged — or left unflagged when it genuinely has no achievement set, instead of guessing.
+- **Amiga games are now identified in your library.** Commodore Amiga and Amiga CD32 titles are recognized across the common naming conventions (WHDLoad, ADF, IPF), with genre, developer, and year filled in where available.
+- **Per-system pages show RetroAchievements coverage.** Each system's metadata view shows how many of your games have an achievement set, and clearly notes the systems RetroAchievements doesn't support.
 - **Settings system info refreshes live.** The System section in Settings now updates every second while you have the page open — CPU temperature, available RAM, network IP addresses, disk space, and OS uptime all stay current in real time.
 
 ---

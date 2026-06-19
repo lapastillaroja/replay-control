@@ -96,6 +96,10 @@ pub struct SystemCoverage {
     pub coop_count: usize,
     #[serde(default)]
     pub verified_count: usize,
+    /// ROMs carrying a RetroAchievements id (`ra_id != ''`) — hash-matched, so
+    /// every one is a precise link, not a title guess.
+    #[serde(default)]
+    pub with_ra_id: usize,
     #[serde(default)]
     pub min_year: Option<u16>,
     #[serde(default)]

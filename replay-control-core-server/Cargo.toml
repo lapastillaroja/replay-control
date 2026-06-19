@@ -8,7 +8,7 @@ repository.workspace = true
 
 [features]
 default = []
-library = ["dep:quick-xml"]
+library = ["dep:quick-xml", "dep:chd"]
 
 [dependencies]
 replay-control-core = { path = "../replay-control-core" }
@@ -18,6 +18,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 url = "2.5.8"
 crc32fast = "1.5.0"
+md-5 = "0.10.6"
 ring = "0.17.14"
 semver = "1.0.28"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
@@ -27,6 +28,7 @@ deadpool-sync = "0.2.0"
 tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process", "io-util"] }
 tokio-stream = "0.1.18"
 quick-xml = { version = "0.40.1", optional = true }
+chd = { version = "0.3.4", optional = true }
 reqwest = { workspace = true, features = ["stream"] }
 tempfile = "3.27.0"
 getrandom = "0.4.2"

@@ -43,9 +43,9 @@ pub struct HashIdentifyResult {
 ///
 /// Excluded categories:
 /// - CD systems (PSX, Saturn, Sega CD, PCE-CD, Dreamcast, 3DO, CD-i, Neo Geo CD)
-/// - Computer/folder systems (ScummVM, DOS/IBM PC, Sharp X68000, Amiga, C64, Amstrad)
-///   except MSX cartridge images, which are small single-file ROMs with
-///   No-Intro CRC data.
+/// - Computer/folder systems (ScummVM, DOS/IBM PC, Sharp X68000, C64, Amstrad)
+///   except MSX cartridge images (small single-file ROMs with No-Intro CRC) and
+///   Amiga disk images (.adf/.adz/.dms/.ipf carry stable TOSEC crc32).
 /// - Arcade (MAME, FBNeo — identified by romset name, not file content)
 /// - Nintendo DS (excluded for now — ROMs average 64 MB, first-scan too slow)
 struct HashSystemRule {
@@ -113,6 +113,15 @@ const HASH_SYSTEM_RULES: &[HashSystemRule] = &[
     HashSystemRule {
         system: "microsoft_msx",
         extensions: &["rom", "mx1", "mx2"],
+        excluded_name_markers: &[],
+    },
+    // Amiga has no No-Intro DAT; identification comes from libretro's WHDLoad
+    // (.lha), No-Intro (.ipf), and TOSEC (.adf) DATs, all carrying crc32. These
+    // whole-file formats are CRC-hashed (WHDLoad .lha is the RePlayOS default);
+    // anything else (.hdf/.m3u) still resolves by filename via `by_stem`.
+    HashSystemRule {
+        system: "commodore_ami",
+        extensions: &["lha", "adf", "adz", "dms", "ipf"],
         excluded_name_markers: &[],
     },
 ];
@@ -212,6 +221,105 @@ fn detect_header_skip(path: &Path) -> usize {
     }
 }
 
+/// rcheevos caps the bytes it MD5s at 64 MiB; we mirror that and also use it as
+/// the read cap. Every header-cart system (NES/SNES/N64) fits well under this.
+const RC_HASH_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Systems whose RetroAchievements hash must be computed from the raw ROM bytes
+/// at scan time (header-stripped / byte-order-normalized), then resolved via the
+/// catalog `ra_hash` table. Whole-file carts are excluded — their RA hash equals
+/// the No-Intro md5, matched at build time onto `rom_entry.ra_id`.
+const RC_HASH_SYSTEMS: &[&str] = &["nintendo_nes", "nintendo_snes", "nintendo_n64"];
+
+/// Whether `system` needs a runtime `rc_hash` (header carts only).
+pub fn needs_rc_hash(system: &str) -> bool {
+    RC_HASH_SYSTEMS.contains(&system)
+}
+
+fn md5_hex(bytes: &[u8]) -> String {
+    use md5::{Digest, Md5};
+    let digest = Md5::digest(bytes);
+    let mut s = String::with_capacity(32);
+    for b in digest {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// rc_hash_nes / FDS (rcheevos hash_rom.c): skip the 16-byte header iff the magic
+/// is present, else hash the whole file.
+fn rc_hash_nes(buf: &[u8]) -> String {
+    if buf.len() > 16 && (&buf[0..4] == b"NES\x1a" || &buf[0..4] == b"FDS\x1a") {
+        md5_hex(&buf[16..])
+    } else {
+        md5_hex(buf)
+    }
+}
+
+/// rc_hash_snes: skip a 512-byte SMC copier header iff `size % 0x2000 == 512`.
+fn rc_hash_snes(buf: &[u8]) -> String {
+    let aligned = (buf.len() / 0x2000) * 0x2000;
+    if buf.len() - aligned == 512 {
+        md5_hex(&buf[512..])
+    } else {
+        md5_hex(buf)
+    }
+}
+
+/// rc_hash_n64: detect endianness from byte 0, normalize to z64 (big-endian),
+/// then MD5. Returns `None` when the buffer isn't a recognizable N64 ROM.
+fn rc_hash_n64(buf: &[u8]) -> Option<String> {
+    if buf.is_empty() {
+        return None;
+    }
+    let mut data = buf.to_vec();
+    match data[0] {
+        0x80 | 0xE8 | 0x22 => {} // z64 / ndd: already native big-endian
+        0x37 => {
+            // v64: 16-bit byteswap
+            for c in data.chunks_exact_mut(2) {
+                c.swap(0, 1);
+            }
+        }
+        0x40 => {
+            // n64: 32-bit byteswap
+            for c in data.chunks_exact_mut(4) {
+                c.swap(0, 3);
+                c.swap(1, 2);
+            }
+        }
+        _ => return None, // "Not a Nintendo 64 ROM"
+    }
+    Some(md5_hex(&data))
+}
+
+/// Compute the RetroAchievements rc_hash for a header cart from its raw bytes.
+fn rc_hash_from_buffer(system: &str, buf: &[u8]) -> Option<String> {
+    match system {
+        "nintendo_nes" => Some(rc_hash_nes(buf)),
+        "nintendo_snes" => Some(rc_hash_snes(buf)),
+        "nintendo_n64" => rc_hash_n64(buf),
+        _ => None,
+    }
+}
+
+/// Read a (bounded, cart-sized) header-cart ROM once and compute both its
+/// No-Intro CRC32 (header-skipped, matching [`compute_crc32`]) and its
+/// RetroAchievements rc_hash. Single read → no extra I/O over the CRC pass.
+fn compute_crc32_and_rc_hash(system: &str, path: &Path) -> io::Result<(u32, Option<String>)> {
+    use std::io::Read;
+
+    let mut buf = Vec::new();
+    std::fs::File::open(path)?
+        .take(RC_HASH_MAX_BYTES)
+        .read_to_end(&mut buf)?;
+
+    let skip = detect_header_skip(path).min(buf.len());
+    let crc32 = crc32fast::hash(&buf[skip..]);
+    let rc_hash = rc_hash_from_buffer(system, &buf);
+    Ok((crc32, rc_hash))
+}
+
 /// Result of hashing and identifying a single ROM file.
 #[derive(Debug, Clone)]
 pub struct HashResult {
@@ -225,6 +333,13 @@ pub struct HashResult {
     pub size_bytes: u64,
     /// No-Intro canonical name if CRC matched, None if no match.
     pub matched_name: Option<String>,
+    /// RetroAchievements game id from the runtime `rc_hash → ra_hash` lookup, for
+    /// header carts (NES/SNES/N64). `None` for whole-file carts (those resolve
+    /// ra_id at build time via `rom_entry.ra_id`) and for unmatched hashes.
+    pub ra_id: Option<String>,
+    /// The computed `rc_hash` (header carts), persisted to `game_library` so a
+    /// catalog-only refresh can re-resolve `ra_id` without re-reading the ROM.
+    pub rc_hash: Option<String>,
 }
 
 /// Cached hash data from the database.
@@ -234,6 +349,15 @@ pub struct CachedHash {
     pub hash_mtime: i64,
     pub hash_size_bytes: Option<u64>,
     pub matched_name: Option<String>,
+    /// Previously computed `rc_hash` (header carts), preserved across rehashes so
+    /// a cache reuse can re-resolve `ra_id` against the current catalog without
+    /// re-reading the ROM. The resolved `ra_id` is normally recomputed from this
+    /// hash every scan so a catalog refresh always wins.
+    pub rc_hash: Option<String>,
+    /// Previously resolved `ra_id`, kept ONLY as a fallback: if the catalog
+    /// lookup fails mid-scan we preserve this instead of clearing the row to "".
+    /// On a successful lookup it is overwritten by the fresh result.
+    pub ra_id: Option<String>,
 }
 
 /// Reuse a cached hash when the current file identity still matches.
@@ -257,6 +381,13 @@ pub fn reusable_cached_hash(
         mtime_secs: current_mtime,
         size_bytes: current_size,
         matched_name: cached.matched_name.clone(),
+        // Only header carts (which have a cached rc_hash) source ra_id from the
+        // HashResult — carry the prior value as a preserve-on-failure fallback.
+        // Whole-file carts resolve ra_id from the CRC-matched rom_entry during
+        // enrichment, so leave it None here; otherwise a stale cached value would
+        // be preferred over the fresh catalog row on a catalog-only refresh.
+        ra_id: cached.rc_hash.as_ref().and_then(|_| cached.ra_id.clone()),
+        rc_hash: cached.rc_hash.clone(),
     })
 }
 
@@ -330,6 +461,7 @@ pub async fn hash_and_identify_with_options_and_cancel(
             crc32: u32,
             mtime_secs: i64,
             size_bytes: u64,
+            rc_hash: Option<String>,
         },
     }
 
@@ -405,12 +537,20 @@ pub async fn hash_and_identify_with_options_and_cancel(
                         }
                     }
 
-                    match compute_crc32(&abs_path) {
-                        Ok(crc32) => pending.push(Pending::NeedsLookup {
+                    // Header carts (NES/SNES/N64) compute the RA rc_hash in the
+                    // same read; whole-file carts only need the CRC32.
+                    let computed = if needs_rc_hash(&system_owned) {
+                        compute_crc32_and_rc_hash(&system_owned, &abs_path)
+                    } else {
+                        compute_crc32(&abs_path).map(|crc32| (crc32, None))
+                    };
+                    match computed {
+                        Ok((crc32, rc_hash)) => pending.push(Pending::NeedsLookup {
                             rom_filename: rom_filename.clone(),
                             crc32,
                             mtime_secs: current_mtime,
                             size_bytes: *size_bytes,
+                            rc_hash,
                         }),
                         Err(e) => {
                             stats.skipped += 1;
@@ -445,7 +585,9 @@ pub async fn hash_and_identify_with_options_and_cancel(
         game_db::lookup_by_crcs_batch(system, &fresh_crcs).await
     };
 
-    let results = pending
+    // Build every result first; ra_id is resolved afterwards so cached and
+    // freshly-hashed entries go through the same catalog lookup.
+    let mut results: Vec<HashResult> = pending
         .into_iter()
         .map(|p| match p {
             Pending::Cached(r) => r,
@@ -454,20 +596,51 @@ pub async fn hash_and_identify_with_options_and_cancel(
                 crc32,
                 mtime_secs,
                 size_bytes,
+                rc_hash,
             } => HashResult {
                 rom_filename,
                 crc32,
                 mtime_secs,
                 size_bytes,
                 matched_name: matches.get(&crc32).map(|e| e.canonical_name.clone()),
+                ra_id: None,
+                rc_hash,
             },
         })
         .collect();
+
+    // Re-resolve ra_id from rc_hash against the CURRENT catalog for every header
+    // cart (cached + fresh). Deliberately not cached: a catalog refresh must win,
+    // and this needs no file I/O (the rc_hash is already in hand). Whole-file
+    // carts carry no rc_hash and resolve ra_id via CRC during enrichment instead.
+    let rc_hashes: Vec<String> = results.iter().filter_map(|r| r.rc_hash.clone()).collect();
+    if !rc_hashes.is_empty() {
+        match game_db::lookup_ra_id_by_rc_hash_batch(system, &rc_hashes).await {
+            // Success: this is the authoritative current mapping. Overwrite every
+            // header cart's ra_id — including clearing rows whose RA set went away.
+            Some(ra_matches) => {
+                for r in &mut results {
+                    if let Some(h) = &r.rc_hash {
+                        r.ra_id = ra_matches.get(h).cloned();
+                    }
+                }
+            }
+            // Failure (catalog/pool/SQL error): do NOT clear. Cached rows keep the
+            // ra_id carried from cache; fresh rows stay None. The startup
+            // `reresolve_rc_hash` phase re-resolves once the catalog is healthy.
+            None => {
+                tracing::warn!(
+                    "{system}: rc_hash → ra_id lookup failed; preserving existing ra_id"
+                );
+            }
+        }
+    }
+
     HashIdentifyResult { results, stats }
 }
 
 /// Get a file's mtime as seconds since the UNIX epoch.
-fn file_mtime_secs(path: &Path) -> Option<i64> {
+pub(crate) fn file_mtime_secs(path: &Path) -> Option<i64> {
     std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -573,6 +746,83 @@ mod tests {
     }
 
     #[test]
+    fn needs_rc_hash_only_header_carts() {
+        assert!(needs_rc_hash("nintendo_nes"));
+        assert!(needs_rc_hash("nintendo_snes"));
+        assert!(needs_rc_hash("nintendo_n64"));
+        // Whole-file carts resolve ra_id at build time, not via rc_hash.
+        assert!(!needs_rc_hash("nintendo_gb"));
+        assert!(!needs_rc_hash("sega_smd"));
+        assert!(!needs_rc_hash("arcade_mame"));
+    }
+
+    #[test]
+    fn rc_hash_nes_skips_header_when_magic_present() {
+        let mut data = b"NES\x1a".to_vec();
+        data.extend_from_slice(&[0u8; 12]); // total 16-byte header
+        data.extend_from_slice(b"romdata");
+        assert_eq!(rc_hash_nes(&data), md5_hex(b"romdata"));
+    }
+
+    #[test]
+    fn rc_hash_nes_hashes_whole_when_no_magic() {
+        let data = b"plainromnoheader_____________".to_vec();
+        assert_eq!(rc_hash_nes(&data), md5_hex(&data));
+    }
+
+    #[test]
+    fn rc_hash_snes_skips_512_when_remainder() {
+        // size = 0x2000 + 512 → remainder 512 → skip the copier header.
+        let mut data = vec![0xAAu8; 512];
+        data.extend_from_slice(&vec![0xBBu8; 0x2000]);
+        assert_eq!(rc_hash_snes(&data), md5_hex(&vec![0xBBu8; 0x2000]));
+    }
+
+    #[test]
+    fn rc_hash_snes_no_skip_when_aligned() {
+        let data = vec![0xCCu8; 0x2000];
+        assert_eq!(rc_hash_snes(&data), md5_hex(&data));
+    }
+
+    #[test]
+    fn rc_hash_n64_z64_native() {
+        let data = vec![0x80u8, 1, 2, 3];
+        assert_eq!(rc_hash_n64(&data).unwrap(), md5_hex(&data));
+    }
+
+    #[test]
+    fn rc_hash_n64_v64_byteswap_matches_z64() {
+        let z64 = vec![0x80u8, 0x37, 0x12, 0x40, 0xAB, 0xCD, 0x00, 0x00];
+        let mut v64 = z64.clone();
+        for c in v64.chunks_exact_mut(2) {
+            c.swap(0, 1);
+        }
+        assert_eq!(v64[0], 0x37); // now a v64 ROM
+        assert_eq!(rc_hash_n64(&z64), rc_hash_n64(&v64));
+    }
+
+    #[test]
+    fn rc_hash_n64_unknown_returns_none() {
+        assert_eq!(rc_hash_n64(&[0x12, 0x34]), None);
+    }
+
+    #[test]
+    fn compute_crc32_and_rc_hash_nes_strips_for_both() {
+        let tmp = tempdir();
+        let path = tmp.join("game.nes");
+        let mut content = b"NES\x1a".to_vec();
+        content.extend_from_slice(&[0u8; 12]);
+        content.extend_from_slice(b"hello world");
+        fs::write(&path, &content).unwrap();
+
+        let (crc, rc) = compute_crc32_and_rc_hash("nintendo_nes", &path).unwrap();
+        // CRC32 strips the 16-byte header (extension rule) → crc of "hello world".
+        assert_eq!(crc, 0x0D4A_1185);
+        // rc_hash strips the 16-byte header (magic present) → md5 of "hello world".
+        assert_eq!(rc.unwrap(), md5_hex(b"hello world"));
+    }
+
+    #[test]
     fn header_skip_by_extension() {
         assert_eq!(detect_header_skip(Path::new("game.nes")), 16);
         assert_eq!(detect_header_skip(Path::new("game.NES")), 16);
@@ -617,6 +867,8 @@ mod tests {
                 hash_mtime: mtime,
                 hash_size_bytes: Some(100),
                 matched_name: Some("Cached Game Name".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
 
@@ -655,6 +907,8 @@ mod tests {
                 hash_mtime: 0, // Very old mtime — won't match current
                 hash_size_bytes: Some(99),
                 matched_name: Some("Old Name".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
 
@@ -691,6 +945,8 @@ mod tests {
                 hash_mtime: mtime,
                 hash_size_bytes: None,
                 matched_name: Some("Cached Game Name".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
 
@@ -724,6 +980,8 @@ mod tests {
                 hash_mtime: 0,
                 hash_size_bytes: Some(100),
                 matched_name: Some("Cached Game Name".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
 
@@ -756,6 +1014,8 @@ mod tests {
                 hash_mtime: file_mtime_secs(&abs_path).unwrap(),
                 hash_size_bytes: Some(100),
                 matched_name: Some("Cached Game Name".to_string()),
+                rc_hash: None,
+                ra_id: None,
             },
         );
 

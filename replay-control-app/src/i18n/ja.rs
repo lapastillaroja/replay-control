@@ -459,6 +459,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowUnlicensed => "非ライセンス",
         Key::MetadataRowSpecial => "特別版",
         Key::MetadataRowVerified => "検証済み",
+        Key::MetadataRowRetroAchievements => "RetroAchievements",
+        Key::MetadataRowNoRetroAchievements => "RetroAchievements非対応",
         Key::MetadataRowCoOp => "協力プレイ",
         Key::MetadataRowDrivers => "ドライバ:",
         Key::MetadataDriverWorking => "動作",

@@ -163,11 +163,16 @@ pub struct GameEntry {
     /// in `ArcadeBoard::from_sourcefile`. Populated at scan time from
     /// `arcade_db::ArcadeGameInfo::board`.
     pub board: Option<ArcadeBoard>,
-    /// RetroAchievements game id (from the built-in catalog's
-    /// `CanonicalGame.ra_id`). Empty when the game has no
-    /// RetroAchievements set. Used by the "has achievements" search filter and
-    /// the game-detail RetroAchievements pill.
+    /// RetroAchievements game id, hash-matched per dump: whole-file carts via
+    /// the CRC-matched `rom_entry.ra_id`, header carts/discs via `rc_hash` →
+    /// catalog `ra_hash`. Empty when the dump has no RA set. Used by the "has
+    /// achievements" search filter and the game-detail RetroAchievements pill.
     pub ra_id: String,
+    /// RetroAchievements `rc_hash` computed from the ROM bytes (header carts:
+    /// NES/SNES/N64). Persisted so a catalog-only refresh can re-resolve `ra_id`
+    /// against the new `ra_hash` table without re-reading the file. `None` for
+    /// whole-file carts (they resolve via CRC) and non-hash systems.
+    pub rc_hash: Option<String>,
 }
 
 /// Durable identity state for ROM hash matching.
@@ -465,6 +470,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         normalized_title_alt TEXT NOT NULL DEFAULT '',
         board TEXT NOT NULL DEFAULT '',
         ra_id TEXT NOT NULL DEFAULT '',
+        rc_hash TEXT,
         PRIMARY KEY (system, rom_filename)
     );
     CREATE INDEX IF NOT EXISTS idx_gl_board ON game_library(system, board) WHERE board != '';
@@ -626,7 +632,8 @@ const CREATE_GAME_LIBRARY_SYSTEM_STATS_SQL: &str = "
         verified_count INTEGER NOT NULL DEFAULT 0,
         driver_status_json TEXT,
         refresh_state INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER
+        updated_at INTEGER,
+        ra_id_count INTEGER NOT NULL DEFAULT 0
     );
 ";
 
@@ -695,6 +702,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "normalized_title_alt",
     "board",
     "ra_id",
+    "rc_hash",
 ];
 
 /// Column set of `game_library_meta`. Must match [`CREATE_GAME_LIBRARY_META_SQL`].
@@ -1244,6 +1252,7 @@ impl LibraryDb {
                 .unwrap_or_default()
                 .and_then(|tag| ArcadeBoard::from_tag(&tag)),
             ra_id: row.get::<_, String>(33).unwrap_or_default(),
+            rc_hash: row.get::<_, Option<String>>(34).unwrap_or_default(),
         })
     }
 }
@@ -1303,6 +1312,7 @@ mod tests {
             normalized_title_alt: String::new(),
             board: None,
             ra_id: String::new(),
+            rc_hash: None,
         }
     }
 
