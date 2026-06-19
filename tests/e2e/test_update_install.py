@@ -30,6 +30,47 @@ from conftest import (
 )
 
 
+def wait_for_update_cleanup(timeout=90):
+    """Wait until install temp payloads and rollback files are gone.
+
+    The background update checker may recreate available.json after the helper
+    script cleans the update directory. That file represents update state, not
+    an in-progress install payload, so ignore it here.
+    """
+    deadline = time.time() + timeout
+    state = {}
+
+    while time.time() < deadline:
+        state = {
+            "temp": ssh_cmd(
+                "find /var/tmp/replay-control-update -mindepth 1 "
+                "! -name available.json -print -quit 2>/dev/null || true"
+            ),
+            "script": ssh_cmd(
+                "test -e /var/tmp/replay-control-do-update.sh "
+                "&& echo EXISTS || echo CLEAN"
+            ),
+            "bak": ssh_cmd(
+                "test -e /usr/local/bin/replay-control-app.bak "
+                "&& echo EXISTS || echo CLEAN"
+            ),
+            "catalog_bak": ssh_cmd(
+                "test -e /usr/local/bin/catalog.sqlite.bak "
+                "&& echo EXISTS || echo CLEAN"
+            ),
+        }
+        if (
+            not state["temp"]
+            and state["script"] == "CLEAN"
+            and state["bak"] == "CLEAN"
+            and state["catalog_bak"] == "CLEAN"
+        ):
+            return state
+        time.sleep(2)
+
+    return state
+
+
 class TestUpdateNow:
 
     def test_update_now_navigates_to_updating(self, clean_pi, page):
@@ -93,24 +134,7 @@ class TestUpdateCleanup:
         wait_for_banner(page)
         click_update_now(page)
 
-        time.sleep(45)
-
-        temp = ssh_cmd(
-            "ls /var/tmp/replay-control-update/ 2>/dev/null "
-            "&& echo EXISTS || echo CLEAN"
-        )
-        script = ssh_cmd(
-            "ls /var/tmp/replay-control-do-update.sh 2>/dev/null "
-            "&& echo EXISTS || echo CLEAN"
-        )
-        bak = ssh_cmd(
-            "ls /usr/local/bin/replay-control-app.bak 2>/dev/null "
-            "&& echo EXISTS || echo CLEAN"
-        )
-        catalog_bak = ssh_cmd(
-            "ls /usr/local/bin/catalog.sqlite.bak 2>/dev/null "
-            "&& echo EXISTS || echo CLEAN"
-        )
+        cleanup = wait_for_update_cleanup()
         # The mock release ships a catalog asset; after update it should be
         # in place next to the binary so init_catalog can open it on restart.
         # `test -f` rather than `ls`: when the file exists, ls prints the
@@ -123,10 +147,12 @@ class TestUpdateCleanup:
             "&& echo EXISTS || echo MISSING"
         )
 
-        assert temp == "CLEAN", f"Temp files not cleaned: {temp}"
-        assert script == "CLEAN", f"Script not cleaned: {script}"
-        assert bak == "CLEAN", f"Backup not cleaned: {bak}"
-        assert catalog_bak == "CLEAN", f"Catalog backup not cleaned: {catalog_bak}"
+        assert not cleanup["temp"], f"Temp files not cleaned: {cleanup['temp']}"
+        assert cleanup["script"] == "CLEAN", f"Script not cleaned: {cleanup['script']}"
+        assert cleanup["bak"] == "CLEAN", f"Backup not cleaned: {cleanup['bak']}"
+        assert cleanup["catalog_bak"] == "CLEAN", (
+            f"Catalog backup not cleaned: {cleanup['catalog_bak']}"
+        )
         assert catalog == "EXISTS", f"Catalog missing after update: {catalog}"
 
 
