@@ -1,490 +1,802 @@
 [
  {
+  "hashes": [
+   "8e40507a386a676cc44827d6ec3f9e28"
+  ],
   "num_achievements": 26,
   "ra_id": "22684",
   "title": "~Homebrew~ Arno Dash"
  },
  {
+  "hashes": [
+   "579bd664e64f02ec1bf5085bffc0d7e0"
+  ],
   "num_achievements": 26,
   "ra_id": "24569",
   "title": "~Homebrew~ Arno Dash 2"
  },
  {
+  "hashes": [
+   "dea9e4e5891fbdcd3e0df16fc840afbe"
+  ],
   "num_achievements": 11,
   "ra_id": "22685",
   "title": "~Homebrew~ Cheril Perils Classic"
  },
  {
+  "hashes": [
+   "be7798f9073f9a587ff0a36b646c65b7"
+  ],
   "num_achievements": 15,
   "ra_id": "25804",
   "title": "~Homebrew~ Earth Attack"
  },
  {
+  "hashes": [
+   "1065ae51e06b8a07ce99998a37c7db79",
+   "7aeb05029bdb9a571b1b72482daad5eb"
+  ],
   "num_achievements": 9,
   "ra_id": "25010",
   "title": "~Homebrew~ Foryster"
  },
  {
+  "hashes": [
+   "784f9220a864953323b42aef566d667e"
+  ],
   "num_achievements": 6,
   "ra_id": "25825",
   "title": "~Homebrew~ H7N9"
  },
  {
+  "hashes": [
+   "ed86987c468fbdcf6255a22536c3bac1"
+  ],
   "num_achievements": 26,
   "ra_id": "25826",
   "title": "~Homebrew~ Hopman"
  },
  {
+  "hashes": [
+   "c07672a810c23e269a65a02e3893172a",
+   "e13c66c69904b94459fa46da26aca87e"
+  ],
   "num_achievements": 8,
   "ra_id": "25011",
   "title": "~Homebrew~ Jet Paco and Jet Puri"
  },
  {
+  "hashes": [
+   "9ced5749ab0db9d67b5446381a0182f7"
+  ],
   "num_achievements": 6,
   "ra_id": "25013",
   "title": "~Homebrew~ Klondike Solitaire"
  },
  {
+  "hashes": [
+   "894cb6837dc67fd4ada3be7126c1cbd4"
+  ],
   "num_achievements": 6,
   "ra_id": "25012",
   "title": "~Homebrew~ Mahjong Solitaire"
  },
  {
+  "hashes": [
+   "a90090e446b4e86ce3cadc451530c0ad"
+  ],
   "num_achievements": 20,
   "ra_id": "25009",
   "title": "~Homebrew~ Palikat"
  },
  {
+  "hashes": [
+   "54be39abfa98f34f9cfeeeaa75aee054"
+  ],
   "num_achievements": 23,
   "ra_id": "25602",
   "title": "~Homebrew~ Pegged"
  },
  {
+  "hashes": [
+   "f8d0df42b3143c16d3730a37ff1190b9"
+  ],
   "num_achievements": 20,
   "ra_id": "22087",
   "title": "~Homebrew~ Pitman"
  },
  {
+  "hashes": [
+   "3bec2aa3d11a1d1e9b1de9dbef6b513c"
+  ],
   "num_achievements": 8,
   "ra_id": "14474",
   "title": "~Homebrew~ Snake [Rick Skrbina]"
  },
  {
+  "hashes": [
+   "bb91e8818fdd78c9e6cd2b94bbe552ff"
+  ],
   "num_achievements": 37,
   "ra_id": "22345",
   "title": "~Homebrew~ Snake [under4mhz]"
  },
  {
+  "hashes": [
+   "44a7e8eaf9187835f3fb6c6ddda45327"
+  ],
   "num_achievements": 58,
   "ra_id": "19716",
   "title": "~Homebrew~ Super Uwol"
  },
  {
+  "hashes": [
+   "7cd478e059987105eaf4f2780be137c9"
+  ],
   "num_achievements": 25,
   "ra_id": "22072",
   "title": "~Homebrew~ Vexed"
  },
  {
+  "hashes": [
+   "cd87c1a8cd8bc137673a7fb057e2142e"
+  ],
   "num_achievements": 12,
   "ra_id": "14185",
   "title": "~Unlicensed~ Bomberman Special"
  },
  {
+  "hashes": [
+   "1c2c5851deb0e9142b5ff19e8dcd8442"
+  ],
   "num_achievements": 7,
   "ra_id": "24311",
   "title": "~Unlicensed~ Cabbage Patch Kids"
  },
  {
+  "hashes": [
+   "ff28e684eb3952ae3f7cf3e3d1c507ef"
+  ],
   "num_achievements": 13,
   "ra_id": "24546",
   "title": "~Unlicensed~ King's Valley"
  },
  {
+  "hashes": [
+   "7fe0bb81a812667f73a0ef5876cc30ac",
+   "e0321cd713ec1b48ff88f7df13e3ce28"
+  ],
   "num_achievements": 41,
   "ra_id": "14030",
   "title": "~Unlicensed~ Knightmare | Mo Yu Chuanqi"
  },
  {
+  "hashes": [
+   "c12474e0a2556adb2478bc4d99faba51"
+  ],
   "num_achievements": 10,
   "ra_id": "24548",
   "title": "~Unlicensed~ Magical Kid Wiz"
  },
  {
+  "hashes": [
+   "014f702585a68399afe55ea63ba0f7de"
+  ],
   "num_achievements": 12,
   "ra_id": "24549",
   "title": "~Unlicensed~ Magical Tree"
  },
  {
+  "hashes": [
+   "3071f939aaa0911fc0907aae5daaa160"
+  ],
   "num_achievements": 18,
   "ra_id": "14188",
   "title": "~Unlicensed~ Rally-X | Du Du Che"
  },
  {
+  "hashes": [
+   "be975a2510125ff4b545bb162826ef26"
+  ],
   "num_achievements": 16,
   "ra_id": "24556",
   "title": "~Unlicensed~ Road Fighter"
  },
  {
+  "hashes": [
+   "cb95017c8d13d95c91129f9b3b1f6798"
+  ],
   "num_achievements": 22,
   "ra_id": "24562",
   "title": "~Unlicensed~ Star Soldier"
  },
  {
+  "hashes": [
+   "8c2c0d7e8415ae7b0c577cf947e89e78"
+  ],
   "num_achievements": 19,
   "ra_id": "14191",
   "title": "~Unlicensed~ TwinBee"
  },
  {
+  "hashes": [
+   "b14852ce157619fd60666a6474936d69"
+  ],
   "num_achievements": 13,
   "ra_id": "24566",
   "title": "~Unlicensed~ Yie Ar Kung-Fu"
  },
  {
+  "hashes": [
+   "c1f51f5dbfb859b1204a812d9c08ffd3"
+  ],
   "num_achievements": 21,
   "ra_id": "22088",
   "title": "~Unlicensed~ Yie Ar Kung-Fu II"
  },
  {
+  "hashes": [
+   "b2ac0c7755e0d6ba0a737861ee190a53"
+  ],
   "num_achievements": 17,
   "ra_id": "24526",
   "title": "007 James Bond"
  },
  {
+  "hashes": [
+   "47cd2d0bbcb879302f83f2f7058f49d4"
+  ],
   "num_achievements": 13,
   "ra_id": "17875",
   "title": "Bank Panic"
  },
  {
+  "hashes": [
+   "0bf5b6959fc1b58d8e37f9647f47a0b3"
+  ],
   "num_achievements": 24,
   "ra_id": "13950",
   "title": "Bomb Jack"
  },
  {
+  "hashes": [
+   "25c742e43bc9f1329f3f26502fefb10a"
+  ],
   "num_achievements": 19,
   "ra_id": "24527",
   "title": "Borderline"
  },
  {
+  "hashes": [
+   "d87daad7de33105d703b613052ccc2dd"
+  ],
   "num_achievements": 41,
   "ra_id": "24528",
   "title": "C_So!"
  },
  {
+  "hashes": [
+   "286ba24b335a1600dfc611a0a9fe7875"
+  ],
   "num_achievements": 33,
   "ra_id": "13996",
   "title": "Chack'n Pop"
  },
  {
+  "hashes": [
+   "308e337a863bb9fa952426ef99180aa7",
+   "f70d4bcf91d3ad9313f9800f35b49536"
+  ],
   "num_achievements": 7,
   "ra_id": "24530",
   "title": "Champion Baseball"
  },
  {
+  "hashes": [
+   "71c32b1cf1e85d217421068ac8ccc655"
+  ],
   "num_achievements": 11,
   "ra_id": "17986",
   "title": "Champion Billiards"
  },
  {
+  "hashes": [
+   "3e346c6137cab263643e42411f64a74d",
+   "3f54756fd73c3fbe33b56d7954d12f31",
+   "7527098abb9df1db29ba9f495b06998a"
+  ],
   "num_achievements": 6,
   "ra_id": "24531",
   "title": "Champion Boxing"
  },
  {
+  "hashes": [
+   "1d87490269964239b64244fcabd18fe1",
+   "3c01bb2a4414989378c252f45a4e5050"
+  ],
   "num_achievements": 24,
   "ra_id": "24532",
   "title": "Champion Golf"
  },
  {
+  "hashes": [
+   "b3af58c60e62bb85522ddc29096cef60"
+  ],
   "num_achievements": 11,
   "ra_id": "24533",
   "title": "Champion Ice Hockey"
  },
  {
+  "hashes": [
+   "ed6e4e8e081b56be488f57abcb51a7e5"
+  ],
   "num_achievements": 14,
   "ra_id": "24534",
   "title": "Champion Kendou"
  },
  {
+  "hashes": [
+   "da9a4589303370e8a751c16b2cbfa628"
+  ],
   "num_achievements": 9,
   "ra_id": "24535",
   "title": "Champion Pro Wrestling"
  },
  {
+  "hashes": [
+   "810064687e1614b6a7fb985b82806d31"
+  ],
   "num_achievements": 8,
   "ra_id": "24536",
   "title": "Champion Soccer"
  },
  {
+  "hashes": [
+   "79e8f456fae5d3719731e960c9b4c612"
+  ],
   "num_achievements": 6,
   "ra_id": "24537",
   "title": "Champion Tennis"
  },
  {
+  "hashes": [
+   "f49d9ea611ccb9289994774406f20d06"
+  ],
   "num_achievements": 57,
   "ra_id": "22894",
   "title": "Championship Lode Runner"
  },
  {
+  "hashes": [
+   "ee557c7811f03c44965a56b80801a3b9"
+  ],
   "num_achievements": 13,
   "ra_id": "6809",
   "title": "Choplifter"
  },
  {
+  "hashes": [
+   "5f4d3c629e37e83794233b3cffc4cc0e"
+  ],
   "num_achievements": 12,
   "ra_id": "13484",
   "title": "Congo Bongo"
  },
  {
+  "hashes": [
+   "79f15598828e697e75c65130262d8d94"
+  ],
   "num_achievements": 33,
   "ra_id": "13997",
   "title": "Doki Doki Penguin Land"
  },
  {
+  "hashes": [
+   "0528eed7e7ae46ec8298098f1a22d18f",
+   "64d3cc8117292f6d5af8e1aad95bcb90"
+  ],
   "num_achievements": 14,
   "ra_id": "13951",
   "title": "Dragon Wang"
  },
  {
+  "hashes": [
+   "8eb2ab42d2bc3f3568e85cba2b46a251"
+  ],
   "num_achievements": 13,
   "ra_id": "24539",
   "title": "Drol"
  },
  {
+  "hashes": [
+   "23c751fe6bb8bd4f8c0cd9b0d39adecd"
+  ],
   "num_achievements": 16,
   "ra_id": "8175",
   "title": "Elevator Action"
  },
  {
+  "hashes": [
+   "7f0ae039dd072d825ebfd2d3bf02a2a0"
+  ],
   "num_achievements": 6,
   "ra_id": "6806",
   "title": "Exerion"
  },
  {
+  "hashes": [
+   "0bb6d2a43b340f56366edabd7e21fed4"
+  ],
   "num_achievements": 24,
   "ra_id": "13482",
   "title": "Flicky"
  },
  {
+  "hashes": [
+   "ac95c0655360f667e3ad705e2eb7367a"
+  ],
   "num_achievements": 49,
   "ra_id": "12363",
   "title": "Girl's Garden"
  },
  {
+  "hashes": [
+   "cb25a12e86c729f6a51ba3dea91c1547"
+  ],
   "num_achievements": 10,
   "ra_id": "24540",
   "title": "Golgo 13"
  },
  {
+  "hashes": [
+   "4d9cc3764321b668d1fc238e19794312"
+  ],
   "num_achievements": 25,
   "ra_id": "24541",
   "title": "GP World"
  },
  {
+  "hashes": [
+   "43c23a134aec3ab424405780ff729d54"
+  ],
   "num_achievements": 29,
   "ra_id": "13991",
   "title": "Gulkave"
  },
  {
+  "hashes": [
+   "f3f1042745e96e29bfdf920d031b8cd5"
+  ],
   "num_achievements": 18,
   "ra_id": "24542",
   "title": "Guzzler"
  },
  {
+  "hashes": [
+   "d10f38c614113cb34bbf4a19b487e1fb"
+  ],
   "num_achievements": 26,
   "ra_id": "13999",
   "title": "H.E.R.O."
  },
  {
+  "hashes": [
+   "314c865decbe6f578d9bfa23f27a08e6"
+  ],
   "num_achievements": 20,
   "ra_id": "24543",
   "title": "Hang On II"
  },
  {
+  "hashes": [
+   "8be690d357a99abd26ebb5378e9c0153"
+  ],
   "num_achievements": 14,
   "ra_id": "17985",
   "title": "Hustle Chumy"
  },
  {
+  "hashes": [
+   "d8e6d89d520c91a9ea219291b55284bb"
+  ],
   "num_achievements": 18,
   "ra_id": "18064",
   "title": "Hyper Sports"
  },
  {
+  "hashes": [
+   "4b4f02eb3cf7d5f9dcd1311d72e6d742"
+  ],
   "num_achievements": 86,
   "ra_id": "14186",
   "title": "Lode Runner"
  },
  {
+  "hashes": [
+   "21a7d483d75b71eb0997a5c0fdd8544b",
+   "8dcdd83e58be634a3735911a1af05bb3"
+  ],
   "num_achievements": 14,
   "ra_id": "25827",
   "title": "Loretta no Shouzou: Sherlock Holmes"
  },
  {
+  "hashes": [
+   "1dbb5c85962c2110ffe35ec536f96329",
+   "d9da8a32bd3b18881dfa2b469c85944e"
+  ],
   "num_achievements": 15,
   "ra_id": "24550",
   "title": "Mahjong"
  },
  {
+  "hashes": [
+   "cda3731948a50bb396b380f7fc82ec12"
+  ],
   "num_achievements": 11,
   "ra_id": "13998",
   "title": "Monaco GP"
  },
  {
+  "hashes": [
+   "56c559d0d82a3e6fb2e87230d39f32f4",
+   "cfced1ba39adee6a75dc830ed9c12f73"
+  ],
   "num_achievements": 13,
   "ra_id": "24551",
   "title": "N-Sub"
  },
  {
+  "hashes": [
+   "28d83150c298bcdae6aec51cc2c6975a"
+  ],
   "num_achievements": 84,
   "ra_id": "12408",
   "title": "Ninja Princess"
  },
  {
+  "hashes": [
+   "0f45fa8e9b985fd5c6545645462b9400"
+  ],
   "num_achievements": 13,
   "ra_id": "17745",
   "title": "Orguss"
  },
  {
+  "hashes": [
+   "3f429704761d34d7793e7123a183d7f6"
+  ],
   "num_achievements": 16,
   "ra_id": "14187",
   "title": "Othello"
  },
  {
+  "hashes": [
+   "8f46800e6fc7d5a40716045f6d739932"
+  ],
   "num_achievements": 16,
   "ra_id": "17771",
   "title": "Pacar"
  },
  {
+  "hashes": [
+   "37f5e516d9fbce05052204b67379a6da"
+  ],
   "num_achievements": 10,
   "ra_id": "6819",
   "title": "Pachinko"
  },
  {
+  "hashes": [
+   "a3409283bf8c808a15095cc005a74975",
+   "eadae13ff73047a47f354e258c12619e"
+  ],
   "num_achievements": 18,
   "ra_id": "19164",
   "title": "Pachinko II"
  },
  {
+  "hashes": [
+   "38ae610eb6266d4db8bc6d3dcb8fcd4a"
+  ],
   "num_achievements": 14,
   "ra_id": "13994",
   "title": "Pitfall II: The Lost Caverns"
  },
  {
+  "hashes": [
+   "7f841aa0c225662e26ca7a8df20b2eb8"
+  ],
   "num_achievements": 11,
   "ra_id": "24555",
   "title": "Pop Flamer"
  },
  {
+  "hashes": [
+   "a768a8ae921126300e98f9d918a4a0c9"
+  ],
   "num_achievements": 26,
   "ra_id": "17354",
   "title": "Q*bert"
  },
  {
+  "hashes": [
+   "108ffe4ba5c2c8c5e0459cb7f0cfac0e"
+  ],
   "num_achievements": 18,
   "ra_id": "14728",
   "title": "Rock n' Bolt"
  },
  {
+  "hashes": [
+   "7867c2dd7d67b291c617feccf23ceb52"
+  ],
   "num_achievements": 6,
   "ra_id": "25998",
   "title": "Rock n' Bolt [Subset - Overtime Overload]"
  },
  {
+  "hashes": [
+   "f77826f62d943c4a24f7fb9c3bb4a5f9"
+  ],
   "num_achievements": 12,
   "ra_id": "24557",
   "title": "Safari Hunting"
  },
  {
+  "hashes": [
+   "8384956e456a91ca59f9c5e72f1cb1c4"
+  ],
   "num_achievements": 7,
   "ra_id": "24558",
   "title": "Safari Race"
  },
  {
+  "hashes": [
+   "3f2acc9de65c8496c3d8470ef12dc210"
+  ],
   "num_achievements": 15,
   "ra_id": "14189",
   "title": "Sega Flipper"
  },
  {
+  "hashes": [
+   "e2619cf7c307ac1916c534519f6043d9"
+  ],
   "num_achievements": 18,
   "ra_id": "13992",
   "title": "Sega-Galaga"
  },
  {
+  "hashes": [
+   "7b0f2be3588337df59959ababbefe505"
+  ],
   "num_achievements": 9,
   "ra_id": "6803",
   "title": "Sindbad Mystery"
  },
  {
+  "hashes": [
+   "6cae3b6286041e742020aeb3cd2bdf52"
+  ],
   "num_achievements": 10,
   "ra_id": "19919",
   "title": "Soukoban"
  },
  {
+  "hashes": [
+   "b6aff368af8c8e1f0ae257c519d96ca8"
+  ],
   "num_achievements": 7,
   "ra_id": "5213",
   "title": "Space Armor"
  },
  {
+  "hashes": [
+   "87a97b049ec01b1803b93f06d0407586"
+  ],
   "num_achievements": 21,
   "ra_id": "14190",
   "title": "Space Invaders"
  },
  {
+  "hashes": [
+   "2321b2a684b83d58489fda2df66ab6fb"
+  ],
   "num_achievements": 11,
   "ra_id": "5397",
   "title": "Space Mountain"
  },
  {
+  "hashes": [
+   "c04dc7fb9d27629735edb1570ec39f00"
+  ],
   "num_achievements": 14,
   "ra_id": "5858",
   "title": "Space Slalom"
  },
  {
+  "hashes": [
+   "2cbd1f9f4927f9618390340f56f116a6"
+  ],
   "num_achievements": 126,
   "ra_id": "6787",
   "title": "Star Force"
  },
  {
+  "hashes": [
+   "0104171ade3cfeaf10c92926869e2a52",
+   "22200ef1461212cacdc58f6636d759fd",
+   "658ede490eae6af2b0f61dd136761d95",
+   "eccad04698782862f3785ff9708f73e8"
+  ],
   "num_achievements": 13,
   "ra_id": "13949",
   "title": "Star Jacker"
  },
  {
+  "hashes": [
+   "59d01bf1093a65e9ec08e533cfbbc5ff"
+  ],
   "num_achievements": 17,
   "ra_id": "24563",
   "title": "Super Tank"
  },
  {
+  "hashes": [
+   "1da64bab6808f8b6df159c912d3b4072",
+   "d2b0524a2cf5754c0fa1c900e9ecb06b",
+   "e2fca5d8609135caf5f4e2a88e38eabb"
+  ],
   "num_achievements": 14,
   "ra_id": "17798",
   "title": "The Black Onyx"
  },
  {
+  "hashes": [
+   "d047c10d6b27cf34ccb66340a089523a"
+  ],
   "num_achievements": 23,
   "ra_id": "13995",
   "title": "The Castle"
  },
  {
+  "hashes": [
+   "d26fabfe84ad40ae04a2cd3dc6cf75df"
+  ],
   "num_achievements": 22,
   "ra_id": "13993",
   "title": "Wonder Boy"
  },
  {
+  "hashes": [
+   "0dd197a0e1f43c0684f98b52514fce59"
+  ],
   "num_achievements": 10,
   "ra_id": "24565",
   "title": "Yamato"
  },
  {
+  "hashes": [
+   "52bbf5336c190610a0fb1ab0bdaca455"
+  ],
   "num_achievements": 8,
   "ra_id": "13483",
   "title": "Zaxxon"
  },
  {
+  "hashes": [
+   "0eda34ba313d3bb34558fd5939b19794",
+   "16856425e0bcc3ab475f46f7cfd00402"
+  ],
   "num_achievements": 12,
   "ra_id": "24567",
   "title": "Zippy Race"
  },
  {
+  "hashes": [
+   "4e457a6c5b4b613f2aac3472f6827a89"
+  ],
   "num_achievements": 12,
   "ra_id": "24568",
   "title": "Zoom 909"

@@ -12,13 +12,14 @@ For each of OUR supported systems that RetroAchievements covers, this fetches
 `API_GetGameList?f=1&h=1` (games WITH achievements, plus ROM hashes) and writes
 `data/retroachievements/<system>.json` as a facts-only array:
 
-    [ { "title": "...", "ra_id": "1234", "num_achievements": 48 }, ... ]
+    [ { "title": "...", "ra_id": "1234", "num_achievements": 48,
+        "hashes": ["<ra_hash>", ...] }, ... ]
 
-For console systems `build-catalog` reads `title` + `ra_id` and title-matches
-each entry to a `canonical_game` row. The `arcade` system additionally carries a
-`hashes` list per entry — `[ { ..., "hashes": ["<md5>", ...] } ]` — which
-`build-catalog` matches against `md5(arcade_game.rom_name)`. Achievement text
-and badges are NEVER bundled — only these facts (plan §4).
+Every entry carries RA's `hashes` (the `ra_hash` values). `build-catalog` matches
+them per realm: whole-file carts join `ra_hash == No-Intro md5`; header carts
+(NES/SNES/N64) match the runtime-computed rc_hash; arcade matches
+`md5(romset name)`. `title` is kept only as a fallback. Achievement text and
+badges are NEVER bundled — only these facts (plan §4).
 
 Why resolve IDs from the API
 ----------------------------
@@ -89,12 +90,24 @@ SYSTEM_TO_RA_CONSOLE = {
     "sega_32x": ["32X"],
     "microsoft_msx": ["MSX"],
     "arcade": ["Arcade"],
+    # Disc systems — RA matched at runtime by the boot-file rc_hash (the `ra_hash`
+    # here), independent of disc identification/cataloguing. See plan §10.6.
+    "sony_psx": ["PlayStation"],
+    "sony_ps2": ["PlayStation 2"],
+    "sony_psp": ["PlayStation Portable"],
+    "sega_st": ["Saturn"],
+    "sega_cd": ["Sega CD"],
+    "sega_dc": ["Dreamcast"],
+    "panasonic_3do": ["3DO Interactive Multiplayer"],
+    "nec_pcecd": ["PC Engine CD/TurboGrafx-CD"],
+    "snk_ngcd": ["Neo Geo CD"],
 }
 
-# Systems whose output keeps RA's per-game `hashes` list (build input for
-# hash-based matching). Only arcade needs it; console systems are title-matched,
-# so including their hashes would just bloat the files.
-HASH_MATCHED_SYSTEMS = {"arcade"}
+# All systems keep RA's per-game `hashes` list — it's the build input for
+# hash-based matching across every realm: arcade is `md5(romset name)`, whole-file
+# carts join `ra_hash == No-Intro md5`, and header carts (NES/SNES/N64) match the
+# runtime-computed rc_hash against these. (Title matching is only a fallback now.)
+HASH_MATCHED_SYSTEMS = set(SYSTEM_TO_RA_CONSOLE)
 
 
 def _get(endpoint: str, params: dict) -> object:

@@ -1,2460 +1,4196 @@
 [
  {
+  "hashes": [
+   "8e509301f6db1f89fee85aead8ebf8d4",
+   "b791e03946353e8afc0a06975318146f",
+   "ee3dcac13383404bd4178b4ca34e7e73",
+   "fd3819f2c0a9bc864c9c7eab107d4c7f"
+  ],
   "num_achievements": 18,
   "ra_id": "12745",
   "title": "~Demo~ Pocket Monsters Kin | Pocket Monsters Gin"
  },
  {
+  "hashes": [
+   "2bade7342d26974b8adcc7748ae398a6",
+   "4277d652ae603923cd46bb8535a0e1f9",
+   "c7e0daf97c6c94a121d80a29e7630b86"
+  ],
   "num_achievements": 51,
   "ra_id": "38064",
   "title": "~Hack~ Embers of Mana"
  },
  {
+  "hashes": [
+   "16044ddc9954974ebe308119acfadd44",
+   "185500ff85bd1ea1e87048c14de3b3e4"
+  ],
   "num_achievements": 100,
   "ra_id": "28237",
   "title": "~Hack~ Kanto Expansion Pak"
  },
  {
+  "hashes": [
+   "c39e609b35ac787ad92404914047d1a1"
+  ],
   "num_achievements": 89,
   "ra_id": "16189",
   "title": "~Hack~ Mario's Picross X"
  },
  {
+  "hashes": [
+   "ef5d2d297c1262dc353ac766a2a67f27"
+  ],
   "num_achievements": 38,
   "ra_id": "6690",
   "title": "~Hack~ Pokémon Blue Kaizo"
  },
  {
+  "hashes": [
+   "854390c4a18d0a1744fb437037b4a531"
+  ],
   "num_achievements": 40,
   "ra_id": "7317",
   "title": "~Hack~ Pokémon Brown Version"
  },
  {
+  "hashes": [
+   "fba12762da3e1d92a62acbcee04635c0"
+  ],
   "num_achievements": 84,
   "ra_id": "7590",
   "title": "~Hack~ Pokémon Grape Version"
  },
  {
+  "hashes": [
+   "1ef07bec11e159d0cb8092799c96356a"
+  ],
   "num_achievements": 21,
   "ra_id": "16548",
   "title": "~Hack~ Pokémon Little Cup Red"
  },
  {
+  "hashes": [
+   "36a3105487967946d62570f917a5eeab",
+   "ac0b46cd9ccb9dda088a0e4e2de96a16"
+  ],
   "num_achievements": 8,
   "ra_id": "32928",
   "title": "~Hack~ Pokémon Professor Oak Challenge"
  },
  {
+  "hashes": [
+   "0b5c445d36c2e6125917a6071656c1e4",
+   "0ee583a9be10502141e07d214f84f6ba",
+   "3883544ce3f7043201d0a2c905c8534b",
+   "3ab51f5f32df9ace20e3f469a4a09c23",
+   "3abfdb86bde17c9cc50d1b1b295de8e7",
+   "3d78ba61d68f59bd23727fc2c402fa7b",
+   "5d180f1df08f71ebc64f31721b95d201",
+   "77704ca2ac89c1630ea87cd2ffe4533e",
+   "bd69d9c06fe77707c5b3ad1fe6f26041",
+   "d0b7052c5440dc7c63e81b55b1782ba5",
+   "d9c5624053d9927b253361cf2abc6914",
+   "fb81050af0248b3f451944eb52fb9a14"
+  ],
   "num_achievements": 77,
   "ra_id": "32009",
   "title": "~Hack~ Pokémon PureRGB"
  },
  {
+  "hashes": [
+   "153c9a6fc72bc55f86a7d2c55bd7e50c",
+   "67338fd0327587195b91814439ed914c",
+   "7c10e851328433609444bc3e571b6748",
+   "fb65ff217fb8245f194d7e984772d800"
+  ],
   "num_achievements": 252,
   "ra_id": "2491",
   "title": "~Hack~ Pokémon Regulation Red | Regulation Blue"
  },
  {
+  "hashes": [
+   "4574f22a18859640dec5ca6a58dfa9c7",
+   "dc6b3c07ed38e4c37366817e01e88df4"
+  ],
   "num_achievements": 151,
   "ra_id": "21533",
   "title": "~Hack~ Pokémon Regulation Red | Regulation Blue [Subset - Solo Challenge]"
  },
  {
+  "hashes": [
+   "a9d98ffd50c82ef6efc8616d0cf67ebe"
+  ],
   "num_achievements": 20,
   "ra_id": "6684",
   "title": "~Hack~ Pokémon STRIKE! Yellow Version"
  },
  {
+  "hashes": [
+   "8789e3890d1dc7d9a8991598b44e18b3"
+  ],
   "num_achievements": 45,
   "ra_id": "8887",
   "title": "~Hack~ Pokémon Unova Red"
  },
  {
+  "hashes": [
+   "1790b5b1ddd2f3beae480a465910d333"
+  ],
   "num_achievements": 76,
   "ra_id": "12799",
   "title": "~Hack~ Pokémon Velvet: Special Hatenna Edition"
  },
  {
+  "hashes": [
+   "1891782030c2583075ce593167ec46c3"
+  ],
   "num_achievements": 53,
   "ra_id": "18444",
   "title": "~Hack~ Pokémon Yellow Legacy"
  },
  {
+  "hashes": [
+   "4311e7667d4edafba75ff0397856b25d",
+   "8a02e978f2f413944cff4112b446e22c"
+  ],
   "num_achievements": 106,
   "ra_id": "24702",
   "title": "~Hack~ Pokémon Yellow: Cramorant Edition"
  },
  {
+  "hashes": [
+   "7f971beee4aa677f9117800f206cf440"
+  ],
   "num_achievements": 17,
   "ra_id": "18660",
   "title": "~Hack~ Pokémon: Battle Factory"
  },
  {
+  "hashes": [
+   "305b47e934fd8b731f79403e16c13691"
+  ],
   "num_achievements": 81,
   "ra_id": "34094",
   "title": "~Hack~ SaGa 2: A Haniwa's Contingency"
  },
  {
+  "hashes": [
+   "470ba1b4ac04fc2e52f874230c024911"
+  ],
   "num_achievements": 41,
   "ra_id": "34095",
   "title": "~Hack~ SaGa 2: A Haniwa's Contingency [Subset - Insane Mode]"
  },
  {
+  "hashes": [
+   "a823a2677138ddef0e13eea955a393ce"
+  ],
   "num_achievements": 60,
   "ra_id": "34304",
   "title": "~Hack~ SaGa 2: A Haniwa's Contingency [Subset - Monotype Party]"
  },
  {
+  "hashes": [
+   "c339042922cda7c386af91244f704554"
+  ],
   "num_achievements": 12,
   "ra_id": "17846",
   "title": "~Hack~ Samus Goes to the Fridge to Get a Glass of Milk II"
  },
  {
+  "hashes": [
+   "2728ad63067e07ca11273a147be8e7f6",
+   "32c00e04ff0e253c5c5cf55a2fccaf8e",
+   "450fd39c5a2d8f3ae5dd9c87d12b811c",
+   "e26319c7d5b15047a686008cb5b9588c",
+   "eeda73918d947e71a1290b626ad97ea9"
+  ],
   "num_achievements": 60,
   "ra_id": "27709",
   "title": "~Hack~ Shin Pokémon Red, Blue, and Green"
  },
  {
+  "hashes": [
+   "2307287d1a5ea5e49bc80d5e4599f43c",
+   "64d2e3dd5b33d3c8a61ab762c962683b",
+   "86ace1f244eb1b352981bb22213c70bd",
+   "c7f9854029de65757b4b42ba4ee31b66",
+   "d4efcd2da823484f7ade154858415208"
+  ],
   "num_achievements": 151,
   "ra_id": "37506",
   "title": "~Hack~ Shin Pokémon Red, Blue, and Green [Subset - Shiny Pokémon]"
  },
  {
+  "hashes": [
+   "1fe5ddbb6502baf81b9cee0ae7446728"
+  ],
   "num_achievements": 15,
   "ra_id": "16520",
   "title": "~Hack~ Super Mario 4"
  },
  {
+  "hashes": [
+   "c6ebf4eb82380e495989ef5f5e62560a"
+  ],
   "num_achievements": 20,
   "ra_id": "14178",
   "title": "~Hack~ Super Mario Land 2012"
  },
  {
+  "hashes": [
+   "f63ee5ae1662892890f57ed1b22d16ac"
+  ],
   "num_achievements": 16,
   "ra_id": "32927",
   "title": "~Hack~ Super Mario Land Hack 2017: Tatanga's Revenge"
  },
  {
+  "hashes": [
+   "ca4fd89cddf413327e1c27ee0a33f051",
+   "d36f1f89d8b35100168d08daa7746df4"
+  ],
   "num_achievements": 30,
   "ra_id": "14179",
   "title": "~Hack~ Super Mario Land X"
  },
  {
+  "hashes": [
+   "c83c5c26c7260a619d2192bf78e5fdd8"
+  ],
   "num_achievements": 27,
   "ra_id": "12975",
   "title": "~Hack~ Super Mario Land: Pier Edition"
  },
  {
+  "hashes": [
+   "396856f9a3edfbf08e9da9accaa97ede"
+  ],
   "num_achievements": 17,
   "ra_id": "20083",
   "title": "~Hack~ Super Mario Land: Timelines"
  },
  {
+  "hashes": [
+   "98d8f8ee2569aaecc1e2e5024c234941"
+  ],
   "num_achievements": 24,
   "ra_id": "14223",
   "title": "~Hack~ Super Super Mario Land"
  },
  {
+  "hashes": [
+   "d28cedbf9defa80efb2c9c5b070373b1"
+  ],
   "num_achievements": 14,
   "ra_id": "7411",
   "title": "~Hack~ The 2nd Super Super Mario Land"
  },
  {
+  "hashes": [
+   "2bd5f9c939c7980e5138ac6d9a33c61b",
+   "eb543a5e89d688f3f00175ce65e8cff9"
+  ],
   "num_achievements": 47,
   "ra_id": "17399",
   "title": "~Hack~ Twitch Plays Pokémon: Anniversary Red"
  },
  {
+  "hashes": [
+   "4f5a6019ef3b9ccff1af75cf35169d3f"
+  ],
   "num_achievements": 7,
   "ra_id": "33616",
   "title": "~Hack~ Urinary Samus"
  },
  {
+  "hashes": [
+   "6696bc9f11dd7f540d02501f4f9151a9"
+  ],
   "num_achievements": 43,
   "ra_id": "9822",
   "title": "~Homebrew~ ~Demo~ Glory Hunters: Chapter 1"
  },
  {
+  "hashes": [
+   "dc06ee0aec594e662e80c2bde217afa1"
+  ],
   "num_achievements": 13,
   "ra_id": "23796",
   "title": "~Homebrew~ ~Demo~ Halo: Combat Devolved"
  },
  {
+  "hashes": [
+   "f6332c87ab33177b3b8650a9d9500851"
+  ],
   "num_achievements": 6,
   "ra_id": "18987",
   "title": "~Homebrew~ ~Demo~ Persona 4"
  },
  {
+  "hashes": [
+   "583ff1d2f95c6237fc0929dad27f5e2d"
+  ],
   "num_achievements": 6,
   "ra_id": "31314",
   "title": "~Homebrew~ ~Demo~ Persona 5 Pocket Edition"
  },
  {
+  "hashes": [
+   "6762619d05c36252b1ddfb67230f52f0",
+   "7936b12937a175abb39e199c9feed508"
+  ],
   "num_achievements": 6,
   "ra_id": "30164",
   "title": "~Homebrew~ ~Demo~ Senshijidaino Kyoryu: DINOPREHIS!"
  },
  {
+  "hashes": [
+   "52b40dc9c628a79da9cd459554e56961"
+  ],
   "num_achievements": 15,
   "ra_id": "24705",
   "title": "~Homebrew~ ~Demo~ Undertale Gameboy Demake"
  },
  {
+  "hashes": [
+   "958670daeccc225fe23e74a60be59541"
+  ],
   "num_achievements": 16,
   "ra_id": "9467",
   "title": "~Homebrew~ ~Prototype~ GB Corp."
  },
  {
+  "hashes": [
+   "c84bc300653ada16fc0b95d14205d992"
+  ],
   "num_achievements": 29,
   "ra_id": "22842",
   "title": "~Homebrew~ ~Prototype~ Silent Hill 2: 20th Anniversary Demake"
  },
  {
+  "hashes": [
+   "28d77a7797b018be49c31f139912aba8"
+  ],
   "num_achievements": 11,
   "ra_id": "33578",
   "title": "~Homebrew~ 204863: A P.T. Silent Hills Demake"
  },
  {
+  "hashes": [
+   "95a0f644d8778b1c934ac5ae8791d80f"
+  ],
   "num_achievements": 19,
   "ra_id": "12300",
   "title": "~Homebrew~ Adulting!"
  },
  {
+  "hashes": [
+   "c3a774c513a2ab5a2b134e0210b6caf1"
+  ],
   "num_achievements": 13,
   "ra_id": "18826",
   "title": "~Homebrew~ An Autumn With You"
  },
  {
+  "hashes": [
+   "35773ac09080e95e9dec4b4b2777480f"
+  ],
   "num_achievements": 17,
   "ra_id": "20370",
   "title": "~Homebrew~ Atop the Witch's Tower GB"
  },
  {
+  "hashes": [
+   "2e90b711c7a97e193819c1db7add15c0"
+  ],
   "num_achievements": 8,
   "ra_id": "25829",
   "title": "~Homebrew~ Banished"
  },
  {
+  "hashes": [
+   "9d6f75cf29a17ed7d46874d068819596"
+  ],
   "num_achievements": 19,
   "ra_id": "27322",
   "title": "~Homebrew~ Batty Zabella"
  },
  {
+  "hashes": [
+   "4fc125be51e95fc976b32d55800697bb"
+  ],
   "num_achievements": 6,
   "ra_id": "26474",
   "title": "~Homebrew~ Bear Boy"
  },
  {
+  "hashes": [
+   "d7cd156ef19534ec9353fa016b391395"
+  ],
   "num_achievements": 7,
   "ra_id": "19859",
   "title": "~Homebrew~ Birdie Bartender"
  },
  {
+  "hashes": [
+   "bd81ecd1dfbc99ff8592a0169fe5e7c3",
+   "d6f78d93f6c784ed58e43c1c6779f2e4"
+  ],
   "num_achievements": 6,
   "ra_id": "7419",
   "title": "~Homebrew~ Bitterroot"
  },
  {
+  "hashes": [
+   "15db12b81db55364a5c0b064b22e569f"
+  ],
   "num_achievements": 9,
   "ra_id": "17412",
   "title": "~Homebrew~ Black Castle"
  },
  {
+  "hashes": [
+   "46d234cdf252280777412a5db98e05d5"
+  ],
   "num_achievements": 7,
   "ra_id": "25391",
   "title": "~Homebrew~ Bug Bites!"
  },
  {
+  "hashes": [
+   "1625b54bab62ff4d7f6878e76c5d09c7"
+  ],
   "num_achievements": 8,
   "ra_id": "25206",
   "title": "~Homebrew~ Capybara Quest"
  },
  {
+  "hashes": [
+   "b73582e8872c1185f5ca7f5aecd7c7f8"
+  ],
   "num_achievements": 7,
   "ra_id": "22573",
   "title": "~Homebrew~ Cargo"
  },
  {
+  "hashes": [
+   "2d6b629ac9898b7688fcc21ad3548ebc",
+   "90ff156a9f31dab82ac604f3830edc13"
+  ],
   "num_achievements": 9,
   "ra_id": "29776",
   "title": "~Homebrew~ Ciao Nonna"
  },
  {
+  "hashes": [
+   "a17431d0f77f14fa8339d6f9fde0f006"
+  ],
   "num_achievements": 7,
   "ra_id": "29665",
   "title": "~Homebrew~ Cosmic Courier: Trapped in Limbo"
  },
  {
+  "hashes": [
+   "28a4e2d989d55f654bba6ca6e0c7f047",
+   "c85e5ba3dad5aa705b96da083cdd1a1c"
+  ],
   "num_achievements": 20,
   "ra_id": "5591",
   "title": "~Homebrew~ Dangan GB"
  },
  {
+  "hashes": [
+   "38be0b6e675f1f5780c71163190c5c6c"
+  ],
   "num_achievements": 7,
   "ra_id": "28392",
   "title": "~Homebrew~ Dead by Daylight"
  },
  {
+  "hashes": [
+   "b04f705f3e4db711560f9834a6431171"
+  ],
   "num_achievements": 19,
   "ra_id": "16366",
   "title": "~Homebrew~ Deadeus"
  },
  {
+  "hashes": [
+   "4f9b77afb81d66e6af1bd54b7b06351f"
+  ],
   "num_achievements": 15,
   "ra_id": "7256",
   "title": "~Homebrew~ Deep Dungeon"
  },
  {
+  "hashes": [
+   "f5357ab80e3838c58668d9d394962f48"
+  ],
   "num_achievements": 6,
   "ra_id": "17053",
   "title": "~Homebrew~ Deep Forest"
  },
  {
+  "hashes": [
+   "44fc58f70f6a69c02b348f121cafb28c"
+  ],
   "num_achievements": 6,
   "ra_id": "13578",
   "title": "~Homebrew~ Desert Bus"
  },
  {
+  "hashes": [
+   "41ac9bd50237cbd54f13b50abf30973a"
+  ],
   "num_achievements": 8,
   "ra_id": "13410",
   "title": "~Homebrew~ Dino's Offline Adventure"
  },
  {
+  "hashes": [
+   "196ce465a2e60ebfa68f377577e6b4aa"
+  ],
   "num_achievements": 18,
   "ra_id": "6713",
   "title": "~Homebrew~ Disco Elysium: Game Boy Edition"
  },
  {
+  "hashes": [
+   "f7c384e29738c21ef611d45e5d35b4b9"
+  ],
   "num_achievements": 10,
   "ra_id": "16278",
   "title": "~Homebrew~ DMG Deals Damage"
  },
  {
+  "hashes": [
+   "040056615586a58260910fc9f7cb7f30",
+   "4523452d7dde5e486187b384fee751a7"
+  ],
   "num_achievements": 6,
   "ra_id": "18825",
   "title": "~Homebrew~ Do I Pass?"
  },
  {
+  "hashes": [
+   "9155b2da7a68a39742ed1c80f1b007a8"
+  ],
   "num_achievements": 7,
   "ra_id": "30849",
   "title": "~Homebrew~ Dog's Muck Island"
  },
  {
+  "hashes": [
+   "f89f14b54db224ab47ebe8a0d6077a3e"
+  ],
   "num_achievements": 25,
   "ra_id": "6438",
   "title": "~Homebrew~ Don't Call Me Mama But Yes I Am Your Mama"
  },
  {
+  "hashes": [
+   "d7fa04a91e492855f549dfe1f2c721f7"
+  ],
   "num_achievements": 7,
   "ra_id": "20364",
   "title": "~Homebrew~ Elden Ring"
  },
  {
+  "hashes": [
+   "efaf761d789e9f6e7cddf81b500576d8"
+  ],
   "num_achievements": 36,
   "ra_id": "15147",
   "title": "~Homebrew~ Final Fantasy XI Adventure"
  },
  {
+  "hashes": [
+   "e9403147da4e45805a37b840269ab79d"
+  ],
   "num_achievements": 7,
   "ra_id": "28689",
   "title": "~Homebrew~ Fishin' for Average Caucasian Boyfriends"
  },
  {
+  "hashes": [
+   "c2bdeda559f02973c213e5085fd0d4df"
+  ],
   "num_achievements": 8,
   "ra_id": "18480",
   "title": "~Homebrew~ Fix My Heart"
  },
  {
+  "hashes": [
+   "b42f765d1704c7bf2e158dacdbee8165"
+  ],
   "num_achievements": 15,
   "ra_id": "26083",
   "title": "~Homebrew~ Flappy Bird GB"
  },
  {
+  "hashes": [
+   "4c0b53fd1fe4923d880e2fc70418d101"
+  ],
   "num_achievements": 8,
   "ra_id": "7412",
   "title": "~Homebrew~ Flappy Boy"
  },
  {
+  "hashes": [
+   "a079653cbee238c70ca3a35601822b82"
+  ],
   "num_achievements": 8,
   "ra_id": "32487",
   "title": "~Homebrew~ Frog Detective -1"
  },
  {
+  "hashes": [
+   "b04d10af7ff5010c90be47948158f016"
+  ],
   "num_achievements": 27,
   "ra_id": "34534",
   "title": "~Homebrew~ Game of Life Kuzushi"
  },
  {
+  "hashes": [
+   "aa05bfdc3b5655d4cf6694f54a6262b0"
+  ],
   "num_achievements": 6,
   "ra_id": "18511",
   "title": "~Homebrew~ GameBoy WORDLE"
  },
  {
+  "hashes": [
+   "7d38f43df5cd5613fa1256de1d351d33"
+  ],
   "num_achievements": 6,
   "ra_id": "38047",
   "title": "~Homebrew~ GB Dash"
  },
  {
+  "hashes": [
+   "c6ae0dee7a42b51caeae2c7e3d20eb9b"
+  ],
+  "num_achievements": 24,
+  "ra_id": "25390",
+  "title": "~Homebrew~ GB Lunar Lander"
+ },
+ {
+  "hashes": [
+   "1b9515262a8a57ef1366bed635c604e4"
+  ],
   "num_achievements": 17,
   "ra_id": "31198",
   "title": "~Homebrew~ Gorf the Ghost Saves Halloween"
  },
  {
+  "hashes": [
+   "01cf4c043f69a9924f2a689e3fa60157",
+   "df77829789b41cc5be505e8cdce80ce1"
+  ],
   "num_achievements": 8,
   "ra_id": "34129",
   "title": "~Homebrew~ GSPS The Game"
  },
  {
+  "hashes": [
+   "587be2dd01bb27eb938fe6c8484a9281"
+  ],
   "num_achievements": 6,
   "ra_id": "13080",
   "title": "~Homebrew~ Gunman Clive"
  },
  {
+  "hashes": [
+   "6a7cb6e2df241e843569c539b724bb5d"
+  ],
   "num_achievements": 15,
   "ra_id": "32840",
   "title": "~Homebrew~ Gunship"
  },
  {
+  "hashes": [
+   "7b0182410ff25d7240827bda438ef05f"
+  ],
   "num_achievements": 25,
   "ra_id": "25300",
   "title": "~Homebrew~ He Fucked the Girl Out of Me."
  },
  {
+  "hashes": [
+   "30e8f62dc1aceabdf14229a59d6853c0"
+  ],
   "num_achievements": 19,
   "ra_id": "37578",
   "title": "~Homebrew~ Helichoppy"
  },
  {
+  "hashes": [
+   "dd83f27a43bc5d571c86f979aac2e1dd"
+  ],
   "num_achievements": 6,
   "ra_id": "7395",
   "title": "~Homebrew~ Impossible Game(boy)"
  },
  {
+  "hashes": [
+   "d051557317b202cfb9b6667fc64a5426"
+  ],
   "num_achievements": 7,
   "ra_id": "29935",
   "title": "~Homebrew~ Jabberwocky"
  },
  {
+  "hashes": [
+   "49b4214dceb5404acd5b83fc3d1a36bf"
+  ],
   "num_achievements": 18,
   "ra_id": "28900",
   "title": "~Homebrew~ Lee Carvallo's Putting Challenge 2"
  },
  {
+  "hashes": [
+   "29ea5f06ac497d805bd686bf948c9d81"
+  ],
   "num_achievements": 30,
   "ra_id": "25016",
   "title": "~Homebrew~ Logic Island"
  },
  {
+  "hashes": [
+   "75e4ced55fe6dc29561c54e613848b23"
+  ],
   "num_achievements": 32,
   "ra_id": "27387",
   "title": "~Homebrew~ Magipanels"
  },
  {
+  "hashes": [
+   "1a583eda068a03bab68786f0d8f70597"
+  ],
   "num_achievements": 9,
   "ra_id": "19272",
   "title": "~Homebrew~ Marzipan Beef Reverser"
  },
  {
+  "hashes": [
+   "6669ba8e9dcd087124ab657c8a8ad0db"
+  ],
   "num_achievements": 12,
   "ra_id": "21558",
   "title": "~Homebrew~ Melanie and the Magic Forest"
  },
  {
+  "hashes": [
+   "b11f6063fd7006426d136da1ee27b27a",
+   "c267820660ecbbab0d63fded955f1e15"
+  ],
   "num_achievements": 7,
   "ra_id": "9765",
   "title": "~Homebrew~ Mona and the Witch's Hat"
  },
  {
+  "hashes": [
+   "fce7079639133df3c4d1f7beb8a89b21"
+  ],
   "num_achievements": 24,
   "ra_id": "7417",
   "title": "~Homebrew~ Neighbor"
  },
  {
+  "hashes": [
+   "5774c875dfd6fe440e7f4c16fb71e696"
+  ],
   "num_achievements": 9,
   "ra_id": "26084",
   "title": "~Homebrew~ Nightshift"
  },
  {
+  "hashes": [
+   "57b46220d280a9fb225abacc9e1a592f"
+  ],
   "num_achievements": 6,
   "ra_id": "31199",
   "title": "~Homebrew~ Niñoid"
  },
  {
+  "hashes": [
+   "a1d55314d4d98e93eaf8de42e1ac5bc8"
+  ],
   "num_achievements": 24,
   "ra_id": "22395",
   "title": "~Homebrew~ Phobos Dere .GB"
  },
  {
+  "hashes": [
+   "654615505816982cdc6446d5af319d6b"
+  ],
   "num_achievements": 17,
   "ra_id": "19576",
   "title": "~Homebrew~ Porklike: Wurst Comes to Worst"
  },
  {
+  "hashes": [
+   "ef677114b4075b5669eba8bcce996b69"
+  ],
   "num_achievements": 10,
   "ra_id": "27366",
   "title": "~Homebrew~ Renegade Rush"
  },
  {
+  "hashes": [
+   "0bc273dfa6a9ed9eaa8687bc391d946c"
+  ],
   "num_achievements": 23,
   "ra_id": "22401",
   "title": "~Homebrew~ Retro Adventure"
  },
  {
+  "hashes": [
+   "eb2c8695b903c45611c9faa43ca1b2ab"
+  ],
   "num_achievements": 26,
   "ra_id": "12837",
   "title": "~Homebrew~ Retroid"
  },
  {
+  "hashes": [
+   "41eab5d6f3d462b9e6a933a4c47bc61d"
+  ],
   "num_achievements": 9,
   "ra_id": "25371",
   "title": "~Homebrew~ Rex Run"
  },
  {
+  "hashes": [
+   "035d06c80ccbbf2d7ff49a4d5b98301e"
+  ],
   "num_achievements": 11,
   "ra_id": "25785",
   "title": "~Homebrew~ Rhythm Land"
  },
  {
+  "hashes": [
+   "3ba766a3d32b765bb038d2ef6b49ead4"
+  ],
   "num_achievements": 11,
   "ra_id": "29783",
   "title": "~Homebrew~ Sacred Meat"
  },
  {
+  "hashes": [
+   "83fc53defeb7b05ac619c9918797ee83"
+  ],
   "num_achievements": 7,
   "ra_id": "6479",
   "title": "~Homebrew~ Sam Mallard: The Case of the Missing Swan"
  },
  {
+  "hashes": [
+   "6d22cab0cbb831bc64abf4f5bad464ff"
+  ],
   "num_achievements": 9,
   "ra_id": "11192",
   "title": "~Homebrew~ Sheep It Up!"
  },
  {
+  "hashes": [
+   "214f8ac98a8c9d78359d71c47cf46df5",
+   "3b1d442a7b54cc4faf27f6f67d96c892"
+  ],
   "num_achievements": 22,
   "ra_id": "18810",
   "title": "~Homebrew~ Shock Lobster"
  },
  {
+  "hashes": [
+   "f7b59aaedd98cc6a43906c2fd1140f51"
+  ],
   "num_achievements": 7,
   "ra_id": "26957",
   "title": "~Homebrew~ Slime Trials"
  },
  {
+  "hashes": [
+   "70bc400b0939236cd147c264d38cba66"
+  ],
   "num_achievements": 10,
   "ra_id": "7887",
   "title": "~Homebrew~ Snake"
  },
  {
+  "hashes": [
+   "ce14afb9b396a74a1e0e2ece9747ea9c"
+  ],
   "num_achievements": 28,
   "ra_id": "25261",
   "title": "~Homebrew~ Soul Void Redux"
  },
  {
+  "hashes": [
+   "08e447a6164cefd3e56212cd36e11e6f"
+  ],
   "num_achievements": 6,
   "ra_id": "22048",
   "title": "~Homebrew~ Space Landing"
  },
  {
+  "hashes": [
+   "45e9109c358d91c9094d5ce36dd85fc0"
+  ],
   "num_achievements": 20,
   "ra_id": "34028",
   "title": "~Homebrew~ Squid Game Boy"
  },
  {
+  "hashes": [
+   "a455a70d52a9ffcfe8c4d8c164267500"
+  ],
   "num_achievements": 22,
   "ra_id": "9764",
   "title": "~Homebrew~ Super Impostor Bros."
  },
  {
+  "hashes": [
+   "b150ebb4eef4643b9a392f41a0cd62e5"
+  ],
   "num_achievements": 7,
   "ra_id": "18806",
   "title": "~Homebrew~ Sushi Gun"
  },
  {
+  "hashes": [
+   "57611d2939ee579349f2221c78339bb1"
+  ],
   "num_achievements": 13,
   "ra_id": "20624",
   "title": "~Homebrew~ Swordbird Song: The Iron Owl Tower"
  },
  {
+  "hashes": [
+   "2554c7f6365dbf59ec1a73f0124a70b4"
+  ],
   "num_achievements": 6,
   "ra_id": "17034",
   "title": "~Homebrew~ The Binding of Isaac: Game Boy Edition"
  },
  {
+  "hashes": [
+   "3cf985dde797f178b8446aefedf5cd20"
+  ],
   "num_achievements": 18,
   "ra_id": "6631",
   "title": "~Homebrew~ The Bouncing Ball"
  },
  {
+  "hashes": [
+   "020397a93cb6b897716c4f261e9a339e"
+  ],
   "num_achievements": 11,
   "ra_id": "27533",
   "title": "~Homebrew~ The Dead in My Living Room"
  },
  {
+  "hashes": [
+   "2295f4ef94f9b9a21dfc04259ab6d7bf",
+   "c1ef769ab7525ca2b2c3b0eb88b1c49c",
+   "d5aef2fb975eebf3b66ea89c469d0d7c"
+  ],
   "num_achievements": 6,
   "ra_id": "14747",
   "title": "~Homebrew~ The Warp Coin Catastrophe"
  },
  {
+  "hashes": [
+   "d44041e733ffa73dea5613f62f8e064b"
+  ],
   "num_achievements": 6,
   "ra_id": "7224",
   "title": "~Homebrew~ There's Nothing to Do in This Town"
  },
  {
+  "hashes": [
+   "48ea776eace6f2582b70dc965cf2df1f"
+  ],
   "num_achievements": 15,
   "ra_id": "13411",
   "title": "~Homebrew~ Tobu Tobu Girl"
  },
  {
+  "hashes": [
+   "0aea35682c6853ec1f36f69a999ae2cb"
+  ],
   "num_achievements": 10,
   "ra_id": "22572",
   "title": "~Homebrew~ Traumatarium"
  },
  {
+  "hashes": [
+   "a6d142742d41b624217123bd020f8391"
+  ],
   "num_achievements": 11,
   "ra_id": "34313",
   "title": "~Homebrew~ Uma Musume Delish Derby"
  },
  {
+  "hashes": [
+   "6e684f059d3228b0c99e59cb69c3ee10"
+  ],
   "num_achievements": 8,
   "ra_id": "33115",
   "title": "~Homebrew~ UNPAN"
  },
  {
+  "hashes": [
+   "8f86db5ca5019627325f722761db3015"
+  ],
   "num_achievements": 8,
   "ra_id": "37082",
   "title": "~Homebrew~ Vampire Night Shift"
  },
  {
+  "hashes": [
+   "3076b0df02804d3b9da27daa6f8258ca"
+  ],
   "num_achievements": 8,
   "ra_id": "33579",
   "title": "~Homebrew~ Virtual BMO"
  },
  {
+  "hashes": [
+   "fd72131f46eaccd71e987489f834c630"
+  ],
   "num_achievements": 13,
   "ra_id": "3821",
   "title": "~Homebrew~ Waifu Clicker"
  },
  {
+  "hashes": [
+   "702bee919d1c9a67069213d6d286af51"
+  ],
   "num_achievements": 8,
   "ra_id": "21929",
   "title": "~Homebrew~ Wordyl"
  },
  {
+  "hashes": [
+   "63b8904275bf684dcdb8face9fff93f8"
+  ],
   "num_achievements": 6,
   "ra_id": "29764",
   "title": "~Homebrew~ Yakuza GB"
  },
  {
+  "hashes": [
+   "c322fe4c7ce87654a429e149c8671f00"
+  ],
   "num_achievements": 27,
   "ra_id": "29794",
   "title": "~Homebrew~ Yoru no Kasou"
  },
  {
+  "hashes": [
+   "abbf60358879b6f47aa61e35695b4995"
+  ],
   "num_achievements": 12,
   "ra_id": "27432",
   "title": "~Homebrew~ You Are a Skeleton & That Is a Problem"
  },
  {
+  "hashes": [
+   "29fe84cfca35b651a0bb86abf4b08792"
+  ],
   "num_achievements": 9,
   "ra_id": "27582",
   "title": "~Homebrew~ Yuuto Ichika Makes Friends"
  },
  {
+  "hashes": [
+   "8b4d9ea149c4cd156bd4ce0db1127943"
+  ],
   "num_achievements": 52,
   "ra_id": "24177",
   "title": "~Homebrew~ Zelda's Adventure"
  },
  {
+  "hashes": [
+   "28e1605572aec89f7d210775e51cb8da"
+  ],
   "num_achievements": 7,
   "ra_id": "9026",
   "title": "~Prototype~ Diablo"
  },
  {
+  "hashes": [
+   "e76328b0795af8cd85a70e84c1ef4722"
+  ],
   "num_achievements": 16,
   "ra_id": "32578",
   "title": "~Prototype~ John Madden Football"
  },
  {
+  "hashes": [
+   "ba78ac0638f36a89386b690d619f13b1"
+  ],
   "num_achievements": 20,
   "ra_id": "4937",
   "title": "~Prototype~ The Adventures of Pinocchio"
  },
  {
+  "hashes": [
+   "ba2ac3587b3e1b36de52e740274071b0"
+  ],
   "num_achievements": 10,
   "ra_id": "7405",
   "title": "~Unlicensed~ King James Bible"
  },
  {
+  "hashes": [
+   "d4ebf9cf10dda19dd2bafd1c1673d762"
+  ],
   "num_achievements": 6,
   "ra_id": "10950",
   "title": "3-pun Yosou: Umaban Club"
  },
  {
+  "hashes": [
+   "71feb6c7d5b764d5192c28efe74d13c6"
+  ],
   "num_achievements": 28,
   "ra_id": "24449",
   "title": "4-in-1 Funpak: Volume II"
  },
  {
+  "hashes": [
+   "53b746bff74c50cd3ebcf41161c66cf3"
+  ],
   "num_achievements": 45,
   "ra_id": "4689",
   "title": "A-Mazing Tater"
  },
  {
+  "hashes": [
+   "d67e58bf5f39d5fb073fed85c3d9bede"
+  ],
   "num_achievements": 27,
   "ra_id": "2265",
   "title": "Adventure Island"
  },
  {
+  "hashes": [
+   "ed2444afe317452e29c1c2258da6963c"
+  ],
   "num_achievements": 51,
   "ra_id": "4486",
   "title": "Adventure Island II: Aliens in Paradise"
  },
  {
+  "hashes": [
+   "8f6b6ef366a787852f664d945c86eb72"
+  ],
   "num_achievements": 22,
   "ra_id": "3624",
   "title": "Adventures of Lolo"
  },
  {
+  "hashes": [
+   "45260f5a05d34c011baac5cb363491d3",
+   "4b4d6e6d4870d36a26e6fe6ad73b0eac",
+   "f777a4526089a83ca758efbf01007ec1"
+  ],
   "num_achievements": 18,
   "ra_id": "3623",
   "title": "Aerostar"
  },
  {
+  "hashes": [
+   "b5c541c765fd3a5767b3fa1cfc821587"
+  ],
   "num_achievements": 9,
   "ra_id": "4938",
   "title": "After Burst"
  },
  {
+  "hashes": [
+   "781f768d5211aba1e4cf383d4585c1bd",
+   "ed5525a71dda6eaf4bbf8d5601b6b3b9"
+  ],
   "num_achievements": 34,
   "ra_id": "6149",
   "title": "Aladdin"
  },
  {
+  "hashes": [
+   "b83f3c669d22bc74c72743821ae3aaa3",
+   "cac921f8eec70d5ccd8a2db8f473a084"
+  ],
   "num_achievements": 23,
   "ra_id": "2572",
   "title": "Alfred Chicken"
  },
  {
+  "hashes": [
+   "b3f3d35f58a0ea3affc0ec6d4ee1183d"
+  ],
   "num_achievements": 13,
   "ra_id": "4947",
   "title": "Alien 3"
  },
  {
+  "hashes": [
+   "138c5fea51e0c9b3ab9075370582717c",
+   "91128778a332495f77699eaf3a37fe30",
+   "981087f288bac171e3ca183fbe2d273b"
+  ],
   "num_achievements": 16,
   "ra_id": "682",
   "title": "Alleyway"
  },
  {
+  "hashes": [
+   "d8326bfee457ccb2c0afb8dd6ac11db2"
+  ],
   "num_achievements": 11,
   "ra_id": "6430",
   "title": "Amazing Penguin"
  },
  {
+  "hashes": [
+   "9642b7c599b47135cbd4e45e039d608d"
+  ],
   "num_achievements": 21,
   "ra_id": "7421",
   "title": "Amida"
  },
  {
+  "hashes": [
+   "25ec0916ff6f24a1878a9f30991d301d"
+  ],
   "num_achievements": 37,
   "ra_id": "7821",
   "title": "Arcade Classic No. 1: Asteroids + Missile Command"
  },
  {
+  "hashes": [
+   "19fd29efaf7ea9e314bd613954a92169",
+   "e7af45fbb8cba8a3bf049eec038452d8"
+  ],
   "num_achievements": 42,
   "ra_id": "701",
   "title": "Arcade Classic No. 3: Galaga & Galaxian"
  },
  {
+  "hashes": [
+   "812db832566202610bb1e42e643e2b93",
+   "c016ae8567a649c17b77171f4fd4dd7f"
+  ],
   "num_achievements": 32,
   "ra_id": "3661",
   "title": "Astérix"
  },
  {
+  "hashes": [
+   "13749826df12da4574e34ccb6d9c780d"
+  ],
   "num_achievements": 13,
   "ra_id": "27342",
   "title": "Asteroids"
  },
  {
+  "hashes": [
+   "2eb9a6891fc79cd878d8bc12d04a0790",
+   "76010c6ff6bd0c4e8ac934dc69fb96ab",
+   "fc2d9eb9479543614b6e3d0d63c359aa"
+  ],
   "num_achievements": 28,
   "ra_id": "4067",
   "title": "Atomic Punk"
  },
  {
+  "hashes": [
+   "669e9d712ce5c424077ca2deec46f05a",
+   "e88eab57ab4614966748280bf3c97f52"
+  ],
   "num_achievements": 34,
   "ra_id": "4069",
   "title": "Avenging Spirit"
  },
  {
+  "hashes": [
+   "501de1b6056bee7aeb0c2bcbb8b3d806",
+   "8f3095c4d98694f19270d8c2788d5e46"
+  ],
   "num_achievements": 23,
   "ra_id": "4088",
   "title": "Ayakashi no Shiro"
  },
  {
+  "hashes": [
+   "1d63b86c857ea92d23ca6d261cfeec68",
+   "b9df0bb1f84333a1e5ab4af563525cdc",
+   "c0d8ed063b30614c71d15d4d0ff08ffe",
+   "c7697c8db218bcb35aa37d43e4278376",
+   "c8bab3886324f6aec60b65d8584453a1"
+  ],
   "num_achievements": 42,
   "ra_id": "4089",
   "title": "Baby T-Rex"
  },
  {
+  "hashes": [
+   "f70c60ca87714fa9d81be60c9ac93de0"
+  ],
   "num_achievements": 15,
   "ra_id": "2184",
   "title": "Balloon Kid"
  },
  {
+  "hashes": [
+   "8fdffb08770609255ec3cd314f79f976",
+   "d309a915021176cd6a49a815b010da4f",
+   "fa8b94ede7e7192c0ccd2fff6c51e948"
+  ],
   "num_achievements": 7,
   "ra_id": "3609",
   "title": "Banishing Racer"
  },
  {
+  "hashes": [
+   "159c8ca77e153b1cc5fe6d5d82a091c2"
+  ],
   "num_achievements": 22,
   "ra_id": "2569",
   "title": "Barbie: Game Girl"
  },
  {
+  "hashes": [
+   "e731fa23d9cd0c3d4dec7d5565beef61"
+  ],
   "num_achievements": 13,
   "ra_id": "549",
   "title": "Bart Simpson's Escape from Camp Deadly"
  },
  {
+  "hashes": [
+   "e7bcb3f5534c8363f855ba92d83cb2d9"
+  ],
   "num_achievements": 20,
   "ra_id": "683",
   "title": "Baseball"
  },
  {
+  "hashes": [
+   "97bc907deba1e7d7c9bc72fca0310822"
+  ],
   "num_achievements": 40,
   "ra_id": "2566",
   "title": "Batman: Return of the Joker"
  },
  {
+  "hashes": [
+   "ae073c63ff7d151dc2dd406830fbbdc2"
+  ],
   "num_achievements": 37,
   "ra_id": "2567",
   "title": "Batman: The Animated Series"
  },
  {
+  "hashes": [
+   "03c6d84a951be6703b7458478f4277b9",
+   "c57f351fcae735e76189023a78fc0c91"
+  ],
   "num_achievements": 31,
   "ra_id": "3678",
   "title": "Batman: The Video Game"
  },
  {
+  "hashes": [
+   "3e986cf3598e0a690fed48aa8c7d95b1",
+   "75b5f31fbacb972fc104b3e77d09003b"
+  ],
   "num_achievements": 24,
   "ra_id": "6299",
   "title": "Battle Arena Toshinden"
  },
  {
+  "hashes": [
+   "e6980267d58310af5ad57570045a95fa"
+  ],
   "num_achievements": 24,
   "ra_id": "6298",
   "title": "Battle City"
  },
  {
+  "hashes": [
+   "c2ab034ceb1dc42c96a7a9301c382d20"
+  ],
   "num_achievements": 17,
   "ra_id": "13125",
   "title": "Battle Crusher"
  },
  {
+  "hashes": [
+   "e8e9ffbc42031a30d305878fff0b4980",
+   "f7aa9880db8e7884618ff0dcab6fba85"
+  ],
   "num_achievements": 16,
   "ra_id": "11008",
   "title": "Battle of Kingdom"
  },
  {
+  "hashes": [
+   "f24ccb89c3ff60f54600d7b063d5a6c2"
+  ],
   "num_achievements": 19,
   "ra_id": "6432",
   "title": "Battle Ping Pong"
  },
  {
+  "hashes": [
+   "023a8fd8eacad0656b5110da26dcdd44"
+  ],
   "num_achievements": 28,
   "ra_id": "4643",
   "title": "Battle Unit Zeoth"
  },
  {
+  "hashes": [
+   "d4f7ade01af0818a79bc809cf96118bb"
+  ],
   "num_achievements": 20,
   "ra_id": "4384",
   "title": "Battleship"
  },
  {
+  "hashes": [
+   "6d24c94d3acd89b4b703f7bd2a504833"
+  ],
   "num_achievements": 28,
   "ra_id": "2211",
   "title": "Battletoads"
  },
  {
+  "hashes": [
+   "13ec0c660b5a963a07b39ecabf0e0ab5"
+  ],
   "num_achievements": 21,
   "ra_id": "14164",
   "title": "Battletoads and Double Dragon: The Ultimate Team"
  },
  {
+  "hashes": [
+   "8f160aa0b2f69a019911fd57ac8c5b31"
+  ],
   "num_achievements": 9,
   "ra_id": "4095",
   "title": "Beavis and Butt-Head"
  },
  {
+  "hashes": [
+   "f6c1715b8b93356b8b8ad27f5574dc96"
+  ],
   "num_achievements": 33,
   "ra_id": "3679",
   "title": "Beetlejuice"
  },
  {
+  "hashes": [
+   "9d94d01d3133165d4469bb27d58f0f6c"
+  ],
   "num_achievements": 10,
   "ra_id": "3680",
   "title": "Bill & Ted's Excellent Game Boy Adventure"
  },
  {
+  "hashes": [
+   "f89a33de3fa660a13ec29bb323efffa9"
+  ],
   "num_achievements": 49,
   "ra_id": "6435",
   "title": "Bionic Commando"
  },
  {
+  "hashes": [
+   "11cb4872732de161a514692479ff5b86",
+   "2b7a0cf7d1aad1be05f411ad1ca8fc08",
+   "7afb675171d58105112dbacf2ced77cb"
+  ],
   "num_achievements": 22,
   "ra_id": "4070",
   "title": "Bishoujo Senshi Sailor Moon"
  },
  {
+  "hashes": [
+   "84634fb36156bb1b9e54bc62fbaf3525"
+  ],
   "num_achievements": 18,
   "ra_id": "22655",
   "title": "Bishoujo Senshi Sailor Moon R"
  },
  {
+  "hashes": [
+   "88908153a898e5d91a02206dbb03713a"
+  ],
   "num_achievements": 25,
   "ra_id": "8829",
   "title": "Black Bass: Lure Fishing"
  },
  {
+  "hashes": [
+   "55ef8421492242c2726e355c41aef000",
+   "b4c3e1ecce45d316a60e54f379f6acb1"
+  ],
   "num_achievements": 22,
   "ra_id": "4064",
   "title": "Block Kuzushi"
  },
  {
+  "hashes": [
+   "7615154dc9afb1a7d7d2fe63b76c68e4"
+  ],
   "num_achievements": 40,
   "ra_id": "2118",
   "title": "Bomb Jack"
  },
  {
+  "hashes": [
+   "4ab78239e79ba059d0d7aa7a629a9474",
+   "6fc5f5680e5e1a4d6378d5abb07e683f",
+   "7e4c9c3620bea7b633394beb67e9680b"
+  ],
   "num_achievements": 44,
   "ra_id": "2384",
   "title": "Bomberman GB"
  },
  {
+  "hashes": [
+   "22e2a5e30bb1c77b8fefe4c4e265681e",
+   "3addab2611566ab072fc996f8a81b224"
+  ],
   "num_achievements": 48,
   "ra_id": "6440",
   "title": "Bomberman GB 3"
  },
  {
+  "hashes": [
+   "79d6e6515905ec3fbcbd9e50ff469000"
+  ],
   "num_achievements": 36,
   "ra_id": "5205",
   "title": "Bonk's Adventure"
  },
  {
+  "hashes": [
+   "b73d76599e3d7f979a99bba5f1c92add"
+  ],
   "num_achievements": 27,
   "ra_id": "7598",
   "title": "Bonk's Revenge"
  },
  {
+  "hashes": [
+   "d17aa3dd0a52bc3dc03bfe20f27c8b07",
+   "faa5793986914861a1edeb8719d6fe76"
+  ],
   "num_achievements": 47,
   "ra_id": "4697",
   "title": "Booby Boys"
  },
  {
+  "hashes": [
+   "239fd20f424ee53d2f11018dbd942df4"
+  ],
   "num_achievements": 48,
   "ra_id": "6442",
   "title": "Boxxle"
  },
  {
+  "hashes": [
+   "308abd707a48ee9d69c287d818469fd6"
+  ],
   "num_achievements": 51,
   "ra_id": "6443",
   "title": "Boxxle II"
  },
  {
+  "hashes": [
+   "7f970d79f06cfb4270dea4b051277098"
+  ],
   "num_achievements": 29,
   "ra_id": "6127",
   "title": "Bubble Ghost"
  },
  {
+  "hashes": [
+   "8963803e642dbfbe4f5f3bc5a567785d"
+  ],
   "num_achievements": 15,
   "ra_id": "688",
   "title": "Bugs Bunny Crazy Castle II"
  },
  {
+  "hashes": [
+   "dd5aa6e85827a3ce6e4b7500e75a3262"
+  ],
   "num_achievements": 39,
   "ra_id": "6445",
   "title": "Burai Fighter Deluxe"
  },
  {
+  "hashes": [
+   "9627134ca3ea6e885275d30460ce3563"
+  ],
   "num_achievements": 62,
   "ra_id": "6446",
   "title": "BurgerTime: Deluxe"
  },
  {
+  "hashes": [
+   "37c69c73c81e221189a672938b5f30ab",
+   "fa91adc7023e03f97ec36f66876a569e"
+  ],
   "num_achievements": 136,
   "ra_id": "2465",
   "title": "Bust-A-Move 2: Arcade Edition"
  },
  {
+  "hashes": [
+   "2b1221e85b545bba7e2291fede03fd96"
+  ],
   "num_achievements": 81,
   "ra_id": "5955",
   "title": "Bust-A-Move 3 DX"
  },
  {
+  "hashes": [
+   "d97f34c22a179fb4094acbc05616f565"
+  ],
   "num_achievements": 23,
   "ra_id": "6447",
   "title": "Buster Bros."
  },
  {
+  "hashes": [
+   "e46274f5c7a7e2f7816174e32da48fdb"
+  ],
   "num_achievements": 13,
   "ra_id": "7334",
   "title": "Card Game"
  },
  {
+  "hashes": [
+   "792c706a0addebed39d177077a1caac0",
+   "a614bbd7851374a870e57f43896ffe0e"
+  ],
   "num_achievements": 10,
   "ra_id": "3695",
   "title": "Casper"
  },
  {
+  "hashes": [
+   "7c65e9da405d2225d079f75e56276822"
+  ],
   "num_achievements": 45,
   "ra_id": "5013",
   "title": "Castlevania II: Belmont's Revenge"
  },
  {
+  "hashes": [
+   "1475824e7262c0d6359f43c287e034a5",
+   "6761f77e6daa82120dd7c73adeec777e"
+  ],
   "num_achievements": 49,
   "ra_id": "5137",
   "title": "Castlevania Legends"
  },
  {
+  "hashes": [
+   "0b4410c6b94d6359dba5609ae9a32909"
+  ],
   "num_achievements": 28,
   "ra_id": "689",
   "title": "Castlevania: The Adventure"
  },
  {
+  "hashes": [
+   "5a75fe8de54e4cbd09cae23f050f6965"
+  ],
   "num_achievements": 22,
   "ra_id": "2245",
   "title": "Catrap"
  },
  {
+  "hashes": [
+   "10d92861e262069ce31559e12b927aa0",
+   "9cf7725b41ee950f58c33e060718c2cf"
+  ],
   "num_achievements": 55,
   "ra_id": "6357",
   "title": "Cave Noire"
  },
  {
+  "hashes": [
+   "0a96c9c737a07148fd065b3c121dcbb2",
+   "6884a31366f565ca25935e1fba52efbc"
+  ],
   "num_achievements": 14,
   "ra_id": "2552",
   "title": "Chase H.Q."
  },
  {
+  "hashes": [
+   "a74aa804a3a6439303583e6c0b413b00"
+  ],
   "num_achievements": 16,
   "ra_id": "7720",
   "title": "Chikyuu Kaihou Gun ZAS"
  },
  {
+  "hashes": [
+   "8d885e185ad2a0cb5c9e3b152bd24583"
+  ],
   "num_achievements": 32,
   "ra_id": "690",
   "title": "Contra: The Alien Wars"
  },
  {
+  "hashes": [
+   "57b192b42b4e1945cc7f20c98f7e1dab"
+  ],
   "num_achievements": 10,
   "ra_id": "6630",
   "title": "Cool Ball"
  },
  {
+  "hashes": [
+   "bcb3d47c291fd0a26b2c7b1082c3ad88"
+  ],
   "num_achievements": 27,
   "ra_id": "5010",
   "title": "Crayon Shin-chan 4: Ora no Itazura Daihenshin"
  },
  {
+  "hashes": [
+   "a5d383a5f6e9d61b505429257f2c44c1"
+  ],
   "num_achievements": 15,
   "ra_id": "8056",
   "title": "Crayon Shin-chan: Ora to Shiro wa Otomodachi da yo"
  },
  {
+  "hashes": [
+   "e55ecbd33d5813fe6e9a4ca1d04e9f15"
+  ],
   "num_achievements": 21,
   "ra_id": "6454",
   "title": "Cyraid"
  },
  {
+  "hashes": [
+   "34b3d0f0843b83e5b0e00bc3d0669793"
+  ],
   "num_achievements": 36,
   "ra_id": "6906",
   "title": "Daedalian Opus"
  },
  {
+  "hashes": [
+   "5c837aeba2aa844d4cd34653d4e332ea",
+   "7d776329212fa7cc2b00c5a46f06dd92"
+  ],
   "num_achievements": 25,
   "ra_id": "3696",
   "title": "Darkwing Duck"
  },
  {
+  "hashes": [
+   "4859ec2b18c4fabf489eb570c1d7d326",
+   "60e55697da19bb160316ec290a7a7437"
+  ],
   "num_achievements": 62,
   "ra_id": "692",
   "title": "Donkey Kong"
  },
  {
+  "hashes": [
+   "89bb0d67d5af35c2ebf09d9aef2e34ad"
+  ],
   "num_achievements": 56,
   "ra_id": "693",
   "title": "Donkey Kong Land"
  },
  {
+  "hashes": [
+   "61e765494826a915948b96570eb1da1f",
+   "6e30394fd7ef4a4dc3fe1edd9fc69f72"
+  ],
   "num_achievements": 28,
   "ra_id": "694",
   "title": "Donkey Kong Land 2"
  },
  {
+  "hashes": [
+   "2e46072ce2416feb18f4bd1e9943546c",
+   "333444e90c0bfb99c4ff89fdcb920fe4"
+  ],
   "num_achievements": 43,
   "ra_id": "695",
   "title": "Donkey Kong Land III"
  },
  {
+  "hashes": [
+   "0edf8501b8c2567371ae4f8747a27d63",
+   "545de5c311259b7f7ec313a9d58cf4b4"
+  ],
   "num_achievements": 11,
   "ra_id": "511",
   "title": "Double Dragon"
  },
  {
+  "hashes": [
+   "469605e02eb10652f8f2afa8c7ebffd5"
+  ],
   "num_achievements": 14,
   "ra_id": "547",
   "title": "Double Dragon 3: The Arcade Game"
  },
  {
+  "hashes": [
+   "4f3b84eb325f9162086fac77ac577e7c"
+  ],
   "num_achievements": 10,
   "ra_id": "523",
   "title": "Double Dragon II"
  },
  {
+  "hashes": [
+   "b6da78085d38a8be3ef564b9989c45d0"
+  ],
   "num_achievements": 42,
   "ra_id": "6460",
   "title": "Dr. Franken"
  },
  {
+  "hashes": [
+   "0281fd8061d82472e242954513805196"
+  ],
   "num_achievements": 69,
   "ra_id": "696",
   "title": "Dr. Mario"
  },
  {
+  "hashes": [
+   "3d4537f6a0542f781e408bd5440d23dd"
+  ],
   "num_achievements": 34,
   "ra_id": "3694",
   "title": "Dragon Ball Z: Goku Hishouden"
  },
  {
+  "hashes": [
+   "ae4fda03378a0584d45a4735c9d6290e"
+  ],
   "num_achievements": 11,
   "ra_id": "698",
   "title": "Dragon's Lair: The Legend"
  },
  {
+  "hashes": [
+   "785441d3d75913393807b10b3194dc48",
+   "7c1689ccd53fcc9684e8ab129c03a14b",
+   "9057925ed2531251d494f76d3b8bb471",
+   "ca7a62e5e14aafd813bc806d0cf54117"
+  ],
   "num_achievements": 40,
   "ra_id": "522",
   "title": "DuckTales"
  },
  {
+  "hashes": [
+   "2eee88360aa199b7adc9d9c6647e0809",
+   "665b9ef961ee82edb8db54b3eb5152fd",
+   "b4e5876c5acedd12b62e25a12973a4ae"
+  ],
   "num_achievements": 32,
   "ra_id": "5601",
   "title": "DuckTales 2"
  },
  {
+  "hashes": [
+   "0d24eeff28040ff2a8f63de5bc8cbea2"
+  ],
   "num_achievements": 38,
   "ra_id": "699",
   "title": "Earthworm Jim"
  },
  {
+  "hashes": [
+   "7876945a990ea94ac6b1fe5cf01bc00f"
+  ],
   "num_achievements": 16,
   "ra_id": "6462",
   "title": "Elevator Action"
  },
  {
+  "hashes": [
+   "8ac5c061641b2a8b4c44b46ef693aeef"
+  ],
   "num_achievements": 25,
   "ra_id": "5253",
   "title": "F-1 Race"
  },
  {
+  "hashes": [
+   "05ba7f165dab1ffd49b63b4f5c704c02",
+   "db7d676c93ce9cb24dad231cc8cf24d0"
+  ],
   "num_achievements": 17,
   "ra_id": "9676",
   "title": "Faceball 2000"
  },
  {
+  "hashes": [
+   "4d606ab4ffd5c3d3ecf914a6af1c1f90"
+  ],
   "num_achievements": 27,
   "ra_id": "3606",
   "title": "Felix the Cat"
  },
  {
+  "hashes": [
+   "24cd3bdf490ef2e1aa6a8af380eccd78"
+  ],
   "num_achievements": 50,
   "ra_id": "2403",
   "title": "Final Fantasy Adventure"
  },
  {
+  "hashes": [
+   "2bb0df1b672253aaa5f9caf9aab78224",
+   "66bcd8472c6aba72843920822a856deb",
+   "d8d941968ab9fd236f91003b79c82fbf",
+   "edd6ce2651b74977bbff376233ff4119"
+  ],
   "num_achievements": 62,
   "ra_id": "2479",
   "title": "Final Fantasy Legend II"
  },
  {
+  "hashes": [
+   "31e0b16020d3b7a08a80d4416507d631",
+   "4e70d913df7ddf0f45155ccb79963c2d",
+   "db156bc96b528996ce1bf771195171af"
+  ],
   "num_achievements": 52,
   "ra_id": "700",
   "title": "Final Fantasy Legend III"
  },
  {
+  "hashes": [
+   "0beb67de765ef358d50c28836a39bfb0"
+  ],
   "num_achievements": 21,
   "ra_id": "17742",
   "title": "Fish Dude"
  },
  {
+  "hashes": [
+   "c88d94a984afde869426694a3b992894",
+   "c9edc6cb63e3c2a91889653af8929ff7"
+  ],
   "num_achievements": 25,
   "ra_id": "3615",
   "title": "Fist of the North Star: 10 Big Brawls for the King of the Universe"
  },
  {
+  "hashes": [
+   "4fcc13db8144687e6b28200387aed25c"
+  ],
   "num_achievements": 14,
   "ra_id": "6640",
   "title": "Flipull"
  },
  {
+  "hashes": [
+   "a981378da19c08597db03f3ee02cd6d7",
+   "ac04d143de6734e181a223d05178bde8"
+  ],
   "num_achievements": 25,
   "ra_id": "4215",
   "title": "Fortified Zone"
  },
  {
+  "hashes": [
+   "ea8d9e89565ff9e931118b9ea4712c29"
+  ],
   "num_achievements": 32,
   "ra_id": "4588",
   "title": "Franky, Joe & Dirk: On the Tiles"
  },
  {
+  "hashes": [
+   "1ed313c4fd78b81a8ca3613e6234da7e"
+  ],
   "num_achievements": 26,
   "ra_id": "4962",
   "title": "Frogger"
  },
  {
+  "hashes": [
+   "7727f43d66a77fe0284bf1b8ffede7dd"
+  ],
   "num_achievements": 27,
   "ra_id": "680",
   "title": "Game & Watch Gallery"
  },
  {
+  "hashes": [
+   "42d2f65e2549be9d1d126a6828b5d1c1"
+  ],
   "num_achievements": 30,
   "ra_id": "5365",
   "title": "Game Boy Camera"
  },
  {
+  "hashes": [
+   "b6d1139fb8d57cd47f173faef592c813"
+  ],
   "num_achievements": 25,
   "ra_id": "7446",
   "title": "Game Boy Gallery"
  },
  {
+  "hashes": [
+   "3e35ece810eaa26bb027a18f58cf6dba"
+  ],
   "num_achievements": 24,
   "ra_id": "22656",
   "title": "Game Boy Gallery 2"
  },
  {
+  "hashes": [
+   "88c33c0fc3dbdc848b9be604cdda5744",
+   "aed4f63feaba8b8731aa3cf556a68e1a"
+  ],
   "num_achievements": 11,
   "ra_id": "22424",
   "title": "Gamera: Daikaijuu Kuuchuu Kessen"
  },
  {
+  "hashes": [
+   "a60df6aeb6820683805be1717097fca8"
+  ],
   "num_achievements": 19,
   "ra_id": "2436",
   "title": "Ganso!! Yancha-Maru"
  },
  {
+  "hashes": [
+   "49bcb33470df757847eef5e170c9b6bd",
+   "744dc7e4b03d16b8b6dd35a697c77892",
+   "bbca91d6bc19cda45c706046b6e854e6"
+  ],
   "num_achievements": 9,
   "ra_id": "4150",
   "title": "Garfield Labyrinth"
  },
  {
+  "hashes": [
+   "63e3f5f4b90f17bdf6d2f2aed515e248"
+  ],
   "num_achievements": 31,
   "ra_id": "2411",
   "title": "Gargoyle's Quest: Ghosts 'n Goblins"
  },
  {
+  "hashes": [
+   "0841a527b116a52ad26de023b20b1a42",
+   "4067f70f9def39ceb49a258540ce3d66"
+  ],
   "num_achievements": 26,
   "ra_id": "3619",
   "title": "Ghostbusters II"
  },
  {
+  "hashes": [
+   "c2cc37e8a5c1c6dd5656b501903f9bcd"
+  ],
   "num_achievements": 28,
   "ra_id": "17397",
   "title": "God Medicine: Fukkokuban"
  },
  {
+  "hashes": [
+   "e83411adccf5266f2deb263e67b68bc1"
+  ],
   "num_achievements": 29,
   "ra_id": "5258",
   "title": "Godzilla"
  },
  {
+  "hashes": [
+   "6175a5ef55a1998944267e75d8ebf79d"
+  ],
   "num_achievements": 14,
   "ra_id": "4648",
   "title": "Golf"
  },
  {
+  "hashes": [
+   "e10f788da29e18934c3e9161b25b96c7"
+  ],
   "num_achievements": 24,
   "ra_id": "7796",
   "title": "Gradius: The Interstellar Assault"
  },
  {
+  "hashes": [
+   "b83f33f33ab52e0b7ee80715dbb8d415"
+  ],
   "num_achievements": 25,
   "ra_id": "5737",
   "title": "Great Greed"
  },
  {
+  "hashes": [
+   "f59dbce4cf5b51a5241806e1b35301fb"
+  ],
   "num_achievements": 47,
   "ra_id": "2210",
   "title": "Gremlins 2: The New Batch"
  },
  {
+  "hashes": [
+   "e7e0943cb9b8d6dd29c18e6a41e8d346"
+  ],
   "num_achievements": 9,
   "ra_id": "27864",
   "title": "Gyogun Tanchiki: Pocket Sonar"
  },
  {
+  "hashes": [
+   "131993b986f3ba1f682d8d74f050487b",
+   "d20d4b7e9f7299ac1f59c3130abb6e02"
+  ],
   "num_achievements": 10,
   "ra_id": "3617",
   "title": "Hammerin' Harry: Ghost Building Company"
  },
  {
+  "hashes": [
+   "b9d3d91d8389cc510aa8fe9063228644"
+  ],
   "num_achievements": 11,
   "ra_id": "5735",
   "title": "Hatris"
  },
  {
+  "hashes": [
+   "b236e81e9f5c19148c24c4984d8ef90f"
+  ],
   "num_achievements": 55,
   "ra_id": "4209",
   "title": "Heiankyo Alien"
  },
  {
+  "hashes": [
+   "51d4ff9a9346b16cf290f50111b110c0"
+  ],
   "num_achievements": 52,
   "ra_id": "20292",
   "title": "Heracles no Eikou: Ugokidashita Kamigami"
  },
  {
+  "hashes": [
+   "abd4baa57f0b90b402c2e56090394f9e"
+  ],
   "num_achievements": 10,
   "ra_id": "3611",
   "title": "Hercules"
  },
  {
+  "hashes": [
+   "cd6ca2a01e2310193c46afcbfa382ab5"
+  ],
   "num_achievements": 31,
   "ra_id": "7007",
   "title": "Hero Shuugou!! Pinball Party"
  },
  {
+  "hashes": [
+   "eb41c29d9526e5f24f590d16f7bd33b8"
+  ],
   "num_achievements": 66,
   "ra_id": "4210",
   "title": "High Stakes Gambling"
  },
  {
+  "hashes": [
+   "6993211741eea010f51b1c20b05d4c43"
+  ],
   "num_achievements": 7,
   "ra_id": "5212",
   "title": "Home Alone"
  },
  {
+  "hashes": [
+   "0611b365116b22c1aaa7e3ce4faed5ed"
+  ],
   "num_achievements": 25,
   "ra_id": "7409",
   "title": "Home Alone 2: Lost in New York"
  },
  {
+  "hashes": [
+   "1efea4210026a8d733a5b2ade2b005f1"
+  ],
   "num_achievements": 25,
   "ra_id": "5351",
   "title": "Ikari no Yousai 2"
  },
  {
+  "hashes": [
+   "669a4ecf89794505591b36d617e51f8a"
+  ],
   "num_achievements": 30,
   "ra_id": "6473",
   "title": "James Bond 007"
  },
  {
+  "hashes": [
+   "341b155413d2253886d8f188625cc1c3",
+   "a4627fb86c2b91fc0ace4f628aa607e4"
+  ],
   "num_achievements": 22,
   "ra_id": "4745",
   "title": "Joe & Mac: Caveman Ninja"
  },
  {
+  "hashes": [
+   "7e9d69eacd6b4c82527065bcf63e474b",
+   "c7f41e40a9e5a9141ca80be614e0907b"
+  ],
   "num_achievements": 27,
   "ra_id": "1394",
   "title": "Judge Dredd"
  },
  {
+  "hashes": [
+   "7173cecc94bcdb7aeb7240ae87491044",
+   "d11d2dc76c6d743c3cc791104a2bdae2"
+  ],
   "num_achievements": 17,
   "ra_id": "5378",
   "title": "Jurassic Park"
  },
  {
+  "hashes": [
+   "b94eb524347bb0a8a5c151b59ad63cfa"
+  ],
   "num_achievements": 28,
   "ra_id": "8361",
   "title": "Jurassic Park 2: The Chaos Continues"
  },
  {
+  "hashes": [
+   "1fd8f7940f3a63012888c0014d5ab014",
+   "4ebe14c4c51555908c0e4cabb66dc813",
+   "5e477cdea0b3266b505ac5938ddc5e5c"
+  ],
   "num_achievements": 79,
   "ra_id": "5045",
   "title": "Kaeru no Tame ni Kane wa Naru"
  },
  {
+  "hashes": [
+   "deb601b4fadefb13f5e6251c945d10f4"
+  ],
   "num_achievements": 15,
   "ra_id": "25619",
   "title": "Kaijuu Ou Gojira"
  },
  {
+  "hashes": [
+   "24a6b4457a511cc667e9ac25417401ab"
+  ],
   "num_achievements": 27,
   "ra_id": "2231",
   "title": "Kid Dracula"
  },
  {
+  "hashes": [
+   "23c7be98ac9a4d3b046ad1be3f0965e4"
+  ],
   "num_achievements": 36,
   "ra_id": "704",
   "title": "Kid Icarus: Of Myths and Monsters"
  },
  {
+  "hashes": [
+   "0e07210b5f62ec8587d270c33a04ed1e",
+   "a7594d0b4362a7e4325dd8ea913c4bf1"
+  ],
   "num_achievements": 60,
   "ra_id": "7008",
   "title": "Kininkou Maroku Oni"
  },
  {
+  "hashes": [
+   "203db7ddc72359e4db5e9ab42a6f0ba8"
+  ],
   "num_achievements": 76,
   "ra_id": "705",
   "title": "Kirby's Block Ball"
  },
  {
+  "hashes": [
+   "995ce81fe91162cff295badd94e366f3",
+   "a66e4918edcd042ec171a57fe3ce36c3",
+   "b7963a68f95d644f8adedb269d29666c",
+   "e1d0ae20278df92dc51618b0fb381539",
+   "e6af05e6e73a6f0b025f43d8f36fc1e4"
+  ],
   "num_achievements": 35,
   "ra_id": "706",
   "title": "Kirby's Dream Land"
  },
  {
+  "hashes": [
+   "ddb5bfae32b0ca39cf8ab6c46880126c"
+  ],
   "num_achievements": 37,
   "ra_id": "707",
   "title": "Kirby's Dream Land 2"
  },
  {
+  "hashes": [
+   "c2de4b0c726b579012fef2be578b1920",
+   "f711ed10307d4ea27223fe965595b123"
+  ],
   "num_achievements": 27,
   "ra_id": "708",
   "title": "Kirby's Pinball Land"
  },
  {
+  "hashes": [
+   "f4c0bf35939be6786c099e9eb4635919"
+  ],
   "num_achievements": 16,
   "ra_id": "2223",
   "title": "Kirby's Star Stacker"
  },
  {
+  "hashes": [
+   "18fe3526f170f47a277e0fac17d90170"
+  ],
   "num_achievements": 20,
   "ra_id": "6481",
   "title": "Kung-Fu Master"
  },
  {
+  "hashes": [
+   "3a4bb57e9fbd4ef563c0c7b59a1c82a5"
+  ],
   "num_achievements": 40,
   "ra_id": "2460",
   "title": "Kwirk"
  },
  {
+  "hashes": [
+   "68a06792ae4401f9fc09d460120ec2a1"
+  ],
   "num_achievements": 41,
   "ra_id": "14354",
   "title": "Lazlos' Leap"
  },
  {
+  "hashes": [
+   "cb66b804aea0db325d5f2dd795c71a6a"
+  ],
   "num_achievements": 10,
   "ra_id": "33488",
   "title": "Lingo"
  },
  {
+  "hashes": [
+   "6ee73d60e4d5a2984edea054082b15bf",
+   "de95d425f6a2836960f4ee2a9aa2f6f7"
+  ],
   "num_achievements": 52,
   "ra_id": "8220",
   "title": "Little Master: Raikuban no Densetsu"
  },
  {
+  "hashes": [
+   "8bb31f539e8999d5c4e9449fe1befad6"
+  ],
   "num_achievements": 34,
   "ra_id": "4059",
   "title": "Lock n' Chase"
  },
  {
+  "hashes": [
+   "6e9dd3c1fb169da79292a1962e95a884",
+   "beeb3092aec6da08f5a86630207ae87c"
+  ],
   "num_achievements": 16,
   "ra_id": "2475",
   "title": "Looney Tunes"
  },
  {
+  "hashes": [
+   "e1d28ce25a61b4f623c3c8013ce55b89"
+  ],
   "num_achievements": 22,
   "ra_id": "4890",
   "title": "Lucle"
  },
  {
+  "hashes": [
+   "0269f100311ee04c3e55423698b33285",
+   "06b75e657debd1568f18d369cc2422dd",
+   "1220df80661f4030a32ad94f780c4191"
+  ],
   "num_achievements": 42,
   "ra_id": "22120",
   "title": "Magic Knight Rayearth"
  },
  {
+  "hashes": [
+   "27334d7717d8e3dc953ba733ef1853c4"
+  ],
   "num_achievements": 14,
   "ra_id": "2457",
   "title": "Magnetic Soccer"
  },
  {
+  "hashes": [
+   "3574c3ae7c83faeb018cb1c05950c25d",
+   "de731a5f2f4e7d16bcdc4b5953ddcc12"
+  ],
   "num_achievements": 42,
   "ra_id": "6200",
   "title": "Makaimura Gaiden: The Demon Darkness"
  },
  {
+  "hashes": [
+   "5e411c0f57b2d867f16084251e677d1c"
+  ],
   "num_achievements": 11,
   "ra_id": "6485",
   "title": "Malibu Beach Volleyball"
  },
  {
+  "hashes": [
+   "f489b8eb7dc88a39842f20a7f7165e5b"
+  ],
   "num_achievements": 6,
   "ra_id": "2456",
   "title": "Marble Madness"
  },
  {
+  "hashes": [
+   "ccaf9331318d4dfe3d1ee681928a74fd",
+   "defe3559ef5e8d69ca95289edb6f9f6e"
+  ],
   "num_achievements": 89,
   "ra_id": "2450",
   "title": "Mario's Picross"
  },
  {
+  "hashes": [
+   "7f26dd90f8e80b52ead8fc0e3609d4f2"
+  ],
   "num_achievements": 25,
   "ra_id": "2455",
   "title": "Maru's Mission"
  },
  {
+  "hashes": [
+   "6dfcaebffc8e2645bb2b1e5be69e1514"
+  ],
   "num_achievements": 25,
   "ra_id": "7826",
   "title": "Maui Mallard in Cold Shadow"
  },
  {
+  "hashes": [
+   "00dd260714d054a2436ed05d5c31a701",
+   "140c0882f7b411043e6c57f0ee3dc242",
+   "406ce3972a8cc5e107fe3957f378eea7",
+   "5168e5f5779ec09bf333580c4fa65e42",
+   "78c568cbfff6314b1416880d9efaeca6",
+   "9c9a8c5b7344c610b1de15fe280292d2",
+   "a74532a4ad7a3788f9f224d7e2faf4cc",
+   "e2ccd9a7b098f83cfe66f959f402a4a2",
+   "f08ba20ef9365237c5728b00a96b9585",
+   "ff283eb6a9ff69ba82cc7d4ed491f401"
+  ],
   "num_achievements": 101,
   "ra_id": "16080",
   "title": "Medarot: Kabuto Version"
  },
  {
+  "hashes": [
+   "02a0e14217691fe1c58aff43fe1adc8e",
+   "15f7a1936bac5b46b90255f6d75966b0",
+   "217ad540e5ea1c25b4c5d6a5860c0f7b",
+   "41a324c8fa014d60246887e68bfa931c",
+   "49515d0da23d5ea4bde8a06dff4a9904",
+   "724d0eecbf6d2ded8c6caa87c7aabe5a",
+   "7ffbde321a427200815c38bdb37e69b0",
+   "a9c9d6b6759c28f2b3986717f4df2f98",
+   "f0871152b2e929c83f7be0d7fdf36f55"
+  ],
   "num_achievements": 101,
   "ra_id": "16081",
   "title": "Medarot: Kuwagata Version"
  },
  {
+  "hashes": [
+   "7fe07271d04ed9e0bc0663dde55a2ae4",
+   "b81ea8b918efbbf8a2db99855faf10b1",
+   "b9cfee05797beb8ff7e259ee77eaf2fb",
+   "c05b47df8bdfe770be228e51bc42da84"
+  ],
   "num_achievements": 44,
   "ra_id": "2251",
   "title": "Mega Man II"
  },
  {
+  "hashes": [
+   "4c614f884a07872f12056ad1a421e1f9",
+   "56a36bd3520bcf5eeb5d6f879be44c1f",
+   "bfdf3a907cd192aeb3ecfbe4e5b69b33",
+   "c22f3efe9048652ef6f798650fce2d2a",
+   "f155c9c04ef01a99b26478c1121c8069"
+  ],
   "num_achievements": 52,
   "ra_id": "5023",
   "title": "Mega Man III"
  },
  {
+  "hashes": [
+   "401647ad59208d67507245ac13e3894c",
+   "704873d8c048881bd21b92a0257dfb58",
+   "8a00f627b8902c92327435901c249e19",
+   "b1a4da0fc96be115b3d5303c9ca1447f"
+  ],
   "num_achievements": 79,
   "ra_id": "712",
   "title": "Mega Man IV"
  },
  {
+  "hashes": [
+   "309fc69d5ab1d2b17d0bbc127faf04c1",
+   "b53fe06db30ab689153135990354dd5a",
+   "b98ce4d1606c2fd533557b3cd16de789",
+   "ceb17d831b410d91aa41bf2819cbed82"
+  ],
   "num_achievements": 43,
   "ra_id": "2255",
   "title": "Mega Man V"
  },
  {
+  "hashes": [
+   "2c1358474573c9dd38d6a128f4714a86",
+   "4ba4398181d98958fa7434ba7716f11a",
+   "76f8d3ed7a22ec9815ad3c5c00a9f9c0",
+   "d0b1c550250c859f4563165eb29033d6",
+   "fed695d2bc3e1801aeeab1c8e573096e"
+  ],
   "num_achievements": 33,
   "ra_id": "2253",
   "title": "Mega Man: Dr. Wily's Revenge"
  },
  {
+  "hashes": [
+   "24c5cec170f19493c6013b4ccaee1e35",
+   "45b5142059907dbd92aaf3f8d003721b"
+  ],
   "num_achievements": 15,
   "ra_id": "2454",
   "title": "Megalit"
  },
  {
+  "hashes": [
+   "7ab8eb19c5356f62bcc3fa2a8f1aba1f",
+   "b6db91e62c675f165d9243426437dc50"
+  ],
   "num_achievements": 14,
   "ra_id": "5215",
   "title": "Meitantei Conan: Chika Yuuenchi Satsujin Jiken"
  },
  {
+  "hashes": [
+   "bf3d90ff1c8d4827b5657d7b15d84fde"
+  ],
   "num_achievements": 42,
   "ra_id": "2452",
   "title": "Mercenary Force"
  },
  {
+  "hashes": [
+   "693fabbcb14ebe1ad65d6735adb7133a",
+   "9639948ad274fa15281f549e5f9c4d87",
+   "f005cbcb60f4d9f3e4f6190e809cff1d"
+  ],
   "num_achievements": 25,
   "ra_id": "521",
   "title": "Metroid II: Return of Samus"
  },
  {
+  "hashes": [
+   "38b65d28ac0bd619f5dee5a45d5fc542"
+  ],
   "num_achievements": 27,
   "ra_id": "2573",
   "title": "Mickey Mouse: Magic Wands!"
  },
  {
+  "hashes": [
+   "16bc18ef00088094e9fad502e613be5e",
+   "5ee6e81ec8261c94f41f8e689863f6c8",
+   "9cd7f210ae2680349078aca844be5354",
+   "b0195767bf5d839e4cc4c837a4709b54"
+  ],
   "num_achievements": 59,
   "ra_id": "3687",
   "title": "Mickey's Dangerous Chase"
  },
  {
+  "hashes": [
+   "f7d266bc81c150796ae373bddd0a9a84"
+  ],
   "num_achievements": 12,
   "ra_id": "4055",
   "title": "Mickey's Ultimate Challenge"
  },
  {
+  "hashes": [
+   "0631158ead23bfed84cd3a5010eb9295"
+  ],
   "num_achievements": 43,
   "ra_id": "7119",
   "title": "Micro Machines"
  },
  {
+  "hashes": [
+   "5b83db9958eefbd72a82c4893e79d9e1"
+  ],
   "num_achievements": 35,
   "ra_id": "6712",
   "title": "Mighty Morphin Power Rangers"
  },
  {
+  "hashes": [
+   "967473063a55634223f15e4c0a79dc44"
+  ],
   "num_achievements": 20,
   "ra_id": "715",
   "title": "Mighty Morphin Power Rangers: The Movie"
  },
  {
+  "hashes": [
+   "1f93249c298f3ecdc4099602d9dedbb5"
+  ],
   "num_achievements": 50,
   "ra_id": "11204",
   "title": "Milon's Secret Castle"
  },
  {
+  "hashes": [
+   "a36b4c6c13d1dc9a98af66f963858ba9"
+  ],
   "num_achievements": 44,
   "ra_id": "7979",
   "title": "Minesweeper: Soukaitei"
  },
  {
+  "hashes": [
+   "872b8eb18385ed6b1937b42436af56fd",
+   "d21322204e66c5f40ab3a86cbb63fccf",
+   "db9e4e9d4a4b9f4e282448284ddea155"
+  ],
   "num_achievements": 43,
   "ra_id": "18326",
   "title": "Mini-Putt"
  },
  {
+  "hashes": [
+   "64080619789f154ee057f2946a98c61c"
+  ],
   "num_achievements": 17,
   "ra_id": "4211",
   "title": "Miracle Adventure of Esparks: Ushinawareta Seiseki Perivron"
  },
  {
+  "hashes": [
+   "6ee9c4e484b70bbecaaffafb963f004b"
+  ],
   "num_achievements": 11,
   "ra_id": "33588",
   "title": "Mogura de Pon!"
  },
  {
+  "hashes": [
+   "4ff223851bc7e3d19acdbf8034e4829f",
+   "f28ade3926852a8ad2e449c274683956"
+  ],
   "num_achievements": 29,
   "ra_id": "2477",
   "title": "Mole Mania"
  },
  {
+  "hashes": [
+   "f31c556186b91cf161ecf60644fbecba",
+   "f7572c43cb8b4ddaef69e45f48051d47"
+  ],
   "num_achievements": 73,
   "ra_id": "18793",
   "title": "Momotarou Dengeki"
  },
  {
+  "hashes": [
+   "f7a896711997ea35d4f79f37ac0890bb"
+  ],
   "num_achievements": 35,
   "ra_id": "11188",
   "title": "Monopoly"
  },
  {
+  "hashes": [
+   "261ec744fcf7a4eb5a6025c48c0538a3"
+  ],
   "num_achievements": 69,
   "ra_id": "4111",
   "title": "Monster Max"
  },
  {
+  "hashes": [
+   "b17c839d444f98a4bd7fec2e49cacf12",
+   "b3474bab3eda25bdb1508ed53765fb30"
+  ],
   "num_achievements": 26,
   "ra_id": "716",
   "title": "Mortal Kombat"
  },
  {
+  "hashes": [
+   "c19d61e31d6aebc12abf80d628a7bd09"
+  ],
   "num_achievements": 43,
   "ra_id": "718",
   "title": "Mortal Kombat 3"
  },
  {
+  "hashes": [
+   "ce2927987765182b9c69f26f758656e9"
+  ],
   "num_achievements": 33,
   "ra_id": "717",
   "title": "Mortal Kombat II"
  },
  {
+  "hashes": [
+   "dca464649ea6a3969ac8ee834d431d44",
+   "de1572d4d181b265e2cb7d517c0ba04a"
+  ],
   "num_achievements": 36,
   "ra_id": "1395",
   "title": "Motocross Maniacs"
  },
  {
+  "hashes": [
+   "1efbb42c4db24e5e42e778d969ba1f5d"
+  ],
   "num_achievements": 16,
   "ra_id": "6410",
   "title": "Mr. Chin's Gourmet Paradise"
  },
  {
+  "hashes": [
+   "7db13139bc32e2aadb732d610f4c1604"
+  ],
   "num_achievements": 13,
   "ra_id": "3651",
   "title": "Mr. Nutz"
  },
  {
+  "hashes": [
+   "5cfa323ad8d8e4a6d50022d5c64b46fd",
+   "ffa8642a18781fbe79df436a761a9775"
+  ],
   "num_achievements": 27,
   "ra_id": "8468",
   "title": "Ms. Pac-Man"
  },
  {
+  "hashes": [
+   "feaa1bbb7e532872cf1d37d80af6fdb4"
+  ],
   "num_achievements": 52,
   "ra_id": "6486",
   "title": "Mystical Ninja Starring Goemon"
  },
  {
+  "hashes": [
+   "521d2aa473f4e740a6938861f70511cc"
+  ],
   "num_achievements": 22,
   "ra_id": "2548",
   "title": "Nail 'n Scale"
  },
  {
+  "hashes": [
+   "802cfbc386bb79b0889d7dd2b6abdc13"
+  ],
   "num_achievements": 39,
   "ra_id": "13205",
   "title": "NBA Jam: Tournament Edition"
  },
  {
+  "hashes": [
+   "c3f48a71da12919004c88b6f37eebd0d"
+  ],
   "num_achievements": 24,
   "ra_id": "6489",
   "title": "Nekketsu! Beach Volley Dayo Kunio-kun"
  },
  {
+  "hashes": [
+   "1eb7ff636e532321a18885eea660604a",
+   "4d4eae6560062b9a12d9770653f1a53f"
+  ],
   "num_achievements": 26,
   "ra_id": "4747",
   "title": "Nemesis"
  },
  {
+  "hashes": [
+   "4e493ada5353cf6eb1c0f009d6a5ac13"
+  ],
   "num_achievements": 15,
   "ra_id": "8885",
   "title": "Nettou Garou Densetsu 2: Aratanaru Tatakai"
  },
  {
+  "hashes": [
+   "4c24f644e70f0786d20d8ca9ffcea51c"
+  ],
   "num_achievements": 47,
   "ra_id": "5389",
   "title": "Nettou Real Bout Garou Densetsu Special"
  },
  {
+  "hashes": [
+   "3eade561a44103622a0aff7b176d3207",
+   "aa9d61a428c592030a88828ae80c8fb2",
+   "b68c4141b4c4f778bd13100b9a3db82c"
+  ],
   "num_achievements": 30,
   "ra_id": "2409",
   "title": "Nettou The King of Fighters '95"
  },
  {
+  "hashes": [
+   "16ee9b10c27c136d2959ae87105a8a2e",
+   "5a763c7a8c6f2ee9e6464512ca2d672e"
+  ],
   "num_achievements": 32,
   "ra_id": "7080",
   "title": "Nettou The King of Fighters '96"
  },
  {
+  "hashes": [
+   "13dd6801246da226b0c2db339df4a246",
+   "7f896b5e5e27eda1b08251ebe581c885",
+   "e12c5c2897ed095f8d26c7578afddfda"
+  ],
   "num_achievements": 36,
   "ra_id": "2561",
   "title": "Ninja Gaiden Shadow"
  },
  {
+  "hashes": [
+   "1a52fb8f767e24dc75c3bb2d08679f6c"
+  ],
   "num_achievements": 17,
   "ra_id": "5741",
   "title": "Ninja Taro"
  },
  {
+  "hashes": [
+   "c9200b1be878f079cee6cbebbeaa27ea"
+  ],
   "num_achievements": 30,
   "ra_id": "5603",
   "title": "Nintendo World Cup"
  },
  {
+  "hashes": [
+   "15449adf4a457462d59c92ed0ac49d5a",
+   "ccd0cf7cc240714a9694e1fe296afb7c"
+  ],
   "num_achievements": 8,
   "ra_id": "3629",
   "title": "Noobow"
  },
  {
+  "hashes": [
+   "5ca71cd4ceace3cb6650ff05d679d149"
+  ],
   "num_achievements": 13,
   "ra_id": "4983",
   "title": "Oddworld Adventures"
  },
  {
+  "hashes": [
+   "c6effb3a51b36056411760d1ffe048f7"
+  ],
   "num_achievements": 19,
   "ra_id": "6075",
   "title": "Operation C"
  },
  {
+  "hashes": [
+   "1123060cb5177d576c191d774ebe403a",
+   "f57101bf26e140991a4e2f50a968ce7c"
+  ],
   "num_achievements": 13,
   "ra_id": "5257",
   "title": "Othello"
  },
  {
+  "hashes": [
+   "0b7cbe56d1cf6370e60699e553d091a1"
+  ],
   "num_achievements": 16,
   "ra_id": "4214",
   "title": "Out of Gas"
  },
  {
+  "hashes": [
+   "8a0430cf49abda1fc055c16d2bbea387",
+   "e2e76c7e50d4463f9e628df2933bb79a",
+   "f683f5e516c1f267d4d16dc0e697f746"
+  ],
   "num_achievements": 22,
   "ra_id": "13124",
   "title": "Pac-Attack"
  },
  {
+  "hashes": [
+   "54ef4bb8c3d272af5bb78b4306f37248",
+   "e3b7b3649e52ee6aa6fd98baf88d50de"
+  ],
   "num_achievements": 47,
   "ra_id": "4589",
   "title": "Pac-in-Time"
  },
  {
+  "hashes": [
+   "1a76705a7617c4f2c54ecf60d89bd0ae",
+   "cd9027e147f4605f26ee261c537441b3",
+   "f6b898bfaa367ac1b0782a363cd098c7"
+  ],
   "num_achievements": 17,
   "ra_id": "719",
   "title": "Pac-Man"
  },
  {
+  "hashes": [
+   "be99ca18c5b9dbb90b4e08f164855be5"
+  ],
   "num_achievements": 17,
   "ra_id": "6856",
   "title": "Pachinko Time"
  },
  {
+  "hashes": [
+   "f4e5b89f72cf88c203d8f66c627acd91"
+  ],
   "num_achievements": 15,
   "ra_id": "7631",
   "title": "Palamedes"
  },
  {
+  "hashes": [
+   "dcabc0879c258e54048237d280ffa7da"
+  ],
   "num_achievements": 49,
   "ra_id": "3705",
   "title": "Paperboy"
  },
  {
+  "hashes": [
+   "e0aadd04cf2c955ff60d9446b2b18931"
+  ],
   "num_achievements": 16,
   "ra_id": "7671",
   "title": "Parasol Henbee"
  },
  {
+  "hashes": [
+   "ab5e4c728a5b62f7985c22c61551469c"
+  ],
   "num_achievements": 36,
   "ra_id": "2437",
   "title": "Parasol Stars: The Story of Bubble Bobble III"
  },
  {
+  "hashes": [
+   "2e3a0305f79b058cc4618565bc2db745"
+  ],
   "num_achievements": 33,
   "ra_id": "3704",
   "title": "Parodius Da!"
  },
  {
+  "hashes": [
+   "9c17a77f10f8c8024addc299cfd74b8b"
+  ],
   "num_achievements": 17,
   "ra_id": "720",
   "title": "Penguin Wars"
  },
  {
+  "hashes": [
+   "142d1f9f4b868780824cca20010ad4d8",
+   "34bc051c58166d7bd1fc2540870edfdb",
+   "e8c6250592807a674b4235d06fb05357"
+  ],
   "num_achievements": 32,
   "ra_id": "6621",
   "title": "Picross 2"
  },
  {
+  "hashes": [
+   "e41aac285898754055eb3f0c3f280ea3"
+  ],
   "num_achievements": 44,
   "ra_id": "3688",
   "title": "Pierre le Chef is... Out to Lunch"
  },
  {
+  "hashes": [
+   "49c8eaa9801c56b432beb6cf51d7fde0"
+  ],
   "num_achievements": 21,
   "ra_id": "5938",
   "title": "Pinball Dreams"
  },
  {
+  "hashes": [
+   "113d8f894df6b8c3641b2ba1fe60c250"
+  ],
   "num_achievements": 18,
   "ra_id": "5937",
   "title": "Pinball: Revenge of the 'Gator"
  },
  {
+  "hashes": [
+   "4202e3486b95ab9a5718830b2aa9b7f6"
+  ],
   "num_achievements": 31,
   "ra_id": "14338",
   "title": "Pingu: Sekai de Ichiban Genki na Penguin"
  },
  {
+  "hashes": [
+   "37f2e18c9c015c6578ef3dd404dafe26",
+   "97fecf5ab824825b781771a40e1c60bf"
+  ],
   "num_achievements": 20,
   "ra_id": "3577",
   "title": "Pinocchio"
  },
  {
+  "hashes": [
+   "0f021462180b18436c21299e923cca91",
+   "d9bacb4b392a0ce4e8f9d29baa916b0b"
+  ],
   "num_achievements": 12,
   "ra_id": "3575",
   "title": "Pipe Dream"
  },
  {
+  "hashes": [
+   "966cc6df20d8c5d42f690f28bbcc8caa"
+  ],
   "num_achievements": 31,
   "ra_id": "5732",
   "title": "Pocahontas"
  },
  {
+  "hashes": [
+   "fa37cdb33108b88ade1a3d4a53a039e8"
+  ],
   "num_achievements": 135,
   "ra_id": "22854",
   "title": "Pocket Monsters Ao [Subset - Professor Oak Challenge]"
  },
  {
+  "hashes": [
+   "6c01085701b6fa219792acb64fc18a6d"
+  ],
   "num_achievements": 27,
   "ra_id": "15689",
   "title": "Pocket Monsters Ao [Subset - Speedrun]"
  },
  {
+  "hashes": [
+   "1af955dc4d4d7e02c3b5a051a54bd43a",
+   "e30ffbab1f239f09b226477d84db1368"
+  ],
   "num_achievements": 147,
   "ra_id": "5214",
   "title": "Pocket Monsters Midori [Subset - Monotype Challenge]"
  },
  {
+  "hashes": [
+   "3fb4187d46d4ca2028cf3a00d286c35f",
+   "50927e843568814f7ed45ec4f944bd8b",
+   "cbfa8ac9c2181eeca72ae2c8e6019f88"
+  ],
   "num_achievements": 90,
   "ra_id": "586",
   "title": "Pokémon Blue Version"
  },
  {
+  "hashes": [
+   "4af8f86a951858ead007e4c6f0202f56"
+  ],
   "num_achievements": 133,
   "ra_id": "29295",
   "title": "Pokémon Blue Version [Subset - Professor Oak Challenge]"
  },
  {
-  "num_achievements": 91,
+  "hashes": [
+   "3132056c8f17e4088b95e4264ca59575",
+   "3d45c1ee9abd5738df46d2bdda8b57dc"
+  ],
+  "num_achievements": 90,
   "ra_id": "724",
   "title": "Pokémon Red Version"
  },
  {
+  "hashes": [
+   "72ff69e125ac889dafe8043a7111f92e"
+  ],
   "num_achievements": 133,
   "ra_id": "16084",
   "title": "Pokémon Red Version [Subset - Professor Oak Challenge]"
  },
  {
+  "hashes": [
+   "25da61b495309bfb4d45ab54918d6135",
+   "6e36ce35a35942e17bf9a2544481d8ce",
+   "b309021c135c9967bfb2f16911061699",
+   "b7711b4c6d3d77567951f4689675918b"
+  ],
   "num_achievements": 8,
   "ra_id": "11632",
   "title": "Pokémon Red Version | Pokémon Blue Version [Subset - Glitch Showcase]"
  },
  {
+  "hashes": [
+   "d9290db87b1f0a23b89f99ee4469e34b",
+   "ebbe3e5c1a2834c9876aad387f817896"
+  ],
   "num_achievements": 76,
   "ra_id": "723",
   "title": "Pokémon Yellow Version: Special Pikachu Edition"
  },
  {
+  "hashes": [
+   "a12f78a4c7842b82f42a2512add7373d"
+  ],
   "num_achievements": 51,
   "ra_id": "6955",
   "title": "Pokémon Yellow Version: Special Pikachu Edition [Subset - \"Shiny\" Pokémon]"
  },
  {
+  "hashes": [
+   "40a092bba9fc23b42781718ea5143b39"
+  ],
   "num_achievements": 138,
   "ra_id": "22851",
   "title": "Pokémon Yellow Version: Special Pikachu Edition [Subset - Prof. Oak Challenge]"
  },
  {
+  "hashes": [
+   "8e76d1ce4b251e3a31056feddda92e9b"
+  ],
   "num_achievements": 22,
   "ra_id": "5251",
   "title": "Power Racer"
  },
  {
+  "hashes": [
+   "c1cff8487b25700a509ce89cc3c7bcac"
+  ],
   "num_achievements": 21,
   "ra_id": "8739",
   "title": "Primal Rage"
  },
  {
+  "hashes": [
+   "1a181f068d715c4ca350fb168fb9dd8a"
+  ],
   "num_achievements": 20,
   "ra_id": "7049",
   "title": "Puyo Puyo"
  },
  {
+  "hashes": [
+   "1c94dccdfaaa0c3e1d6bda5969704885"
+  ],
   "num_achievements": 18,
   "ra_id": "4967",
   "title": "QIX"
  },
  {
+  "hashes": [
+   "de2236723c8d218e04c93849ebcda72d"
+  ],
   "num_achievements": 75,
   "ra_id": "2489",
   "title": "Quarth"
  },
  {
+  "hashes": [
+   "972dc35b3b2bd0762999b1ae48da94f6"
+  ],
   "num_achievements": 17,
   "ra_id": "7009",
   "title": "R-Type"
  },
  {
+  "hashes": [
+   "1294651ee0bcdaf1a0724e7fa9ffe557",
+   "1636d766639525de9fe1ef335808cdfb",
+   "2815ff13131712bcd00c3852d461b414",
+   "4a3309be521df2ca7645363a88d1f2b4",
+   "d0444abf63571f46cd080063f82a4452"
+  ],
   "num_achievements": 23,
   "ra_id": "11837",
   "title": "Robin Hood: Prince of Thieves"
  },
  {
+  "hashes": [
+   "a477ac86be35d1fa70b708ad08dc88b8"
+  ],
   "num_achievements": 23,
   "ra_id": "550",
   "title": "RoboCop"
  },
  {
+  "hashes": [
+   "3eb476d0c6347ce9034246f826866a58",
+   "cd84cc505331f6a1d0702bb4a9667cec"
+  ],
   "num_achievements": 28,
   "ra_id": "3669",
   "title": "RoboCop 2"
  },
  {
+  "hashes": [
+   "ebd1866dc6c13ca48f45538ed33ea46f"
+  ],
   "num_achievements": 15,
   "ra_id": "2564",
   "title": "Rolan's Curse"
  },
  {
+  "hashes": [
+   "27f2c99b13cbdb5a5be4afce87b9039b"
+  ],
   "num_achievements": 16,
   "ra_id": "17332",
   "title": "Rolan's Curse II"
  },
  {
+  "hashes": [
+   "322965849b9103a3d6906c9697a19c09"
+  ],
   "num_achievements": 24,
   "ra_id": "2488",
   "title": "Saigo no Nindou"
  },
  {
+  "hashes": [
+   "bdd6f3f98390202800751a4ea2a48c36"
+  ],
   "num_achievements": 17,
   "ra_id": "3668",
   "title": "Same Game"
  },
  {
+  "hashes": [
+   "4ea04ab8fcea4c41f26e44bb4f50d73e"
+  ],
   "num_achievements": 11,
   "ra_id": "2473",
   "title": "SD Lupin III: Kinko Yaburi Daisakusen"
  },
  {
+  "hashes": [
+   "d11777331e12f55ae4bab2f6e0bda918"
+  ],
   "num_achievements": 9,
   "ra_id": "6706",
   "title": "Shanghai"
  },
  {
+  "hashes": [
+   "9d4d9a346158fcda7221c853b13bd19d"
+  ],
   "num_achievements": 16,
   "ra_id": "5940",
   "title": "Shaq-Fu"
  },
  {
+  "hashes": [
+   "3dbe9be772ca50da3a76d8860c7b08e2"
+  ],
   "num_achievements": 10,
   "ra_id": "5738",
   "title": "Side Pocket VS"
  },
  {
+  "hashes": [
+   "ed7318b615b0a827f3edcff0c817caea",
+   "fd6bd52147792817cbddf37c454e8563"
+  ],
   "num_achievements": 23,
   "ra_id": "5044",
   "title": "Skate or Die: Bad 'N Rad"
  },
  {
+  "hashes": [
+   "0b5127a54cc8581acfabe0413378ca3d"
+  ],
   "num_achievements": 31,
   "ra_id": "6500",
   "title": "Sneaky Snakes"
  },
  {
+  "hashes": [
+   "3d8f6eccc13f3344c8d971b7e141f064",
+   "6fd39be1e41aea4b354fd291d9677b39",
+   "8a06994b2e265244147a4d6d0e80623f"
+  ],
   "num_achievements": 19,
   "ra_id": "2558",
   "title": "Snoopy's Magic Show"
  },
  {
+  "hashes": [
+   "b4cee49981c3124df8bbd40a60426f9e"
+  ],
   "num_achievements": 20,
   "ra_id": "4743",
   "title": "Snow Bros. Jr."
  },
  {
+  "hashes": [
+   "83bed4ebefeece45748258fd2ef105b3"
+  ],
   "num_achievements": 22,
   "ra_id": "5252",
   "title": "Solar Striker"
  },
  {
+  "hashes": [
+   "78da1015ca2b5b4e83f7aea41214e779"
+  ],
   "num_achievements": 13,
   "ra_id": "6912",
   "title": "Solitaire FunPak"
  },
  {
+  "hashes": [
+   "45ae101994d2dfb0cec87e8a97e2b5a8",
+   "8a5ccf172f31a0dbfa0600d40b388fdc"
+  ],
   "num_achievements": 66,
   "ra_id": "2557",
   "title": "Solomon's Club"
  },
  {
+  "hashes": [
+   "704cefb5c77dc74631b9acbaa2b19435",
+   "d32b9da8028d357e20c791b07ded4f86"
+  ],
   "num_achievements": 19,
   "ra_id": "729",
   "title": "Space Invaders"
  },
  {
+  "hashes": [
+   "3c268409bf6869a8707839a7dd1ee1c7",
+   "694b6d16d8010d179c92b69b2898cc16",
+   "cc111bc1ee3e0ad566b8bc058372b6cd"
+  ],
   "num_achievements": 30,
   "ra_id": "2495",
   "title": "Spanky's Quest"
  },
  {
+  "hashes": [
+   "7e1bedf88581ee7370c8eb86c6863e2c"
+  ],
   "num_achievements": 67,
   "ra_id": "3329",
   "title": "Speedy Gonzales"
  },
  {
+  "hashes": [
+   "58e1cd396548b0e57b0514d8bec066d9"
+  ],
   "num_achievements": 27,
   "ra_id": "6319",
   "title": "Spot: The Cool Adventure"
  },
  {
+  "hashes": [
+   "2524230d0300f46ebf423ae1b37747eb"
+  ],
   "num_achievements": 19,
   "ra_id": "730",
   "title": "Spot: The Video Game"
  },
  {
+  "hashes": [
+   "c9e8c196d57aab17c4c171816fcd6492"
+  ],
   "num_achievements": 45,
   "ra_id": "4112",
   "title": "Spud's Adventure"
  },
  {
+  "hashes": [
+   "1a316519500424ae9a2649746c4c83ab"
+  ],
   "num_achievements": 20,
   "ra_id": "4963",
   "title": "Stop That Roach!"
  },
  {
+  "hashes": [
+   "2cf83df10495ad163c88698c6c44f1ef",
+   "c87119b643ff4de3e2614ff10bd0c6ea"
+  ],
   "num_achievements": 37,
   "ra_id": "731",
   "title": "Street Fighter II"
  },
  {
+  "hashes": [
+   "b259feb41811c7e4e1dc200167985c84",
+   "b45f850d25943a636d9999f90a2bbaa8",
+   "b48161623f12f86fec88320166a21fce",
+   "c6cfb6cb982ac886faa83a1f0e597dc8"
+  ],
   "num_achievements": 34,
   "ra_id": "504",
   "title": "Super Mario Land"
  },
  {
+  "hashes": [
+   "75c4ba84db4048d135fbe622bb975ec9",
+   "7d635b6861b35e28cefd433840efe1db"
+  ],
   "num_achievements": 33,
   "ra_id": "7596",
   "title": "Super Mario Land [Subset - Bonus]"
  },
  {
+  "hashes": [
+   "1d2c316f9f32727261328c7a49b22e2c",
+   "4bd6e929ec716a5c7fe7dc684860d551",
+   "55935b66d1a130967dffc6e911d4e42e",
+   "946a4a60bbd5328ca2250d5f9f0606c7",
+   "98dab710bdf256c1f1cf92c31d58d632",
+   "9efef8cea73bafbaaeb779b97356149f",
+   "a8413347d5df8c9d14f97f0330d67bce",
+   "dfed3323300c23a691846291fdefb2b7"
+  ],
   "num_achievements": 28,
   "ra_id": "540",
   "title": "Super Mario Land 2: 6 Golden Coins"
  },
  {
+  "hashes": [
+   "9ba2999ef3ecf9e27ac6c88e995c9d7a"
+  ],
   "num_achievements": 14,
   "ra_id": "4917",
   "title": "Super R.C. Pro-Am"
  },
  {
+  "hashes": [
+   "7bb8a5bc9e55a05eba1a3fcbf460a9b5",
+   "d05a4c81821a4627d56d08e08f9449d4"
+  ],
   "num_achievements": 56,
   "ra_id": "7262",
   "title": "Super Robot Taisen"
  },
  {
+  "hashes": [
+   "5c39c161b85481d7154f19081ff40f42"
+  ],
   "num_achievements": 17,
   "ra_id": "6504",
   "title": "Super Scrabble"
  },
  {
+  "hashes": [
+   "cac94925bf098982d31f7c9a2c296d25"
+  ],
   "num_achievements": 20,
   "ra_id": "6505",
   "title": "Tail 'Gator"
  },
  {
+  "hashes": [
+   "26c65da146faa09505c554447792e493"
+  ],
   "num_achievements": 28,
   "ra_id": "2577",
   "title": "TaleSpin"
  },
  {
+  "hashes": [
+   "c7920eb4b478c4d7513f2f43b7dbb9cf",
+   "fdd228f59ee0eb8b162054a330039b0a"
+  ],
   "num_achievements": 21,
   "ra_id": "734",
   "title": "Tamagotchi"
  },
  {
+  "hashes": [
+   "0221de99d11f50f79430c8ff9b430994"
+  ],
   "num_achievements": 31,
   "ra_id": "736",
   "title": "Teenage Mutant Ninja Turtles II: Back from the Sewers"
  },
  {
+  "hashes": [
+   "7768609b189e788ab08c8aac165b9f4c",
+   "e6104df1feb1318ff1764c791eb4ce0e"
+  ],
   "num_achievements": 22,
   "ra_id": "5203",
   "title": "Teenage Mutant Ninja Turtles III: Radical Rescue"
  },
  {
+  "hashes": [
+   "3172f2d0c417107da132f8437c43763b",
+   "ad868e84fb6071a3b6a211d16e6cbb66"
+  ],
   "num_achievements": 26,
   "ra_id": "735",
   "title": "Teenage Mutant Ninja Turtles: Fall of the Foot Clan"
  },
  {
+  "hashes": [
+   "7d621dcbbce12b73574c42f40deec275"
+  ],
   "num_achievements": 9,
   "ra_id": "5293",
   "title": "Tennis"
  },
  {
+  "hashes": [
+   "084f1e457749cdec86183189bd88ce69",
+   "982ed5d2b12a0377eb14bcdc4123744e",
+   "d1feeed857f9010980b00bf53f749d61"
+  ],
   "num_achievements": 13,
   "ra_id": "508",
   "title": "Tetris"
  },
  {
+  "hashes": [
+   "7fbda0c87af7701bb5e75c2a77bb0143",
+   "8517ac370fc46971d8a8c106bde4d4c4"
+  ],
   "num_achievements": 49,
   "ra_id": "2447",
   "title": "Tetris Attack"
  },
  {
+  "hashes": [
+   "0affc9df2e1220ea4573deb6cb2d4b32"
+  ],
   "num_achievements": 23,
   "ra_id": "7040",
   "title": "Tetris Blast"
  },
  {
+  "hashes": [
+   "4511333eeecb3c9f20874d595424447c",
+   "d9cb4470f5320cac32fc2bc17e1e9d7b"
+  ],
   "num_achievements": 33,
   "ra_id": "5075",
   "title": "Tetris Plus"
  },
  {
+  "hashes": [
+   "f629f0b6d156bec6acb9e6b9da4ad4e3"
+  ],
   "num_achievements": 16,
   "ra_id": "4934",
   "title": "The Addams Family"
  },
  {
+  "hashes": [
+   "57726c28dc09949029a154f63b891dd0"
+  ],
   "num_achievements": 24,
   "ra_id": "4931",
   "title": "The Addams Family: Pugsley's Scavenger Hunt"
  },
  {
+  "hashes": [
+   "f78e6574ba56879c9333b3aa60278721"
+  ],
   "num_achievements": 34,
   "ra_id": "4063",
   "title": "The Adventures of Rocky and Bullwinkle and Friends"
  },
  {
+  "hashes": [
+   "10c581e4d5b612831c79724434f93e9f",
+   "91ecec5f8d06f18724bd1462b53c4b3d"
+  ],
   "num_achievements": 16,
   "ra_id": "3622",
   "title": "The Adventures of Star Saver"
  },
  {
+  "hashes": [
+   "4a967a8f1dd6f627e8b72950739c26d4"
+  ],
   "num_achievements": 51,
   "ra_id": "4065",
   "title": "The Amazing Spider-Man"
  },
  {
+  "hashes": [
+   "506ccd75db221acbf26f1681f3c97efd"
+  ],
   "num_achievements": 15,
   "ra_id": "5602",
   "title": "The Amazing Spider-Man 2"
  },
  {
+  "hashes": [
+   "044c71562429da60891a93a131a0304a"
+  ],
   "num_achievements": 24,
   "ra_id": "6433",
   "title": "The Battle of Olympus"
  },
  {
+  "hashes": [
+   "ceaedf86193a8708a8a67e0e472b57fb"
+  ],
   "num_achievements": 23,
   "ra_id": "10666",
   "title": "The Blues Brothers"
  },
  {
+  "hashes": [
+   "43189b859c0036119f233d46b1f2e9fd",
+   "c58edffdb628ea2fc904d4b8c93b6cbc"
+  ],
   "num_achievements": 30,
   "ra_id": "687",
   "title": "The Bugs Bunny Crazy Castle"
  },
  {
+  "hashes": [
+   "8645f33476770262a51fd914e519a1ad",
+   "d5c27ff8cb1b69cb56df4ff170e2baf0"
+  ],
   "num_achievements": 40,
   "ra_id": "2478",
   "title": "The Final Fantasy Legend"
  },
  {
+  "hashes": [
+   "f07ed24e96f84ce78787709f248263c8"
+  ],
   "num_achievements": 27,
   "ra_id": "4149",
   "title": "The Flintstones"
  },
  {
+  "hashes": [
+   "25dfaca5120462af05532aaf4756776a"
+  ],
   "num_achievements": 30,
   "ra_id": "6467",
   "title": "The Flintstones: King Rock Treasure Island"
  },
  {
+  "hashes": [
+   "70cd582d3b1f15cb251620203d8b00c9"
+  ],
   "num_achievements": 28,
   "ra_id": "3686",
   "title": "The Jetsons: Robot Panic"
  },
  {
+  "hashes": [
+   "5bc0913d533000522c7c9cac1ef6f97f",
+   "69d643bf4e37b3c133518517338b6a1c",
+   "8b7af1a8ca96c74301d633e0ce83ba0b",
+   "ae08c1f73f822116060ef58293b94ed8"
+  ],
   "num_achievements": 30,
   "ra_id": "669",
   "title": "The Legend of Zelda: Link's Awakening"
  },
  {
+  "hashes": [
+   "baf5068c926c2eabea4afe559f2e3cb0"
+  ],
   "num_achievements": 30,
   "ra_id": "9681",
   "title": "The Lion King"
  },
  {
+  "hashes": [
+   "8cfce7b63aa070b5bcdc2e1bcb56e18e",
+   "a4dee5de1b4c3d9083f307d910fa0c3f"
+  ],
   "num_achievements": 33,
   "ra_id": "6484",
   "title": "The Little Mermaid"
  },
  {
+  "hashes": [
+   "7a3757ce00ed456890f953a8accb3e2a"
+  ],
   "num_achievements": 15,
   "ra_id": "7456",
   "title": "The Little Mermaid [Subset - Bonus]"
  },
  {
+  "hashes": [
+   "84133af3324fc1aaf00c0769e15708c0"
+  ],
   "num_achievements": 20,
   "ra_id": "2494",
   "title": "The Punisher: The Ultimate Payback"
  },
  {
+  "hashes": [
+   "3b3ee80272479464698200ad712d4152"
+  ],
   "num_achievements": 17,
   "ra_id": "12780",
   "title": "The Ren & Stimpy Show: Space Cadet Adventures"
  },
  {
+  "hashes": [
+   "d29cc1b6fe7709a6d16f00c779499de2"
+  ],
   "num_achievements": 22,
   "ra_id": "2563",
   "title": "The Rugrats Movie"
  },
  {
+  "hashes": [
+   "19058077b12ac22580aae17b3dd1233f"
+  ],
   "num_achievements": 16,
   "ra_id": "2560",
   "title": "The Simpsons: Bart and the Beanstalk"
  },
  {
+  "hashes": [
+   "ed0a8885341ee6a201873b2038c87582"
+  ],
   "num_achievements": 20,
   "ra_id": "2461",
   "title": "The Simpsons: Itchy & Scratchy - Miniature Golf Madness"
  },
  {
+  "hashes": [
+   "4528d42eae39a3fa756eefa29d52ef55"
+  ],
   "num_achievements": 40,
   "ra_id": "674",
   "title": "The Smurfs"
  },
  {
+  "hashes": [
+   "7138d95583fc38ee7b3cf18de5e09e89",
+   "9f2b62d971705e147745dc2bffb99cc1",
+   "b8de7e1ef842f68d1d33538e621a9248"
+  ],
   "num_achievements": 27,
   "ra_id": "733",
   "title": "The Sword of Hope"
  },
  {
+  "hashes": [
+   "64f7f8af18f75a9b3767e4637e693be7"
+  ],
   "num_achievements": 36,
   "ra_id": "5194",
   "title": "The Sword of Hope II"
  },
  {
+  "hashes": [
+   "c8611861afe5d9b47043150ee2c94389"
+  ],
   "num_achievements": 132,
   "ra_id": "7993",
   "title": "The Tower of Druaga"
  },
  {
+  "hashes": [
+   "eef71c64f1a51f5e32ab4e6e5e2cc5e8"
+  ],
   "num_achievements": 38,
   "ra_id": "6263",
   "title": "Tintin in Tibet"
  },
  {
+  "hashes": [
+   "7e893bd4b6c404843df52288ff681325"
+  ],
   "num_achievements": 32,
   "ra_id": "20097",
   "title": "Tiny Toon Adventures 2: Buster Bunny no Kattobi Daibouken"
  },
  {
+  "hashes": [
+   "7aa389f71808dc989a38b41009a32851"
+  ],
   "num_achievements": 24,
   "ra_id": "4973",
   "title": "Tiny Toon Adventures 2: Montana's Movie Madness"
  },
  {
+  "hashes": [
+   "1ceb3148a1b68b2ba9eada0393f987fc",
+   "cbb45188c780ce5bbdf502ceb2b9994a"
+  ],
   "num_achievements": 32,
   "ra_id": "2498",
   "title": "Tiny Toon Adventures: Babs' Big Break"
  },
  {
+  "hashes": [
+   "2b42e312afbee6599ce413a8784e4e68"
+  ],
   "num_achievements": 19,
   "ra_id": "29798",
   "title": "Torpedo Range"
  },
  {
+  "hashes": [
+   "344ed70fe1a7a8cc904eda886543252c"
+  ],
   "num_achievements": 21,
   "ra_id": "7838",
   "title": "Toy Story"
  },
  {
+  "hashes": [
+   "e07a8d8ac2a2770ea1a808ac517384cc"
+  ],
   "num_achievements": 30,
   "ra_id": "6512",
   "title": "Track & Field"
  },
  {
+  "hashes": [
+   "89ecf5b28d5cc84208cfc39dc2d96598"
+  ],
   "num_achievements": 36,
   "ra_id": "6514",
   "title": "Trax"
  },
  {
+  "hashes": [
+   "c46e059a69d9b3b4b0b9d8d303c559b3",
+   "e0a81dcc3aa0db3896c6f46e0ed3fc80"
+  ],
   "num_achievements": 27,
   "ra_id": "2180",
   "title": "Trip World"
  },
  {
+  "hashes": [
+   "df483f321a00f806b0f8ccea89eb111a"
+  ],
   "num_achievements": 20,
   "ra_id": "22390",
   "title": "Uchuu no Kishi Tekkaman Blade"
  },
  {
+  "hashes": [
+   "411c3d168141d10eddd93243f2a7765f"
+  ],
   "num_achievements": 28,
   "ra_id": "7448",
   "title": "Ultima: Runes of Virtue"
  },
  {
+  "hashes": [
+   "15cd267d7805fe9f1769e9644a9cec2e"
+  ],
   "num_achievements": 55,
   "ra_id": "18577",
   "title": "Ultima: Runes of Virtue II"
  },
  {
+  "hashes": [
+   "90a0bc783fbe56748989d8fad9ae48ed",
+   "bc977605b3db8aeab9d60289e6b7e361"
+  ],
   "num_achievements": 30,
   "ra_id": "17436",
   "title": "Ultraman Ball"
  },
  {
+  "hashes": [
+   "5294a5fed7e88a6f76707979c83017d6"
+  ],
   "num_achievements": 26,
   "ra_id": "6695",
   "title": "Undercover Cops Gaiden: Hakaishin Garumaa"
  },
  {
+  "hashes": [
+   "fb0adff5efe92c9d3a26be9313bcc236"
+  ],
   "num_achievements": 28,
   "ra_id": "13055",
   "title": "V-Rally: Championship Edition"
  },
  {
+  "hashes": [
+   "80bc594310a940feb9512cf3233bed71"
+  ],
   "num_achievements": 16,
   "ra_id": "18756",
   "title": "Versus Hero: Kakutou Ou e no Michi"
  },
  {
+  "hashes": [
+   "308f35e84b1984aba38814db00a4e769"
+  ],
   "num_achievements": 34,
   "ra_id": "6669",
   "title": "Volleyfire"
  },
  {
+  "hashes": [
+   "14fe7234ee4bcb14adf20c743f084a35",
+   "2cad6ee6df3402aeb8f8ab7921517779"
+  ],
   "num_achievements": 10,
   "ra_id": "4882",
   "title": "Wario Blast: Featuring Bomberman!"
  },
  {
+  "hashes": [
+   "e5e8910d436acb9fd218559a216501a3"
+  ],
   "num_achievements": 20,
   "ra_id": "740",
   "title": "Wario Land II"
  },
  {
+  "hashes": [
+   "04dddb0416d85e9610e771692d097812"
+  ],
   "num_achievements": 25,
   "ra_id": "739",
   "title": "Wario Land: Super Mario Land 3"
  },
  {
+  "hashes": [
+   "93e66350ffd7403827914b80d233c989"
+  ],
   "num_achievements": 13,
   "ra_id": "4714",
   "title": "Waterworld"
  },
  {
+  "hashes": [
+   "10fd41703b816fcb2a3d6766574b98f9"
+  ],
   "num_achievements": 32,
   "ra_id": "10204",
   "title": "Wave Race"
  },
  {
+  "hashes": [
+   "a2b68b9472bde2d2fee32c2ec87ff017"
+  ],
   "num_achievements": 25,
   "ra_id": "4715",
   "title": "Wayne's World"
  },
  {
+  "hashes": [
+   "1d0889833ed086c6b11c1fc4d40f9f3a",
+   "34310686415c87dfe69882a6ad3f548f",
+   "692fc5a0b6a9893d6ea25326c55caae5"
+  ],
   "num_achievements": 12,
   "ra_id": "6518",
   "title": "Who Framed Roger Rabbit"
  },
  {
+  "hashes": [
+   "14d6a5e430452dca394bd3e641dc327b"
+  ],
   "num_achievements": 32,
   "ra_id": "5464",
   "title": "Wizardry Gaiden 1: Suffering of the Queen"
  },
  {
+  "hashes": [
+   "177f5fc642f650e45bae33b10ba1fe48",
+   "1919c1597fa158092c159230df1f6349"
+  ],
   "num_achievements": 32,
   "ra_id": "5465",
   "title": "Wizardry Gaiden 2: Curse of the Ancient Emperor"
  },
  {
+  "hashes": [
+   "2be59d4c20728300c84a71fcfcb565f9",
+   "e1f712b4d9d4496e679c736c15895772"
+  ],
   "num_achievements": 63,
   "ra_id": "5466",
   "title": "Wizardry Gaiden 3: Scripture of the Dark"
  },
  {
+  "hashes": [
+   "f9445b104ebb70d8fb91c8c64452c0a4"
+  ],
   "num_achievements": 22,
   "ra_id": "6983",
   "title": "Wizards & Warriors X: The Fortress of Fear"
  },
  {
+  "hashes": [
+   "8272e012f5c953450a3e2efd88d41aeb"
+  ],
   "num_achievements": 33,
   "ra_id": "2434",
   "title": "World Heroes 2 JET"
  },
  {
+  "hashes": [
+   "8ffab7c16a215d3e2cce01fa24fbdf4f",
+   "dba637d1573394056a89cb97ec78000a"
+  ],
   "num_achievements": 24,
   "ra_id": "6316",
   "title": "WWF King of the Ring"
  },
  {
+  "hashes": [
+   "3d08d0dbe1fa865e3d2e87578cced5f5",
+   "ba544265b8d949cf35984cd23af63da8"
+  ],
   "num_achievements": 20,
   "ra_id": "5606",
   "title": "WWF Superstars"
  },
  {
+  "hashes": [
+   "2acfc8d0213b186552124fb8b3085fa1",
+   "2e8d69bd73c3deee6c076c0a2da25617",
+   "837a9e13b7f378bcb94bf1ed294312a0"
+  ],
   "num_achievements": 13,
   "ra_id": "6593",
   "title": "Yakuman"
  },
  {
+  "hashes": [
+   "99faa610157c2771a0ce43dbc6e134d6",
+   "9bed09b0e79f10907d014671a64ca6b9",
+   "fca62b15796f06348621aca99d08c6a7"
+  ],
   "num_achievements": 12,
   "ra_id": "30159",
   "title": "Yakuman [Subset - Yakumaster]"
  },
  {
+  "hashes": [
+   "1337510dc9de85723ff1778524c5007f",
+   "84fc4878829fdff7d1c6d92c67ae35ea"
+  ],
   "num_achievements": 12,
   "ra_id": "2486",
   "title": "Yogi Bear's Gold Rush"
  },
  {
+  "hashes": [
+   "a8804c8514619cc918960c2008ed65d1"
+  ],
   "num_achievements": 28,
   "ra_id": "743",
   "title": "Yoshi"
  },
  {
+  "hashes": [
+   "bc1a3848092bdc900c157996c29a7783"
+  ],
   "num_achievements": 38,
   "ra_id": "4404",
   "title": "Yoshi's Cookie"
  },
  {
+  "hashes": [
+   "d120872ad4f5b3e67cc5561550f2d142"
+  ],
   "num_achievements": 15,
   "ra_id": "6051",
   "title": "Yu Yu Hakusho"
  },
  {
+  "hashes": [
+   "0c21cf8df56d55f0696036ed7508946b",
+   "2534c95317a9c0324a5bcd0e4765ea23",
+   "35e6e4336d8c1a1997cf7c4f047bc91a",
+   "3adbda6de0b4edb496064d2e83449326",
+   "43cbc5b46fdd1c9825e0d8f3fdf17639",
+   "770a917f18e0aa1f3bb027d0783f548b",
+   "9371994bab043a73d678776f84e526d0",
+   "dea982111cc284f28ec4c161e921bbcf"
+  ],
   "num_achievements": 96,
   "ra_id": "595",
   "title": "Yu-Gi-Oh! Duel Monsters"
  },
  {
+  "hashes": [
+   "a517826d1cc3984a141f0f08d3ad72ee"
+  ],
   "num_achievements": 34,
   "ra_id": "4213",
   "title": "Zen: Intergalactic Ninja"

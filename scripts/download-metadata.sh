@@ -33,6 +33,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="$PROJECT_ROOT/data/upstream"
 
 mkdir -p "$DATA_DIR/no-intro"
+mkdir -p "$DATA_DIR/amiga"
 mkdir -p "$DATA_DIR/libretro-meta/maxusers"
 mkdir -p "$DATA_DIR/libretro-meta/genre"
 mkdir -p "$DATA_DIR/mister-manuals"
@@ -96,6 +97,31 @@ for system in "${!NOINTRO_DATS[@]}"; do
             "$dest" \
             "No-Intro DAT: $dat_name" || true
     done
+done
+
+echo
+echo "=== Amiga identification DATs (TOSEC + Redump) ==="
+echo
+
+# Amiga has no No-Intro DAT and no RetroAchievements console, so identification
+# comes from three libretro Amiga DATs covering the naming conventions found on
+# disk — WHDLoad (.lha, the RePlayOS default), No-Intro IPF (.ipf), and TOSEC
+# (.adf disk images) — plus Redump for CD32. All carry crc32, so the scan matches
+# by CRC first and falls back to filename. Stored under amiga/ with distinct dest
+# names because all three Amiga DATs share the basename "Commodore - Amiga.dat".
+declare -A AMIGA_DATS=(
+    ["Commodore - Amiga (WHDLoad).dat"]="dat/Commodore - Amiga.dat"
+    ["Commodore - Amiga (No-Intro IPF).dat"]="metadat/no-intro/Commodore - Amiga.dat"
+    ["Commodore - Amiga (TOSEC).dat"]="metadat/tosec/Commodore - Amiga.dat"
+    ["Commodore - CD32.dat"]="metadat/redump/Commodore - CD32.dat"
+)
+for dest_name in "${!AMIGA_DATS[@]}"; do
+    src_path="${AMIGA_DATS[$dest_name]}"
+    encoded_path="${src_path// /%20}"
+    download \
+        "$LIBRETRO_DB_RAW/$encoded_path" \
+        "$DATA_DIR/amiga/$dest_name" \
+        "Amiga DAT: $dest_name" || true
 done
 
 echo
