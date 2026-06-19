@@ -66,6 +66,7 @@ Read task-specific docs as needed:
 - Use `root` as the SSH user. The default password is `replayos`, or `PI_PASS` if the environment overrides it.
 - Prefer `./dev.sh --pi` for build/deploy because it already handles the default host, `SSH_ASKPASS`, SSH options, ControlMaster reuse, rsync, service stop/start, and catalog/site deployment.
 - To deploy to a specific address, run `./dev.sh --pi <ip-or-hostname>`.
+- Never set `CARGO_TARGET_DIR` to a custom value unless the user explicitly asks for it. If an existing custom `CARGO_TARGET_DIR` could affect build or deploy artifacts, unset it for that command with `env -u CARGO_TARGET_DIR ...` instead of choosing another target directory.
 - For ad hoc SSH commands, use the askpass pattern from `dev.sh` — plain `ssh` with a password requires `SSH_ASKPASS`:
   ```sh
   ASKPASS=$(mktemp) && printf '#!/bin/sh\necho "%s"\n' "${PI_PASS:-replayos}" > "$ASKPASS" && chmod +x "$ASKPASS"

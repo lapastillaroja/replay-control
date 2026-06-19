@@ -16,7 +16,13 @@ When connected to the internet, you can optionally enrich your library with addi
 
 Display names, year, genre, developer, player count, and region for games across 20+ systems. Data is sourced from [No-Intro](https://datomatic.no-intro.org/), [TheGamesDB](https://thegamesdb.net/), and libretro-database at build time.
 
-Games are identified by filename, with a CRC32 hash fallback for 9 cartridge systems when the filename does not match the database.
+Games are identified by the strongest available signal:
+
+- CRC32 hash matches for cartridge systems covered by No-Intro data
+- RetroAchievements runtime hashes for headered cartridge systems and supported disc systems
+- Filename/title matching as the fallback for systems or files without a hash identity path
+
+Hash-identified rows are marked as verified. Title fallback still gives useful metadata coverage for hacks, translations, regional variants, and systems without a hash source, but it is not treated as a verified dump match.
 
 ### Arcade Games
 

@@ -36,8 +36,10 @@ Each game supports:
 Games that span multiple discs (common for PlayStation, Sega CD, etc.) are handled automatically:
 
 - When an M3U playlist exists, individual disc files are hidden from the game list
+- Playlist references are resolved before game rows are built, so referenced discs are not treated as separate games for identification
 - Sizes from all disc files are aggregated into the playlist entry
 - M3U playlists are auto-generated at scan time for multi-part games (Side A/B, Disk 1 of N)
+- ScummVM M3U launchers are treated as folder launchers: the playlist is the visible game entry, and the referenced game folder is hidden
 
 From a user perspective, a 3-disc game appears as a single entry with the combined size.
 
@@ -99,7 +101,7 @@ On local storage (SD, USB, NVMe), the app watches the `roms/` directory for chan
 
 On NFS storage, automatic live detection is not possible (inotify does not work across network mounts). Startup and manual rescans reconcile every visible system, including ROMs stored in subfolders, so ROMs added while the device was off are picked up on the next boot. Use the "Rescan Game Library" button in the metadata page when you want to refresh immediately. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
 
-For cartridge systems with No-Intro CRC data, normal startup scans, manual rescans, and local watcher rescans reuse cached CRC identity when the file still has the same recorded size. This keeps common rescans fast on large ROM sets and NFS shares without dropping hash-based identification. Manual "Rebuild Game Library" is the full verification path: it ignores the CRC cache and recomputes hashes for hash-eligible ROM files. Hybrid folders such as Sega 32X only hash cartridge-shaped entries; CD/image/playlist entries are skipped.
+For systems with hash-based identity, normal startup scans, manual rescans, and local watcher rescans reuse cached identity when the underlying file still has the same recorded size. Cartridge systems use No-Intro CRC data. Supported disc systems use RetroAchievements disc hashes; for M3U playlists, the playlist remains the visible game while the first referenced disc supplies the hash identity. Manual "Rebuild Game Library" is the full verification path: it ignores the cache and recomputes hashes for eligible ROM files.
 
 When ROM matching continues after a scan or rebuild, Replay Control shows a "Matching ROMs" progress banner. Library browsing stays available, but starting another rescan or rebuild is blocked until matching finishes. If you add, rename, or delete ROMs while a scan, rebuild, or matching pass is running, run Rescan again afterwards so the library reflects the final files on disk.
 
