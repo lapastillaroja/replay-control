@@ -1,5 +1,6 @@
 use replay_control_core::systems::system_thumbnail_repos;
 use replay_control_core_server::db_pool::rusqlite;
+use replay_control_core_server::game_entry_builder::HashIdentificationMethod;
 use replay_control_core_server::library_db::{IdentityState, LibraryDb};
 use replay_control_core_server::roms::{RomEntry, StorageProbe};
 use replay_control_core_server::storage::StorageLocation;
@@ -23,7 +24,7 @@ use crate::types::RomWatcherStatus;
 /// rc_hash). Both go through the same identity-job machinery; only the inner
 /// hash dispatch differs.
 fn is_hash_identifiable(system: &str) -> bool {
-    rom_hash::is_hash_eligible(system) || rc_hash_disc::is_disc_rc_hash_system(system)
+    game_entry_builder::hash_identification_method(system) != HashIdentificationMethod::None
 }
 
 fn env_flag(name: &str) -> bool {
@@ -648,16 +649,17 @@ impl BackgroundManager {
 
         let started = Instant::now();
         let force_rehash = job.scan_inputs.force_rehash();
+        let method = game_entry_builder::hash_identification_method(&job.system);
         let force_candidates: Vec<String> = job
             .roms
             .iter()
-            .filter(|rom| {
-                if rc_hash_disc::is_disc_rc_hash_system(&job.system) {
-                    true
-                } else {
+            .filter(|rom| match method {
+                HashIdentificationMethod::Disc => true,
+                HashIdentificationMethod::Cart => {
                     !rom.is_m3u
                         && rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
                 }
+                HashIdentificationMethod::None => false,
             })
             .map(|rom| rom.game.rom_filename.clone())
             .collect();

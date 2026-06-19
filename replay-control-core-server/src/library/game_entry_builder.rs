@@ -212,15 +212,41 @@ fn build_single_entry(
     })
 }
 
-/// Whether a ROM file participates in hash identification (gets a CRC/rc_hash and
-/// an `ra_id`). Disc systems accept disc images/playlists; every other system
-/// uses the cartridge No-Intro eligibility. Disc files that aren't hash-eligible
-/// here would be marked `NotApplicable` and never hashed.
-fn is_identity_applicable(system: &str, rom_filename: &str) -> bool {
+/// How a system's ROMs are hash-identified in the identity phase. The single
+/// source of truth for the disc-vs-cart-vs-none dispatch, so callers don't each
+/// re-ask `is_disc_rc_hash_system` / `is_hash_eligible`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashIdentificationMethod {
+    /// Cartridge whole-file No-Intro CRC (+ header rc_hash for some systems).
+    Cart,
+    /// Disc boot-file rc_hash (PSX, Sega CD, Saturn, Dreamcast, 3DO, …).
+    Disc,
+    /// No runtime hash identification for this system.
+    None,
+}
+
+/// The hash-identification method for `system` (see [`HashIdentificationMethod`]).
+pub fn hash_identification_method(system: &str) -> HashIdentificationMethod {
     if rc_hash_disc::is_disc_rc_hash_system(system) {
-        is_disc_identity_candidate(rom_filename)
+        HashIdentificationMethod::Disc
+    } else if crate::rom_hash::is_hash_eligible(system) {
+        HashIdentificationMethod::Cart
     } else {
-        crate::rom_hash::is_file_hash_eligible(system, rom_filename)
+        HashIdentificationMethod::None
+    }
+}
+
+/// Whether a ROM file participates in hash identification (gets a CRC/rc_hash and
+/// an `ra_id`). Disc systems accept disc images/playlists; cart systems use the
+/// No-Intro eligibility. Files that aren't candidates are marked `NotApplicable`
+/// and never hashed.
+fn is_identity_applicable(system: &str, rom_filename: &str) -> bool {
+    match hash_identification_method(system) {
+        HashIdentificationMethod::Disc => is_disc_identity_candidate(rom_filename),
+        HashIdentificationMethod::Cart => {
+            crate::rom_hash::is_file_hash_eligible(system, rom_filename)
+        }
+        HashIdentificationMethod::None => false,
     }
 }
 

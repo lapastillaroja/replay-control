@@ -32,19 +32,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::library::rom_hash;
+use crate::library::rom_hash::md5_digest_hex;
 
 /// rcheevos caps the bytes it MD5s at 64 MiB; mirror it for the PSX exe body.
 const MAX_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 const MAX_M3U_BYTES: u64 = 8192;
 const SECTOR_USER: usize = 2048;
-
-fn md5_hex(d: [u8; 16]) -> String {
-    let mut s = String::with_capacity(32);
-    for b in d {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
-}
 
 /// A source of 2048-byte logical user-data sectors from the first data track,
 /// addressed by absolute logical sector number (sector 0 = first sector of the
@@ -523,7 +516,7 @@ fn psx_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     let mut md5 = Md5::new();
     md5.update(exe_name.as_bytes());
     md5.update(&read_file_bytes(r, lba, size)?);
-    Ok(Some(md5_hex(md5.finalize().into())))
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
 /// Sega CD / Mega-CD / Saturn rc_hash: MD5 of the first 512 bytes of sector 0
@@ -539,7 +532,7 @@ fn sega_cd_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     }
     let mut md5 = Md5::new();
     md5.update(&sec[0..512]);
-    Ok(Some(md5_hex(md5.finalize().into())))
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
 /// Dreamcast rc_hash (hash_disc.c rc_hash_dreamcast): read the 256-byte IP.BIN
@@ -574,7 +567,7 @@ fn dreamcast_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     };
     let size = (size as usize).min(MAX_BUFFER_SIZE) as u32;
     md5.update(&read_file_bytes(r, lba, size)?);
-    Ok(Some(md5_hex(md5.finalize().into())))
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
 /// Dreamcast images on RePlayOS are `.gdi` (track 3 in the high-density area).
@@ -686,7 +679,7 @@ fn three_do_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     if r.read_sector(sector, &mut tmp)? != 0 {
         md5.update(&tmp[..remaining as usize]);
     }
-    Ok(Some(md5_hex(md5.finalize().into())))
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
 /// PC Engine CD rc_hash (hash_disc.c rc_hash_pce_track): on the first data
@@ -713,14 +706,14 @@ fn pce_cd_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
             sector += 1;
             num -= 1;
         }
-        return Ok(Some(md5_hex(md5.finalize().into())));
+        return Ok(Some(md5_digest_hex(md5.finalize().into())));
     }
     if let Some((lba, size)) = iso_find_file(r, "BOOT.BIN")?
         && (size as usize) < MAX_BUFFER_SIZE
     {
         let mut md5 = Md5::new();
         md5.update(&read_file_bytes(r, lba, size)?);
-        return Ok(Some(md5_hex(md5.finalize().into())));
+        return Ok(Some(md5_digest_hex(md5.finalize().into())));
     }
     Ok(None)
 }
@@ -761,7 +754,7 @@ fn neogeo_cd_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     if !any {
         return Ok(None);
     }
-    Ok(Some(md5_hex(md5.finalize().into())))
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
 /// Open the data track of a disc image (CHD or cue/bin/iso) as a sector reader.
@@ -1122,7 +1115,7 @@ mod tests {
         exp.update(b"SLUS_007.55");
         let body: Vec<u8> = (0..100u8).map(|i| i.wrapping_mul(7)).collect();
         exp.update(&body);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1139,7 +1132,7 @@ mod tests {
         .unwrap();
         let mut exp = Md5::new();
         exp.update(&sectors[0][0..512]);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1160,7 +1153,7 @@ mod tests {
         .unwrap();
         let mut exp = Md5::new();
         exp.update(&sectors[0][0..512]);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1191,7 +1184,7 @@ mod tests {
         exp.update(&sectors[0][0..256]);
         let body: Vec<u8> = (0..80u8).map(|i| i.wrapping_mul(7)).collect();
         exp.update(&body);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1224,7 +1217,7 @@ mod tests {
         exp.update(&sectors[0][0..132]);
         let body: Vec<u8> = (0..100u8).map(|i| i.wrapping_mul(13)).collect();
         exp.update(&body);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1243,7 +1236,7 @@ mod tests {
         exp.update(title);
         let boot: Vec<u8> = (0..2048).map(|i| (i as u8).wrapping_mul(5)).collect();
         exp.update(&boot);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     #[test]
@@ -1270,7 +1263,7 @@ mod tests {
         let mut exp = Md5::new();
         let body: Vec<u8> = (0..80u8).map(|i| i.wrapping_mul(3)).collect();
         exp.update(&body);
-        assert_eq!(got, md5_hex(exp.finalize().into()));
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }
 
     fn write_sega_cd_bin(path: &Path) {

@@ -236,14 +236,20 @@ pub fn needs_rc_hash(system: &str) -> bool {
     RC_HASH_SYSTEMS.contains(&system)
 }
 
-fn md5_hex(bytes: &[u8]) -> String {
-    use md5::{Digest, Md5};
-    let digest = Md5::digest(bytes);
+/// Lowercase hex of a 16-byte MD5 digest. Shared by the cart (`md5_hex`) and disc
+/// (`rc_hash_disc`) hashers, which both finalize an MD5 to the same hex form.
+pub(crate) fn md5_digest_hex(digest: [u8; 16]) -> String {
+    use std::fmt::Write;
     let mut s = String::with_capacity(32);
     for b in digest {
-        s.push_str(&format!("{b:02x}"));
+        let _ = write!(s, "{b:02x}");
     }
     s
+}
+
+fn md5_hex(bytes: &[u8]) -> String {
+    use md5::{Digest, Md5};
+    md5_digest_hex(Md5::digest(bytes).into())
 }
 
 /// rc_hash_nes / FDS (rcheevos hash_rom.c): skip the 16-byte header iff the magic

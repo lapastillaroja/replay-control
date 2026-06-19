@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags;
+use replay_control_core_server::game_entry_builder::HashIdentificationMethod;
 use replay_control_core_server::rom_hash::{CachedHash, HashResult, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
@@ -132,10 +133,11 @@ impl LibraryService {
         use replay_control_core_server::rc_hash_disc;
         use replay_control_core_server::rom_hash;
 
-        let is_disc = rc_hash_disc::is_disc_rc_hash_system(system);
-        if !rom_hash::is_hash_eligible(system) && !is_disc {
+        let method = game_entry_builder::hash_identification_method(system);
+        if method == HashIdentificationMethod::None {
             return HashMap::new();
         }
+        let is_disc = method == HashIdentificationMethod::Disc;
 
         let mut result = HashMap::new();
         for rom in roms.iter().filter(|rom| is_disc || !rom.is_m3u) {
@@ -190,10 +192,11 @@ impl LibraryService {
 
         // Disc systems (PSX, Sega CD) RA-hash via the boot-file recipe; carts via
         // the No-Intro CRC path. Anything else has no hash identification.
-        let is_disc = rc_hash_disc::is_disc_rc_hash_system(system);
-        if !rom_hash::is_hash_eligible(system) && !is_disc {
+        let method = game_entry_builder::hash_identification_method(system);
+        if method == HashIdentificationMethod::None {
             return (HashMap::new(), HashStats::default());
         }
+        let is_disc = method == HashIdentificationMethod::Disc;
 
         let hash_profile_started = Instant::now();
 
