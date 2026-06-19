@@ -19,7 +19,7 @@ jobs:
     # ride out a window or two and still run the catalog build afterwards.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
