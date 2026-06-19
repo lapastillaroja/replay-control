@@ -1,0 +1,116 @@
+name: Refresh RetroAchievements Game List
+
+# Monthly producer for the committed RetroAchievements per-system game list
+# snapshots under data/retroachievements/. The extract needs a Web API key, so
+# release and CI builds use the committed snapshot instead of querying live.
+# The snapshot is reviewed via PR before release builds use it.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly, 1st at 08:00 UTC. Staggered with wikidata (06:00) and shmups (07:00).
+    - cron: '0 8 1 * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
+      - name: Restore catalog source data cache
+        uses: actions/cache/restore@v5
+        with:
+          path: data/upstream/
+          key: data-upstream-latest
+          restore-keys: data-upstream-
+
+      - name: Download catalog source data
+        run: |
+          ./scripts/download-arcade-data.sh
+          ./scripts/download-metadata.sh
+
+      - name: Fetch RetroAchievements game lists
+        env:
+          RETROACHIEVEMENTS_KEY: ${{ secrets.RETROACHIEVEMENTS_KEY }}
+        run: python3 scripts/retroachievements-gamelist-extract.py
+
+      - name: Validate snapshots
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          required = {"title", "ra_id", "num_achievements"}
+          errors = []
+          files = sorted(Path("data/retroachievements").glob("*.json"))
+          if not files:
+              raise SystemExit("no RA JSON files found under data/retroachievements/")
+          for f in files:
+              rows = json.loads(f.read_text())
+              if not rows:
+                  errors.append(f"{f.name}: empty")
+                  continue
+              bad = [i for i, r in enumerate(rows) if not required.issubset(r)]
+              if bad:
+                  errors.append(f"{f.name}: {len(bad)} rows missing required fields")
+          if errors:
+              for e in errors:
+                  print(f"ERROR: {e}", file=sys.stderr)
+              raise SystemExit(1)
+          total = sum(len(json.loads(f.read_text())) for f in files)
+          print(f"validated {len(files)} files, {total} total entries")
+          PY
+
+      - name: Build catalog with refreshed RA data
+        run: cargo run --release -p build-catalog -- --output /tmp/catalog-ra-refresh.sqlite
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-retroachievements
+        run: |
+          if git diff --quiet -- data/retroachievements/; then
+            echo "No RetroAchievements changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/retroachievements/
+          git commit -m "chore: refresh RetroAchievements game list"
+          # Plain --force: this bot-owned branch is always fully overwritten, and
+          # --force-with-lease can't form a lease here (checkout fetches only the
+          # default branch, so there's no remote-tracking ref → "stale info").
+          git push --force origin "$BRANCH"
+
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')"
+          body="Refreshes the committed RetroAchievements per-system game list snapshots.
+
+          Validation performed by this workflow:
+          - JSON shape check (\`title\`, \`ra_id\`, \`num_achievements\` present in every row)
+          - Full catalog build using the refreshed snapshots"
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "chore: refresh RetroAchievements game list" \
+              --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: refresh RetroAchievements game list" \
+              --body "$body"
+          fi

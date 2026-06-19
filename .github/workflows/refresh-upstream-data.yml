@@ -44,7 +44,8 @@ jobs:
               mame2003plus.xml \
               mame0285-arcade.xml \
               no-intro \
-              thegamesdb-latest.json; do
+              thegamesdb-latest.json \
+              amiga/whdload_db.xml; do
             if [[ ! -e "data/upstream/$req" ]]; then
               echo "MISSING: data/upstream/$req" >&2
               missing=1

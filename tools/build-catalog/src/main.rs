@@ -1495,7 +1495,34 @@ fn normalize_title(name: &str) -> String {
 }
 
 fn clean_display_name(name: &str) -> String {
-    let base = name.split('(').next().unwrap_or(name).trim();
+    // Strip [...] bracket tags (TOSEC crack/hack/slot markers, No-Intro flags)
+    let without_brackets: String = {
+        let mut out = String::with_capacity(name.len());
+        let mut depth = 0usize;
+        for ch in name.chars() {
+            match ch {
+                '[' => depth += 1,
+                ']' => depth = depth.saturating_sub(1),
+                _ if depth == 0 => out.push(ch),
+                _ => {}
+            }
+        }
+        out
+    };
+    // Strip from first '(' onwards (region/year/publisher parens)
+    let before_paren = without_brackets
+        .split('(')
+        .next()
+        .unwrap_or(&without_brackets)
+        .trim_end();
+    // Strip trailing TOSEC version " vX.Y[suffix]" — version always precedes paren tags
+    let base = match before_paren.rfind(" v") {
+        Some(idx) if before_paren[idx + 2..].starts_with(|c: char| c.is_ascii_digit()) => {
+            before_paren[..idx].trim_end()
+        }
+        _ => before_paren,
+    };
+    // Article inversion: "Title, The" → "The Title"
     for article in &[", The", ", An", ", A"] {
         if let Some(idx) = base.find(article) {
             let after = &base[idx + article.len()..];
@@ -1511,6 +1538,123 @@ fn clean_display_name(name: &str) -> String {
         }
     }
     base.to_string()
+}
+
+/// Build the display-name suffix for a TOSEC filename stem.
+///
+/// TOSEC structure: `Title version (Year)(Publisher)(Country)[Flags]`
+/// Groups 0 (year) and 1 (publisher) are always skipped. Groups 2+ are classified:
+/// - Hardware IDs (AGA, ECS, …), disk/tape counts, language codes → skipped
+/// - Everything else, including region codes and edition tags → appended as `(tag)`
+///
+/// Returns a string like `" (US) (Updated)"` — empty when no qualifying groups exist.
+fn tosec_display_suffix(stem: &str) -> String {
+    const HARDWARE: &[&str] = &["AGA", "ECS", "OCS", "CD32", "CDTV"];
+
+    let mut suffix = String::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut group_count = 0usize;
+    for (i, ch) in stem.char_indices() {
+        match ch {
+            '(' => {
+                if depth == 0 {
+                    start = i + 1;
+                }
+                depth += 1;
+            }
+            ')' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    group_count += 1;
+                    // groups[0] = year, groups[1] = publisher — skip both
+                    if group_count > 2 {
+                        let g = &stem[start..i];
+                        if !HARDWARE.contains(&g) && !is_tosec_metadata_group(g) {
+                            suffix.push(' ');
+                            suffix.push('(');
+                            suffix.push_str(g);
+                            suffix.push(')');
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    suffix
+}
+
+/// Returns true for TOSEC paren groups that are metadata noise, not edition tags:
+/// disk/tape/side counts, language codes, multi-language markers, and bare years.
+fn is_tosec_metadata_group(g: &str) -> bool {
+    // Disk/tape/side counts: "Disk 1 of 2", "Side A", "Tape 1 of 3"
+    if g.starts_with("Disk ") || g.starts_with("Side ") || g.starts_with("Tape ") {
+        return true;
+    }
+    // 4-digit year (safety net for year appearing outside group 0)
+    if g.len() == 4 && g.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    // Language codes: all lowercase letters/hyphens, e.g. "en", "de", "en-it"
+    if !g.is_empty() && g.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
+        return true;
+    }
+    // Multi-language marker: "M3", "M4", etc.
+    g.len() >= 2 && g.starts_with('M') && g[1..].chars().all(|c| c.is_ascii_digit())
+}
+
+/// Parse `whdload_db.xml` into a `filename → display name` map.
+/// The `filename` attribute on each `<game>` matches the LHA archive stem
+/// (e.g. `SuperFrog_v1.1_0485`); `<name>` is the clean human-readable title.
+fn parse_whdload_db(path: &Path) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut reader = Reader::from_file(path).unwrap_or_else(|e| {
+        panic!(
+            "whdload_db.xml not found at {}; run ./scripts/download-metadata.sh\n  {e}",
+            path.display()
+        )
+    });
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut current_filename = String::new();
+    let mut in_name = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
+                b"game" => {
+                    current_filename.clear();
+                    for attr in e.attributes().filter_map(|a| a.ok()) {
+                        if attr.key.local_name().as_ref() == b"filename" {
+                            current_filename = String::from_utf8_lossy(&attr.value).into_owned();
+                        }
+                    }
+                }
+                b"name" if !current_filename.is_empty() => in_name = true,
+                _ => {}
+            },
+            Ok(Event::Text(ref e)) if in_name => {
+                let name = e.decode().unwrap_or_default();
+                if !name.is_empty() {
+                    map.insert(current_filename.clone(), name.into_owned());
+                }
+                in_name = false;
+            }
+            Ok(Event::End(ref e)) if e.local_name().as_ref() == b"name" => {
+                in_name = false;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => panic!(
+                "error parsing whdload_db.xml at position {}: {e:?}",
+                reader.error_position()
+            ),
+            _ => {}
+        }
+        buf.clear();
+    }
+    eprintln!("whdload_db: loaded {} name entries", map.len());
+    map
 }
 
 fn is_beta_or_proto(name: &str) -> bool {
@@ -1943,6 +2087,10 @@ fn insert_amiga_games(
     tgdb_data: &TgdbData,
 ) -> rusqlite::Result<()> {
     let amiga_dir = upstream(sources_dir).join("amiga");
+    // whdload_db.xml provides clean display names for WHDLoad LHA entries
+    // (e.g. "SuperFrog" instead of the DAT's "SuperFrog (Europe)"). Keyed by
+    // the LHA archive stem that also appears in the WHDLoad DAT's rom filename.
+    let whdload_names = parse_whdload_db(&amiga_dir.join("whdload_db.xml"));
     // commodore_ami loads all three naming conventions seen on disk — WHDLoad
     // (.lha, the RePlayOS default), No-Intro (.ipf), TOSEC (.adf) — so a user's
     // files match whichever convention they use. First DAT wins on a stem clash
@@ -1999,13 +2147,34 @@ fn insert_amiga_games(
                 if !seen_stems.insert(stem.clone()) {
                     continue;
                 }
-                // Region/tag-stripped name ("1000cc Turbo (Europe)" → "1000cc
-                // Turbo") for both display and the TGDB match, mirroring the
-                // console pass — TGDB titles have no region tags.
-                let display_name = clean_display_name(&entry.name);
-                // Enrich from TGDB by the clean name; the DATs supply no
+                // For WHDLoad entries, prefer the clean name from whdload_db.xml
+                // (e.g. "SuperFrog") over the DAT-derived name which may carry
+                // region tags or version suffixes. Fall back to clean_display_name
+                // for entries not in whdload_db and for all non-WHDLoad sources.
+                //
+                // For No-Intro IPF and TOSEC entries, append the TOSEC region
+                // code when present so regional variants are distinguishable
+                // (e.g. "Nitro (US)" vs "Nitro").
+                // `display_name` is what we store (carries the region suffix so
+                // variants stay distinguishable); `lookup_name` is the clean base
+                // title we send to TGDB. They must differ for non-WHDLoad rows —
+                // appending "(US)" before lookup makes `tgdb_lookup` normalize to
+                // "nitro us" and miss, dropping metadata for exactly these variants.
+                let (display_name, lookup_name) = if *source == "whdload" {
+                    let name = whdload_names
+                        .get(&stem)
+                        .cloned()
+                        .unwrap_or_else(|| clean_display_name(&entry.name));
+                    (name.clone(), name)
+                } else {
+                    let base = clean_display_name(&entry.name);
+                    let mut display = base.clone();
+                    display.push_str(&tosec_display_suffix(&stem));
+                    (display, base)
+                };
+                // Enrich from TGDB by the clean base name; the DATs supply no
                 // genre/dev/year of their own. Default = "no match" (all-empty).
-                let matched = tgdb_lookup(&display_name, platform_ids, tgdb_data);
+                let matched = tgdb_lookup(&lookup_name, platform_ids, tgdb_data);
                 total_tgdb += matched.is_some() as usize;
                 let m = matched.unwrap_or_default();
                 let norm_genre = normalize_console_genre(&m.genre);
@@ -2037,6 +2206,44 @@ fn insert_amiga_games(
             }
             total += inserted;
             eprintln!("Amiga DB: {system} - {inserted} games from {dat}");
+        }
+        // Insert whdload_db.xml entries whose stems are absent from all DATs.
+        // The WHDLoad DAT is No-Intro–tracked (only the latest verified version
+        // per title), so older LHA versions (e.g. Superfrog_v1.5_0035 vs v1.6)
+        // are missing from the DAT but present in whdload_db.xml.  Adding them
+        // here gives those files a proper display name instead of the raw stem.
+        if *system == "commodore_ami" {
+            let mut extra = 0usize;
+            for (filename, display_name) in &whdload_names {
+                if !seen_stems.insert(filename.clone()) {
+                    continue;
+                }
+                let matched = tgdb_lookup(display_name, platform_ids, tgdb_data);
+                total_tgdb += matched.is_some() as usize;
+                let m = matched.unwrap_or_default();
+                let norm_genre = normalize_console_genre(&m.genre);
+                stmt_cg.execute(params![
+                    system,
+                    display_name,
+                    m.year as i64,
+                    m.genre,
+                    m.developer,
+                    m.publisher,
+                    m.players as i64,
+                    m.coop.map(|b| b as i64),
+                    m.rating,
+                    norm_genre,
+                    "whdload",
+                ])?;
+                let cg_id = conn.last_insert_rowid();
+                let norm_title = normalize_title(filename);
+                stmt_re.execute(params![system, filename, "", 0i64, cg_id, norm_title, "",])?;
+                extra += 1;
+            }
+            total += extra;
+            eprintln!(
+                "Amiga DB: {system} - {extra} extra games from whdload_db.xml (not in WHDLoad DAT)"
+            );
         }
     }
     eprintln!("Amiga DB: Total {total} games inserted ({total_tgdb} TGDB metadata matches)");
@@ -3694,5 +3901,85 @@ mod tests {
         let after = catalog_enrichment_inputs_version(&conn).unwrap();
 
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn tosec_display_suffix_appends_region_and_edition() {
+        // Region code appended
+        assert_eq!(tosec_display_suffix("Nitro (1990)(Psygnosis)(US)"), " (US)");
+        // No qualifying groups → empty suffix
+        assert_eq!(tosec_display_suffix("Nitro (1990)(Psygnosis)"), "");
+        // Region after disk-count: disk stripped, region kept
+        assert_eq!(
+            tosec_display_suffix("Batman - The Movie (1989)(Ocean)(PAL)(Disk 1 of 2)"),
+            " (PAL)"
+        );
+        assert_eq!(
+            tosec_display_suffix("Killing Game Show, The (1990)(Psygnosis)(Disk 1 of 2)(US)"),
+            " (US)"
+        );
+        // Hardware tag stripped, not a region
+        assert_eq!(
+            tosec_display_suffix("Blobz (1996)(Apex Systems)(AGA)(Disk 1 of 2)"),
+            ""
+        );
+        // Language code stripped
+        assert_eq!(
+            tosec_display_suffix("1000 Miglia (1992)(Simulmondo)(en-it)"),
+            ""
+        );
+        // Nordic region codes
+        assert_eq!(
+            tosec_display_suffix("Hugo (1994)(ITE)(SE)(Disk 1 of 8)"),
+            " (SE)"
+        );
+        assert_eq!(
+            tosec_display_suffix("Skaermtrolden Hugo v1.20 (1991)(ITE)(DK)(Disk 1 of 3)"),
+            " (DK)"
+        );
+        // Edition tag (Updated) is kept
+        assert_eq!(
+            tosec_display_suffix("A320 Airbus (1991)(Thalion)(Updated)"),
+            " (Updated)"
+        );
+        // No edition tag on the base variant
+        assert_eq!(tosec_display_suffix("A320 Airbus (1991)(Thalion)"), "");
+        // Region + edition both appended
+        assert_eq!(
+            tosec_display_suffix("Game (1990)(Dev)(US)(Updated)"),
+            " (US) (Updated)"
+        );
+        // Rev tag kept
+        assert_eq!(tosec_display_suffix("Game (1990)(Dev)(Rev A)"), " (Rev A)");
+    }
+
+    #[test]
+    fn clean_display_name_strips_tosec_version_and_brackets() {
+        // TOSEC version suffix before paren
+        assert_eq!(
+            clean_display_name("'Nam 1965-1975 v1.0 (Europe)"),
+            "'Nam 1965-1975"
+        );
+        // TOSEC slot number in brackets only
+        assert_eq!(
+            clean_display_name("'Nam 1965-1975 [0249]"),
+            "'Nam 1965-1975"
+        );
+        // TOSEC crack/hack tags combined with version
+        assert_eq!(
+            clean_display_name("'Nam 1965-1975 v1.0 [cr QTX][h BTL]"),
+            "'Nam 1965-1975"
+        );
+        // Standard No-Intro region tag (existing behaviour preserved)
+        assert_eq!(clean_display_name("1000cc Turbo (Europe)"), "1000cc Turbo");
+        // Article inversion still works
+        assert_eq!(
+            clean_display_name("Legend of Zelda, The (USA)"),
+            "The Legend of Zelda"
+        );
+        // No version: untouched beyond paren strip
+        assert_eq!(clean_display_name("Lemmings (Europe)"), "Lemmings");
+        // Lowercase 'v' not preceded by space — not treated as version
+        assert_eq!(clean_display_name("v-rally (Europe)"), "v-rally");
     }
 }
