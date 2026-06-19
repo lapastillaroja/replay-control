@@ -126,10 +126,13 @@ done
 
 # WHDLoad name database: maps LHA archive stems to clean display names
 # (e.g. "SuperFrog" instead of "SuperFrog_v1.1_0485"). Source: Amiberry project.
+# Mandatory for the catalog build (build-catalog `parse_whdload_db` requires it),
+# so no `|| true` — a failed fetch must abort the data build rather than silently
+# ship a catalog without curated Amiga names.
 download \
     "https://raw.githubusercontent.com/nemo93/Amiberry-XML-Builder/master/whdload_db.xml" \
     "$DATA_DIR/amiga/whdload_db.xml" \
-    "WHDLoad name database (whdload_db.xml)" || true
+    "WHDLoad name database (whdload_db.xml)"
 
 echo
 echo "=== libretro metadata files ==="

@@ -43,6 +43,7 @@ else
         upstream/mame0285-arcade.xml \
         upstream/no-intro \
         upstream/thegamesdb-latest.json \
+        upstream/amiga/whdload_db.xml \
         wikidata/series.json; do
         [[ ! -e "$SCRIPT_DIR/data/$req" ]] && data_missing=true
     done
