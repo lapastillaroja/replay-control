@@ -228,6 +228,8 @@ pub enum Key {
     GameDetailParentRom,
     GameDetailBoard,
     GameDetailRetroAchievements,
+    GameDetailRetroAchievementsNoCore,
+    GameDetailRetroAchievementsDiscFormat,
     GameDetailGenre,
     GameDetailDeveloper,
     GameDetailEmulation,

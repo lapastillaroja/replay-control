@@ -1176,9 +1176,9 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
             <CoverageBarRow cov field=CoverageField::BoxArt />
             <CoverageBarRow cov field=CoverageField::Manuals />
             <CoverageBarRow cov field=CoverageField::Videos />
-            // CRC identification — only for systems that hash-identify at all.
+            // Verified identity — CRC match or runtime RA hash match.
             <Show when=move || cov.with_value(|c| c.verified_count > 0) fallback=|| ()>
-                <CoverageBarRow cov field=CoverageField::CrcVerified />
+                <CoverageBarRow cov field=CoverageField::Verified />
             </Show>
             // RetroAchievements — shown for every RA-supported system (even at
             // 0%, e.g. discs pre-resolution). Systems RA doesn't cover get a
@@ -1216,7 +1216,7 @@ enum CoverageField {
     BoxArt,
     Manuals,
     Videos,
-    CrcVerified,
+    Verified,
     RaId,
 }
 
@@ -1241,7 +1241,7 @@ fn CoverageBarRow(cov: StoredValue<SystemCoverage>, field: CoverageField) -> imp
         CoverageField::BoxArt => (c.with_thumbnail, c.total_games, Key::MetadataRowBoxArt),
         CoverageField::Manuals => (c.with_manual, c.total_games, Key::MetadataRowManuals),
         CoverageField::Videos => (c.with_video, c.total_games, Key::MetadataRowVideos),
-        CoverageField::CrcVerified => (c.verified_count, c.total_games, Key::MetadataRowVerified),
+        CoverageField::Verified => (c.verified_count, c.total_games, Key::MetadataRowVerified),
         CoverageField::RaId => (
             c.with_ra_id,
             c.total_games,

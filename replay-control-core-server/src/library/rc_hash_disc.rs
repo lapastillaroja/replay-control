@@ -26,7 +26,7 @@
 //! CD, Saturn, 3DO and Dreamcast validated on-device against the RA hash set.
 
 use md5::{Digest, Md5};
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +35,7 @@ use crate::library::rom_hash;
 
 /// rcheevos caps the bytes it MD5s at 64 MiB; mirror it for the PSX exe body.
 const MAX_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+const MAX_M3U_BYTES: u64 = 8192;
 const SECTOR_USER: usize = 2048;
 
 fn md5_hex(d: [u8; 16]) -> String {
@@ -136,13 +137,17 @@ const CD_FRAME_SIZE: usize = 2352;
 const CD_SUBCODE: usize = 96;
 const CD_UNIT: usize = CD_FRAME_SIZE + CD_SUBCODE; // 2448
 
+/// chdman pads each CD track to a 4-frame boundary in the CHD (MAME cdrom.cpp).
+const CD_TRACK_PADDING: u32 = 4;
+
 struct ChdReader {
     chd: chd::Chd<std::fs::File>,
     frames_per_hunk: usize,
     cmpbuf: Vec<u8>,
     hunk_cache: Vec<u8>,
     cached_hunk: Option<u32>,
-    header_skip: usize, // 16 (mode1) or 24 (mode2 form1), detected from sector 16
+    header_skip: usize, // 16 (mode1) or 24 (mode2 form1), detected from the data track
+    frame_base: u32,    // CHD frame offset of the first DATA track (audio-first discs, e.g. PCE-CD)
 }
 
 impl ChdReader {
@@ -156,6 +161,11 @@ impl ChdReader {
             .checked_div(unit_bytes)
             .unwrap_or(hunk_bytes / CD_UNIT);
         let cmpbuf = chd.get_hunksized_buffer();
+        // Address frames relative to the first DATA track. Single-data-track-1
+        // discs (Saturn / Sega CD / 3DO / Neo Geo CD / most PSX) -> 0 (no change);
+        // audio-first discs (PCE-CD often: track 1 audio, track 2 data) skip the
+        // leading audio track(s) so sector 0 = the data track's INDEX 01.
+        let frame_base = first_data_track_chd_offset(path, chd.header().meta_offset())?;
         let mut me = Self {
             chd,
             frames_per_hunk: frames_per_hunk.max(1),
@@ -163,6 +173,7 @@ impl ChdReader {
             hunk_cache: vec![0u8; hunk_bytes],
             cached_hunk: None,
             header_skip: 16,
+            frame_base,
         };
         me.header_skip = me.detect_header_skip()?;
         Ok(me)
@@ -202,7 +213,9 @@ impl ChdReader {
             0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0,
         ];
         let mut raw = [0u8; CD_FRAME_SIZE];
-        if !self.frame_raw(0, &mut raw)? {
+        // Detect framing from the DATA track's first frame (frame_base), not the
+        // CHD's frame 0 — on audio-first discs frame 0 is audio with no sync.
+        if !self.frame_raw(self.frame_base, &mut raw)? {
             return Ok(16);
         }
         // No 12-byte sync at the start of a frame means the CHD stores cooked
@@ -212,8 +225,8 @@ impl ChdReader {
         if raw[..12] != SYNC {
             return Ok(0);
         }
-        // Sector 16 holds the ISO9660 PVD: "CD001" follows the sector header.
-        if self.frame_raw(16, &mut raw)? {
+        // Sector 16 (of the data track) holds the ISO9660 PVD: "CD001" follows the header.
+        if self.frame_raw(self.frame_base + 16, &mut raw)? {
             for &skip in &[16usize, 24, 8, 0] {
                 if skip + 6 <= CD_FRAME_SIZE && &raw[skip + 1..skip + 6] == b"CD001" {
                     return Ok(skip);
@@ -229,13 +242,58 @@ impl ChdReader {
 impl SectorReader for ChdReader {
     fn read_sector(&mut self, sector: u32, out: &mut [u8]) -> io::Result<usize> {
         let mut raw = [0u8; CD_FRAME_SIZE];
-        if !self.frame_raw(sector, &mut raw)? {
+        // Sectors are addressed relative to the first data track (frame_base).
+        if !self.frame_raw(self.frame_base + sector, &mut raw)? {
             return Ok(0);
         }
         let skip = self.header_skip;
         out[..SECTOR_USER].copy_from_slice(&raw[skip..skip + SECTOR_USER]);
         Ok(SECTOR_USER)
     }
+}
+
+/// CHD frame offset of the first DATA track, parsed from the CHD's CHTR/CHT2 track
+/// metadata (read directly off the on-disk linked list — the crate's `metadata()`
+/// iterator needs an unstable feature). chdman lays tracks out sequentially, each
+/// padded to a 4-frame boundary; `FRAMES` is the stored count and the first
+/// `PREGAP` of them are the pregap (written even for a virtual pregap), so the
+/// track's DATA (INDEX 01) sits at `chdframeofs + pregap` (MAME cdrom.cpp). For a
+/// data-track-1 disc this returns 0 (no behaviour change).
+fn first_data_track_chd_offset(path: &Path, meta_off: Option<u64>) -> io::Result<u32> {
+    let Some(mut off) = meta_off else {
+        return Ok(0);
+    };
+    let mut file = std::fs::File::open(path)?;
+    let mut chd_ofs: u32 = 0;
+    while off != 0 {
+        file.seek(SeekFrom::Start(off))?;
+        let mut hdr = [0u8; 16];
+        if file.read_exact(&mut hdr).is_err() {
+            break;
+        }
+        let tag = &hdr[0..4];
+        let length = u32::from_be_bytes([0, hdr[5], hdr[6], hdr[7]]) as usize;
+        let next = u64::from_be_bytes([
+            hdr[8], hdr[9], hdr[10], hdr[11], hdr[12], hdr[13], hdr[14], hdr[15],
+        ]);
+        if tag == b"CHTR" || tag == b"CHT2" {
+            let mut val = vec![0u8; length];
+            if file.read_exact(&mut val).is_err() {
+                break;
+            }
+            let text = String::from_utf8_lossy(&val);
+            let field = |key: &str| text.split_whitespace().find_map(|t| t.strip_prefix(key));
+            let ttype = field("TYPE:").unwrap_or("");
+            let frames: u32 = field("FRAMES:").and_then(|s| s.parse().ok()).unwrap_or(0);
+            let pregap: u32 = field("PREGAP:").and_then(|s| s.parse().ok()).unwrap_or(0);
+            if ttype != "AUDIO" {
+                return Ok(chd_ofs + pregap);
+            }
+            chd_ofs += frames.div_ceil(CD_TRACK_PADDING) * CD_TRACK_PADDING;
+        }
+        off = next;
+    }
+    Ok(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +856,95 @@ pub fn is_disc_rc_hash_system(system: &str) -> bool {
     )
 }
 
+fn looks_like_m3u_reference(line: &str) -> bool {
+    let ext = Path::new(line)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(ext.as_str(), "chd" | "cue" | "bin" | "iso" | "img" | "gdi")
+}
+
+fn parse_m3u_lines(m3u_path: &Path) -> io::Result<Vec<String>> {
+    let file = std::fs::File::open(m3u_path)?;
+    let reader = BufReader::new(file.take(MAX_M3U_BYTES));
+    let mut lines = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let trimmed = line.trim().trim_start_matches('\u{feff}').trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.chars().any(|ch| ch == '\0') {
+            break;
+        }
+        let reference = trimmed.trim_matches('"').trim();
+        if looks_like_m3u_reference(reference) {
+            lines.push(reference.to_string());
+        }
+    }
+
+    Ok(lines)
+}
+
+fn resolve_m3u_reference(line: &str, m3u_parent: &Path, storage_root: &Path) -> Option<PathBuf> {
+    let normalized = line.replace('\\', "/");
+    let as_path = Path::new(&normalized);
+    if as_path.is_absolute() && as_path.is_file() {
+        return Some(as_path.to_path_buf());
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(after_roms) = normalized.split("/roms/").nth(1) {
+        candidates.push(storage_root.join("roms").join(after_roms));
+    }
+    candidates.push(storage_root.join(normalized.trim_start_matches('/')));
+    candidates.push(m3u_parent.join(&normalized));
+    if let Some(filename) = as_path.file_name() {
+        candidates.push(m3u_parent.join(filename));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if let (Some(parent), Some(name)) = (candidate.parent(), candidate.file_name())
+            && let Some(name) = name.to_str()
+            && let Some(found) = find_file_case_insensitive(parent, name)
+        {
+            return Some(found);
+        }
+    }
+
+    None
+}
+
+fn first_disc_from_m3u(m3u_path: &Path, storage_root: &Path) -> Option<PathBuf> {
+    let m3u_parent = m3u_path.parent()?;
+    for line in parse_m3u_lines(m3u_path).ok()? {
+        if let Some(path) = resolve_m3u_reference(&line, m3u_parent, storage_root) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Filesystem identity used for a disc hash row. Plain disc images hash
+/// themselves; M3U playlists hash the first referenced disc while keeping the
+/// playlist as the library/cache key.
+pub fn disc_hash_identity_path(path: &Path, storage_root: &Path) -> PathBuf {
+    let is_m3u = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
+    if is_m3u {
+        first_disc_from_m3u(path, storage_root).unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    }
+}
+
 /// Hash + RA-resolve a batch of disc files for a disc system — the disc analogue
 /// of [`crate::rom_hash::hash_and_identify`]. Reuses the persisted `rc_hash`
 /// (keyed by mtime/size) to avoid re-reading multi-GB CHDs, computes the
@@ -829,7 +976,7 @@ pub async fn hash_and_identify_discs(
         tokio::task::spawn_blocking(move || {
             let mut results = Vec::with_capacity(rom_files.len());
             let mut stats = HashStats::default();
-            for (rom_filename, rom_path, size_bytes) in &rom_files {
+            for (rom_filename, rom_path, _size_bytes) in &rom_files {
                 if cancel_owned
                     .as_ref()
                     .is_some_and(|c| c.load(Ordering::Relaxed))
@@ -837,7 +984,9 @@ pub async fn hash_and_identify_discs(
                     break;
                 }
                 let abs_path = root.join(rom_path.trim_start_matches('/'));
-                let Some(current_mtime) = rom_hash::file_mtime_secs(&abs_path) else {
+                let target_path = disc_hash_identity_path(&abs_path, &root);
+                let Some((current_mtime, current_size)) = rom_hash::file_mtime_size(&target_path)
+                else {
                     stats.skipped += 1;
                     continue;
                 };
@@ -845,13 +994,13 @@ pub async fn hash_and_identify_discs(
                 if !options.force_rehash
                     && let Some(c) = cached.get(rom_filename)
                     && let Some(reused) =
-                        reusable_cached_hash(rom_filename, c, current_mtime, *size_bytes)
+                        reusable_cached_hash(rom_filename, c, current_mtime, current_size)
                 {
                     stats.reused_exact += 1;
                     results.push(reused);
                     continue;
                 }
-                match compute_disc_rc_hash(&sys, &abs_path) {
+                match compute_disc_rc_hash(&sys, &target_path) {
                     Ok(rc_hash) => {
                         if options.force_rehash {
                             stats.forced_computed += 1;
@@ -862,7 +1011,7 @@ pub async fn hash_and_identify_discs(
                             rom_filename: rom_filename.clone(),
                             crc32: 0,
                             mtime_secs: current_mtime,
-                            size_bytes: *size_bytes,
+                            size_bytes: current_size,
                             matched_name: None,
                             ra_id: None,
                             rc_hash,
@@ -870,7 +1019,7 @@ pub async fn hash_and_identify_discs(
                     }
                     Err(e) => {
                         stats.skipped += 1;
-                        tracing::debug!("disc rc_hash failed for {}: {e}", abs_path.display());
+                        tracing::debug!("disc rc_hash failed for {}: {e}", target_path.display());
                     }
                 }
             }
@@ -1122,6 +1271,109 @@ mod tests {
         let body: Vec<u8> = (0..80u8).map(|i| i.wrapping_mul(3)).collect();
         exp.update(&body);
         assert_eq!(got, md5_hex(exp.finalize().into()));
+    }
+
+    fn write_sega_cd_bin(path: &Path) {
+        let mut sector = [0u8; SECTOR_USER];
+        sector[0..16].copy_from_slice(b"SEGADISCSYSTEM  ");
+        for (i, b) in sector.iter_mut().take(512).enumerate().skip(16) {
+            *b = (i as u8).wrapping_mul(3);
+        }
+        std::fs::write(path, sector).unwrap();
+    }
+
+    #[tokio::test]
+    async fn m3u_hash_uses_first_referenced_disc_but_returns_playlist_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let roms_dir = temp.path().join("roms").join("sega_cd");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let disc = roms_dir.join("Game (Disc 1).bin");
+        let m3u = roms_dir.join("Game.m3u");
+        write_sega_cd_bin(&disc);
+        std::fs::write(&m3u, "Game (Disc 1).bin\n").unwrap();
+
+        let expected = compute_disc_rc_hash("sega_cd", &disc).unwrap();
+        let result = hash_and_identify_discs(
+            "sega_cd",
+            &[(
+                "Game.m3u".to_string(),
+                "/roms/sega_cd/Game.m3u".to_string(),
+                std::fs::metadata(&m3u).unwrap().len(),
+            )],
+            &std::collections::HashMap::new(),
+            temp.path(),
+            rom_hash::HashOptions::default(),
+            None,
+        )
+        .await;
+
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].rom_filename, "Game.m3u");
+        assert_eq!(result.results[0].rc_hash, expected);
+        assert_eq!(
+            result.results[0].size_bytes,
+            std::fs::metadata(&disc).unwrap().len()
+        );
+        assert_eq!(result.stats.computed, 1);
+    }
+
+    #[tokio::test]
+    async fn m3u_hash_reuses_playlist_cache_against_referenced_disc_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let roms_dir = temp.path().join("roms").join("sega_cd");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let disc = roms_dir.join("Game (Disc 1).bin");
+        let m3u = roms_dir.join("Game.m3u");
+        write_sega_cd_bin(&disc);
+        std::fs::write(&m3u, "Game (Disc 1).bin\n").unwrap();
+
+        let first = hash_and_identify_discs(
+            "sega_cd",
+            &[(
+                "Game.m3u".to_string(),
+                "/roms/sega_cd/Game.m3u".to_string(),
+                std::fs::metadata(&m3u).unwrap().len(),
+            )],
+            &std::collections::HashMap::new(),
+            temp.path(),
+            rom_hash::HashOptions::default(),
+            None,
+        )
+        .await;
+        let first = first.results.into_iter().next().unwrap();
+
+        let mut cached = std::collections::HashMap::new();
+        cached.insert(
+            "Game.m3u".to_string(),
+            rom_hash::CachedHash {
+                crc32: first.crc32,
+                hash_mtime: first.mtime_secs,
+                hash_size_bytes: Some(first.size_bytes),
+                matched_name: first.matched_name.clone(),
+                rc_hash: first.rc_hash.clone(),
+                ra_id: first.ra_id.clone(),
+            },
+        );
+
+        let second = hash_and_identify_discs(
+            "sega_cd",
+            &[(
+                "Game.m3u".to_string(),
+                "/roms/sega_cd/Game.m3u".to_string(),
+                std::fs::metadata(&m3u).unwrap().len(),
+            )],
+            &cached,
+            temp.path(),
+            rom_hash::HashOptions::default(),
+            None,
+        )
+        .await;
+
+        assert_eq!(second.results.len(), 1);
+        assert_eq!(second.results[0].rom_filename, "Game.m3u");
+        assert_eq!(second.results[0].rc_hash, first.rc_hash);
+        assert_eq!(second.stats.reused_exact, 1);
+        assert_eq!(second.stats.computed, 0);
     }
 
     #[test]

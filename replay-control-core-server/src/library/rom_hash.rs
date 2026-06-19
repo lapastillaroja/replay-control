@@ -641,14 +641,21 @@ pub async fn hash_and_identify_with_options_and_cancel(
 
 /// Get a file's mtime as seconds since the UNIX epoch.
 pub(crate) fn file_mtime_secs(path: &Path) -> Option<i64> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs() as i64)
-        })
+    file_mtime_size(path).map(|(mtime, _)| mtime)
+}
+
+/// Modification time (seconds since epoch) and size of a file in a single
+/// `stat`. Callers that need both (cache-identity checks keyed by mtime+size)
+/// should use this rather than `file_mtime_secs` + a separate `.metadata()`.
+pub fn file_mtime_size(path: &Path) -> Option<(i64, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((mtime, meta.len()))
 }
 
 #[cfg(test)]

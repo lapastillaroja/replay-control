@@ -55,6 +55,15 @@
     --value-text-word-break: break-word;
 }
 
+/* Clarifying note next to the RA trophy when RePlay's core can't award RA for
+   this system (see System::replayos_retroachievements). */
+.game-meta-note {
+    display: block;
+    margin-top: var(--space-3);
+    color: var(--muted);
+    font-size: var(--font-size-small);
+}
+
 .game-meta-status {
     --value-text-display: flex;
     align-items: center;

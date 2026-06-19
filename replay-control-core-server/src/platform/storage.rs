@@ -158,6 +158,12 @@ impl StorageLocation {
         self.root.join(ROMS_DIR)
     }
 
+    /// Absolute path of a ROM from its stored `rom_path` (which includes the
+    /// `roms/` prefix, e.g. `/roms/sega_st/Game.m3u`).
+    pub fn rom_abs_path(&self, rom_path: &str) -> PathBuf {
+        self.root.join(rom_path.trim_start_matches('/'))
+    }
+
     pub fn saves_dir(&self) -> PathBuf {
         self.root.join(SAVES_DIR)
     }

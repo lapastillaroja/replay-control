@@ -26,6 +26,12 @@
 #                          (default: local code-server image if present,
 #                          otherwise python:3.12-slim)
 #   PYTEST_ARGS       - pytest args to run (default: tests/e2e/ -v)
+#   REPLAY_CONTROL_SKIP_FIRST_RUN_SEED
+#                      - set to "1" to skip first-run metadata downloads
+#   REPLAY_CONTROL_UPDATE_INITIAL_DELAY_SECS
+#                      - update-check first delay inside the app container
+#   REPLAY_CONTROL_UPDATE_INTERVAL_SECS
+#                      - update-check loop interval inside the app container
 
 set -euo pipefail
 
@@ -272,6 +278,9 @@ $ENGINE run -d \
     --name "$CONTAINER_NAME" \
     "${PUBLISH_ARGS[@]}" \
     -e "REPLAY_GITHUB_API_URL=${APP_MOCK_URL}" \
+    -e "REPLAY_CONTROL_SKIP_FIRST_RUN_SEED=${REPLAY_CONTROL_SKIP_FIRST_RUN_SEED:-1}" \
+    -e "REPLAY_CONTROL_UPDATE_INITIAL_DELAY_SECS=${REPLAY_CONTROL_UPDATE_INITIAL_DELAY_SECS:-1}" \
+    -e "REPLAY_CONTROL_UPDATE_INTERVAL_SECS=${REPLAY_CONTROL_UPDATE_INTERVAL_SECS:-5}" \
     "${EXTRA_ARGS[@]}" \
     "$IMAGE_NAME"
 

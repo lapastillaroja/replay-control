@@ -26,10 +26,27 @@ fn is_hash_identifiable(system: &str) -> bool {
     rom_hash::is_hash_eligible(system) || rc_hash_disc::is_disc_rc_hash_system(system)
 }
 
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
+fn env_duration_secs(name: &str, default_secs: u64, min_secs: u64) -> Duration {
+    let secs = std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|secs| secs.max(min_secs))
+        .unwrap_or(default_secs);
+    Duration::from_secs(secs)
+}
+
 const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PIPELINE_ACTIVITY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const PIPELINE_ACTIVITY_RETRY_ATTEMPTS: usize = 240;
 const IDENTITY_BATCH_SIZE: usize = 200;
+const UPDATE_INITIAL_DELAY_SECS: u64 = 60;
+const UPDATE_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateProgress {
@@ -261,10 +278,14 @@ impl BackgroundManager {
         // Phase 0.5: On first boot, fetch optional source metadata before the
         // library scan. This is a one-time cost, and waiting avoids building a
         // partial first library that needs immediate re-enrichment.
-        if let Some(_guard) =
-            Self::claim_startup_activity(state, StartupPhase::FetchingMetadata).await
-        {
-            Self::phase_first_run_seed(state).await;
+        if Self::first_run_seed_enabled() {
+            if let Some(_guard) =
+                Self::claim_startup_activity(state, StartupPhase::FetchingMetadata).await
+            {
+                Self::phase_first_run_seed(state).await;
+            }
+        } else {
+            tracing::debug!("phase_first_run_seed: disabled by environment");
         }
 
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
@@ -631,9 +652,12 @@ impl BackgroundManager {
             .roms
             .iter()
             .filter(|rom| {
-                !rom.is_m3u
-                    && (rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
-                        || rc_hash_disc::is_disc_rc_hash_system(&job.system))
+                if rc_hash_disc::is_disc_rc_hash_system(&job.system) {
+                    true
+                } else {
+                    !rom.is_m3u
+                        && rom_hash::is_file_hash_eligible(&job.system, &rom.game.rom_filename)
+                }
             })
             .map(|rom| rom.game.rom_filename.clone())
             .collect();
@@ -2167,7 +2191,7 @@ impl BackgroundManager {
     /// Periodically checks GitHub for new releases.
     async fn update_check_loop(state: AppState) {
         // Delay first check to let WiFi come up on Pi.
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Self::update_initial_delay()).await;
 
         let analytics = super::analytics::AnalyticsClient::new(
             replay_control_core_server::http::shared_client().clone(),
@@ -2192,8 +2216,28 @@ impl BackgroundManager {
                 }
             }
 
-            tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
+            tokio::time::sleep(Self::update_interval()).await;
         }
+    }
+
+    fn first_run_seed_enabled() -> bool {
+        !env_flag("REPLAY_CONTROL_SKIP_FIRST_RUN_SEED")
+    }
+
+    fn update_initial_delay() -> Duration {
+        env_duration_secs(
+            "REPLAY_CONTROL_UPDATE_INITIAL_DELAY_SECS",
+            UPDATE_INITIAL_DELAY_SECS,
+            0,
+        )
+    }
+
+    fn update_interval() -> Duration {
+        env_duration_secs(
+            "REPLAY_CONTROL_UPDATE_INTERVAL_SECS",
+            UPDATE_INTERVAL_SECS,
+            1,
+        )
     }
 
     /// Background check variant: does NOT nuke before checking (preserves existing

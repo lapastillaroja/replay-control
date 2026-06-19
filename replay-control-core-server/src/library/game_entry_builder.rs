@@ -13,6 +13,7 @@ use crate::rc_hash_disc;
 use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, game_db};
+use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::{developer, genre, rom_tags, systems, title_utils};
 
 /// Pre-fetched catalog lookups for a system, keyed by filename stem.
@@ -35,7 +36,7 @@ type RomMetadata = (
     String,
     Option<u16>,
     bool,
-    Option<replay_control_core::arcade_board::ArcadeBoard>,
+    Option<ArcadeBoard>,
     String,
 );
 
@@ -141,16 +142,24 @@ fn build_single_entry(
     // Look up hash result for this ROM file.
     let hash = hash_results.get(rom_filename);
 
-    // Override display_name with the No-Intro canonical name from CRC hash matching.
-    // More authoritative than filename-derived names (e.g., "Dongguri Techi Jakjeon (Korea)"
-    // instead of "Dong Gu Ri Te Chi Jak Jeon (Korea)"). Excluded for translations/hacks/specials
-    // whose filename-derived names carry useful tags (e.g., "PT-BR Translation").
+    // Override display_name using CRC hash matching when available.
+    // The matched name is re.filename_stem from the catalog — for No-Intro that
+    // IS human-readable, but for TOSEC it carries year/publisher tags (e.g.
+    // "Nitro (1990)(Psygnosis)(US)"). Always resolve through batch.by_stem so
+    // the canonical_game.display_name is used (e.g. "Nitro (US)"). Excluded for
+    // translations/hacks/specials whose filename-derived names carry useful tags.
     let display_name = if !is_translation
         && !is_hack
         && !is_special
         && let Some(matched) = hash.and_then(|h| h.matched_name.as_deref())
     {
-        Some(matched.to_string())
+        Some(
+            batch
+                .by_stem
+                .get(matched)
+                .map(|e| e.game.display_name.clone())
+                .unwrap_or_else(|| matched.to_string()),
+        )
     } else {
         r.game.display_name.clone()
     };
@@ -752,5 +761,34 @@ mod tests {
         .expect("metadata should resolve");
 
         assert_eq!(developer, "AmigaVision Project");
+    }
+
+    #[test]
+    fn disc_m3u_with_ra_hash_result_is_matched_identity_row() {
+        let mut rom = rom_entry("sony_psx", "Game.m3u", Some("Game"));
+        rom.is_m3u = true;
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            "Game.m3u".to_string(),
+            HashResult {
+                rom_filename: "Game.m3u".to_string(),
+                crc32: 0,
+                mtime_secs: 123,
+                size_bytes: 456,
+                matched_name: None,
+                ra_id: Some("9876".to_string()),
+                rc_hash: Some("disc-ra-hash".to_string()),
+            },
+        );
+
+        let entry = build_single_entry(&rom, &hash_results, false, &CatalogLookup::default())
+            .expect("m3u identity row should build");
+
+        assert_eq!(entry.rom_filename, "Game.m3u");
+        assert!(entry.is_m3u);
+        assert_eq!(entry.identity_state, IdentityState::CompleteMatched);
+        assert_eq!(entry.ra_id, "9876");
+        assert_eq!(entry.rc_hash.as_deref(), Some("disc-ra-hash"));
+        assert_eq!(entry.hash_size_bytes, Some(456));
     }
 }

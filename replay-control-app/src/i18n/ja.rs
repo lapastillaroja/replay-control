@@ -244,6 +244,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailParentRom => "オリジナル版",
         Key::GameDetailBoard => "基板",
         Key::GameDetailRetroAchievements => "RetroAchievements",
+        Key::GameDetailRetroAchievementsNoCore => {
+            "このシステムのRePlayエミュレーターは実績に対応していません"
+        }
+        Key::GameDetailRetroAchievementsDiscFormat => {
+            "RePlayはこのディスク形式からは実績をまだ記録できません"
+        }
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
 

@@ -244,6 +244,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailParentRom => "Versión original",
         Key::GameDetailBoard => "Placa",
         Key::GameDetailRetroAchievements => "RetroAchievements",
+        Key::GameDetailRetroAchievementsNoCore => {
+            "El emulador de RePlay para este sistema no admite logros"
+        }
+        Key::GameDetailRetroAchievementsDiscFormat => {
+            "RePlay aún no puede registrar logros desde este formato de disco"
+        }
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
 

@@ -972,7 +972,6 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
 /// when a system's scan fails, but partial duplicate-detection is more
 /// useful than a 500.
 pub async fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
-    let roms_dir = storage.roms_dir();
     let mut all_roms: Vec<RomEntry> = Vec::new();
 
     for system in systems::visible_systems() {
@@ -991,8 +990,6 @@ pub async fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEnt
             ),
         }
     }
-    apply_m3u_dedup(&mut all_roms, &roms_dir);
-
     // Group by (filename, size) — exact duplicates
     let mut seen: std::collections::HashMap<(String, u64), RomEntry> =
         std::collections::HashMap::new();
@@ -1287,6 +1284,20 @@ fn resolve_m3u_containers(raw: &mut Vec<RawRom>, roms_root: &Path, system: &Syst
 /// files where the first line is a filename followed by binary disc data.
 /// Uses `BufReader` and reads at most `MAX_M3U_BYTES` to avoid loading large
 /// binary files into memory.
+/// Lowercase extension (no dot) of the first disc image referenced by an M3U
+/// playlist — e.g. `"chd"` for a multi-disc CHD set. An M3U row's visible
+/// filename is `.m3u`, but RetroAchievements hashing (and the RePlayOS `.chd`
+/// hash-generation limitation) apply to the referenced disc image, so callers
+/// that reason about the effective disc format must look through the playlist.
+/// Returns `None` if the playlist is empty or unreadable.
+pub fn m3u_first_disc_extension(m3u_path: &Path) -> Option<String> {
+    parse_m3u_references(m3u_path)
+        .first()
+        .and_then(|reference| Path::new(reference).extension())
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+}
+
 fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
     /// Maximum bytes to read from an M3U file. Covers any reasonable text
     /// playlist while protecting against X68000 binary M3U files (~1.2 MB).
@@ -1335,105 +1346,6 @@ fn looks_like_filename(s: &str) -> bool {
     // Must contain a dot (for the extension), be reasonably short, and
     // contain no control characters except tab.
     s.contains('.') && s.len() < 512 && s.chars().all(|c| !c.is_control() || c == '\t')
-}
-
-/// Remove ROM entries that are referenced by M3U playlist files and aggregate
-/// their sizes into the corresponding M3U entry.
-///
-/// This prevents double-counting of disc files alongside their M3U entry
-/// (e.g., X68000 games where both `Game.m3u` and `Game.dim` exist).
-fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
-    // Collect M3U entries and parse their references.
-    // Key: lowercased referenced filename -> list of M3U indices that reference it.
-    let mut referenced_by_m3u: HashMap<String, Vec<usize>> = HashMap::new();
-
-    for (idx, rom) in roms.iter().enumerate() {
-        if !rom.is_m3u {
-            continue;
-        }
-        // Resolve the M3U file's absolute path on disk from rom_path.
-        // rom_path is like "/roms/sharp_x68k/Game.m3u" relative to storage root.
-        let m3u_disk_path = roms_root
-            .parent()
-            .unwrap_or(Path::new("/"))
-            .join(rom.game.rom_path.trim_start_matches('/'));
-
-        for filename in parse_m3u_references(&m3u_disk_path) {
-            let lower = filename.to_lowercase();
-            referenced_by_m3u
-                .entry(lower.clone())
-                .or_default()
-                .push(idx);
-            // ScummVM M3U files reference .svm or .scummvm files in subfolders.
-            // Some games have both extensions; add the alternative so both are excluded.
-            if let Some(stem) = lower.strip_suffix(".svm") {
-                referenced_by_m3u
-                    .entry(format!("{stem}.scummvm"))
-                    .or_default()
-                    .push(idx);
-            } else if let Some(stem) = lower.strip_suffix(".scummvm") {
-                referenced_by_m3u
-                    .entry(format!("{stem}.svm"))
-                    .or_default()
-                    .push(idx);
-            }
-        }
-    }
-
-    if referenced_by_m3u.is_empty() {
-        return;
-    }
-
-    // Collect the set of M3U indices that have at least one reference.
-    let m3u_indices_with_refs: HashSet<usize> = referenced_by_m3u
-        .values()
-        .flat_map(|v| v.iter().copied())
-        .collect();
-
-    // Build a set of ROM indices to remove (disc files referenced by M3U).
-    // Also accumulate sizes to add to each M3U entry.
-    let mut m3u_extra_size: HashMap<usize, u64> = HashMap::new();
-    let mut indices_to_remove: HashSet<usize> = HashSet::new();
-
-    for (idx, rom) in roms.iter().enumerate() {
-        if rom.is_m3u {
-            continue;
-        }
-        let key = rom.game.rom_filename.to_lowercase();
-        if let Some(m3u_indices) = referenced_by_m3u.get(&key) {
-            indices_to_remove.insert(idx);
-            // Add this disc file's size to each M3U that references it.
-            for &m3u_idx in m3u_indices {
-                *m3u_extra_size.entry(m3u_idx).or_default() += rom.size_bytes;
-            }
-        }
-    }
-
-    // Orphan M3U detection: an M3U whose references matched zero collected
-    // ROMs is a stub (e.g., ScummVM wrapper M3U without actual game files).
-    // Remove these so they don't appear as phantom entries.
-    for &m3u_idx in &m3u_indices_with_refs {
-        if !m3u_extra_size.contains_key(&m3u_idx) {
-            indices_to_remove.insert(m3u_idx);
-        }
-    }
-
-    if indices_to_remove.is_empty() {
-        return;
-    }
-
-    // Aggregate sizes into M3U entries.
-    for (&m3u_idx, &extra) in &m3u_extra_size {
-        roms[m3u_idx].size_bytes += extra;
-    }
-
-    // Remove referenced disc files and orphan M3Us, preserving order.
-    let mut idx = 0;
-    roms.retain(|_| {
-        let keep = !indices_to_remove.contains(&idx);
-        idx += 1;
-        keep
-    });
 }
 
 fn is_rom_file(path: &Path, system: &System) -> bool {
@@ -1637,6 +1549,30 @@ mod tests {
         fs::write(&m3u, "Game (1991)(Publisher).dim\r\n").unwrap();
         let refs = parse_m3u_references(&m3u);
         assert_eq!(refs, vec!["Game (1991)(Publisher).dim"]);
+    }
+
+    #[test]
+    fn m3u_first_disc_extension_chd() {
+        // A multi-disc CHD set: the visible row is `.m3u`, but the effective
+        // disc format is `.chd` (so the game-detail RA format check must block it).
+        let tmp = tempdir();
+        let m3u = tmp.join("Panzer Dragoon Saga (USA).m3u");
+        fs::write(
+            &m3u,
+            "Panzer Dragoon Saga (USA) (Disc 1).chd\nPanzer Dragoon Saga (USA) (Disc 2).chd\n",
+        )
+        .unwrap();
+        assert_eq!(m3u_first_disc_extension(&m3u).as_deref(), Some("chd"));
+    }
+
+    #[test]
+    fn m3u_first_disc_extension_cue_and_empty() {
+        let tmp = tempdir();
+        let cue_m3u = tmp.join("game.m3u");
+        fs::write(&cue_m3u, "Game (Disc 1).cue\n").unwrap();
+        assert_eq!(m3u_first_disc_extension(&cue_m3u).as_deref(), Some("cue"));
+        // Unreadable / missing playlist → None.
+        assert_eq!(m3u_first_disc_extension(&tmp.join("missing.m3u")), None);
     }
 
     #[test]

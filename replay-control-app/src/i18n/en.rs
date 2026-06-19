@@ -244,6 +244,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailParentRom => "Original Version",
         Key::GameDetailBoard => "Board",
         Key::GameDetailRetroAchievements => "RetroAchievements",
+        Key::GameDetailRetroAchievementsNoCore => {
+            "RePlay's emulator for this system doesn't support achievements"
+        }
+        Key::GameDetailRetroAchievementsDiscFormat => {
+            "RePlay can't track achievements from this disc format yet"
+        }
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
 

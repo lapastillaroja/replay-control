@@ -803,9 +803,9 @@ mod tests {
         let reader = LibraryReadPool::from_pool(pool.clone());
         let writer = LibraryWritePool::from_pool(pool);
         let storage_tmp = tempfile::tempdir().unwrap();
-        let roms_dir = storage_tmp.path().join("roms").join("sony_psx");
+        let roms_dir = storage_tmp.path().join("roms").join("nintendo_ds");
         std::fs::create_dir_all(&roms_dir).unwrap();
-        let rom_path = roms_dir.join("Crash Bandicoot.chd");
+        let rom_path = roms_dir.join("Brain Age.nds");
         std::fs::write(&rom_path, b"rom").unwrap();
 
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
@@ -813,7 +813,7 @@ mod tests {
         let first = svc
             .scan_and_cache_system_with_inputs(
                 &storage,
-                "sony_psx",
+                "nintendo_ds",
                 RegionPreference::default(),
                 None,
                 &writer,
@@ -825,13 +825,13 @@ mod tests {
 
         writer
             .try_write(|conn| {
-                LibraryDb::set_enrichment_state(conn, "sony_psx", PhaseState::Complete)
+                LibraryDb::set_enrichment_state(conn, "nintendo_ds", PhaseState::Complete)
             })
             .await
             .unwrap()
             .unwrap();
         let clean_fingerprint = reader
-            .read(|conn| LibraryDb::clean_startup_discovery_fingerprint(conn, "sony_psx"))
+            .read(|conn| LibraryDb::clean_startup_discovery_fingerprint(conn, "nintendo_ds"))
             .await
             .unwrap()
             .unwrap()
@@ -850,7 +850,7 @@ mod tests {
         let unchanged = svc
             .scan_and_cache_system_with_inputs(
                 &storage,
-                "sony_psx",
+                "nintendo_ds",
                 RegionPreference::default(),
                 None,
                 &writer,
@@ -873,7 +873,7 @@ mod tests {
         let manual = svc
             .scan_and_cache_system_with_inputs(
                 &storage,
-                "sony_psx",
+                "nintendo_ds",
                 RegionPreference::default(),
                 None,
                 &writer,
@@ -887,7 +887,7 @@ mod tests {
         let changed = svc
             .scan_and_cache_system_with_inputs(
                 &storage,
-                "sony_psx",
+                "nintendo_ds",
                 RegionPreference::default(),
                 None,
                 &writer,

@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
 use replay_control_core::resource_kind;
+use replay_control_core::systems::system_display_name;
 
 use super::{
     CountBucket, DownloadedThumbnailStats, DriverStatusCounts, LibraryDb, SystemCoverage,
@@ -470,7 +471,7 @@ impl LibraryDb {
             summary.max_year = max_optional(summary.max_year, row.release_year_max);
 
             coverage.push(SystemCoverage {
-                display_name: replay_control_core::systems::system_display_name(&row.system),
+                display_name: system_display_name(&row.system),
                 total_games: row.rom_count,
                 with_thumbnail: row.boxart_count.min(row.rom_count),
                 with_snap: row.snap_count.min(row.rom_count),
@@ -552,7 +553,17 @@ impl LibraryDb {
         let rating_known_count = count_where(conn, system, "rating IS NOT NULL")?;
         let boxart_count = count_where(conn, system, "box_art_url IS NOT NULL")?;
         let coop_count = count_where(conn, system, "cooperative = 1")?;
-        let verified_count = count_where(conn, system, "hash_matched_name IS NOT NULL")?;
+        let verified_count = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM game_library
+                 WHERE system = ?1
+                   AND (identity_state = ?2 OR hash_matched_name IS NOT NULL OR ra_id != '')",
+                params![system, super::IdentityState::CompleteMatched.as_i64()],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| Error::Other(format!("query verified identity stats: {e}")))?
+            as usize;
         let ra_id_count = count_where(conn, system, "ra_id != ''")?;
         let (release_year_min, release_year_max) = conn
             .query_row(
@@ -961,6 +972,25 @@ mod tests {
         assert_eq!(summary.coop_games, 1);
         assert_eq!(summary.min_year, Some(1991));
         assert_eq!(summary.max_year, Some(1991));
+    }
+
+    #[test]
+    fn verified_coverage_counts_ra_only_identity_matches() {
+        let (mut conn, _tmp) = super::super::tests::open_temp_db();
+        let mut disc = super::super::tests::make_game_entry("sony_psx", "Game.m3u", false);
+        disc.is_m3u = true;
+        disc.identity_state = IdentityState::CompleteMatched;
+        disc.hash_matched_name = None;
+        disc.ra_id = "9876".into();
+        disc.rc_hash = Some("disc-ra-hash".into());
+
+        LibraryDb::save_system_entries(&mut conn, "sony_psx", &[disc], None).unwrap();
+        LibraryDb::refresh_game_library_system_stats(&conn, "sony_psx").unwrap();
+
+        let (_, coverage) = LibraryDb::library_overview_from_system_stats(&conn).unwrap();
+        assert_eq!(coverage.len(), 1);
+        assert_eq!(coverage[0].verified_count, 1);
+        assert_eq!(coverage[0].with_ra_id, 1);
     }
 
     #[test]

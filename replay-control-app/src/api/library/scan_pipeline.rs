@@ -5,9 +5,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
+use replay_control_core::rom_tags;
 use replay_control_core_server::rom_hash::{CachedHash, HashResult, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
+use replay_control_core_server::{game_db, game_entry_builder};
 
 use replay_control_core_server::library_db::{
     DISCOVERY_SAVE_CHUNK_ROWS, DiscoveryFinalizeStats, LibraryDb,
@@ -126,28 +128,38 @@ impl LibraryService {
         system: &str,
         roms: &[RomEntry],
         scan_inputs: &ScanInputs,
-    ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
+    ) -> HashMap<String, HashResult> {
+        use replay_control_core_server::rc_hash_disc;
         use replay_control_core_server::rom_hash;
 
-        if !rom_hash::is_hash_eligible(system) {
+        let is_disc = rc_hash_disc::is_disc_rc_hash_system(system);
+        if !rom_hash::is_hash_eligible(system) && !is_disc {
             return HashMap::new();
         }
 
         let mut result = HashMap::new();
-        for rom in roms.iter().filter(|rom| !rom.is_m3u) {
+        for rom in roms.iter().filter(|rom| is_disc || !rom.is_m3u) {
             let rom_filename = &rom.game.rom_filename;
-            if !rom_hash::is_file_hash_eligible(system, rom_filename) {
+            if !is_disc && !rom_hash::is_file_hash_eligible(system, rom_filename) {
                 continue;
             }
             let Some(cached) = scan_inputs.cached_hashes.get(rom_filename) else {
                 continue;
             };
             let abs_path = storage.root.join(rom.game.rom_path.trim_start_matches('/'));
-            let Some(current_mtime) = file_mtime_secs(&abs_path) else {
+            let identity_path = if is_disc {
+                rc_hash_disc::disc_hash_identity_path(&abs_path, &storage.root)
+            } else {
+                abs_path
+            };
+            let Some((current_mtime, file_size)) = rom_hash::file_mtime_size(&identity_path) else {
                 continue;
             };
+            // Disc rows are keyed by the actual file size; cartridge rows keep the
+            // discovered size (matches how the cached hash was originally recorded).
+            let current_size = if is_disc { file_size } else { rom.size_bytes };
             if let Some(hash) =
-                rom_hash::reusable_cached_hash(rom_filename, cached, current_mtime, rom.size_bytes)
+                rom_hash::reusable_cached_hash(rom_filename, cached, current_mtime, current_size)
             {
                 result.insert(rom_filename.clone(), hash);
             }
@@ -172,10 +184,7 @@ impl LibraryService {
         roms: &mut [RomEntry],
         scan_inputs: &ScanInputs,
         hash_cancel: Option<Arc<AtomicBool>>,
-    ) -> (
-        HashMap<String, replay_control_core_server::rom_hash::HashResult>,
-        HashStats,
-    ) {
+    ) -> (HashMap<String, HashResult>, HashStats) {
         use replay_control_core_server::rc_hash_disc;
         use replay_control_core_server::rom_hash::{self, HashResult};
 
@@ -192,7 +201,7 @@ impl LibraryService {
         let input_started = Instant::now();
         let rom_files: Vec<(String, String, u64)> = roms
             .iter()
-            .filter(|r| !r.is_m3u) // Skip M3U playlists
+            .filter(|r| is_disc || !r.is_m3u)
             .map(|r| {
                 (
                     r.game.rom_filename.clone(),
@@ -257,18 +266,15 @@ impl LibraryService {
             .collect();
         if !canonical_filenames.is_empty() {
             let refs: Vec<&str> = canonical_filenames.iter().map(String::as_str).collect();
-            let display_map =
-                replay_control_core_server::game_db::display_names_batch(system, &refs).await;
+            let display_map = game_db::display_names_batch(system, &refs).await;
             for rom in roms.iter_mut() {
                 if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
                     && let Some(ref matched_name) = hash_result.matched_name
                 {
                     let canonical_filename = format!("{matched_name}.rom");
                     if let Some(display) = display_map.get(&canonical_filename) {
-                        let with_tags = replay_control_core::rom_tags::display_name_with_tags(
-                            display,
-                            &rom.game.rom_filename,
-                        );
+                        let with_tags =
+                            rom_tags::display_name_with_tags(display, &rom.game.rom_filename);
                         rom.game.display_name = Some(with_tags);
                     }
                 }
@@ -323,12 +329,7 @@ impl LibraryService {
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
         let build_started = Instant::now();
-        let cached_roms = replay_control_core_server::game_entry_builder::build_game_entries(
-            system,
-            roms,
-            hash_results,
-        )
-        .await;
+        let cached_roms = game_entry_builder::build_game_entries(system, roms, hash_results).await;
         let build_ms = build_started.elapsed().as_millis();
 
         tracing::debug!(
@@ -440,14 +441,6 @@ impl LibraryService {
     }
 }
 
-fn file_mtime_secs(path: &Path) -> Option<i64> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-}
-
 fn log_hash_stats(system: &str, stats: HashStats) {
     if stats == HashStats::default() {
         return;
@@ -466,6 +459,9 @@ fn log_hash_stats(system: &str, stats: HashStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use replay_control_core::game_ref::GameRef;
+    use replay_control_core_server::rom_hash;
+    use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
     #[test]
     fn scan_inputs_without_cancellation_is_current() {
@@ -514,5 +510,60 @@ mod tests {
             None,
         );
         assert!(trusted_probe.startup_can_skip("fingerprint"));
+    }
+
+    #[test]
+    fn cached_identity_for_discovery_reuses_disc_m3u_child_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let roms_dir = temp.path().join("roms").join("sega_cd");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let disc = roms_dir.join("Game (Disc 1).bin");
+        let m3u = roms_dir.join("Game.m3u");
+        std::fs::write(&disc, [1u8; 2048]).unwrap();
+        std::fs::write(&m3u, "Game (Disc 1).bin\n").unwrap();
+
+        let (disc_mtime, disc_size) = rom_hash::file_mtime_size(&disc).unwrap();
+        let mut cached_hashes = HashMap::new();
+        cached_hashes.insert(
+            "Game.m3u".to_string(),
+            CachedHash {
+                crc32: 0,
+                hash_mtime: disc_mtime,
+                hash_size_bytes: Some(disc_size),
+                matched_name: None,
+                rc_hash: Some("disc-ra-hash".to_string()),
+                ra_id: Some("9876".to_string()),
+            },
+        );
+        let inputs = ScanInputs::new(cached_hashes, None, false, ScanOptions::default(), None);
+        let storage = StorageLocation::from_path(temp.path().to_path_buf(), StorageKind::Sd);
+        let rom = RomEntry {
+            game: GameRef::from_parts(
+                "sega_cd",
+                "Game.m3u".to_string(),
+                "/roms/sega_cd/Game.m3u".to_string(),
+                Some("Game".to_string()),
+            ),
+            size_bytes: std::fs::metadata(&m3u).unwrap().len(),
+            mtime_nanos: None,
+            is_m3u: true,
+            is_favorite: false,
+            box_art_url: None,
+            driver_status: None,
+            rating: None,
+            players: None,
+        };
+
+        let result = LibraryService::new().cached_identity_for_discovery(
+            &storage,
+            "sega_cd",
+            &[rom],
+            &inputs,
+        );
+
+        let hash = result.get("Game.m3u").expect("cached m3u identity");
+        assert_eq!(hash.size_bytes, disc_size);
+        assert_eq!(hash.rc_hash.as_deref(), Some("disc-ra-hash"));
+        assert_eq!(hash.ra_id.as_deref(), Some("9876"));
     }
 }
