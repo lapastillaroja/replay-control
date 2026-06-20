@@ -4,6 +4,17 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.8.0-beta.3]
+
+> Beta release — broader region coverage for game names.
+
+### Fixed
+
+- **More regional game variants now show a clean region name.** Games named in the TOSEC convention (Amiga, X68000, and others) from less-common regions — Poland, Denmark, Finland, Canada, Norway, Czechia, and many more — now display a readable region (e.g. "Game (Poland)") instead of a raw two-letter code like "(PL)". The major regions (USA, UK, Germany, …) are unchanged.
+- **Library scans identify games more reliably.** Achievement/content identification is now scheduled before per-system metadata enrichment, so a transient enrichment hiccup no longer skips identifying that system's games.
+
+---
+
 ## [0.8.0-beta.2]
 
 > Beta release — clearer RetroAchievements availability and Amiga naming improvements.
