@@ -12,6 +12,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - **More regional game variants now show a clean region name.** Games named in the TOSEC convention (Amiga, X68000, and others) from less-common regions — Poland, Denmark, Finland, Canada, Norway, Czechia, and many more — now display a readable region (e.g. "Game (Poland)") instead of a raw two-letter code like "(PL)". The major regions (USA, UK, Germany, …) are unchanged.
 - **Library scans identify games more reliably.** Achievement/content identification is now scheduled before per-system metadata enrichment, so a transient enrichment hiccup no longer skips identifying that system's games.
+- **Game names are consistent across the app.** A game's display name is resolved once during the library scan and reused everywhere — home, recently played, and lists now show the same clean name. Multi-disc playlists (`.m3u`) no longer pick up a stray disc label.
 
 ---
 
