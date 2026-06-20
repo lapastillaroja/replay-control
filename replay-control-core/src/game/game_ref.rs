@@ -70,7 +70,7 @@ impl GameRef {
         let display_name = if systems::is_arcade_system(system) {
             resolved_name
         } else {
-            Some(compute_console_display_name(
+            Some(console_display_name(
                 resolved_name.as_deref(),
                 &rom_filename,
             ))
@@ -108,7 +108,7 @@ impl GameRef {
 /// passthrough (region, revision, disc labels) and falls back to filename
 /// stem processing (article inversion, version stripping) when the catalog
 /// has no match.
-fn compute_console_display_name(resolved: Option<&str>, rom_filename: &str) -> String {
+pub fn console_display_name(resolved: Option<&str>, rom_filename: &str) -> String {
     let stem = title_utils::filename_stem(rom_filename);
     // TOSEC stems carry variant info (edition/region) that catalog fuzzy-match
     // can't preserve — two m3u files with the same base title collapse to the
@@ -123,7 +123,11 @@ fn compute_console_display_name(resolved: Option<&str>, rom_filename: &str) -> S
             title_utils::strip_version(name).to_string()
         });
     let mut display = rom_tags::display_name_with_tags(&base_name, rom_filename);
-    if let Some(label) = rom_tags::extract_disc_label(rom_filename) {
+    let is_m3u = rom_filename
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.eq_ignore_ascii_case("m3u"))
+        .unwrap_or(false);
+    if !is_m3u && let Some(label) = rom_tags::extract_disc_label(rom_filename) {
         display.push_str(" [");
         display.push_str(&label);
         display.push(']');
@@ -188,5 +192,24 @@ mod tests {
     #[test]
     fn uninvert_empty() {
         assert_eq!(uninvert_article(""), None);
+    }
+
+    #[test]
+    fn console_display_name_appends_aggregated_tags_to_resolved_base() {
+        assert_eq!(
+            console_display_name(
+                Some("Super Mario World"),
+                "Super Mario World (Japan) (Rev 2).sfc",
+            ),
+            "Super Mario World (Japan, Rev 2)"
+        );
+    }
+
+    #[test]
+    fn console_display_name_keeps_disc_label_off_m3u_playlist() {
+        assert_eq!(
+            console_display_name(Some("Final Fantasy VII"), "Final Fantasy VII (USA).m3u"),
+            "Final Fantasy VII (USA)"
+        );
     }
 }

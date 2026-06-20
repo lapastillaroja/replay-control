@@ -5,12 +5,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use replay_control_core::error::{Error, Result};
-use replay_control_core::rom_tags;
+use replay_control_core_server::game_entry_builder;
 use replay_control_core_server::game_entry_builder::HashIdentificationMethod;
 use replay_control_core_server::rom_hash::{CachedHash, HashResult, HashStats};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
-use replay_control_core_server::{game_db, game_entry_builder};
 
 use replay_control_core_server::library_db::{
     DISCOVERY_SAVE_CHUNK_ROWS, DiscoveryFinalizeStats, LibraryDb,
@@ -175,8 +174,7 @@ impl LibraryService {
     /// 1. Loads cached hashes from the database
     /// 2. Computes CRC32 for new/modified files
     /// 3. Looks up CRC32 in the No-Intro index
-    /// 4. Overrides display names for matched ROMs (via `GameRef::new()` with the
-    ///    canonical No-Intro name)
+    /// 4. Returns identity results for the library-row builder to finalize display names
     ///
     /// Returns a map of rom_filename -> HashResult for use by save_roms_to_db.
     pub(crate) async fn hash_roms_for_system(
@@ -247,43 +245,11 @@ impl LibraryService {
             .as_ref()
             .is_some_and(|cancel| cancel.load(Ordering::Relaxed));
 
-        // Build a lookup map for applying results.
-        let display_started = Instant::now();
+        // Build a lookup map for the library-row builder.
         let mut result_map: HashMap<String, HashResult> = HashMap::new();
         for result in hash_result.results {
             result_map.insert(result.rom_filename.clone(), result);
         }
-
-        // Apply hash-matched display names to RomEntries. The matched_name
-        // is the No-Intro canonical filename stem (e.g., "Super Mario World
-        // (USA)"); look it up to get the clean display title and re-apply
-        // tags from the original filename.
-        let canonical_filenames: Vec<String> = roms
-            .iter()
-            .filter_map(|rom| {
-                result_map
-                    .get(&rom.game.rom_filename)
-                    .and_then(|hr| hr.matched_name.as_ref())
-                    .map(|matched| format!("{matched}.rom"))
-            })
-            .collect();
-        if !canonical_filenames.is_empty() {
-            let refs: Vec<&str> = canonical_filenames.iter().map(String::as_str).collect();
-            let display_map = game_db::display_names_batch(system, &refs).await;
-            for rom in roms.iter_mut() {
-                if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
-                    && let Some(ref matched_name) = hash_result.matched_name
-                {
-                    let canonical_filename = format!("{matched_name}.rom");
-                    if let Some(display) = display_map.get(&canonical_filename) {
-                        let with_tags =
-                            rom_tags::display_name_with_tags(display, &rom.game.rom_filename);
-                        rom.game.display_name = Some(with_tags);
-                    }
-                }
-            }
-        }
-        let display_ms = display_started.elapsed().as_millis();
 
         if !result_map.is_empty() {
             let matched = result_map
@@ -298,7 +264,7 @@ impl LibraryService {
         }
 
         tracing::info!(
-            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} cancelled={cancelled} input_ms={input_ms} hash_ms={hash_ms} display_ms={display_ms} total_ms={}",
+            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} cancelled={cancelled} input_ms={input_ms} hash_ms={hash_ms} total_ms={}",
             rom_files.len(),
             result_map.len(),
             stats.reused_exact,

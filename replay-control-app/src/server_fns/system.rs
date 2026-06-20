@@ -244,13 +244,21 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         "get_recents db_read complete"
     );
 
-    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
-    // If NULL, no art is available — show placeholder.
+    // Prefer the scanned library row as the display-name source of truth; keep
+    // marker-derived data only when the row is missing (for stale recents).
     let mut enriched = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let box_art_url = db_entries
-            .get(&(entry.game.system.clone(), entry.game.rom_filename.clone()))
-            .and_then(|e| e.box_art_url.clone());
+    for mut entry in entries {
+        let db_entry =
+            db_entries.get(&(entry.game.system.clone(), entry.game.rom_filename.clone()));
+        let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
+        if let Some(db_entry) = db_entry {
+            entry.game = GameRef::new_with_display(
+                &db_entry.system,
+                db_entry.rom_filename.clone(),
+                db_entry.rom_path.clone(),
+                db_entry.display_name.clone(),
+            );
+        }
         enriched.push(RecentWithArt { entry, box_art_url });
     }
     // The homepage only displays 1 hero + 10 scroll = 11 entries.

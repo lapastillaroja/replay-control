@@ -14,7 +14,7 @@ use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, game_db};
 use replay_control_core::arcade_board::ArcadeBoard;
-use replay_control_core::{developer, genre, rom_tags, systems, title_utils};
+use replay_control_core::{developer, game_ref, genre, rom_tags, systems, title_utils};
 
 /// Pre-fetched catalog lookups for a system, keyed by filename stem.
 #[derive(Default)]
@@ -146,20 +146,20 @@ fn build_single_entry(
     // The matched name is re.filename_stem from the catalog — for No-Intro that
     // IS human-readable, but for TOSEC it carries year/publisher tags (e.g.
     // "Nitro (1990)(Psygnosis)(US)"). Always resolve through batch.by_stem so
-    // the canonical_game.display_name is used (e.g. "Nitro (US)"). Excluded for
-    // translations/hacks/specials whose filename-derived names carry useful tags.
-    let display_name = if !is_translation
+    // the canonical_game.display_name is used (e.g. "Nitro (US)"), then re-apply
+    // tags from the visible filename. Excluded for translations/hacks/specials
+    // whose filename-derived names carry useful tags.
+    let display_name = if !is_arcade
+        && !is_translation
         && !is_hack
         && !is_special
         && let Some(matched) = hash.and_then(|h| h.matched_name.as_deref())
     {
-        Some(
-            batch
-                .by_stem
-                .get(matched)
-                .map(|e| e.game.display_name.clone())
-                .unwrap_or_else(|| matched.to_string()),
-        )
+        let resolved_base = batch
+            .by_stem
+            .get(matched)
+            .map(|e| e.game.display_name.as_str());
+        Some(game_ref::console_display_name(resolved_base, rom_filename))
     } else {
         r.game.display_name.clone()
     };
@@ -745,9 +745,28 @@ mod tests {
         }
     }
 
-    fn canonical_game(developer: &str) -> CanonicalGame {
+    fn rom_entry_finalized(system: &str, filename: &str, display_name: Option<&str>) -> RomEntry {
+        RomEntry {
+            game: GameRef::new_with_display(
+                system,
+                filename.to_string(),
+                filename.to_string(),
+                display_name.map(str::to_string),
+            ),
+            size_bytes: 1,
+            mtime_nanos: None,
+            is_m3u: false,
+            is_favorite: false,
+            box_art_url: None,
+            driver_status: None,
+            rating: None,
+            players: None,
+        }
+    }
+
+    fn canonical_game(display_name: &str, developer: &str) -> CanonicalGame {
         CanonicalGame {
-            display_name: "AmigaVision".to_string(),
+            display_name: display_name.to_string(),
             year: 2024,
             genre: "Compilation".to_string(),
             developer: developer.to_string(),
@@ -771,7 +790,7 @@ mod tests {
                 region: String::new(),
                 crc32: 0,
                 ra_id: String::new(),
-                game: canonical_game("AmigaVision Project"),
+                game: canonical_game("AmigaVision", "AmigaVision Project"),
             },
         );
         let rom = rom_entry("commodore_ami", "AmigaVision.hdf", Some("AmigaVision"));
@@ -816,5 +835,129 @@ mod tests {
         assert_eq!(entry.ra_id, "9876");
         assert_eq!(entry.rc_hash.as_deref(), Some("disc-ra-hash"));
         assert_eq!(entry.hash_size_bytes, Some(456));
+    }
+
+    fn hash_result(filename: &str, matched_name: &str) -> HashResult {
+        HashResult {
+            rom_filename: filename.to_string(),
+            crc32: 0x1234,
+            mtime_secs: 123,
+            size_bytes: 456,
+            matched_name: Some(matched_name.to_string()),
+            ra_id: None,
+            rc_hash: None,
+        }
+    }
+
+    #[test]
+    fn hash_matched_console_display_preserves_filename_tags() {
+        let rom = rom_entry(
+            "nintendo_snes",
+            "Super Mario World (Japan) (Rev 2).sfc",
+            Some("Super Mario World (Japan, Rev 2)"),
+        );
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            rom.game.rom_filename.clone(),
+            hash_result(&rom.game.rom_filename, "Super Mario World (Japan) (Rev 2)"),
+        );
+        let mut batch = CatalogLookup::default();
+        batch.by_stem.insert(
+            "Super Mario World (Japan) (Rev 2)".to_string(),
+            CatalogGameEntry {
+                canonical_name: "Super Mario World (Japan) (Rev 2)".to_string(),
+                region: "Japan".to_string(),
+                crc32: 0x1234,
+                ra_id: String::new(),
+                game: canonical_game("Super Mario World", "Nintendo"),
+            },
+        );
+
+        let entry = build_single_entry(&rom, &hash_results, false, &batch)
+            .expect("hash-matched row should build");
+
+        assert_eq!(
+            entry.display_name.as_deref(),
+            Some("Super Mario World (Japan, Rev 2)")
+        );
+    }
+
+    #[test]
+    fn hash_matched_console_without_catalog_does_not_double_suffix() {
+        let rom = rom_entry(
+            "nintendo_snes",
+            "Super Mario World (Japan) (Rev 2).sfc",
+            Some("Super Mario World (Japan, Rev 2)"),
+        );
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            rom.game.rom_filename.clone(),
+            hash_result(&rom.game.rom_filename, "Super Mario World (Japan) (Rev 2)"),
+        );
+
+        let entry = build_single_entry(&rom, &hash_results, false, &CatalogLookup::default())
+            .expect("hash-matched row should build");
+
+        assert_eq!(
+            entry.display_name.as_deref(),
+            Some("Super Mario World (Japan, Rev 2)")
+        );
+    }
+
+    #[test]
+    fn hash_matched_m3u_display_uses_visible_playlist_tags() {
+        let mut rom = rom_entry(
+            "sony_psx",
+            "Metal Gear Solid (USA).m3u",
+            Some("Metal Gear Solid (USA)"),
+        );
+        rom.is_m3u = true;
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            rom.game.rom_filename.clone(),
+            hash_result(&rom.game.rom_filename, "Metal Gear Solid (USA) (Disc 1)"),
+        );
+        let mut batch = CatalogLookup::default();
+        batch.by_stem.insert(
+            "Metal Gear Solid (USA) (Disc 1)".to_string(),
+            CatalogGameEntry {
+                canonical_name: "Metal Gear Solid (USA) (Disc 1)".to_string(),
+                region: "USA".to_string(),
+                crc32: 0x1234,
+                ra_id: String::new(),
+                game: canonical_game("Metal Gear Solid", "Konami"),
+            },
+        );
+
+        let entry = build_single_entry(&rom, &hash_results, false, &batch)
+            .expect("hash-matched m3u row should build");
+
+        assert_eq!(
+            entry.display_name.as_deref(),
+            Some("Metal Gear Solid (USA)")
+        );
+    }
+
+    #[test]
+    fn translation_display_keeps_already_finalized_filename_title() {
+        let rom = rom_entry_finalized(
+            "nintendo_gba",
+            "Mother 3 (Japan) [T+Eng1.3].gba",
+            Some("Mother 3 (Japan, EN Translation)"),
+        );
+        let mut hash_results = HashMap::new();
+        hash_results.insert(
+            rom.game.rom_filename.clone(),
+            hash_result(&rom.game.rom_filename, "Mother 3 (Japan)"),
+        );
+        let batch = CatalogLookup::default();
+
+        let entry = build_single_entry(&rom, &hash_results, false, &batch)
+            .expect("translation row should build");
+
+        assert_eq!(
+            entry.display_name.as_deref(),
+            Some("Mother 3 (Japan, EN Translation)")
+        );
     }
 }
