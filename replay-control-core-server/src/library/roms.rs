@@ -517,6 +517,21 @@ pub fn list_rom_group(
                 });
             }
         }
+    } else if ext == "gdi" {
+        // Dreamcast GDI: include referenced track files. The descriptor itself
+        // is tiny, so showing only its size makes the detail page misleading.
+        let track_files = parse_gdi_file_references(&full_path);
+        for track_name in &track_files {
+            let track_path = parent_dir.join(track_name);
+            if track_path.exists() && track_path.is_file() {
+                let size = std::fs::metadata(&track_path).map(|m| m.len()).unwrap_or(0);
+                group.push(GroupedFile {
+                    path: track_path,
+                    size_bytes: size,
+                    kind: FileKind::Disc,
+                });
+            }
+        }
     } else if ext == "chd" {
         // Single CHD: check for SBI companions.
         add_sbi_companion(&full_path, &mut group);
@@ -785,6 +800,31 @@ fn parse_cue_file_references(cue_path: &Path) -> Vec<String> {
     }
 
     files
+}
+
+fn parse_gdi_file_references(gdi_path: &Path) -> Vec<String> {
+    let content = match std::fs::read_to_string(gdi_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.parse::<u32>().is_ok() {
+                return None;
+            }
+
+            let mut parts = trimmed.split_whitespace();
+            let _track = parts.next()?;
+            let _lba = parts.next()?;
+            let _control = parts.next()?;
+            let _sector_size = parts.next()?;
+            let filename = parts.next()?.trim_matches('"');
+            Some(filename.to_string())
+        })
+        .collect()
 }
 
 /// Check if an M3U file is a binary M3U (X68000 style: first line is a
@@ -2012,6 +2052,20 @@ mod tests {
         assert!(refs.is_empty());
     }
 
+    #[test]
+    fn parse_gdi_tracks() {
+        let tmp = tempdir();
+        let gdi = tmp.join("game.gdi");
+        fs::write(
+            &gdi,
+            "3\n1 0 4 2352 track01.bin 0\n2 450 0 2352 track02.raw 0\n3 45150 4 2352 track03.bin 0\n",
+        )
+        .unwrap();
+
+        let refs = parse_gdi_file_references(&gdi);
+        assert_eq!(refs, vec!["track01.bin", "track02.raw", "track03.bin"]);
+    }
+
     // --- is_binary_m3u ---
 
     #[test]
@@ -2223,6 +2277,40 @@ mod tests {
         assert_eq!(group.len(), 2);
         assert!(group.iter().any(|g| g.kind == FileKind::Primary));
         assert!(group.iter().any(|g| g.kind == FileKind::Disc));
+    }
+
+    #[test]
+    fn group_gdi_with_tracks() {
+        let tmp = tempdir();
+        let dc_dir = tmp.join("roms/sega_dc/Game");
+        fs::create_dir_all(&dc_dir).unwrap();
+
+        fs::write(
+            dc_dir.join("Game.gdi"),
+            "3\n1 0 4 2352 track01.bin 0\n2 450 0 2352 track02.raw 0\n3 45150 4 2352 track03.bin 0\n",
+        )
+        .unwrap();
+        fs::write(dc_dir.join("track01.bin"), [0u8; 100]).unwrap();
+        fs::write(dc_dir.join("track02.raw"), [0u8; 200]).unwrap();
+        fs::write(dc_dir.join("track03.bin"), [0u8; 300]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(&storage, "sega_dc", "roms/sega_dc/Game/Game.gdi").unwrap();
+
+        assert_eq!(group.len(), 4);
+        assert!(group.iter().any(|g| g.kind == FileKind::Primary));
+        assert_eq!(
+            group
+                .iter()
+                .filter(|g| g.kind == FileKind::Disc)
+                .map(|g| g.size_bytes)
+                .sum::<u64>(),
+            600
+        );
+        assert_eq!(
+            group.iter().filter(|g| g.kind == FileKind::Disc).count(),
+            3
+        );
     }
 
     #[test]

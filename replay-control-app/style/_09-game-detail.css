@@ -55,6 +55,130 @@
     --value-text-word-break: break-word;
 }
 
+.game-info-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--control-gap-compact) var(--cluster-gap-md);
+    margin-bottom: var(--panel-gap);
+    color: var(--text-secondary);
+    font-size: var(--font-size-compact-default);
+    line-height: 1.4;
+}
+
+.game-info-strip span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--control-gap-compact);
+    min-width: 0;
+}
+
+.game-info-strip span:not(:first-child)::before {
+    content: "";
+    width: 0.25rem;
+    height: 0.25rem;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    opacity: 0.65;
+}
+
+.game-info-strip strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.game-description-block {
+    margin-bottom: var(--panel-gap);
+}
+
+.game-description-clamped {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+}
+
+.game-description-toggle {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-compact-default);
+    font-weight: 600;
+    margin-top: var(--control-gap-tight);
+    padding: 0;
+}
+
+.game-description-toggle:hover {
+    text-decoration: underline;
+}
+
+.game-info-table {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: var(--panel-gap);
+}
+
+.game-info-row {
+    --row-align: stretch;
+    --row-gap: var(--control-gap-tight);
+    display: block;
+    min-width: 0;
+}
+
+.game-info-row .info-label {
+    display: block;
+    margin-bottom: var(--space-1);
+}
+
+.game-info-row .info-value {
+    display: block;
+    min-width: 0;
+    word-break: break-word;
+}
+
+.game-info-row .game-meta-status {
+    justify-content: flex-start;
+}
+
+.game-info-row-filename .info-value {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: var(--font-size-small);
+    line-height: 1.45;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: var(--space-1);
+    scrollbar-color: color-mix(in srgb, var(--text-secondary) 45%, transparent) transparent;
+    scrollbar-width: thin;
+    white-space: nowrap;
+}
+
+.game-info-row-filename .info-value::-webkit-scrollbar {
+    height: 0.45rem;
+}
+
+.game-info-row-filename .info-value::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.game-info-row-filename .info-value::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-secondary) 34%, transparent);
+    border: 0.12rem solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+}
+
+.game-info-row-filename .info-value:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-secondary) 58%, transparent);
+    background-clip: padding-box;
+}
+
+.game-info-row-filename {
+    grid-column: 1 / -1;
+}
+
 /* Clarifying note next to the RA trophy when RePlay's core can't award RA for
    this system (see System::replayos_retroachievements). */
 .game-meta-note {
@@ -102,6 +226,7 @@
 
 .game-description {
     color: var(--text);
+    margin: 0;
     white-space: pre-line;
 }
 

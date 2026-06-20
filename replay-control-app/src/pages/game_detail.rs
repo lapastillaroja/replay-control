@@ -196,6 +196,18 @@ fn GameDetailContent(
     } else {
         String::new()
     };
+    let players_str = StoredValue::new(players_str);
+    let summary_players_str = StoredValue::new(if game.players == 1 {
+        t(i18n.locale.get_untracked(), Key::GameDetailOnePlayer).to_string()
+    } else if game.players > 1 {
+        tf(
+            i18n.locale.get_untracked(),
+            Key::GameDetailPlayerRange,
+            &[&game.players.to_string()],
+        )
+    } else {
+        String::new()
+    });
 
     // Arcade-specific fields
     let rotation = game.rotation.clone();
@@ -230,6 +242,25 @@ fn GameDetailContent(
     // External metadata
     let description = StoredValue::new(game.description.clone());
     let has_description = game.description.is_some();
+    let description_expanded = RwSignal::new(false);
+    let description_needs_toggle = game.description.as_ref().is_some_and(|text| {
+        text.lines().count() > 6 || text.chars().count() > 540
+    });
+    let description_class = move || {
+        if description_expanded.get() || !description_needs_toggle {
+            "game-description"
+        } else {
+            "game-description game-description-clamped"
+        }
+    };
+    let description_toggle_label = move || {
+        let key = if description_expanded.get() {
+            Key::GameDetailShowLess
+        } else {
+            Key::GameDetailShowMore
+        };
+        t(i18n.locale.get(), key)
+    };
     let has_rating = game.rating.is_some();
     let rating_display = StoredValue::new(game.rating.map(|r| format!("{:.1} / 5.0", r)));
     let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
@@ -435,65 +466,89 @@ fn GameDetailContent(
         // Game Info Card
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailInfo)}</h2>
-            <div class="game-meta-grid">
-                <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailSystem)}</span>
-                    <span class="game-meta-value">{system_display.clone()}</span>
+            <div class="game-info-strip">
+                <span><strong>{system_display.clone()}</strong></span>
+                <Show when=move || has_year>
+                    <span>{year.get_value()}</span>
+                </Show>
+                <Show when=move || has_genre>
+                    <span>{genre.get_value()}</span>
+                </Show>
+                <Show when=move || has_players>
+                    <span>{summary_players_str.get_value()}</span>
+                </Show>
+            </div>
+
+            <Show when=move || has_description>
+                <div class="game-description-block">
+                    <p class=description_class>{move || description.get_value()}</p>
+                    <Show when=move || description_needs_toggle>
+                        <button
+                            type="button"
+                            class="game-description-toggle"
+                            on:click=move |_| description_expanded.update(|expanded| *expanded = !*expanded)
+                        >
+                            {description_toggle_label}
+                        </button>
+                    </Show>
                 </div>
-                <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFilename)}</span>
-                    <span class="game-meta-value">{relative_path_sv.get_value()}</span>
+            </Show>
+
+            <div class="info-grid game-info-table">
+                <div class="info-row game-info-row game-info-row-filename">
+                    <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailFilename)}</span>
+                    <span class="info-value" title=relative_path_sv.get_value()>{relative_path_sv.get_value()}</span>
                 </div>
-                <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFileSize)}</span>
-                    <span class="game-meta-value">{size_display}</span>
+                <div class="info-row game-info-row">
+                    <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailFileSize)}</span>
+                    <span class="info-value">{size_display}</span>
                 </div>
                 <Show when=move || !has_arcade>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFormat)}</span>
-                        <span class="game-meta-value">{ext.clone()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailFormat)}</span>
+                        <span class="info-value">{ext.clone()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_year>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailReleased)}</span>
-                        <span class="game-meta-value">{year.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailReleased)}</span>
+                        <span class="info-value">{year.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_developer>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailDeveloper)}</span>
-                        <span class="game-meta-value">{developer.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailDeveloper)}</span>
+                        <span class="info-value">{developer.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_publisher>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailPublisher)}</span>
-                        <span class="game-meta-value">{publisher.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailPublisher)}</span>
+                        <span class="info-value">{publisher.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_genre>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailGenre)}</span>
-                        <span class="game-meta-value">{genre.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailGenre)}</span>
+                        <span class="info-value">{genre.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_players>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailPlayers)}</span>
-                        <span class="game-meta-value">{players_str.clone()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailPlayers)}</span>
+                        <span class="info-value">{players_str.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_rating>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRating)}</span>
-                        <span class="game-meta-value">{rating_display.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRating)}</span>
+                        <span class="info-value">{rating_display.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_achievements>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRetroAchievements)}</span>
-                        <span class="game-meta-value">
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRetroAchievements)}</span>
+                        <span class="info-value">
                             "\u{1F3C6}"
                             <Show when=move || ra_blocked_by_core>
                                 <span class="game-meta-note">
@@ -513,16 +568,16 @@ fn GameDetailContent(
                 {arcade_board.zip(arcade_board_tag).map(|(label, tag)| {
                     let href = format!("/board/{}", urlencoding::encode(&tag));
                     view! {
-                        <div class="game-meta-item">
-                            <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailBoard)}</span>
-                            <A href=href attr:class="game-meta-value game-meta-link">{label}</A>
+                        <div class="info-row game-info-row">
+                            <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailBoard)}</span>
+                            <A href=href attr:class="info-value game-meta-link">{label}</A>
                         </div>
                     }
                 })}
                 {rotation.map(|r| view! {
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRotation)}</span>
-                        <span class="game-meta-value">{r}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRotation)}</span>
+                        <span class="info-value">{r}</span>
                     </div>
                 })}
                 {driver_status.map(|s| {
@@ -545,9 +600,9 @@ fn GameDetailContent(
                         ),
                     };
                     view! {
-                        <div class="game-meta-item">
-                            <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailEmulation)}</span>
-                            <span class="game-meta-value game-meta-status">
+                        <div class="info-row game-info-row">
+                            <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailEmulation)}</span>
+                            <span class="info-value game-meta-status">
                                 <span class=dot_class></span>
                                 {label}
                             </span>
@@ -555,23 +610,23 @@ fn GameDetailContent(
                     }
                 })}
                 <Show when=move || has_category>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRawCategory)}</span>
-                        <span class="game-meta-value">{arcade_category.get_value()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRawCategory)}</span>
+                        <span class="info-value">{arcade_category.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || is_clone>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailParentRom)}</span>
-                        <span class="game-meta-value">{parent_rom.clone()}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailParentRom)}</span>
+                        <span class="info-value">{parent_rom.clone()}</span>
                     </div>
                 </Show>
 
                 // Console-specific fields
                 {region.map(|r| view! {
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRegion)}</span>
-                        <span class="game-meta-value">{r}</span>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRegion)}</span>
+                        <span class="info-value">{r}</span>
                     </div>
                 })}
             </div>
@@ -585,14 +640,6 @@ fn GameDetailContent(
                 <ExternalMetaLink url label_key=Key::GameDetailShmupsWikiVideoIndexLink />
             })}
         </section>
-
-        // Description (hidden when no description available)
-        <Show when=move || has_description>
-            <section class="section game-section">
-                <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailDescription)}</h2>
-                <p class="game-description">{move || description.get_value()}</p>
-            </section>
-        </Show>
 
         // Screenshots Gallery (hidden when no screenshots)
         <Show when=move || has_screenshot || has_title>

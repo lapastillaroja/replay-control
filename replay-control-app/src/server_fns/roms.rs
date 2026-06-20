@@ -4,6 +4,8 @@ use replay_control_core::library_db::LibraryResourceLink;
 use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::recents::add_recent;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::roms::list_rom_group;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,9 +324,13 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         elapsed_ms = fn_start.elapsed().as_millis(),
         "get_rom_detail complete"
     );
+    let size_bytes = list_rom_group(&storage, &system, &entry.rom_path)
+        .map(|group| group.iter().map(|file| file.size_bytes).sum())
+        .unwrap_or(entry.size_bytes);
+
     Ok(RomDetail {
         game,
-        size_bytes: entry.size_bytes,
+        size_bytes,
         is_m3u: entry.is_m3u,
         is_favorite,
         user_screenshots,
