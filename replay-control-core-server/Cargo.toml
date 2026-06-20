@@ -29,9 +29,9 @@ tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread
 tokio-stream = "0.1.18"
 quick-xml = { version = "0.40.1", optional = true }
 chd = { version = "0.3.4", optional = true }
-reqwest = { workspace = true, features = ["stream"] }
+reqwest = { workspace = true, features = ["stream", "query"] }
 tempfile = "3.27.0"
-getrandom = "0.4.2"
+getrandom = "0.4.3"
 
 [[bin]]
 name = "library_report"

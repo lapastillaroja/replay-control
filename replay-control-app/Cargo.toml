@@ -26,9 +26,9 @@ server_fn = "=0.7.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
 urlencoding = "2.1.3"
-wasm-bindgen = "0.2.122"
-wasm-bindgen-futures = { version = "0.4.72", optional = true }
-js-sys = "0.3.99"
+wasm-bindgen = "0.2.125"
+wasm-bindgen-futures = { version = "0.4.75", optional = true }
+js-sys = "0.3.102"
 replay-control-core = { path = "../replay-control-core", default-features = false }
 replay-control-core-server = { path = "../replay-control-core-server", default-features = false, optional = true }
 
@@ -38,7 +38,7 @@ axum = { version = "=0.7.9", features = ["multipart"], optional = true }
 leptos_axum = { version = "=0.7.8", optional = true }
 tower-http = { version = "0.7.0", features = ["fs", "cors", "compression-gzip", "set-header"], optional = true }
 tower = { version = "0.5.3", optional = true }
-http = { version = "1.4.1", optional = true }
+http = { version = "1.4.2", optional = true }
 tokio = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
@@ -48,8 +48,8 @@ notify = { version = "8.2.0", optional = true }
 tokio-stream = { version = "0.1.18", optional = true }
 async-stream = { version = "0.3.6", optional = true }
 rand = { version = "0.10.1", optional = true }
-uuid = { version = "1.23.1", features = ["v4"], optional = true }
-reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "stream"], optional = true }
+uuid = { version = "1.23.3", features = ["v4"], optional = true }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream"], optional = true }
 semver = { version = "1.0.28", optional = true }
 flate2 = { version = "1.1.9", optional = true }
 tar = { version = "0.4.46", optional = true }
@@ -57,7 +57,7 @@ libc = { version = "0.2.186", optional = true }
 nix = { version = "0.31.3", features = ["fs"], optional = true }
 ring = { version = "0.17.14", optional = true }
 # Hydrate-only (optional, activated by `hydrate` feature)
-web-sys = { version = "0.3.99", features = [
+web-sys = { version = "0.3.102", features = [
     "HtmlInputElement",
     "HtmlElement",
     "HtmlTextAreaElement",
