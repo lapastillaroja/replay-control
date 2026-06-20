@@ -18,7 +18,7 @@ A summary card displays:
 - File size (Mbit/Kbit for cartridge systems, MB/GB for disc-based)
 - Developer, release year, genre
 - Player count and co-op support
-- A 🏆 **RetroAchievements** indicator when the game has a known achievement set
+- A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). Compressed disc images (`.chd`) are also affected for now, pending a RePlayOS fix
 - For arcade games, the hardware **board** with its manufacturer (e.g. "CPS-2 (Capcom)") — a link to that board's page. See [Arcade Boards](arcade-boards.md).
 
 ## Launch on TV

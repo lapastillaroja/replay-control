@@ -24,6 +24,8 @@ Games are identified by the strongest available signal:
 
 Hash-identified rows are marked as verified. Title fallback still gives useful metadata coverage for hacks, translations, regional variants, and systems without a hash source, but it is not treated as a verified dump match.
 
+Commodore Amiga and Amiga CD32 titles are identified across their common naming conventions (WHDLoad, ADF, IPF) and given clean display names — for example "SuperFrog" instead of "SuperFrog_v1.1_0485 (Europe)" — while regional variants you own as distinct games keep a clean region suffix so they stay distinguishable.
+
 ### Arcade Games
 
 Covers [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, category, and the hardware **board** it ran on (CPS-2, Neo Geo MVS, Taito F3, …).
@@ -89,6 +91,17 @@ ROMs are classified into tiers that affect their visibility in recommendations a
 | Translation | `(Traducido Es)`, `[T+Spa]` | Separate section, excluded from recommendations |
 | Hack | `(Hack)`, `[h1]` | Separate section, excluded from recommendations |
 | Special | `(Unl)`, `(Homebrew)`, `(Beta)`, `(Pirate)` | Excluded from recommendations |
+
+## Library Coverage
+
+The metadata page includes a per-system breakdown. Expand any system to see how complete its metadata is — genre, developer, publisher, release date, rating, description, box art, manuals, and videos — alongside romset composition (unique, clones, hacks, …), region and genre distribution, and downloaded media counts.
+
+Two identity-related rows appear where relevant:
+
+- **Verified** — how many games are identified by an exact content match (cartridge CRC or RetroAchievements disc/cartridge hash) rather than by filename.
+- **RetroAchievements** — how many games have a known achievement set, shown for every system RetroAchievements supports.
+
+Systems RetroAchievements doesn't cover at all (Amiga, C64, DOS, …) show a "not supported" note instead of a bar. Systems it does cover but whose RePlay emulator can't award achievements — for example PlayStation, PC Engine CD, and arcade MAME — keep the coverage bar, since the matches are real, but add a note that they aren't earnable on RePlay today.
 
 ## Cache Management
 

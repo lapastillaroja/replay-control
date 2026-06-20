@@ -57,7 +57,7 @@ When your search query matches a developer or manufacturer name, a "Games by Dev
 Each developer has a dedicated page (`/developer/:name`) with:
 
 - **System filter chips** across the top (all systems the developer has games on, with counts)
-- **Content filters** -- hide hacks, hide translations, hide betas, hide clones, multiplayer only, co-op only, genre filter, minimum rating, year range
+- **Content filters** -- hide hacks, hide translations, hide betas, hide clones, multiplayer only, co-op only, has achievements, genre filter, minimum rating, year range
 - **Infinite scroll** with pagination
 - **Cross-system game list** with system badges on each card
 
