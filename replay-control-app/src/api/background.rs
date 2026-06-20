@@ -2094,6 +2094,13 @@ impl BackgroundManager {
                         );
                         continue;
                     }
+                    if !roms.is_empty() && is_hash_identifiable(sys.folder_name) {
+                        identity_jobs.push(IdentityJob {
+                            system: sys.folder_name.to_string(),
+                            roms: roms.clone(),
+                            scan_inputs: scan_inputs.clone(),
+                        });
+                    }
                     // Inline enrichment runs on every Ok (including
                     // Ok(empty), which clears stale game_detail_metadata rows
                     // when a previously-populated system goes empty).
@@ -2104,9 +2111,9 @@ impl BackgroundManager {
                     // (e.g. a flaky box-art lookup) must not abort the whole
                     // rebuild and block later systems — mirror the scan step's
                     // preserve-cached-state policy and move on. Scan-derived
-                    // fields (ra_id, board, developer) are already persisted by
-                    // the scan above, so they're unaffected. Storage swaps still
-                    // abort (the caller redoes the pass on the new storage).
+                    // fields are already persisted by the scan above, and
+                    // hash identity work has already been queued. Storage swaps
+                    // still abort (the caller redoes the pass on the new storage).
                     if let Err(e) = state
                         .cache
                         .enrich_system_cache_with_cancellation(
@@ -2126,13 +2133,6 @@ impl BackgroundManager {
                         continue;
                     }
                     let enrich_ms = enrich_started.elapsed().as_millis();
-                    if !roms.is_empty() && is_hash_identifiable(sys.folder_name) {
-                        identity_jobs.push(IdentityJob {
-                            system: sys.folder_name.to_string(),
-                            roms: roms.clone(),
-                            scan_inputs: scan_inputs.clone(),
-                        });
-                    }
                     tracing::info!(
                         "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms={enrich_ms} total_ms={}",
                         sys.folder_name,
