@@ -463,6 +463,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowVerified => "Verified games",
         Key::MetadataRowRetroAchievements => "RetroAchievements",
         Key::MetadataRowNoRetroAchievements => "RetroAchievements not supported",
+        Key::MetadataRowRetroAchievementsNoCore => {
+            "RetroAchievements not earnable on RePlay's emulator"
+        }
         Key::MetadataRowCoOp => "co-op",
         Key::MetadataRowDrivers => "Drivers:",
         Key::MetadataDriverWorking => "working",

@@ -428,6 +428,7 @@ pub enum Key {
     MetadataRowVerified,
     MetadataRowRetroAchievements,
     MetadataRowNoRetroAchievements,
+    MetadataRowRetroAchievementsNoCore,
     MetadataRowCoOp,
     MetadataRowDrivers,
     MetadataDriverWorking,

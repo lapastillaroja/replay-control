@@ -10,7 +10,9 @@ use crate::server_fns::{
     SystemStatsRefreshState, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
-use replay_control_core::systems::system_has_retroachievements;
+use replay_control_core::systems::{
+    system_core_supports_retroachievements, system_has_retroachievements,
+};
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 type OverviewRes = Resource<Result<MetadataLibraryOverview, ServerFnError>>;
@@ -1451,9 +1453,14 @@ fn footer_row_view(
             parts.push(yr);
         }
         // RA-supported systems show the % bar above (even at 0%). Systems RA
-        // doesn't cover (Amiga, C64, DOS, …) get this explicit note instead.
+        // doesn't cover (Amiga, C64, DOS, …) get an explicit "not supported"
+        // note instead. Systems RA covers but whose RePlay core can't earn them
+        // (PlayStation via pcsx_rearmed, PC Engine CD, MAME, …) keep the bar
+        // (the matches are real) but add a note that they aren't earnable here.
         if !system_has_retroachievements(&c.system) {
             parts.push(t(locale, Key::MetadataRowNoRetroAchievements).to_string());
+        } else if !system_core_supports_retroachievements(&c.system) {
+            parts.push(t(locale, Key::MetadataRowRetroAchievementsNoCore).to_string());
         }
         if c.coop_count > 0 {
             parts.push(format!(

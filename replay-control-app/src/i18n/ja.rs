@@ -467,6 +467,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowVerified => "検証済みゲーム",
         Key::MetadataRowRetroAchievements => "RetroAchievements",
         Key::MetadataRowNoRetroAchievements => "RetroAchievements非対応",
+        Key::MetadataRowRetroAchievementsNoCore => "RePlayのエミュレーターでは実績を獲得できません",
         Key::MetadataRowCoOp => "協力プレイ",
         Key::MetadataRowDrivers => "ドライバ:",
         Key::MetadataDriverWorking => "動作",
