@@ -1220,52 +1220,90 @@ fn is_language_code(s: &str) -> bool {
 /// Only matches exact two-letter uppercase codes to avoid conflicts with
 /// mixed-case language codes like "en", "fr", "de".
 pub(crate) fn is_tosec_country_code(tag: &str) -> bool {
-    matches!(
-        tag,
-        "US" | "GB"
-            | "JP"
-            | "DE"
-            | "FR"
-            | "ES"
-            | "IT"
-            | "NL"
-            | "SE"
-            | "PT"
-            | "AU"
-            | "BR"
-            | "KR"
-            | "TW"
-            | "CN"
-            | "RU"
-            | "EU"
-            | "GR"
-    )
+    // Single source of truth: a code is a country code iff it has a display name.
+    // (Previously a separate hand-maintained list that drifted from the expand
+    // map below, leaking unlisted codes like "(PL)"/"(DK)" as raw suffixes.)
+    expand_tosec_country_code(tag).is_some()
 }
 
-/// Expand a TOSEC two-letter country code to a full region name.
-/// Returns `None` if the code is not a recognized TOSEC country code.
+/// Expand a TOSEC two-letter country code (ISO 3166-1 alpha-2, uppercase) to a
+/// display region name. Returns `None` for non-country codes.
+///
+/// Covers the country codes that appear in retro ROM naming (all of Europe plus
+/// the major world regions) rather than only a handful, so regional variants get
+/// a clean region instead of leaking the raw two-letter code. Deliberately
+/// EXCLUDES the ISO codes that collide with TOSEC copyright/console flags handled
+/// by [`is_noise_tag`] — `CW` (Curaçao vs cardware), `GW` (Guinea-Bissau vs
+/// GNU/GPL), `VC` (St. Vincent vs Virtual Console); those countries don't appear
+/// in retro sets, and including them would misclassify the flags as regions.
 fn expand_tosec_country_code(code: &str) -> Option<&'static str> {
-    match code {
-        "US" => Some("USA"),
-        "GB" => Some("UK"),
-        "JP" => Some("Japan"),
-        "DE" => Some("Germany"),
-        "FR" => Some("France"),
-        "ES" => Some("Spain"),
-        "IT" => Some("Italy"),
-        "NL" => Some("Netherlands"),
-        "SE" => Some("Sweden"),
-        "PT" => Some("Portugal"),
-        "AU" => Some("Australia"),
-        "BR" => Some("Brazil"),
-        "KR" => Some("Korea"),
-        "TW" => Some("Taiwan"),
-        "CN" => Some("China"),
-        "RU" => Some("Russia"),
-        "EU" => Some("Europe"),
-        "GR" => Some("Greece"),
-        _ => None,
-    }
+    let name = match code {
+        // Existing names kept verbatim (USA/UK/Korea short forms).
+        "US" => "USA",
+        "GB" => "UK",
+        "JP" => "Japan",
+        "DE" => "Germany",
+        "FR" => "France",
+        "ES" => "Spain",
+        "IT" => "Italy",
+        "NL" => "Netherlands",
+        "SE" => "Sweden",
+        "PT" => "Portugal",
+        "AU" => "Australia",
+        "BR" => "Brazil",
+        "KR" => "Korea",
+        "TW" => "Taiwan",
+        "CN" => "China",
+        "RU" => "Russia",
+        "EU" => "Europe",
+        "GR" => "Greece",
+        // Rest of Europe.
+        "AT" => "Austria",
+        "BE" => "Belgium",
+        "BG" => "Bulgaria",
+        "CH" => "Switzerland",
+        "CZ" => "Czechia",
+        "DK" => "Denmark",
+        "EE" => "Estonia",
+        "FI" => "Finland",
+        "HR" => "Croatia",
+        "HU" => "Hungary",
+        "IE" => "Ireland",
+        "IS" => "Iceland",
+        "LT" => "Lithuania",
+        "LU" => "Luxembourg",
+        "LV" => "Latvia",
+        "NO" => "Norway",
+        "PL" => "Poland",
+        "RO" => "Romania",
+        "RS" => "Serbia",
+        "SI" => "Slovenia",
+        "SK" => "Slovakia",
+        "UA" => "Ukraine",
+        // Americas.
+        "AR" => "Argentina",
+        "CA" => "Canada",
+        "MX" => "Mexico",
+        // Asia / Oceania.
+        "HK" => "Hong Kong",
+        "ID" => "Indonesia",
+        "IN" => "India",
+        "MY" => "Malaysia",
+        "NZ" => "New Zealand",
+        "PH" => "Philippines",
+        "SG" => "Singapore",
+        "TH" => "Thailand",
+        "VN" => "Vietnam",
+        // Middle East / Africa.
+        "AE" => "UAE",
+        "EG" => "Egypt",
+        "IL" => "Israel",
+        "SA" => "Saudi Arabia",
+        "TR" => "Turkey",
+        "ZA" => "South Africa",
+        _ => return None,
+    };
+    Some(name)
 }
 
 /// Try to parse a TOSEC year from a parenthesized tag.
