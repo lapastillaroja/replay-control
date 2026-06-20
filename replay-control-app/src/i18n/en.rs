@@ -460,7 +460,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowHomebrew => "homebrew",
         Key::MetadataRowUnlicensed => "unlicensed",
         Key::MetadataRowSpecial => "special",
-        Key::MetadataRowVerified => "verified",
+        Key::MetadataRowVerified => "Verified games",
         Key::MetadataRowRetroAchievements => "RetroAchievements",
         Key::MetadataRowNoRetroAchievements => "RetroAchievements not supported",
         Key::MetadataRowCoOp => "co-op",

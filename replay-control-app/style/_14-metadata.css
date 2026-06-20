@@ -102,13 +102,14 @@
 
 .coverage-row {
     display: grid;
-    grid-template-columns: 110px 1fr var(--square-size-large-default);
+    grid-template-columns: minmax(110px, max-content) 1fr var(--square-size-large-default);
     align-items: center;
     gap: var(--cluster-gap-md);
 }
 
 .coverage-row-label {
-    word-break: break-word;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 .coverage-row-pct {
