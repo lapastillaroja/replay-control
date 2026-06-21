@@ -111,7 +111,7 @@ PAGES = [
     # Game detail
     {"name": "detail-sonic2", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000},
     # Game detail scrolled to info card
-    {"name": "detail-info", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000, "scroll": 350, "skin": 10},  # UNICOLORS
+    {"name": "detail-info", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000, "scroll": 500, "skin": 10},  # UNICOLORS
     # Box art picker (mobile only — click "Change cover" to open)
     {"name": "boxart-picker", "path": "/games/sega_smd/Rocket%20Knight%20Adventures%20(Europe).md", "wait": ".content", "extra_wait": 8000, "click": ".change-cover-link", "click_wait": ".boxart-picker-overlay", "mobile_only": True},
     # Search
@@ -133,7 +133,7 @@ PAGES = [
     # Skin selection page
     {"name": "skins-page", "path": "/settings/skin", "wait": "main", "extra_wait": 5000},
     # Metadata page
-    {"name": "metadata", "path": "/settings/metadata", "wait": "main"},
+    {"name": "metadata", "path": "/settings/game-library", "wait": "main"},
     # ── Device-only (skipped automatically in standalone mode) ──
     # RePlayOS Net Control settings: status card ("Connected to RePlayOS ...")
     {"name": "net-control", "path": "/settings/replay-net-control", "wait": ".net-control-status", "extra_wait": 3000, "device_only": True},
