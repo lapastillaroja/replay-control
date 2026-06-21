@@ -74,6 +74,22 @@ Read task-specific docs as needed:
   rm -f "$ASKPASS"
   ```
 
+### Switching active storage (sd / usb / nfs)
+
+The active library lives on whichever storage RePlayOS' frontend config selects. To switch (e.g. to benchmark USB vs NFS), edit the config and reboot — the app re-opens the per-storage `library.db` on boot:
+
+1. The config is `/media/sd/config/replay.cfg`; the key is `system_storage = "<sd|usb|nfs>"` (NFS also reads `nfs_server` / `nfs_share` / `nfs_version` from the same file).
+2. Stop the service, change the value in place, then reboot the Pi (a full reboot remounts cleanly and avoids the busy-mount fallback):
+   ```sh
+   systemctl stop replay-control
+   sed -i 's/^system_storage = .*/system_storage = "usb"/' /media/sd/config/replay.cfg
+   reboot
+   ```
+3. **Wait for the startup scan to finish before benchmarking.** After reboot the app rescans the newly-active library; page/stat timings are not representative until it settles. Confirm via the service logs or by polling that per-system stats report `Fresh` (the `game_library_system_stats.refresh_state` column) and the home page renders without a "scanning" banner.
+4. Per-storage DBs live at `/var/lib/replay-control/storages/{sd,usb,nfs}-<id>/library.db`; the one held open by the service PID (`ls -l /proc/<pid>/fd | grep library.db`) is the active one.
+
+Note: a launch-triggered restart can flip `system_storage` when a mount is busy, so the value may change underneath you — prefer a clean `reboot` over a bare service restart when switching, and re-check the value after boot.
+
 ## General
 
 - Follow best practices for the language and framework in use
