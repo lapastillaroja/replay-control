@@ -74,14 +74,6 @@
   {
     "game_title": "1943 Kai: Midway Kaisen",
     "series_name": "194X",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "1943 Kai: Midway Kaisen",
-    "series_name": "194X",
     "system": "nec_pce",
     "series_order": null,
     "follows": "",
@@ -211,14 +203,6 @@
     "game_title": "7th Dragon",
     "series_name": "7th Dragon",
     "system": "nintendo_ds",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": ":The Game:",
-    "series_name": ":The Game: trilogy",
-    "system": "arcade_fbneo",
     "series_order": 1,
     "follows": "",
     "followed_by": ""
@@ -398,22 +382,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Ace Driver: Victory Lap"
-  },
-  {
-    "game_title": "Ace Driver 3: Final Turn",
-    "series_name": "Ace Driver",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Ace Driver: Victory Lap",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ace Driver: Victory Lap",
-    "series_name": "Ace Driver",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Ace Driver",
-    "followed_by": "Ace Driver 3: Final Turn"
   },
   {
     "game_title": "Acme Animation Factory",
@@ -715,7 +683,7 @@
     "game_title": "Aero Fighters",
     "series_name": "Aero Fighters",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -723,7 +691,7 @@
     "game_title": "Aero Fighters",
     "series_name": "Aero Fighters",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -794,14 +762,6 @@
   {
     "game_title": "After Burner",
     "series_name": "After Burner",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "After Burner",
-    "series_name": "After Burner",
     "system": "sega_sms",
     "series_order": null,
     "follows": "",
@@ -859,14 +819,6 @@
     "game_title": "Airwolf",
     "series_name": "Airwolf",
     "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Airwolf",
-    "series_name": "Airwolf",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -883,14 +835,6 @@
     "game_title": "Airwolf",
     "series_name": "Airwolf",
     "system": "nintendo_nes",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Aladdin",
-    "series_name": "Aladdin",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -1074,14 +1018,6 @@
   {
     "game_title": "Alien Crush",
     "series_name": "Crush Pinball",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Alien Crush",
-    "series_name": "Crush Pinball",
     "system": "nec_pce",
     "series_order": null,
     "follows": "",
@@ -1101,22 +1037,6 @@
     "system": "sony_psx",
     "series_order": null,
     "follows": "Aliens Online",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Alien Syndrome",
-    "series_name": "Alien Syndrome",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": "Sega Ages 2500 Series Vol.14 - Alien Syndrome"
-  },
-  {
-    "game_title": "Alien Syndrome",
-    "series_name": "Alien Syndrome",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "Sega Ages 2500 Series Vol.14 - Alien Syndrome",
     "followed_by": ""
   },
   {
@@ -1592,26 +1512,10 @@
     "followed_by": ""
   },
   {
-    "game_title": "Are You Smarter Than A 5th Grader?",
-    "series_name": "Are You Smarter Than a 5th Grader",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Area 51",
     "series_name": "Area 51",
     "system": "arcade_fbneo",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Area 51",
-    "series_name": "Area 51",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -1994,14 +1898,6 @@
   {
     "game_title": "Atomic Punk",
     "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Bomber Man World"
-  },
-  {
-    "game_title": "Atomic Punk",
-    "series_name": "Saga Bomberman",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -2155,14 +2051,6 @@
     "game_title": "Bachelor Party",
     "series_name": "Swedish Erotica",
     "system": "atari_2600",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Back to the Future",
-    "series_name": "Back to the Future",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -2538,14 +2426,6 @@
   {
     "game_title": "Batman",
     "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Batman",
-    "followed_by": "Batman Returns"
-  },
-  {
-    "game_title": "Batman",
-    "series_name": "",
     "system": "nec_pce",
     "series_order": null,
     "follows": "",
@@ -2770,22 +2650,6 @@
   {
     "game_title": "Battletoads",
     "series_name": "Battletoads",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Battletoads",
-    "series_name": "Battletoads",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Battletoads",
-    "series_name": "Battletoads",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -2920,7 +2784,7 @@
     "followed_by": ""
   },
   {
-    "game_title": "Beatmania 2nd MIX",
+    "game_title": "Beatmania 2ndMIX",
     "series_name": "Beatmania",
     "system": "arcade_fbneo",
     "series_order": 2,
@@ -3008,54 +2872,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Beatmania IIDX 3rd Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Beatmania IIDX 4th Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Beatmania IIDX 5th Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Beatmania IIDX 6th Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Beatmania IIDX 7th Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Beatmania IIDX 8th Style",
-    "series_name": "Beatmania IIDX",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Beatmania IIDX Club Version",
     "series_name": "Beatmania IIDX",
     "system": "arcade_fbneo",
@@ -3066,6 +2882,22 @@
   {
     "game_title": "Beatmania IIDX Substream",
     "series_name": "Beatmania IIDX",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Beatmania completeMIX",
+    "series_name": "Beatmania",
+    "system": "arcade_fbneo",
+    "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Beatmania completeMIX 2",
+    "series_name": "Beatmania",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3192,14 +3024,6 @@
     "followed_by": "Big Mutha Truckers 2"
   },
   {
-    "game_title": "Bionic Commando",
-    "series_name": "Bionic Commando",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Bishoujo Senshi Sailor Moon R",
     "series_name": "Sailor Moon",
     "system": "nintendo_snes",
@@ -3242,14 +3066,6 @@
   {
     "game_title": "Blade Arcus from Shining",
     "series_name": "Blade Arcus",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Blades of Steel",
-    "series_name": "Blades of Steel",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3301,14 +3117,6 @@
     "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Blasteroids",
-    "series_name": "Asteroids",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Space Duel",
     "followed_by": ""
   },
   {
@@ -3490,14 +3298,6 @@
   {
     "game_title": "Bomb Jack",
     "series_name": "Bomb Jack",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Bomb Jack",
-    "series_name": "Bomb Jack",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -3525,54 +3325,6 @@
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Atomic Punk",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "One Hundred Person Battle Bomberman",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "3-D Bomberman"
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "3-D Bomberman",
-    "followed_by": "Bomberman II"
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -3866,14 +3618,6 @@
   {
     "game_title": "Bonk's Adventure",
     "series_name": "Bonk",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Bonk's Revenge"
-  },
-  {
-    "game_title": "Bonk's Adventure",
-    "series_name": "Bonk",
     "system": "nec_pce",
     "series_order": null,
     "follows": "",
@@ -3902,14 +3646,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Asmik-kun World 2"
-  },
-  {
-    "game_title": "Boulder Dash",
-    "series_name": "Boulder Dash",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Boulder Dash",
@@ -4456,14 +4192,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Burnin' Rubber",
-    "series_name": "Burnin' Rubber",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Burnout Legends",
     "series_name": "Burnout",
     "system": "nintendo_ds",
@@ -4550,14 +4278,6 @@
     "series_order": 3,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "California Games",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "California Games II"
   },
   {
     "game_title": "California Games",
@@ -5098,14 +4818,6 @@
   {
     "game_title": "Centipede",
     "series_name": "Centipede",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Millipede"
-  },
-  {
-    "game_title": "Centipede",
-    "series_name": "Centipede",
     "system": "atari_2600",
     "series_order": null,
     "follows": "",
@@ -5176,22 +4888,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Championship Sprint",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Super Sprint",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Chase H.Q.",
-    "series_name": "Chase H.Q.",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Chase H.Q.",
     "series_name": "Chase H.Q.",
     "system": "microsoft_msx",
@@ -5234,14 +4930,6 @@
   {
     "game_title": "Chase H.Q. 2",
     "series_name": "Chase H.Q.",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Chessmaster",
-    "series_name": "Chessmaster",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -5334,14 +5022,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Chocolatier 2: Secret Ingredients"
-  },
-  {
-    "game_title": "Choplifter",
-    "series_name": "Choplifter",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Choplifter",
@@ -5484,14 +5164,6 @@
     "series_name": "Chrono",
     "system": "nintendo_snes",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Chuckie Egg",
-    "series_name": "Chuckie Egg",
-    "system": "arcade_fbneo",
-    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -6200,14 +5872,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Crackdown",
-    "series_name": "Crackdown",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": "Crackdown 2"
-  },
-  {
     "game_title": "Crafting Mama",
     "series_name": "Mama",
     "system": "nintendo_ds",
@@ -6448,14 +6112,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Crisis Zone",
-    "series_name": "Time Crisis",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Croc",
     "series_name": "Croc",
     "system": "nintendo_gbc",
@@ -6506,8 +6162,32 @@
   {
     "game_title": "Cruis'n Exotica",
     "series_name": "Cruis'n",
+    "system": "arcade_fbneo",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Cruis'n Exotica",
+    "series_name": "Cruis'n",
+    "system": "nintendo_gbc",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Cruis'n Exotica",
+    "series_name": "Cruis'n",
     "system": "nintendo_n64",
     "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Cruis'n USA",
+    "series_name": "Cruis'n",
+    "system": "arcade_fbneo",
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -6524,6 +6204,14 @@
     "series_name": "Cruis'n",
     "system": "nintendo_gba",
     "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Cruis'n World",
+    "series_name": "Cruis'n",
+    "system": "arcade_fbneo",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -6620,14 +6308,6 @@
     "series_name": "Custom Robo",
     "system": "nintendo_n64",
     "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Cut the Rope",
-    "series_name": "Cut the Rope",
-    "system": "arcade_fbneo",
-    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -6771,15 +6451,7 @@
     "game_title": "Dance Dance Revolution",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Dance Dance Revolution X3",
-    "followed_by": "Dance Dance Revolution A"
-  },
-  {
-    "game_title": "Dance Dance Revolution",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -6788,6 +6460,14 @@
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
+    "follows": "Dance Dance Revolution X3",
+    "followed_by": "Dance Dance Revolution A"
+  },
+  {
+    "game_title": "Dance Dance Revolution",
+    "series_name": "Dance Dance Revolution",
+    "system": "sony_psx",
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -6912,22 +6592,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Dance Dance Revolution Extreme",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dance Dance Revolution Extreme",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Dance Dance Revolution Kids",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
@@ -6953,30 +6617,6 @@
   },
   {
     "game_title": "Dance Dance Revolution Solo Bass Mix",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dance Dance Revolution SuperNova",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dance Dance Revolution SuperNova",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dance Dance Revolution SuperNova 2",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -7072,14 +6712,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Dancing Stage SuperNova",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Dancing Stage featuring Dreams Come True",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
@@ -7101,22 +6733,6 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Dancing with the Stars",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dangar – Ufo Robo",
-    "series_name": "Terra Cresta",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Darius",
-    "series_name": "Darius",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -7380,14 +6996,6 @@
     "series_name": "Deadly Premonition",
     "system": "sony_psx",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Deal or No Deal",
-    "series_name": "Deal or No Deal",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -7754,14 +7362,6 @@
   {
     "game_title": "Destruction Derby",
     "series_name": "Destruction Derby",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Destruction Derby",
-    "series_name": "Destruction Derby",
     "system": "sega_saturn",
     "series_order": 1,
     "follows": "",
@@ -7918,14 +7518,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Dig Dug",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Dig Dug II"
   },
   {
     "game_title": "Dig Dug",
@@ -8339,7 +7931,7 @@
     "game_title": "DoDonPachi",
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 2,
     "follows": "DonPachi",
     "followed_by": "DoDonPachi II"
   },
@@ -8347,7 +7939,7 @@
     "game_title": "DoDonPachi",
     "series_name": "DonPachi",
     "system": "sega_saturn",
-    "series_order": null,
+    "series_order": 2,
     "follows": "DonPachi",
     "followed_by": "DoDonPachi II"
   },
@@ -8355,7 +7947,7 @@
     "game_title": "DoDonPachi",
     "series_name": "DonPachi",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 2,
     "follows": "DonPachi",
     "followed_by": "DoDonPachi II"
   },
@@ -8364,23 +7956,23 @@
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
     "series_order": 4,
-    "follows": "",
-    "followed_by": "DoDonPachi"
+    "follows": "DoDonPachi II",
+    "followed_by": "Dodonpachi Resurrection"
   },
   {
     "game_title": "DoDonPachi II",
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "series_order": 3,
+    "follows": "DoDonPachi",
+    "followed_by": "DoDonPachi Dai-Ou-Jou"
   },
   {
     "game_title": "DoDonPachi Saidaioujou",
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
+    "series_order": 6,
+    "follows": "Dodonpachi Resurrection",
     "followed_by": ""
   },
   {
@@ -8411,9 +8003,9 @@
     "game_title": "Dodonpachi Resurrection",
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "series_order": 5,
+    "follows": "Dodonpachi Resurrection",
+    "followed_by": "DoDonPachi Saidaioujou"
   },
   {
     "game_title": "Dogz",
@@ -8523,7 +8115,7 @@
     "game_title": "DonPachi",
     "series_name": "DonPachi",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "DoDonPachi"
   },
@@ -8531,7 +8123,7 @@
     "game_title": "DonPachi",
     "series_name": "DonPachi",
     "system": "sega_saturn",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "DoDonPachi"
   },
@@ -8539,7 +8131,7 @@
     "game_title": "DonPachi",
     "series_name": "DonPachi",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "DoDonPachi"
   },
@@ -8796,22 +8388,6 @@
     "series_name": "Donkey Kong Country",
     "system": "nintendo_snes",
     "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Donkey Kong Jr.",
-    "series_name": "Donkey Kong",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Donkey Kong Jr.",
-    "series_name": "Mario",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -9170,14 +8746,6 @@
   {
     "game_title": "Double Dragon II: The Revenge",
     "series_name": "Double Dragon",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Double Dragon II: The Revenge",
-    "series_name": "Double Dragon",
     "system": "sega_smd",
     "series_order": null,
     "follows": "",
@@ -9356,6 +8924,14 @@
     "series_name": "Dragon Ball Z",
     "system": "nintendo_ds",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Dragon Ball Z: Super Butōden 2",
+    "series_name": "list of Dragon Ball video games",
+    "system": "nintendo_snes",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -9730,14 +9306,6 @@
   {
     "game_title": "Dragon Slayer",
     "series_name": "Dragon Slayer",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dragon Slayer",
-    "series_name": "Dragon Slayer",
     "system": "microsoft_msx",
     "series_order": 1,
     "follows": "",
@@ -9992,6 +9560,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Driving Party",
+    "series_name": "GTI Club",
+    "system": "arcade_fbneo",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Drome Racers",
     "series_name": "Lego Racers",
     "system": "nintendo_gba",
@@ -10017,14 +9593,6 @@
   },
   {
     "game_title": "DrumMania V6",
-    "series_name": "DrumMania",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Drummania",
     "series_name": "DrumMania",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -10610,14 +10178,6 @@
   {
     "game_title": "Elevator Action",
     "series_name": "Elevator Action",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Elevator Action",
-    "series_name": "Elevator Action",
     "system": "atari_2600",
     "series_order": 1,
     "follows": "",
@@ -10750,14 +10310,6 @@
     "series_order": 2,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Esprit",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Oxyd"
   },
   {
     "game_title": "Essential Sudoku DS",
@@ -11011,7 +10563,7 @@
     "game_title": "F-1 Grand Prix Part II",
     "series_name": "F-1 Grand Prix",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -11019,7 +10571,7 @@
     "game_title": "F-1 Grand Prix Part II",
     "series_name": "F-1 Grand Prix",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -11077,14 +10629,6 @@
     "system": "sega_dc",
     "series_order": null,
     "follows": "F-1 World Grand Prix",
-    "followed_by": ""
-  },
-  {
-    "game_title": "F-15 Strike Eagle",
-    "series_name": "F-15 Strike Eagle",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -11211,14 +10755,6 @@
     "game_title": "F1 Circus CD",
     "series_name": "F1 Circus",
     "system": "sega_cd",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "F1 Grand Prix",
-    "series_name": "Formula One",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -11619,14 +11155,6 @@
     "game_title": "Fade to Black",
     "series_name": "Flashback",
     "system": "sony_psx",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Falcon",
-    "series_name": "Falcon",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -12610,14 +12138,6 @@
   {
     "game_title": "Flashback",
     "series_name": "Flashback",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Flashback",
-    "series_name": "Flashback",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "",
@@ -12730,14 +12250,6 @@
   {
     "game_title": "Ford Racing",
     "series_name": "Ford Racing",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ford Racing",
-    "series_name": "Ford Racing",
     "system": "sony_psx",
     "series_order": null,
     "follows": "",
@@ -12796,22 +12308,6 @@
     "series_name": "Frog Detective",
     "system": "sony_psx",
     "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Frogger",
-    "series_name": "Frogger",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Frogger II: ThreeeDeep!"
-  },
-  {
-    "game_title": "Frogger",
-    "series_name": "Frogger",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -13136,7 +12632,7 @@
     "followed_by": "GT Advance 2: Rally Racing"
   },
   {
-    "game_title": "GTI Club",
+    "game_title": "GTI Club: Rally Côte d'Azur",
     "series_name": "GTI Club",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -13163,22 +12659,6 @@
     "game_title": "Galactic Protector",
     "series_name": "Fantasy Zone",
     "system": "sega_sms",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Galaga",
-    "series_name": "Galaga",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Galaga",
-    "series_name": "Galaxian",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -13258,14 +12738,6 @@
   {
     "game_title": "Galaxian",
     "series_name": "Galaxian",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Galaxian",
-    "series_name": "Galaxian",
     "system": "atari_2600",
     "series_order": null,
     "follows": "",
@@ -13299,14 +12771,6 @@
     "game_title": "Galaxian",
     "series_name": "Galaxian",
     "system": "nintendo_nes",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Galaxian 2",
-    "series_name": "Galaxian",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -13418,14 +12882,6 @@
   {
     "game_title": "Gallop Racer 3",
     "series_name": "Gallop Racer",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Gallop Racer 3",
-    "series_name": "Gallop Racer",
     "system": "sony_psx",
     "series_order": 3,
     "follows": "",
@@ -13461,30 +12917,6 @@
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "Game & Watch Gallery 3",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Game & Watch: Mario Bros.",
-    "series_name": "Game & Watch series",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Game & Watch: Mario Bros.",
-    "series_name": "Mario",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Game & Watch: Oil Panic",
-    "series_name": "Game & Watch series",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -13754,14 +13186,6 @@
   {
     "game_title": "Gauntlet",
     "series_name": "Gauntlet",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Gauntlet",
-    "series_name": "Gauntlet",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -13787,7 +13211,7 @@
     "game_title": "Gauntlet Dark Legacy",
     "series_name": "Gauntlet",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 7,
     "follows": "",
     "followed_by": ""
   },
@@ -13795,15 +13219,7 @@
     "game_title": "Gauntlet Dark Legacy",
     "series_name": "Gauntlet",
     "system": "nintendo_gba",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Gauntlet II",
-    "series_name": "Gauntlet",
-    "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 7,
     "follows": "",
     "followed_by": ""
   },
@@ -13828,6 +13244,38 @@
     "series_name": "Gauntlet",
     "system": "sega_smd",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Gauntlet Legends",
+    "series_name": "Gauntlet",
+    "system": "arcade_fbneo",
+    "series_order": 6,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Gauntlet Legends",
+    "series_name": "Gauntlet",
+    "system": "nintendo_n64",
+    "series_order": 6,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Gauntlet Legends",
+    "series_name": "Gauntlet",
+    "system": "sega_dc",
+    "series_order": 6,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Gauntlet Legends",
+    "series_name": "Gauntlet",
+    "system": "sony_psx",
+    "series_order": 6,
     "follows": "",
     "followed_by": ""
   },
@@ -14202,14 +13650,6 @@
   {
     "game_title": "Godzilla",
     "series_name": "Godzilla",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Godzilla",
-    "series_name": "Godzilla",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -14330,14 +13770,6 @@
   {
     "game_title": "Golden Axe II",
     "series_name": "Golden Axe",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Golden Axe II",
-    "series_name": "Golden Axe",
     "system": "sega_smd",
     "series_order": null,
     "follows": "",
@@ -14427,7 +13859,7 @@
     "game_title": "Golden Tee Golf",
     "series_name": "Golden Tee Golf",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -14720,14 +14152,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Guardian",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Guardian II"
-  },
-  {
     "game_title": "Guardian Heroes",
     "series_name": "",
     "system": "sega_saturn",
@@ -14868,14 +14292,6 @@
     "series_name": "Gunbird",
     "system": "arcade_fbneo",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Gunbird 2",
-    "series_name": "Gunbird",
-    "system": "arcade_fbneo",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -15304,14 +14720,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Haunted Castle",
-    "series_name": "Castlevania",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Hayarigami 2: Keishichō Kaii Jiken File",
     "series_name": "Hayarigami: Keishichō Kaii Jiken File",
     "system": "nintendo_ds",
@@ -15332,14 +14740,6 @@
     "series_name": "Headhunter",
     "system": "sega_dc",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Heavyweight Champ",
-    "series_name": "Heavyweight Champ",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -15587,22 +14987,6 @@
     "game_title": "Hisui no Shizuku: Hiiro no Kakera 2",
     "series_name": "Hiiro no Kakera",
     "system": "nintendo_ds",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Home Alone",
-    "series_name": "Home Alone",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Home Alone 2: Lost in New York",
-    "series_name": "Home Alone",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -15896,6 +15280,14 @@
     "followed_by": "Hydro Thunder Hurricane"
   },
   {
+    "game_title": "Hyper Bishi Bashi Champ",
+    "series_name": "Bishi Bashi",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "ICarly 2: iJoin the Click!",
     "series_name": "iCarly",
     "system": "nintendo_ds",
@@ -15914,24 +15306,8 @@
   {
     "game_title": "Ikari III: The Rescue",
     "series_name": "Ikari Warriors",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ikari III: The Rescue",
-    "series_name": "Ikari Warriors",
     "system": "nintendo_nes",
     "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ikari Warriors",
-    "series_name": "Ikari Warriors",
-    "system": "arcade_fbneo",
-    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -16528,14 +15904,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Jammin'",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Beat It!"
-  },
-  {
     "game_title": "Janken Disk Jō",
     "series_name": "Famimaga Disk",
     "system": "nintendo_nes",
@@ -17048,14 +16416,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Kenshin Dragon Quest: Yomigaerishi Densetsu no Ken",
-    "series_name": "Dragon Quest",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Keroro Gunso: Enshū da Yo! Zenin Shūgō",
     "series_name": "Sgt. Frog",
     "system": "nintendo_ds",
@@ -17075,14 +16435,6 @@
     "game_title": "Kessakusen! Ganbare Goemon 1 & 2",
     "series_name": "Goemon",
     "system": "nintendo_gba",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Kick Off",
-    "series_name": "Kick Off",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -17155,7 +16507,7 @@
     "game_title": "Killer Instinct",
     "series_name": "Killer Instinct",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Killer Instinct 2"
   },
@@ -17163,7 +16515,7 @@
     "game_title": "Killer Instinct",
     "series_name": "Killer Instinct",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Killer Instinct 2"
   },
@@ -17171,7 +16523,7 @@
     "game_title": "Killer Instinct",
     "series_name": "Killer Instinct",
     "system": "nintendo_n64",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Killer Instinct 2"
   },
@@ -17179,7 +16531,7 @@
     "game_title": "Killer Instinct",
     "series_name": "Killer Instinct",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Killer Instinct 2"
   },
@@ -17602,14 +16954,6 @@
   {
     "game_title": "Knightmare",
     "series_name": "Knightmare",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": "Maze of Galious"
-  },
-  {
-    "game_title": "Knightmare",
-    "series_name": "Knightmare",
     "system": "microsoft_msx",
     "series_order": 1,
     "follows": "",
@@ -17870,14 +17214,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Landing Gear",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Top Landing",
-    "followed_by": "Landing High Japan"
   },
   {
     "game_title": "Landing High Japan",
@@ -18266,14 +17602,6 @@
   {
     "game_title": "Lemmings",
     "series_name": "Lemmings",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Lemmings",
-    "series_name": "Lemmings",
     "system": "atari_lynx",
     "series_order": null,
     "follows": "",
@@ -18482,14 +17810,6 @@
   {
     "game_title": "Littlest Pet Shop",
     "series_name": "Littlest Pet Shop",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Littlest Pet Shop",
-    "series_name": "Littlest Pet Shop",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -18518,14 +17838,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Lizzie McGuire 2: Lizzie Diaries"
-  },
-  {
-    "game_title": "Lode Runner",
-    "series_name": "Lode Runner",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Lode Runner 3-D",
@@ -18592,36 +17904,12 @@
     "followed_by": ""
   },
   {
-    "game_title": "Lovely Pop Mahjong JangJang Shimasho 2",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Lovely Pop Mahjong Janjan Shimasho",
-    "followed_by": ""
-  },
-  {
     "game_title": "Lovely Pop Mahjong Janjan Shimasho",
     "series_name": "",
     "system": "sega_saturn",
     "series_order": null,
     "follows": "",
     "followed_by": "Lovely Pop Mahjong JangJang Shimasho 2"
-  },
-  {
-    "game_title": "Lucky Luke",
-    "series_name": "Lucky Luke",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Lucky Luke",
-    "followed_by": "Lucky Luke: Desperado Train"
-  },
-  {
-    "game_title": "Lucky Luke",
-    "series_name": "Lucky Luke",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Lucky Luke",
-    "followed_by": "Lucky Luke"
   },
   {
     "game_title": "Lucky Luke",
@@ -20128,14 +19416,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Matrix",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Gridrunner",
-    "followed_by": ""
-  },
-  {
     "game_title": "Max Payne",
     "series_name": "Max Payne",
     "system": "nintendo_gba",
@@ -20298,14 +19578,6 @@
   {
     "game_title": "Mega Man 2",
     "series_name": "Mega Man",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Mega Man 2",
-    "series_name": "Mega Man",
     "system": "nintendo_nes",
     "series_order": 2,
     "follows": "",
@@ -20325,14 +19597,6 @@
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Mega Man: The Power Battle",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Mega Man 3",
-    "series_name": "Mega Man",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -20493,14 +19757,6 @@
     "system": "nintendo_gb",
     "series_order": 2,
     "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Mega Man III",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Mega Man",
     "followed_by": ""
   },
   {
@@ -20894,14 +20150,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Men in Black 2: The Series"
-  },
-  {
-    "game_title": "Mercs",
-    "series_name": "Commando",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Mercs",
@@ -21320,14 +20568,6 @@
     "followed_by": "Midnight Club II"
   },
   {
-    "game_title": "Midnight Landing",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Top Landing"
-  },
-  {
     "game_title": "Might & Magic: Clash of Heroes",
     "series_name": "Might and Magic",
     "system": "nintendo_ds",
@@ -21666,30 +20906,6 @@
   {
     "game_title": "Monopoly",
     "series_name": "Monopoly",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Monopoly",
-    "series_name": "Monopoly",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Monopoly",
-    "series_name": "Monopoly",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Monopoly",
-    "series_name": "Monopoly",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -21818,14 +21034,6 @@
   {
     "game_title": "Moon Cresta",
     "series_name": "Terra Cresta",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Moon Cresta",
-    "series_name": "Terra Cresta",
     "system": "nintendo_snes",
     "series_order": 1,
     "follows": "",
@@ -21843,23 +21051,15 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
   {
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Mortal Kombat X"
-  },
-  {
-    "game_title": "Mortal Kombat",
-    "series_name": "Mortal Kombat",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21867,7 +21067,7 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21875,7 +21075,7 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "sega_cd",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21883,7 +21083,7 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "sega_gg",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21891,7 +21091,7 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "sega_smd",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21899,7 +21099,7 @@
     "game_title": "Mortal Kombat",
     "series_name": "Mortal Kombat",
     "system": "sega_sms",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Mortal Kombat II"
   },
@@ -21907,7 +21107,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21915,7 +21115,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21923,7 +21123,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21931,7 +21131,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "panasonic_3do",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21939,7 +21139,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "sega_smd",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21947,7 +21147,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "sega_sms",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21955,7 +21155,7 @@
     "game_title": "Mortal Kombat 3",
     "series_name": "Mortal Kombat",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 3,
     "follows": "Mortal Kombat II",
     "followed_by": "Ultimate Mortal Kombat 3"
   },
@@ -21963,32 +21163,32 @@
     "game_title": "Mortal Kombat 4",
     "series_name": "Mortal Kombat",
     "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Mortal Kombat 3",
+    "series_order": 4,
+    "follows": "",
     "followed_by": ""
   },
   {
     "game_title": "Mortal Kombat 4",
     "series_name": "Mortal Kombat",
     "system": "nintendo_gbc",
-    "series_order": null,
-    "follows": "Mortal Kombat 3",
+    "series_order": 4,
+    "follows": "",
     "followed_by": ""
   },
   {
     "game_title": "Mortal Kombat 4",
     "series_name": "Mortal Kombat",
     "system": "nintendo_n64",
-    "series_order": null,
-    "follows": "Mortal Kombat 3",
+    "series_order": 4,
+    "follows": "",
     "followed_by": ""
   },
   {
     "game_title": "Mortal Kombat 4",
     "series_name": "Mortal Kombat",
     "system": "sony_psx",
-    "series_order": null,
-    "follows": "Mortal Kombat 3",
+    "series_order": 4,
+    "follows": "",
     "followed_by": ""
   },
   {
@@ -22011,7 +21211,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22019,7 +21219,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22027,7 +21227,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22035,7 +21235,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sega_32x",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22043,7 +21243,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sega_gg",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22051,7 +21251,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sega_saturn",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22059,7 +21259,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sega_smd",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22067,7 +21267,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sega_sms",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22075,7 +21275,7 @@
     "game_title": "Mortal Kombat II",
     "series_name": "Mortal Kombat",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Mortal Kombat",
     "followed_by": "Mortal Kombat 3"
   },
@@ -22208,22 +21408,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "MotoGP",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "MotoGP 2"
-  },
-  {
-    "game_title": "MotoGP",
-    "series_name": "MotoGP",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "MotoGP: Ultimate Racing Technology",
     "series_name": "MotoGP: Ultimate Racing Technology",
     "system": "nintendo_gba",
@@ -22261,14 +21445,6 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Stitch Jam",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Mr. Do!",
-    "series_name": "Mr. Do!",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -22842,22 +22018,6 @@
   {
     "game_title": "NBA Jam",
     "series_name": "NBA Jam",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "NBA Jam",
-    "series_name": "NBA Jam",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "NBA Jam",
-    "series_name": "NBA Jam",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "",
@@ -22915,14 +22075,6 @@
     "game_title": "NBA Jam 99",
     "series_name": "NBA Jam",
     "system": "nintendo_n64",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "NBA Jam Extreme",
-    "series_name": "NBA Jam",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -23306,14 +22458,6 @@
   {
     "game_title": "NFL Blitz",
     "series_name": "NFL Blitz",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "NFL Blitz",
-    "series_name": "NFL Blitz",
     "system": "nintendo_n64",
     "series_order": 1,
     "follows": "",
@@ -23324,6 +22468,38 @@
     "series_name": "NFL Blitz",
     "system": "sony_psx",
     "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NFL Blitz 2000",
+    "series_name": "NFL Blitz",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NFL Blitz 2000",
+    "series_name": "NFL Blitz",
+    "system": "nintendo_n64",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NFL Blitz 2000",
+    "series_name": "NFL Blitz",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NFL Blitz 2000",
+    "series_name": "NFL Blitz",
+    "system": "sony_psx",
+    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -24386,22 +23562,6 @@
   {
     "game_title": "Ninja Gaiden",
     "series_name": "Ninja Gaiden",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ninja Gaiden",
-    "series_name": "Ninja Gaiden",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ninja Gaiden",
-    "series_name": "Ninja Gaiden",
     "system": "nec_pce",
     "series_order": null,
     "follows": "",
@@ -24548,14 +23708,6 @@
     "series_name": "NOëL",
     "system": "sony_psx",
     "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Nu, Pogodi!",
-    "series_name": "Elektronika IM",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -25216,14 +24368,6 @@
     "followed_by": "Panzer Dragoon Orta"
   },
   {
-    "game_title": "Paparazzi",
-    "series_name": "Simple 2000 Series",
-    "system": "arcade_fbneo",
-    "series_order": 53,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Paper Mario",
     "series_name": "Paper Mario",
     "system": "nintendo_n64",
@@ -25238,14 +24382,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Paperboy",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
@@ -25326,14 +24462,6 @@
     "series_order": null,
     "follows": "Paperboy",
     "followed_by": ""
-  },
-  {
-    "game_title": "Paranoia",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Paranoia 2: Savior"
   },
   {
     "game_title": "Parasite Eve",
@@ -25418,14 +24546,6 @@
   {
     "game_title": "Peggle",
     "series_name": "Peggle",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Peggle",
-    "series_name": "Peggle",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -25470,14 +24590,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Pengo!"
-  },
-  {
-    "game_title": "Pengo!",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Pengo",
-    "followed_by": ""
   },
   {
     "game_title": "Penny Racers",
@@ -25984,6 +25096,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "Plasma Sword: Nightmare of Bilstein",
+    "series_name": "Star Gladiator",
+    "system": "arcade_fbneo",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Plasma Sword: Nightmare of Bilstein",
+    "series_name": "Star Gladiator",
+    "system": "sega_dc",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Playboy's Complete Massage",
     "series_name": "Playboy",
     "system": "philips_cdi",
@@ -26228,14 +25356,6 @@
     "series_name": "Pokémon",
     "system": "nintendo_ds",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Pokémon HeartGold and SoulSilver",
-    "series_name": "Pokémon",
-    "system": "nintendo_ds",
-    "series_order": 11,
     "follows": "",
     "followed_by": ""
   },
@@ -26491,22 +25611,6 @@
     "game_title": "Pop'n Music Mickey Tunes",
     "series_name": "Pop'n Music",
     "system": "nintendo_gbc",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Pop'n music 8",
-    "series_name": "Pop'n Music",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Pop'n music 9",
-    "series_name": "Pop'n Music",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -27072,14 +26176,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Psycho Soldier",
-    "series_name": "Athena",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Pump It Up NX",
     "series_name": "Pump It Up",
     "system": "arcade_fbneo",
@@ -27117,14 +26213,6 @@
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "Pumpkin Adventure II",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Punch-Out!!",
-    "series_name": "Punch-Out!!",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -27440,7 +26528,7 @@
     "followed_by": ""
   },
   {
-    "game_title": "Puzzle & Dragons Battle Tournament: Lazul Ōkoku to Madoromi Dragon",
+    "game_title": "Puzzle & Dragons Battle Tournament: Champions of Lazul",
     "series_name": "Puzzle & Dragons",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -27764,14 +26852,6 @@
     "series_name": "R-Type",
     "system": "sony_psx",
     "series_order": 4,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "R-Type II",
-    "series_name": "R-Type",
-    "system": "arcade_fbneo",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -28120,22 +27200,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Raiden III",
-    "series_name": "Raiden",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Raiden IV",
-    "series_name": "Raiden",
-    "system": "arcade_fbneo",
-    "series_order": 4,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Railroad Tycoon II",
     "series_name": "Railroad Tycoon",
     "system": "sega_dc",
@@ -28381,7 +27445,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
-    "followed_by": ""
+    "followed_by": "Rayman Raving Rabbids 2"
   },
   {
     "game_title": "Rayman Raving Rabbids",
@@ -28389,7 +27453,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
-    "followed_by": "Rayman Raving Rabbids 2"
+    "followed_by": ""
   },
   {
     "game_title": "Rayman Raving Rabbids",
@@ -28736,14 +27800,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Red Baron",
-    "series_name": "Red Baron",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Reel Fishing",
     "series_name": "Reel Fishing",
     "system": "sony_psx",
@@ -28822,14 +27878,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Remote Control Dandy SF"
-  },
-  {
-    "game_title": "Renegade",
-    "series_name": "Kunio-kun",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Renegade",
@@ -29082,22 +28130,6 @@
   {
     "game_title": "Ridge Racer",
     "series_name": "Ridge Racer",
-    "system": "arcade_fbneo",
-    "series_order": 10,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ridge Racer",
-    "series_name": "Ridge Racer",
-    "system": "arcade_fbneo",
-    "series_order": 17,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ridge Racer",
-    "series_name": "Ridge Racer",
     "system": "sony_psx",
     "series_order": 1,
     "follows": "",
@@ -29108,14 +28140,6 @@
     "series_name": "Ridge Racer",
     "system": "arcade_fbneo",
     "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ridge Racer 2",
-    "series_name": "Ridge Racer",
-    "system": "arcade_fbneo",
-    "series_order": 12,
     "follows": "",
     "followed_by": ""
   },
@@ -29158,14 +28182,6 @@
     "series_order": null,
     "follows": "Freshly-Picked Tingle's Rosy Rupeeland",
     "followed_by": ""
-  },
-  {
-    "game_title": "Rise of the Robots",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Rise 2: Resurrection"
   },
   {
     "game_title": "Rise of the Robots",
@@ -29792,6 +28808,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Run and Gun",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Run and Gun II"
+  },
+  {
     "game_title": "Runabout 2",
     "series_name": "Runabout",
     "system": "sony_psx",
@@ -29868,14 +28892,6 @@
     "series_name": "Rush",
     "system": "nintendo_n64",
     "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Rygar",
-    "series_name": "Rygar",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -30140,14 +29156,6 @@
     "series_name": "Sakura Wars",
     "system": "sega_dc",
     "series_order": 4,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Salamander",
-    "series_name": "Gradius",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -30682,14 +29690,6 @@
   {
     "game_title": "Shadow Dancer",
     "series_name": "Shinobi",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Shadow Dancer",
-    "series_name": "Shinobi",
     "system": "sega_sms",
     "series_order": null,
     "follows": "",
@@ -30726,14 +29726,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Shadow Tower Abyss"
-  },
-  {
-    "game_title": "Shadow of the Beast",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Shadow of the Beast II"
   },
   {
     "game_title": "Shadow of the Beast",
@@ -31291,22 +30283,6 @@
     "game_title": "Shining the Holy Ark",
     "series_name": "Shining",
     "system": "sega_saturn",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Shinobi",
-    "series_name": "Shinobi",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Shinobi",
-    "series_name": "Shinobi",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -31938,14 +30914,6 @@
   {
     "game_title": "Skate or Die!",
     "series_name": "Skate or Die",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Skate or Die!",
-    "series_name": "Skate or Die",
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "",
@@ -32304,14 +31272,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Sonic Boom",
-    "series_name": "Sonic Boom",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Sonic Chaos",
     "series_name": "Sonic the Hedgehog",
     "system": "sega_gg",
@@ -32498,14 +31458,6 @@
   {
     "game_title": "Sonic the Hedgehog",
     "series_name": "Sonic the Hedgehog",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Sonic the Hedgehog",
-    "series_name": "Sonic the Hedgehog",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -32638,14 +31590,6 @@
     "series_order": null,
     "follows": "Sonic the Hedgehog",
     "followed_by": ""
-  },
-  {
-    "game_title": "Sonic the Hedgehog 3",
-    "series_name": "Sonic the Hedgehog",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Sonic the Hedgehog 2",
-    "followed_by": "Sonic & Knuckles"
   },
   {
     "game_title": "Sonic the Hedgehog 3",
@@ -32710,14 +31654,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Sorcerer",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Enchanter",
-    "followed_by": "Spellbreaker"
   },
   {
     "game_title": "Sorcerian",
@@ -32826,14 +31762,6 @@
   {
     "game_title": "Sound Voltex III: Gravity Wars",
     "series_name": "Sound Voltex",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "South Park",
-    "series_name": "South Park",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -33010,14 +31938,6 @@
   {
     "game_title": "Space Harrier II",
     "series_name": "Space Harrier",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Space Harrier II",
-    "series_name": "Space Harrier",
     "system": "sega_smd",
     "series_order": null,
     "follows": "",
@@ -33176,14 +32096,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Special Forces",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Airborne Ranger",
-    "followed_by": ""
-  },
-  {
     "game_title": "Spectrobes",
     "series_name": "Spectrobes",
     "system": "nintendo_ds",
@@ -33234,14 +32146,6 @@
   {
     "game_title": "Spelunker",
     "series_name": "Spelunker",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Spelunker",
-    "series_name": "Spelunker",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -33259,30 +32163,6 @@
     "game_title": "Spelunker II: Yūsha e no Chōsen",
     "series_name": "Spelunker",
     "system": "nintendo_nes",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Spider-Man",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Spider-Man 2: Enter: Electro"
-  },
-  {
-    "game_title": "Spider-Man",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Spider-Man 2"
-  },
-  {
-    "game_title": "Spider-Man",
-    "series_name": "Spider-Man",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -33365,14 +32245,6 @@
     "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Spider-Man 3",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Spider-Man 2",
     "followed_by": ""
   },
   {
@@ -33666,22 +32538,6 @@
   {
     "game_title": "Star Fox",
     "series_name": "Star Fox",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Star Fox",
-    "series_name": "Star Fox",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Star Fox",
-    "series_name": "Star Fox",
     "system": "nintendo_snes",
     "series_order": 1,
     "follows": "",
@@ -33708,6 +32564,22 @@
     "series_name": "Star Fox",
     "system": "nintendo_ds",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Star Gladiator",
+    "series_name": "Star Gladiator",
+    "system": "arcade_fbneo",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Star Gladiator",
+    "series_name": "Star Gladiator",
+    "system": "sony_psx",
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -33822,14 +32694,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Star Wars: The Empire Strikes Back"
-  },
-  {
-    "game_title": "Star Wars Arcade",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Star Wars Trilogy Arcade"
   },
   {
     "game_title": "Star Wars Arcade",
@@ -34083,14 +32947,6 @@
     "game_title": "Street Fighter",
     "series_name": "Street Fighter",
     "system": "nec_pce",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Street Fighter 2010: The Final Fight",
-    "series_name": "Street Fighter",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -34394,14 +33250,6 @@
   {
     "game_title": "Streets of Rage",
     "series_name": "Streets of Rage",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Streets of Rage",
-    "series_name": "Streets of Rage",
     "system": "sega_gg",
     "series_order": 1,
     "follows": "",
@@ -34512,22 +33360,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Strikers 1945",
-    "series_name": "Strikers 1945",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Strikers 1945 II",
-    "series_name": "Strikers 1945",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Strikers 1945 II",
     "series_name": "Strikers 1945",
     "system": "sega_saturn",
@@ -34556,6 +33388,14 @@
     "series_name": "Strikers 1945",
     "system": "arcade_fbneo",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Stuntman",
+    "series_name": "Stuntman",
+    "system": "nintendo_gba",
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -35058,14 +33898,6 @@
   {
     "game_title": "Super Mario All-Stars",
     "series_name": "Super Mario",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Super Mario All-Stars",
-    "series_name": "Super Mario",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "",
@@ -35188,22 +34020,6 @@
     "series_name": "Mario role-playing games",
     "system": "nintendo_snes",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Super Mario World",
-    "series_name": "Mario",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Super Mario World",
-    "series_name": "Super Mario",
-    "system": "arcade_fbneo",
-    "series_order": 6,
     "follows": "",
     "followed_by": ""
   },
@@ -35394,14 +34210,6 @@
   {
     "game_title": "Super Puzzle Bobble",
     "series_name": "Puzzle Bobble",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Super Puzzle Bobble 2"
-  },
-  {
-    "game_title": "Super Puzzle Bobble",
-    "series_name": "Puzzle Bobble",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "",
@@ -35586,14 +34394,6 @@
   {
     "game_title": "Super Sprint",
     "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Q63107841",
-    "followed_by": "Championship Sprint"
-  },
-  {
-    "game_title": "Super Sprint",
-    "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "Q63107841",
@@ -35654,14 +34454,6 @@
     "series_order": 2,
     "follows": "Super Star Wars",
     "followed_by": "Super Star Wars: Return of the Jedi"
-  },
-  {
-    "game_title": "Super Street Fighter II Turbo",
-    "series_name": "Street Fighter",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Super Street Fighter II Turbo",
@@ -35934,14 +34726,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "TNK III",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Iron Tank"
   },
   {
     "game_title": "TNN Outdoors Fishing Champ",
@@ -36386,38 +35170,6 @@
   {
     "game_title": "Teenage Mutant Ninja Turtles",
     "series_name": "Teenage Mutant Ninja Turtles",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Teenage Mutant Ninja Turtles",
-    "series_name": "Teenage Mutant Ninja Turtles",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Teenage Mutant Ninja Turtles",
-    "series_name": "Teenage Mutant Ninja Turtles",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Teenage Mutant Ninja Turtles",
-    "series_name": "Teenage Mutant Ninja Turtles",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Teenage Mutant Ninja Turtles",
-    "series_name": "Teenage Mutant Ninja Turtles",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -36546,24 +35298,8 @@
   {
     "game_title": "Tekken",
     "series_name": "Tekken",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tekken",
-    "series_name": "Tekken",
     "system": "sony_psx",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tekken 2",
-    "series_name": "Tekken",
-    "system": "arcade_fbneo",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -36600,14 +35336,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Tekken 5: Dark Resurrection",
-    "series_name": "Tekken",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Tekken 6: Bloodline Rebellion",
     "series_name": "Tekken",
     "system": "arcade_fbneo",
@@ -36630,22 +35358,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Tekken Tag Tournament",
-    "series_name": "Tekken",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": "Tekken Tag Tournament 2"
-  },
-  {
-    "game_title": "Tempest",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Tempest 2000"
   },
   {
     "game_title": "Tempest 2000",
@@ -36762,14 +35474,6 @@
   {
     "game_title": "Terminator 2: Judgment Day",
     "series_name": "Terminator",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Terminator 2: Judgment Day",
-    "series_name": "Terminator",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -36844,14 +35548,6 @@
     "series_name": "Terminator Salvation",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Terra Cresta",
-    "series_name": "Terra Cresta",
-    "system": "arcade_fbneo",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -36978,30 +35674,6 @@
   {
     "game_title": "Tetris",
     "series_name": "Tetris",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris",
-    "series_name": "Tetris",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris",
-    "series_name": "Tetris",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris",
-    "series_name": "Tetris",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -37102,38 +35774,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Tetris Plus 2"
-  },
-  {
-    "game_title": "Tetris Plus 2",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Tetris Plus",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris: The Absolute - The Grand Master 2",
-    "series_name": "Tetris: The Grand Master",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris: The Absolute - The Grand Master 2 Plus",
-    "series_name": "Tetris: The Grand Master",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tetris: The Grand Master",
-    "series_name": "Tetris: The Grand Master",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "The 7th Guest",
@@ -37680,14 +36320,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "The King of Fighters 2002 Unlimited Match",
-    "series_name": "The King of Fighters",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "The King of Fighters 2003",
     "series_name": "The King of Fighters",
     "system": "arcade_fbneo",
@@ -37708,14 +36340,6 @@
     "series_name": "The King of Fighters",
     "system": "arcade_fbneo",
     "series_order": 11,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The King of Fighters XII",
-    "series_name": "The King of Fighters",
-    "system": "arcade_fbneo",
-    "series_order": 12,
     "follows": "",
     "followed_by": ""
   },
@@ -38106,46 +36730,6 @@
   {
     "game_title": "The Oregon Trail",
     "series_name": "The Oregon Trail",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Oregon Trail",
-    "series_name": "The Oregon Trail",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Oregon Trail",
-    "series_name": "The Oregon Trail",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Oregon Trail",
-    "series_name": "The Oregon Trail",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Oregon Trail",
-    "series_name": "The Oregon Trail",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Oregon Trail",
-    "series_name": "The Oregon Trail",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -38322,14 +36906,6 @@
   {
     "game_title": "The Revenge of Shinobi",
     "series_name": "Shinobi",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Revenge of Shinobi",
-    "series_name": "Shinobi",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "",
@@ -38388,14 +36964,6 @@
     "series_name": "The Settlers",
     "system": "nintendo_ds",
     "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "The Simpsons",
-    "series_name": "The Simpsons",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -38797,14 +37365,6 @@
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Thief",
-    "series_name": "Thief",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Thief: Deadly Shadows",
     "followed_by": ""
   },
   {
@@ -39219,22 +37779,6 @@
     "game_title": "Tokimeki Memorial Girl's Side: 3rd Story",
     "series_name": "Tokimeki Memorial",
     "system": "nintendo_ds",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
-    "series_name": "Taisen Puzzle-Dama",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
-    "series_name": "Tokimeki Memorial",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -39834,38 +38378,6 @@
   {
     "game_title": "Top Gun",
     "series_name": "Top Gun",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Top Gun",
-    "series_name": "Top Gun",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Top Gun",
-    "series_name": "Top Gun",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Top Gun",
-    "series_name": "Top Gun",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Top Gun",
-    "series_name": "Top Gun",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -39910,14 +38422,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Top Landing",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Midnight Landing",
-    "followed_by": "Landing Gear"
   },
   {
     "game_title": "Top Spin 2",
@@ -39998,14 +38502,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Totally Spies!",
-    "series_name": "Totally Spies!",
-    "system": "arcade_fbneo",
-    "series_order": 3,
-    "follows": "Totally Spies!: The Mobile Game",
-    "followed_by": "Totally Spies!: Zombie Jamboree!"
   },
   {
     "game_title": "Totally Spies!",
@@ -40256,14 +38752,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Trivial Pursuit",
-    "series_name": "Trivial Pursuit",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Truxton",
     "series_name": "Truxton",
     "system": "arcade_fbneo",
@@ -40310,14 +38798,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Turbo Outrun",
-    "series_name": "",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Out-Run 3-D",
-    "followed_by": "Battle Out Run"
   },
   {
     "game_title": "Turbo Outrun",
@@ -40414,6 +38894,14 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Turrican II: The Final Fight"
+  },
+  {
+    "game_title": "Tux Racer",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Extreme Tux Racer"
   },
   {
     "game_title": "Twilight Syndrome: Investigation",
@@ -40774,14 +39262,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Ultimate Mortal Kombat 3",
-    "series_name": "Mortal Kombat",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "Mortal Kombat 3",
-    "followed_by": "Mortal Kombat Trilogy"
   },
   {
     "game_title": "Ultimate Mortal Kombat 3",
@@ -41314,14 +39794,6 @@
   {
     "game_title": "Victory Road",
     "series_name": "Ikari Warriors",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Victory Road",
-    "series_name": "Ikari Warriors",
     "system": "nintendo_nes",
     "series_order": 2,
     "follows": "",
@@ -41418,14 +39890,6 @@
   {
     "game_title": "Virtua Cop 2",
     "series_name": "Virtua Cop",
-    "system": "arcade_fbneo",
-    "series_order": 2,
-    "follows": "Virtua Cop",
-    "followed_by": "Virtua Cop 3"
-  },
-  {
-    "game_title": "Virtua Cop 2",
-    "series_name": "Virtua Cop",
     "system": "sega_dc",
     "series_order": 2,
     "follows": "Virtua Cop",
@@ -41466,14 +39930,6 @@
   {
     "game_title": "Virtua Fighter",
     "series_name": "Virtua Fighter",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Virtua Fighter",
-    "series_name": "Virtua Fighter",
     "system": "sega_32x",
     "series_order": null,
     "follows": "",
@@ -41498,14 +39954,6 @@
   {
     "game_title": "Virtua Fighter 3",
     "series_name": "Virtua Fighter",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Virtua Fighter 3",
-    "series_name": "Virtua Fighter",
     "system": "sega_dc",
     "series_order": null,
     "follows": "",
@@ -41513,14 +39961,6 @@
   },
   {
     "game_title": "Virtua Fighter 4",
-    "series_name": "Virtua Fighter",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Virtua Fighter 5",
     "series_name": "Virtua Fighter",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -41584,14 +40024,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Virtua Formula",
-    "series_name": "Virtua Racing",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Virtua Racing Deluxe",
     "series_name": "Virtua Racing",
     "system": "sega_32x",
@@ -41600,10 +40032,18 @@
     "followed_by": ""
   },
   {
-    "game_title": "Virtua Striker",
+    "game_title": "Virtua Striker 2",
     "series_name": "Virtua Striker",
     "system": "arcade_fbneo",
-    "series_order": 1,
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Virtua Striker 2",
+    "series_name": "Virtua Striker",
+    "system": "sega_dc",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -41648,14 +40088,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Virtua Tennis 3",
-    "series_name": "Virtua Tennis",
-    "system": "arcade_fbneo",
-    "series_order": 4,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Virtual Bart",
     "series_name": "The Simpsons",
     "system": "nintendo_snes",
@@ -41678,14 +40110,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Virtual Pool",
-    "series_name": "Virtual Pool",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": "Virtual Pool 2"
   },
   {
     "game_title": "Virtual Villagers: A New Home",
@@ -41734,14 +40158,6 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Voyeur II"
-  },
-  {
-    "game_title": "Vs. Excitebike",
-    "series_name": "Excite",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
   },
   {
     "game_title": "Vs. Excitebike",
@@ -41827,14 +40243,6 @@
     "game_title": "WWF SmackDown! 2: Know Your Role",
     "series_name": "WWE 2K",
     "system": "sony_psx",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "WWF WrestleMania",
-    "series_name": "WWE 2K",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -42110,14 +40518,6 @@
     "series_order": 2,
     "follows": "",
     "followed_by": ""
-  },
-  {
-    "game_title": "Warlords",
-    "series_name": "Warlords",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": "Warlords II"
   },
   {
     "game_title": "Warriors of Might and Magic",
@@ -42522,14 +40922,6 @@
   {
     "game_title": "Wipeout",
     "series_name": "Wipeout",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Wipeout",
-    "series_name": "Wipeout",
     "system": "sega_saturn",
     "series_order": 1,
     "follows": "",
@@ -42835,22 +41227,6 @@
     "game_title": "World Heroes Perfect",
     "series_name": "World Heroes",
     "system": "sega_saturn",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "World Rally Championship",
-    "series_name": "World Rally Championship",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "World Rally Championship",
-    "series_name": "World Rally Championship",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -44165,14 +42541,6 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "De Blob",
-    "followed_by": ""
-  },
-  {
-    "game_title": "drummania",
-    "series_name": "DrumMania",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
     "followed_by": ""
   },
   {
