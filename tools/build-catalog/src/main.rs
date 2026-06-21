@@ -7,7 +7,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use quick_xml::events::Event;
+use quick_xml::XmlVersion;
+use quick_xml::events::{BytesRef, Event};
 use quick_xml::reader::Reader;
 use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::library::resource_kind;
@@ -301,6 +302,53 @@ fn parse_csv(path: &Path) -> Vec<ArcadeEntry> {
     entries
 }
 
+/// Resolve a quick-xml general entity reference to its decoded text.
+///
+/// quick-xml 0.40 reports entity references inside character data (e.g. `&amp;`,
+/// `&#x27;`) as standalone `Event::GeneralRef` events rather than folding them into
+/// the surrounding `Event::Text`. A parser that only handles `Event::Text` drops the
+/// entity entirely -- and with `trim_text` enabled also loses the spaces that
+/// bordered it -- corrupting titles like "Dungeons & Dragons" into "DungeonsDragons".
+/// `resolve_char_ref` handles the numeric forms; the five predefined named
+/// entities are the only named refs these DATs use, so a static-string match
+/// avoids an allocation on the common path.
+fn resolve_general_ref(e: &BytesRef) -> String {
+    // Numeric character references (&#NN; / &#xNN;).
+    if let Ok(Some(ch)) = e.resolve_char_ref() {
+        return ch.to_string();
+    }
+    match e.decode().as_deref() {
+        Ok("amp") => "&",
+        Ok("lt") => "<",
+        Ok("gt") => ">",
+        Ok("quot") => "\"",
+        Ok("apos") => "'",
+        _ => "",
+    }
+    .to_string()
+}
+
+/// Append a decoded text fragment to the matching `ArcadeEntry` field.
+///
+/// Accepts both the long element names used by the FBNeo / MAME 2003+ DATs
+/// (`description` / `year` / `manufacturer`) and the short tags in MAME's
+/// current XML (`d` / `y` / `f`), so all three parsers share one dispatch for
+/// both `Event::Text` and `Event::GeneralRef`.
+fn append_arcade_text(
+    element: &str,
+    text: &str,
+    description: &mut String,
+    year: &mut String,
+    manufacturer: &mut String,
+) {
+    match element {
+        "description" | "d" => description.push_str(text),
+        "year" | "y" => year.push_str(text),
+        "manufacturer" | "f" => manufacturer.push_str(text),
+        _ => {}
+    }
+}
+
 fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
     let mut entries = Vec::new();
     let mut reader = match Reader::from_file(path) {
@@ -314,7 +362,9 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
             return entries;
         }
     };
-    reader.config_mut().trim_text(true);
+    // No `trim_text`: quick-xml splits character data at entity references, and
+    // trimming each chunk would drop the spaces bordering an entity (see
+    // `resolve_general_ref`). Whitespace is trimmed once per field on store.
     let mut buf = Vec::new();
 
     let mut in_game = false;
@@ -364,22 +414,31 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_game => {
-                let text = e.decode().unwrap_or_default();
-                match current_element.as_str() {
-                    "description" => current_description.push_str(&text),
-                    "year" => current_year.push_str(&text),
-                    "manufacturer" => current_manufacturer.push_str(&text),
-                    _ => {}
-                }
+                append_arcade_text(
+                    &current_element,
+                    &e.decode().unwrap_or_default(),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
+            }
+            Ok(Event::GeneralRef(ref e)) if in_game => {
+                append_arcade_text(
+                    &current_element,
+                    &resolve_general_ref(e),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
                 b"game" if in_game => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
-                            display_name: current_description.clone(),
-                            year: current_year.clone(),
-                            manufacturer: current_manufacturer.clone(),
+                            display_name: current_description.trim().to_string(),
+                            year: current_year.trim().to_string(),
+                            manufacturer: current_manufacturer.trim().to_string(),
                             players: 0,
                             rotation: "unknown".to_string(),
                             status: "unknown".to_string(),
@@ -424,7 +483,8 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
             return entries;
         }
     };
-    reader.config_mut().trim_text(true);
+    // No `trim_text`: see `parse_fbneo_dat` / `resolve_general_ref`. Whitespace is
+    // trimmed once per field on store.
     let mut buf = Vec::new();
 
     let mut in_game = false;
@@ -510,22 +570,31 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_game => {
-                let text = e.decode().unwrap_or_default();
-                match current_element.as_str() {
-                    "description" => current_description.push_str(&text),
-                    "year" => current_year.push_str(&text),
-                    "manufacturer" => current_manufacturer.push_str(&text),
-                    _ => {}
-                }
+                append_arcade_text(
+                    &current_element,
+                    &e.decode().unwrap_or_default(),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
+            }
+            Ok(Event::GeneralRef(ref e)) if in_game => {
+                append_arcade_text(
+                    &current_element,
+                    &resolve_general_ref(e),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
                 b"game" if in_game => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
-                            display_name: current_description.clone(),
-                            year: current_year.clone(),
-                            manufacturer: current_manufacturer.clone(),
+                            display_name: current_description.trim().to_string(),
+                            year: current_year.trim().to_string(),
+                            manufacturer: current_manufacturer.trim().to_string(),
                             players: current_players,
                             rotation: current_orientation.clone(),
                             status: current_status.clone(),
@@ -570,7 +639,8 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
             return entries;
         }
     };
-    reader.config_mut().trim_text(true);
+    // No `trim_text`: see `parse_fbneo_dat` / `resolve_general_ref`. Whitespace is
+    // trimmed once per field on store.
     let mut buf = Vec::new();
 
     let mut in_machine = false;
@@ -631,22 +701,31 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_machine => {
-                let text = e.decode().unwrap_or_default();
-                match current_element.as_str() {
-                    "d" => current_description.push_str(&text),
-                    "y" => current_year.push_str(&text),
-                    "f" => current_manufacturer.push_str(&text),
-                    _ => {}
-                }
+                append_arcade_text(
+                    &current_element,
+                    &e.decode().unwrap_or_default(),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
+            }
+            Ok(Event::GeneralRef(ref e)) if in_machine => {
+                append_arcade_text(
+                    &current_element,
+                    &resolve_general_ref(e),
+                    &mut current_description,
+                    &mut current_year,
+                    &mut current_manufacturer,
+                );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
                 b"m" if in_machine => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
-                            display_name: current_description.clone(),
-                            year: current_year.clone(),
-                            manufacturer: current_manufacturer.clone(),
+                            display_name: current_description.trim().to_string(),
+                            year: current_year.trim().to_string(),
+                            manufacturer: current_manufacturer.trim().to_string(),
                             players: current_players,
                             rotation: current_rotate.clone(),
                             status: current_status.clone(),
@@ -1615,9 +1694,13 @@ fn parse_whdload_db(path: &Path) -> HashMap<String, String> {
             path.display()
         )
     });
-    reader.config_mut().trim_text(true);
+    // No `trim_text`: entity references split character data into chunks, and the
+    // name is accumulated across events until </name>. Trimming each chunk would
+    // drop the spaces bordering an entity (see `resolve_general_ref`) -- e.g.
+    // "4th & Inches" would otherwise lose the "& " entirely.
     let mut buf = Vec::new();
     let mut current_filename = String::new();
+    let mut current_name = String::new();
     let mut in_name = false;
 
     loop {
@@ -1627,21 +1710,37 @@ fn parse_whdload_db(path: &Path) -> HashMap<String, String> {
                     current_filename.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         if attr.key.local_name().as_ref() == b"filename" {
-                            current_filename = String::from_utf8_lossy(&attr.value).into_owned();
+                            // Unescape so an entity in the archive name (e.g.
+                            // "4th&amp;Inches_..." for "4th&Inches_....lha") keys
+                            // under the literal "&" the WHDLoad DAT stem uses.
+                            current_filename = attr
+                                .normalized_value(XmlVersion::Implicit1_0)
+                                .map(|v| v.into_owned())
+                                .unwrap_or_else(|_| {
+                                    String::from_utf8_lossy(&attr.value).into_owned()
+                                });
                         }
                     }
                 }
-                b"name" if !current_filename.is_empty() => in_name = true,
+                b"name" if !current_filename.is_empty() => {
+                    in_name = true;
+                    current_name.clear();
+                }
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_name => {
-                let name = e.decode().unwrap_or_default();
-                if !name.is_empty() {
-                    map.insert(current_filename.clone(), name.into_owned());
-                }
-                in_name = false;
+                current_name.push_str(&e.decode().unwrap_or_default());
+            }
+            Ok(Event::GeneralRef(ref e)) if in_name => {
+                current_name.push_str(&resolve_general_ref(e));
             }
             Ok(Event::End(ref e)) if e.local_name().as_ref() == b"name" => {
+                if in_name {
+                    let name = current_name.trim();
+                    if !name.is_empty() {
+                        map.insert(current_filename.clone(), name.to_string());
+                    }
+                }
                 in_name = false;
             }
             Ok(Event::Eof) => break,
@@ -3657,6 +3756,151 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         std::env::temp_dir().join(format!("build-catalog-test-{unique}"))
+    }
+
+    /// Write `content` to a uniquely-named temp file and return its path. The
+    /// caller removes the parent dir (via `path.parent()`) when finished.
+    fn write_temp_file(name: &str, content: &str) -> PathBuf {
+        let dir = temp_sources_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn resolve_general_ref_decodes_named_and_numeric_entities() {
+        // Predefined named entities.
+        assert_eq!(resolve_general_ref(&BytesRef::new("amp")), "&");
+        assert_eq!(resolve_general_ref(&BytesRef::new("apos")), "'");
+        assert_eq!(resolve_general_ref(&BytesRef::new("quot")), "\"");
+        assert_eq!(resolve_general_ref(&BytesRef::new("lt")), "<");
+        assert_eq!(resolve_general_ref(&BytesRef::new("gt")), ">");
+        // Numeric character references (hex and decimal both map to apostrophe).
+        assert_eq!(resolve_general_ref(&BytesRef::new("#x27")), "'");
+        assert_eq!(resolve_general_ref(&BytesRef::new("#39")), "'");
+        // Unknown entity resolves to empty rather than panicking.
+        assert_eq!(resolve_general_ref(&BytesRef::new("bogus")), "");
+    }
+
+    // Regression for issue #66: entity references in <description>/<d> text were
+    // dropped along with their bordering spaces ("Dungeons & Dragons" became
+    // "DungeonsDragons", "Warriors' Dreams" became "WarriorsDreams"), which broke
+    // thumbnail filename matching for CPS2 games like sfa and ddsom.
+
+    #[test]
+    fn parse_mame_current_xml_preserves_entities_in_descriptions() {
+        let path = write_temp_file(
+            "mame-entities.xml",
+            r#"<?xml version="1.0"?>
+<mame version="0.285">
+<m name="sfa" rotate="0" players="2" status="good"><d>Street Fighter Alpha: Warriors&#x27; Dreams (Europe 950727)</d><y>1995</y><f>Capcom</f></m>
+<m name="ddsom" rotate="0" players="4" status="good"><d>Dungeons &amp; Dragons: Shadow over Mystara (Europe 960619)</d><y>1996</y><f>Capcom</f></m>
+</mame>
+"#,
+        );
+        let entries = parse_mame_current_xml(&path);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+
+        let sfa = entries.iter().find(|e| e.rom_name == "sfa").unwrap();
+        assert_eq!(
+            sfa.display_name,
+            "Street Fighter Alpha: Warriors' Dreams (Europe 950727)"
+        );
+        let ddsom = entries.iter().find(|e| e.rom_name == "ddsom").unwrap();
+        assert_eq!(
+            ddsom.display_name,
+            "Dungeons & Dragons: Shadow over Mystara (Europe 960619)"
+        );
+    }
+
+    #[test]
+    fn parse_fbneo_dat_preserves_entities_in_descriptions() {
+        let path = write_temp_file(
+            "fbneo-entities.dat",
+            r#"<?xml version="1.0"?>
+<datafile>
+<game name="ddsom" sourcefile="capcom/d_cps2.cpp">
+<description>Dungeons &amp; Dragons: Shadow over Mystara (Europe 960619)</description>
+<year>1996</year>
+<manufacturer>Capcom</manufacturer>
+</game>
+<game name="entitydemo" sourcefile="capcom/d_cps2.cpp">
+<description>Capcom&apos;s &quot;Best&quot; &lt;Demo&gt;</description>
+<year>1996</year>
+<manufacturer>Capcom</manufacturer>
+</game>
+</datafile>
+"#,
+        );
+        let entries = parse_fbneo_dat(&path);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+
+        let ddsom = entries.iter().find(|e| e.rom_name == "ddsom").unwrap();
+        assert_eq!(
+            ddsom.display_name,
+            "Dungeons & Dragons: Shadow over Mystara (Europe 960619)"
+        );
+        let demo = entries.iter().find(|e| e.rom_name == "entitydemo").unwrap();
+        assert_eq!(demo.display_name, r#"Capcom's "Best" <Demo>"#);
+    }
+
+    #[test]
+    fn parse_mame2003plus_xml_preserves_entities_in_descriptions() {
+        let path = write_temp_file(
+            "mame2003plus-entities.xml",
+            r#"<?xml version="1.0"?>
+<mame>
+<game name="ddsom" sourcefile="cps2.c">
+<description>Dungeons &amp; Dragons: Shadow over Mystara (Euro 960619)</description>
+<year>1996</year>
+<manufacturer>Capcom</manufacturer>
+<video orientation="horizontal"/>
+<input players="4"/>
+<driver status="good"/>
+</game>
+</mame>
+"#,
+        );
+        let entries = parse_mame2003plus_xml(&path);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+
+        let ddsom = entries.iter().find(|e| e.rom_name == "ddsom").unwrap();
+        assert_eq!(
+            ddsom.display_name,
+            "Dungeons & Dragons: Shadow over Mystara (Euro 960619)"
+        );
+    }
+
+    #[test]
+    fn parse_whdload_db_preserves_entities_in_names() {
+        // Real whdload_db.xml entries: the <name> previously truncated at the first
+        // text chunk, so "4th & Inches" became "4th" (the entity ended the insert).
+        let path = write_temp_file(
+            "whdload-entities.xml",
+            r#"<?xml version="1.0"?>
+<whdbooter>
+<game filename="4th&amp;Inches_v1.1_1230" sha1="37e24f5e72fbc8fc518360e8b1dd2ed160e145b7">
+<name>4th &amp; Inches</name>
+</game>
+<game filename="1000ccTurbo_v1.0" sha1="6997ff430c6381d7fe46b78ea37a6a2c0bdcdb71">
+<name>1000cc Turbo</name>
+</game>
+</whdbooter>
+"#,
+        );
+        let map = parse_whdload_db(&path);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+
+        assert_eq!(
+            map.get("4th&Inches_v1.1_1230").map(String::as_str),
+            Some("4th & Inches")
+        );
+        // Plain name (no entity) still round-trips.
+        assert_eq!(
+            map.get("1000ccTurbo_v1.0").map(String::as_str),
+            Some("1000cc Turbo")
+        );
     }
 
     #[test]

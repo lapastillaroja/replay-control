@@ -10,7 +10,8 @@ use crate::thumbnails::{
     base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
 };
 use replay_control_core::title_utils::{
-    normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix, strip_tags,
+    normalize_aggressive, normalize_aggressive_compact, normalize_numeral_compact,
+    strip_n64dd_prefix, strip_tags,
 };
 
 /// Directory index for matching ROM filenames to image files.
@@ -33,6 +34,11 @@ pub struct DirIndex {
     /// Catches "Galaga '88.png" ↔ catalog "Galaga88" both collapsing to
     /// "galaga88".
     pub aggressive_compact: HashMap<String, String>,
+    /// Numeral-compact normalization: like `aggressive_compact` but also folds
+    /// Roman numerals to Arabic digits. Mirrors
+    /// `ManifestFuzzyIndex::by_numeral_compact`. Catches "DOOM2" ↔ "Doom II"
+    /// both collapsing to "doom2".
+    pub numeral: HashMap<String, String>,
 }
 
 /// Build a `DirIndex` by scanning a media subdirectory (boxart or snap).
@@ -48,6 +54,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     let mut version = HashMap::new();
     let mut aggressive = HashMap::new();
     let mut aggressive_compact = HashMap::new();
+    let mut numeral = HashMap::new();
 
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -110,6 +117,20 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                                 *existing = path.clone();
                             }
                         })
+                        .or_insert_with(|| path.clone());
+                }
+
+                // Numeral-compact: folds Roman numerals to digits. See doc on
+                // the `numeral` field.
+                let num_compact = normalize_numeral_compact(&bt);
+                if !num_compact.is_empty() {
+                    numeral
+                        .entry(num_compact)
+                        .and_modify(|existing| {
+                            if path < *existing {
+                                *existing = path.clone();
+                            }
+                        })
                         .or_insert(path);
                 }
             }
@@ -123,6 +144,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
         version,
         aggressive,
         aggressive_compact,
+        numeral,
     }
 }
 
@@ -241,6 +263,16 @@ pub fn find_best_match(
         {
             return Some(path.clone());
         }
+
+        // Tier 9: numeral-compact — folds Roman numerals to digits so a
+        // digit/glued name ("DOOM2") matches a Roman-numeral thumbnail
+        // ("Doom II"). Same no-internal-space guard as the compact tier.
+        let num_compact = normalize_numeral_compact(&base);
+        if !num_compact.is_empty()
+            && let Some(path) = index.numeral.get(&num_compact)
+        {
+            return Some(path.clone());
+        }
     }
 
     None
@@ -347,6 +379,7 @@ mod tests {
         let mut version = HashMap::new();
         let mut aggressive = HashMap::new();
         let mut aggressive_compact = HashMap::new();
+        let mut numeral = HashMap::new();
 
         for &(stem, path) in entries {
             exact.insert(stem.to_string(), path.to_string());
@@ -398,6 +431,17 @@ mod tests {
                     })
                     .or_insert_with(|| path.to_string());
             }
+            let num_compact = normalize_numeral_compact(&bt);
+            if !num_compact.is_empty() {
+                numeral
+                    .entry(num_compact)
+                    .and_modify(|existing: &mut String| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
+            }
         }
 
         DirIndex {
@@ -407,6 +451,7 @@ mod tests {
             version,
             aggressive,
             aggressive_compact,
+            numeral,
         }
     }
 
@@ -662,5 +707,31 @@ mod tests {
             index_ba.aggressive.get("game"),
             "aggressive tier must be deterministic"
         );
+    }
+
+    #[test]
+    fn numeral_tier_matches_arabic_rom_against_roman_thumbnail() {
+        // Issue #66: libretro-thumbnails/DOS ships "Doom II.png"; the user's
+        // ROM is "DOOM2.zip". Earlier tiers can't bridge "2" vs "II".
+        let index = index_from(&[
+            ("Doom", "boxart/Doom.png"),
+            ("Doom II", "boxart/Doom II.png"),
+        ]);
+        assert_eq!(
+            find_best_match(&index, "DOOM2.zip", None, None).as_deref(),
+            Some("boxart/Doom II.png"),
+        );
+        // The plain "Doom" still matches its own art, not the sequel.
+        assert_eq!(
+            find_best_match(&index, "DOOM.zip", None, None).as_deref(),
+            Some("boxart/Doom.png"),
+        );
+    }
+
+    #[test]
+    fn numeral_tier_does_not_match_single_letter_numerals() {
+        // "Mega Man X" must NOT match a "Mega Man 10" thumbnail (X is a name).
+        let index = index_from(&[("Mega Man 10", "boxart/Mega Man 10.png")]);
+        assert_eq!(find_best_match(&index, "Mega Man X.zip", None, None), None);
     }
 }

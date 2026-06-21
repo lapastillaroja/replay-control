@@ -336,11 +336,12 @@ mod tests {
         let mut version: HashMap<String, String> = HashMap::new();
         let mut aggressive: HashMap<String, String> = HashMap::new();
         let mut aggressive_compact: HashMap<String, String> = HashMap::new();
+        let mut numeral: HashMap<String, String> = HashMap::new();
 
         for &(stem, path) in entries {
             use crate::thumbnails::{base_title, strip_version};
             use replay_control_core::title_utils::{
-                normalize_aggressive, normalize_aggressive_compact,
+                normalize_aggressive, normalize_aggressive_compact, normalize_numeral_compact,
             };
 
             exact.insert(stem.to_string(), path.to_string());
@@ -392,6 +393,17 @@ mod tests {
                     })
                     .or_insert_with(|| path.to_string());
             }
+            let num_compact = normalize_numeral_compact(&bt);
+            if !num_compact.is_empty() {
+                numeral
+                    .entry(num_compact)
+                    .and_modify(|existing| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
+            }
         }
 
         ImageIndex {
@@ -402,6 +414,7 @@ mod tests {
                 version,
                 aggressive,
                 aggressive_compact,
+                numeral,
             },
             db_paths: HashMap::new(),
             manifest: None,
