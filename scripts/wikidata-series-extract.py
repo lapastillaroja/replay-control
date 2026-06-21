@@ -320,12 +320,15 @@ def fuzzy_key(title):
 def load_arcade_names(script_dir):
     """Load display names from all arcade data sources.
     Returns a set of fuzzy-normalized display names."""
-    data_dir = os.path.join(script_dir, '..', 'data')
+    # Downloaded third-party inputs (FBNeo/MAME DATs) live under data/upstream
+    # (relocated there by download-metadata.sh / download-arcade-data.sh).
+    # The flycast CSV is committed curated data and stays under data/arcade.
+    upstream_dir = os.path.join(script_dir, '..', 'data', 'upstream')
     core_data_dir = os.path.join(script_dir, '..', 'data', 'arcade')
     names = set()
 
     # 1. FBNeo DAT (ClrMame Pro XML)
-    fbneo_path = os.path.join(data_dir, 'fbneo-arcade.dat')
+    fbneo_path = os.path.join(upstream_dir, 'fbneo-arcade.dat')
     if os.path.exists(fbneo_path):
         count = 0
         for event, elem in ET.iterparse(fbneo_path, events=['end']):
@@ -338,7 +341,7 @@ def load_arcade_names(script_dir):
         print(f"  Arcade names: FBNeo DAT loaded {count} names", file=sys.stderr)
 
     # 2. MAME 2003+ XML
-    mame2003_path = os.path.join(data_dir, 'mame2003plus.xml')
+    mame2003_path = os.path.join(upstream_dir, 'mame2003plus.xml')
     if os.path.exists(mame2003_path):
         count = 0
         for event, elem in ET.iterparse(mame2003_path, events=['end']):
@@ -351,7 +354,7 @@ def load_arcade_names(script_dir):
         print(f"  Arcade names: MAME 2003+ loaded {count} names", file=sys.stderr)
 
     # 3. MAME 0.285 compact XML (uses <m> with <d> child)
-    mame285_path = os.path.join(data_dir, 'mame0285-arcade.xml')
+    mame285_path = os.path.join(upstream_dir, 'mame0285-arcade.xml')
     if os.path.exists(mame285_path):
         count = 0
         for event, elem in ET.iterparse(mame285_path, events=['end']):
