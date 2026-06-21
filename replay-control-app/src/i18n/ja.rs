@@ -15,6 +15,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::HomeLibrary => "ライブラリ",
         Key::HomeNoGamesPlayed => "まだゲームをプレイしていません",
         Key::HomeNoRecent => "最近のゲームなし",
+        Key::HomeDeleteRecent => "最近から削除",
+        Key::HomeDeleteRecentConfirm => "最近のゲームから削除しますか？",
         Key::HomeDiscover => "おすすめ",
 
         // Stats
@@ -287,6 +289,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::GameDetailViewAllCaptures => "すべて見る",
         Key::GameDetailDeleteCapture => "キャプチャを削除",
+        Key::GameDetailDeleteCaptureConfirm => "このキャプチャを削除しますか？",
         Key::GameDetailManual => "マニュアル",
         Key::GameDetailNoManual => "マニュアルなし",
         Key::GameDetailSuggestedManuals => "おすすめ",

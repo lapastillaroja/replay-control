@@ -143,6 +143,25 @@ pub fn add_recent(
     Ok(())
 }
 
+/// Delete the recent marker(s) for a game.
+///
+/// Both `.rec` and `.fav.rec` variants are removed so the entry no longer
+/// appears in `list_recents`. Safe to call if the file has already been deleted.
+pub fn delete_recent(storage: &StorageLocation, marker_filename: &str) -> Result<()> {
+    let recents_dir = storage.recents_dir();
+    let base = marker_filename
+        .strip_suffix(".fav.rec")
+        .or_else(|| marker_filename.strip_suffix(".rec"))
+        .unwrap_or(marker_filename);
+    for suffix in &[".rec", ".fav.rec"] {
+        let path = recents_dir.join(format!("{base}{suffix}"));
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| Error::io(&path, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Get the most recently played game.
 pub async fn last_played(storage: &StorageLocation) -> Result<Option<RecentEntry>> {
     let recents = list_recents(storage).await?;
@@ -297,5 +316,51 @@ mod tests {
         // Should deduplicate to one entry
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.rom_filename, "chelnov.zip");
+    }
+
+    #[tokio::test]
+    async fn delete_recent_removes_marker() {
+        let tmp = std::env::temp_dir().join(format!("replay-rec-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let recent_dir = tmp.join("roms/_recent");
+        std::fs::create_dir_all(&recent_dir).unwrap();
+
+        std::fs::write(
+            recent_dir.join("sega_smd@Sonic.md.rec"),
+            "/roms/sega_smd/Sonic.md",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        delete_recent(&storage, "sega_smd@Sonic.md.rec").unwrap();
+
+        let recents = list_recents(&storage).await.unwrap();
+        assert!(recents.is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_recent_removes_both_fav_variants() {
+        let tmp = std::env::temp_dir().join(format!("replay-rec-del-fav-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let recent_dir = tmp.join("roms/_recent");
+        std::fs::create_dir_all(&recent_dir).unwrap();
+
+        std::fs::write(
+            recent_dir.join("arcade_fbneo@chelnov.zip.rec"),
+            "/roms/arcade_fbneo/chelnov.zip",
+        )
+        .unwrap();
+        std::fs::write(
+            recent_dir.join("arcade_fbneo@chelnov.zip.fav.rec"),
+            "/roms/arcade_fbneo/chelnov.zip",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        // Either variant as the marker_filename removes both
+        delete_recent(&storage, "arcade_fbneo@chelnov.zip.fav.rec").unwrap();
+
+        let recents = list_recents(&storage).await.unwrap();
+        assert!(recents.is_empty());
     }
 }

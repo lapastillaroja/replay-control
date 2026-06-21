@@ -17,6 +17,8 @@ pub enum Key {
     HomeLibrary,
     HomeNoGamesPlayed,
     HomeNoRecent,
+    HomeDeleteRecent,
+    HomeDeleteRecentConfirm,
     HomeDiscover,
 
     // Stats
@@ -264,6 +266,7 @@ pub enum Key {
     GameDetailNoCaptures,
     GameDetailViewAllCaptures,
     GameDetailDeleteCapture,
+    GameDetailDeleteCaptureConfirm,
     GameDetailManual,
     GameDetailNoManual,
     GameDetailSuggestedManuals,

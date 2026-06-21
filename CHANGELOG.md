@@ -8,6 +8,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 > Box art now appears for more games — arcade titles with "&" or "'" in their names, Amiga titles, and sequels named with digits.
 
+### Added
+
+- Recent games can now be removed from the home page. A **×** button appears on hover (always visible on touch devices) for each card in the "Last Played" and "Recently Played" rows. Removal is confirmed before taking effect and is immediately reflected in the UI.
+
 ### Fixed
 
 - Fixed missing box art for arcade games whose names contain an ampersand or apostrophe — for example **Dungeons & Dragons: Shadow over Mystara**, **Street Fighter Alpha: Warriors' Dreams**, and other CPS2 titles. The game info was already correct, but the photos were missing; the underlying game names are now read correctly so the artwork matches.

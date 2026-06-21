@@ -15,6 +15,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::HomeLibrary => "Library",
         Key::HomeNoGamesPlayed => "No games played yet",
         Key::HomeNoRecent => "No recent games",
+        Key::HomeDeleteRecent => "Remove from recents",
+        Key::HomeDeleteRecentConfirm => "Remove this game from recents?",
         Key::HomeDiscover => "Discover",
 
         // Stats
@@ -287,6 +289,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::GameDetailViewAllCaptures => "View all",
         Key::GameDetailDeleteCapture => "Delete capture",
+        Key::GameDetailDeleteCaptureConfirm => "Delete this capture?",
         Key::GameDetailManual => "Manual",
         Key::GameDetailNoManual => "No manual available",
         Key::GameDetailSuggestedManuals => "Suggested",

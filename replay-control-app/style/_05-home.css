@@ -353,6 +353,58 @@
     text-decoration: underline;
 }
 
+/* ── Recent-entry delete button ─────────────────────────────────── */
+
+.recent-card-wrapper {
+    position: relative;
+}
+
+.recent-delete-btn {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border: var(--control-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-small);
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition:
+        opacity var(--motion-fast),
+        transform var(--motion-fast),
+        background var(--motion-fast),
+        border-color var(--motion-fast);
+    z-index: 1;
+}
+
+.recent-card-wrapper:hover .recent-delete-btn,
+.recent-card-wrapper:focus-within .recent-delete-btn {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.recent-delete-btn:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+@media (hover: none), (pointer: coarse) {
+    .recent-delete-btn {
+        opacity: 1;
+        transform: none;
+    }
+}
+
 /* ── Skeleton loaders (streaming SSR placeholder) ──────────────── */
 
 .skeleton-shimmer {

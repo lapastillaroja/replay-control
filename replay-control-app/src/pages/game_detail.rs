@@ -40,15 +40,16 @@ fn split_filename(filename: &str) -> (String, String) {
     (stem, ext)
 }
 
-fn confirm_capture_delete() -> bool {
+fn confirm_delete(message: &str) -> bool {
     #[cfg(feature = "hydrate")]
     {
         web_sys::window()
-            .and_then(|window| window.confirm_with_message("Delete this capture?").ok())
+            .and_then(|window| window.confirm_with_message(message).ok())
             .unwrap_or(false)
     }
     #[cfg(not(feature = "hydrate"))]
     {
+        let _ = message;
         true
     }
 }
@@ -392,7 +393,10 @@ fn GameDetailContent(
         let Some(capture) = capture else {
             return;
         };
-        if !confirm_capture_delete() {
+        if !confirm_delete(t(
+            i18n.locale.get_untracked(),
+            Key::GameDetailDeleteCaptureConfirm,
+        )) {
             return;
         }
 

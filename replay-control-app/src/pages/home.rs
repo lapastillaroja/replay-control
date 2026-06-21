@@ -10,15 +10,59 @@ use crate::components::stat_card::StatCard;
 use crate::components::system_card::SystemCard;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
+use crate::server_fns::RecentWithArt;
 use crate::util::format_size_short;
+
+fn confirm_delete(message: &str) -> bool {
+    #[cfg(feature = "hydrate")]
+    {
+        web_sys::window()
+            .and_then(|window| window.confirm_with_message(message).ok())
+            .unwrap_or(false)
+    }
+    #[cfg(not(feature = "hydrate"))]
+    {
+        let _ = message;
+        true
+    }
+}
 
 #[component]
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
+    let recents_signal: RwSignal<Vec<RecentWithArt>> = RwSignal::new(Vec::new());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
     let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
+
+    let delete_recent = move |marker_filename: String| {
+        if !confirm_delete(t(i18n.locale.get_untracked(), Key::HomeDeleteRecentConfirm)) {
+            return;
+        }
+        let idx = recents_signal
+            .read()
+            .iter()
+            .position(|e| e.entry.marker_filename == marker_filename);
+        let Some(idx) = idx else { return };
+        let removed = recents_signal.read().get(idx).cloned();
+        let Some(removed) = removed else { return };
+        recents_signal.update(|v| {
+            v.remove(idx);
+        });
+        leptos::task::spawn_local(async move {
+            if server_fns::delete_recent(marker_filename.clone())
+                .await
+                .is_err()
+            {
+                recents_signal.update(|v| {
+                    if !v.iter().any(|e| e.entry.marker_filename == marker_filename) {
+                        v.insert(idx.min(v.len()), removed);
+                    }
+                });
+            }
+        });
+    };
 
     view! {
         <div class="page home-page">
@@ -37,17 +81,30 @@ pub fn HomePage() -> impl IntoView {
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let entries = recents.await?;
-                        Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
-                            let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
-                            let sys = last.entry.game.system_display.clone();
-                            let sys_folder = last.entry.game.system.clone();
-                            let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
-                            let art_url = last.box_art_url.clone();
-                            view! {
-                                <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
-                            }.into_any()
-                        } else {
-                            view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
+                        recents_signal.set(entries);
+                        Ok::<_, ServerFnError>(move || {
+                            if let Some(last) = recents_signal.read().first().cloned() {
+                                let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
+                                let sys = last.entry.game.system_display.clone();
+                                let sys_folder = last.entry.game.system.clone();
+                                let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
+                                let art_url = last.box_art_url.clone();
+                                let marker = last.entry.marker_filename.clone();
+                                view! {
+                                    <div class="recent-card-wrapper">
+                                        <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
+                                        <button
+                                            class="recent-delete-btn"
+                                            title=t(locale, Key::HomeDeleteRecent)
+                                            on:click=move |_| delete_recent(marker.clone())
+                                        >
+                                            "×"
+                                        </button>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
+                            }
                         })
                     })}
                 </Suspense>
@@ -58,25 +115,39 @@ pub fn HomePage() -> impl IntoView {
                 <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let entries = recents.await?;
-                        let items: Vec<_> = entries.iter().skip(1).take(10).cloned().collect();
-                        Ok::<_, ServerFnError>(if items.is_empty() {
-                            view! { <p class="empty-state">{t(locale, Key::HomeNoRecent)}</p> }.into_any()
-                        } else {
-                            view! {
-                                <div class="scroll-card-row">
-                                    {items.into_iter().map(|item| {
-                                        let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
-                                        let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
-                                        let art_url = item.box_art_url.clone();
-                                        let system = system_abbreviation(&item.entry.game.system);
-                                        let system_folder = item.entry.game.system.clone();
-                                        view! {
-                                            <GameScrollCard href name system system_folder box_art_url=art_url />
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
-                            }.into_any()
+                        let _ = recents.await?;
+                        Ok::<_, ServerFnError>(move || {
+                            let entries = recents_signal.read();
+                            let items: Vec<_> = entries.iter().skip(1).take(crate::MAX_PICKS).cloned().collect();
+                            drop(entries);
+                            if items.is_empty() {
+                                view! { <p class="empty-state">{t(locale, Key::HomeNoRecent)}</p> }.into_any()
+                            } else {
+                                view! {
+                                    <div class="scroll-card-row">
+                                        {items.into_iter().map(|item| {
+                                            let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
+                                            let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
+                                            let art_url = item.box_art_url.clone();
+                                            let system = system_abbreviation(&item.entry.game.system);
+                                            let system_folder = item.entry.game.system.clone();
+                                            let marker = item.entry.marker_filename.clone();
+                                            view! {
+                                                <div class="recent-card-wrapper">
+                                                    <GameScrollCard href name system system_folder box_art_url=art_url />
+                                                    <button
+                                                        class="recent-delete-btn"
+                                                        title=t(locale, Key::HomeDeleteRecent)
+                                                        on:click=move |_| delete_recent(marker.clone())
+                                                    >
+                                                        "×"
+                                                    </button>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }
                         })
                     })}
                 </Suspense>

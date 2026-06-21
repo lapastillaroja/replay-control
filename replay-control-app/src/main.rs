@@ -583,6 +583,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecents>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::DeleteRecent>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddFavorite>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveFavorite>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GroupFavorites>();

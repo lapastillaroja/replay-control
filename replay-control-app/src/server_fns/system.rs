@@ -3,6 +3,8 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::systems::visible_systems;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::recents;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::storage::DiskUsage;
 
 /// A recent entry enriched with box art URL for the home page.
@@ -271,6 +273,16 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         "get_recents complete"
     );
     Ok(enriched)
+}
+
+#[server(prefix = "/sfn")]
+pub async fn delete_recent(marker_filename: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "delete recents").await?;
+    let storage = state.storage();
+    recents::delete_recent(&storage, &marker_filename)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
 }
 
 /// Read system logs.
