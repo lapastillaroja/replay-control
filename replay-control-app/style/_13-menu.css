@@ -127,6 +127,7 @@
 
 .update-controls-row {
     --row-wrap: wrap;
+    --input-min-height: var(--control-height);
     margin-bottom: var(--panel-gap);
 }
 
