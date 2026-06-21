@@ -878,7 +878,7 @@ fn RescanActionCard(
     view! {
         <div class="manage-action-card">
             <button
-                class="game-action-btn"
+                class="form-btn"
                 on:click=move |ev| on_click.run(ev)
                 disabled=move || rescanning.get() || externally_disabled()
             >
@@ -922,7 +922,7 @@ fn ClearActionCard(
             <Show when=move || confirming.get()
                 fallback=move || view! {
                     <button
-                        class="game-action-btn game-action-delete"
+                        class="form-btn form-btn-secondary"
                         on:click=move |_| confirming.set(true)
                         disabled=externally_disabled
                     >
@@ -933,7 +933,7 @@ fn ClearActionCard(
                 <p class="manage-action-hint">{move || t(i18n.locale.get(), confirm_key)}</p>
                 <div class="game-delete-confirm">
                     <button
-                        class="game-action-btn game-action-delete-confirm"
+                        class="form-btn form-btn-danger"
                         on:click=move |ev| on_confirm.run(ev)
                         disabled=move || clearing.get() || externally_disabled()
                     >
@@ -943,7 +943,7 @@ fn ClearActionCard(
                             t(i18n.locale.get(), label_key)
                         }}
                     </button>
-                    <button class="game-action-btn" on:click=move |_| confirming.set(false)>
+                    <button class="form-btn form-btn-secondary" on:click=move |_| confirming.set(false)>
                         {move || t(i18n.locale.get(), Key::CommonCancel)}
                     </button>
                 </div>

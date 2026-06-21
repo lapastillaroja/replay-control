@@ -14,6 +14,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Changed
 
+- The **Advanced** actions in the Game Library settings page now use consistent button styling: the primary action uses the accent fill, secondary/destructive actions use a bordered style, and the two-step confirmation shows a clearly styled danger button. The action cards are arranged in a 2-column grid on wider screens so labels no longer collapse into narrow columns.
 - The home **Recently Played** row, the **Recently Added** favorites row, and the **More like this** and **More on this board** rows on a game's page now show up to 12 games (previously 8–10), filling out the rows on larger screens.
 
 ### Fixed

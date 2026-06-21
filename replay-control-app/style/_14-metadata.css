@@ -141,18 +141,21 @@
    buttons instead. */
 .manage-action-card .game-delete-confirm {
     margin-top: var(--panel-gap);
+    align-items: stretch;
 }
 
-/* Compact 2-column grid for the Advanced section so 5 destructive cards
-   don't make the section feel like a wall. Falls back to single-column on
-   narrow screens. */
+/* 2-column grid for the Advanced section. Explicit display:grid overrides
+   the flex inherited from .manage-actions (both are :where() in primitives,
+   but the flex selector appears later in the file and would win otherwise). */
 .manage-actions-grid {
-    --grid-columns: 1fr;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--panel-gap);
     margin-top: var(--panel-gap);
 }
 @media (min-width: 600px) {
     .manage-actions-grid {
-        --grid-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 

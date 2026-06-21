@@ -82,6 +82,19 @@ select.form-input option {
     border-color: var(--accent);
 }
 
+.form-btn-danger {
+    background: var(--control-bg, var(--surface));
+    border: var(--control-border);
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.form-btn-danger:hover:not(:disabled) {
+    background: var(--error);
+    border-color: var(--error);
+    color: var(--text-on-danger);
+}
+
 .form-hint {
     margin-bottom: var(--control-stack-gap-sm);
 }
