@@ -224,7 +224,7 @@ def test_rebuild_streams_identity_progress_and_blocks_rescan(
     isolated_container_library,
 ):
     _create_hash_workload_before_startup()
-    page.goto(f"{PI_URL}/settings/metadata", wait_until="load", timeout=30000)
+    page.goto(f"{PI_URL}/settings/game-library", wait_until="load", timeout=30000)
     page.locator(".manage-actions.is-hydrated").wait_for(timeout=15000)
     rescan_button = page.get_by_role("button", name="Rescan Library")
     expect(rescan_button).to_be_enabled(timeout=10000)

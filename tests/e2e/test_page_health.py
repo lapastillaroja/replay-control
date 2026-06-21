@@ -65,7 +65,7 @@ MAIN_ROUTES = [
     ("/favorites", ["Replay Control"]),
     ("/search?q=mario", ["Replay Control"]),
     ("/settings", ["Replay Control"]),
-    ("/settings/metadata", ["Replay Control"]),
+    ("/settings/game-library", ["Replay Control"]),
 ]
 
 # Generous transition budget (Pi 4 + USB+exFAT). The fast path is ~50–80 ms,
@@ -149,7 +149,7 @@ class TestPageNavigationIsResponsive:
         "/favorites",
         "/search?q=mario",
         "/settings",
-        "/settings/metadata",
+        "/settings/game-library",
         "/games/nintendo_snes",
     ]
 
@@ -208,7 +208,7 @@ class TestForceRefreshDoesNotHang:
         "/",
         "/games/nintendo_snes",
         "/favorites",
-        "/settings/metadata",
+        "/settings/game-library",
         "/search?q=mario",
     ]
 

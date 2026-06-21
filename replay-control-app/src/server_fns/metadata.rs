@@ -142,7 +142,7 @@ pub use replay_control_core::library_db::{
     ImportStats, LibrarySummary, MetadataStats, SystemCoverage, SystemStatsRefreshState,
 };
 
-/// Aggregated `/settings/metadata` payload. Server-side this is built from
+/// Aggregated `/settings/game-library` payload. Server-side this is built from
 /// DB-backed stats plus off-pool helpers; clients render six panels from one
 /// resource. See `api/library/metadata_snapshot.rs`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -153,7 +153,7 @@ pub struct MetadataPageSnapshot {
     pub builtin_stats: BuiltinDbStats,
 }
 
-/// Fast library-only payload for the top of `/settings/metadata`.
+/// Fast library-only payload for the top of `/settings/game-library`.
 /// Reads only `game_library_system_stats`, so it can render while slower
 /// media/data-source stats continue loading.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

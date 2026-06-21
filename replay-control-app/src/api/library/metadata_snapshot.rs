@@ -1,4 +1,4 @@
-//! DB-backed `/settings/metadata` page payload builder.
+//! DB-backed `/settings/game-library` page payload builder.
 
 use replay_control_core_server::external_metadata::{self, DataSourceStats};
 use replay_control_core_server::library_db::LibraryDb;
@@ -7,7 +7,7 @@ use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
 use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 
-/// Build the slower data-source payload for `/settings/metadata`. The top
+/// Build the slower data-source payload for `/settings/game-library`. The top
 /// library overview is loaded separately from `game_library_system_stats` so
 /// it does not wait for filesystem media sizing or bundled catalog stats.
 pub(crate) async fn compute(state: &AppState) -> MetadataPageSnapshot {

@@ -192,6 +192,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings/retroachievements") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><RetroAchievementsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/replayos") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/replay-net-control") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/game-library") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />

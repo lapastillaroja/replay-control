@@ -115,7 +115,7 @@ pub fn SettingsPage() -> impl IntoView {
                                     let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
                                     Ok::<_, ServerFnError>(view! {
                                         <div class="menu-list">
-                                            <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                                            <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/game-library") />
                                             <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=on_device.then_some("/settings/retroachievements") />
                                         </div>
                                         {(!on_device).then(|| view! {

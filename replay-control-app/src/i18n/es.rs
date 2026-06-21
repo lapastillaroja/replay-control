@@ -346,8 +346,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailShmupsWikiVideoIndexLink => "Índice de vídeos en Shmups Wiki",
 
         // Metadata management
-        Key::MoreMetadata => "Metadatos de juegos",
-        Key::MetadataTitle => "Datos de juegos",
+        Key::MoreMetadata => "Biblioteca de juegos",
+        Key::MetadataTitle => "Biblioteca de juegos",
         Key::MetadataDataSources => "Fuentes de datos",
         Key::MetadataDescriptionsRatings => "Descripciones y valoraciones",
         Key::MetadataNoData => "Aún no importado",

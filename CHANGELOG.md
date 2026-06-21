@@ -16,6 +16,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Changed
 
+- The Settings metadata page is now presented as **Game Library**, with the new `/settings/game-library` URL while the old metadata URL remains available for compatibility.
 - Back buttons, game-title wrapping, resource rows, pending save indicators, and expanded video embeds were aligned with the app's shared control styling.
 - The detail page now keeps long game titles readable at the normal title size, wrapping up to three lines instead of shrinking text.
 
