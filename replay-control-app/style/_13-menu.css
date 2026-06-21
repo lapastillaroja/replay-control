@@ -127,12 +127,12 @@
 
 .update-controls-row {
     --row-wrap: wrap;
-    --input-min-height: var(--control-height);
     margin-bottom: var(--panel-gap);
 }
 
 .update-controls-row .form-input {
     min-width: 120px;
+    min-height: var(--control-height);
     width: auto;
     flex-shrink: 0;
 }

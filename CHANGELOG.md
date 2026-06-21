@@ -22,6 +22,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Fixed
 
+- Fixed the channel selector and **Check for Updates** button in the Updates section rendering at different heights.
 - Fixed a console warning logged when clearing metadata or the search index from the Game Library page.
 
 ---
