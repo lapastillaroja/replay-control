@@ -712,6 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn wikidata_series_roman_numeral_matching() {
+        crate::catalog_pool::init_test_catalog().await;
         // "Streets of Rage II" (roman) should match Wikidata "Streets of Rage 2" (arabic)
         let entries = vec![make_entry("sega_smd", "streets of rage ii")];
         let result = build_wikidata_series_tuples("sega_smd", &entries).await;

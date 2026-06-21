@@ -8,7 +8,7 @@ use std::io::BufRead;
 use std::path::Path;
 
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesRef, Event};
 
 use crate::library_db::DatePrecision;
 use replay_control_core::error::{Error, Result};
@@ -86,13 +86,40 @@ pub struct ParseResult {
     pub game_names: HashMap<String, String>,
 }
 
+/// Resolve a quick-xml general entity reference (e.g. `&amp;`, `&#x27;`) to its
+/// decoded text.
+///
+/// quick-xml 0.40 reports entity references inside character data as standalone
+/// `Event::GeneralRef` events; a parser that only handles `Event::Text` drops
+/// the entity entirely (and, with `trim_text`, its bordering spaces). The five
+/// predefined named entities are the only named refs LaunchBox metadata uses,
+/// so a static-string match avoids an allocation on the common path.
+fn resolve_general_ref(e: &BytesRef) -> String {
+    // Numeric character references (&#NN; / &#xNN;).
+    if let Ok(Some(ch)) = e.resolve_char_ref() {
+        return ch.to_string();
+    }
+    match e.decode().as_deref() {
+        Ok("amp") => "&",
+        Ok("lt") => "<",
+        Ok("gt") => ">",
+        Ok("quot") => "\"",
+        Ok("apos") => "'",
+        _ => "",
+    }
+    .to_string()
+}
+
 pub(crate) fn parse_xml<R: BufRead>(
     reader: R,
     platforms: &HashMap<&str, Vec<&str>>,
     mut on_game: impl FnMut(&LbGame, &str),
 ) -> Result<ParseResult> {
     let mut xml = Reader::from_reader(reader);
-    xml.config_mut().trim_text(true);
+    // No `trim_text`: quick-xml splits character data at entity references, and
+    // trimming each chunk would drop the spaces bordering an entity (see
+    // `resolve_general_ref`). LaunchBox element content is tight, so field
+    // values stay clean; numeric fields trim defensively before parsing.
 
     let mut buf = Vec::with_capacity(4096);
 
@@ -176,16 +203,16 @@ pub(crate) fn parse_xml<R: BufRead>(
                         "Platform" => platform.push_str(&text),
                         "Overview" => overview.push_str(&text),
                         "CommunityRating" => {
-                            rating = text.parse::<f64>().ok();
+                            rating = text.trim().parse::<f64>().ok();
                         }
                         "CommunityRatingCount" => {
-                            rating_count = text.parse::<u32>().ok();
+                            rating_count = text.trim().parse::<u32>().ok();
                         }
                         "Publisher" => publisher.push_str(&text),
                         "Developer" => developer.push_str(&text),
                         "Genres" => genre.push_str(&text),
                         "MaxPlayers" => {
-                            if let Ok(n) = text.parse::<u8>()
+                            if let Ok(n) = text.trim().parse::<u8>()
                                 && (1..=8).contains(&n)
                             {
                                 max_players = Some(n);
@@ -206,6 +233,30 @@ pub(crate) fn parse_xml<R: BufRead>(
                     Context::AlternateName => match current_tag.as_str() {
                         "AlternateName" => alt_name.push_str(&text),
                         "DatabaseID" => alt_db_id.push_str(&text),
+                        "Region" => alt_region.push_str(&text),
+                        _ => {}
+                    },
+                    Context::None => {}
+                }
+            }
+            // Entity references (`&amp;`, `&#x27;`, ...) arrive as their own event;
+            // append the decoded text to the same field the surrounding text goes
+            // to. Only the free-text fields can contain entities.
+            Ok(Event::GeneralRef(ref e)) => {
+                let text = resolve_general_ref(e);
+                match ctx {
+                    Context::Game => match current_tag.as_str() {
+                        "Name" => name.push_str(&text),
+                        "Platform" => platform.push_str(&text),
+                        "Overview" => overview.push_str(&text),
+                        "Publisher" => publisher.push_str(&text),
+                        "Developer" => developer.push_str(&text),
+                        "Genres" => genre.push_str(&text),
+                        "VideoURL" => video_url.push_str(&text),
+                        _ => {}
+                    },
+                    Context::AlternateName => match current_tag.as_str() {
+                        "AlternateName" => alt_name.push_str(&text),
                         "Region" => alt_region.push_str(&text),
                         _ => {}
                     },
@@ -509,5 +560,34 @@ mod tests {
             normalize_title("Game v2 Special Edition"),
             "gamev2specialedition"
         );
+    }
+
+    #[test]
+    fn parse_xml_preserves_xml_entities_in_text_fields() {
+        // quick-xml 0.40 emits entity references inside text as standalone
+        // `Event::GeneralRef` events; a parser that only handles `Event::Text`
+        // drops the entity (and, under `trim_text`, its bordering spaces),
+        // mangling "Dungeons & Dragons" into "DungeonsDragons".
+        let xml = r#"<?xml version="1.0"?>
+<LaunchBox>
+<Game>
+<Name>Dungeons &amp; Dragons: Shadow over Mystara</Name>
+<DatabaseID>1</DatabaseID>
+<Platform>Arcade</Platform>
+<Publisher>Capcom &amp; Co</Publisher>
+</Game>
+</LaunchBox>"#;
+        let mut platforms: HashMap<&str, Vec<&str>> = HashMap::new();
+        platforms.insert("Arcade", vec!["arcade_mame"]);
+
+        let mut games: Vec<(String, String)> = Vec::new();
+        parse_xml(xml.as_bytes(), &platforms, |g, _folder| {
+            games.push((g.name.clone(), g.publisher.clone()));
+        })
+        .unwrap();
+
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].0, "Dungeons & Dragons: Shadow over Mystara");
+        assert_eq!(games[0].1, "Capcom & Co");
     }
 }

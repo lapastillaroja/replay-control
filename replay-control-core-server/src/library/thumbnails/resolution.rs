@@ -65,8 +65,10 @@ pub fn build_image_index(
     // Build the base index using the shared image matching module.
     let mut dir_index = image_matching::build_dir_index(&boxart_dir, boxart_media);
 
-    // Second pass: resolve fake symlinks (small text files pointing to real images).
-    let base_title = thumbnails::base_title;
+    // Second pass: resolve fake symlinks (small text files pointing to real
+    // images). Funnel through `DirIndex::insert` so resolved symlinks populate
+    // exactly the same tiers as the directory scan — including the aggressive
+    // and compact tiers, which an open-coded insertion here would silently miss.
     if let Ok(entries) = std::fs::read_dir(&boxart_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -79,51 +81,7 @@ pub fn build_image_index(
                 if let Some(resolved) =
                     thumbnails::try_resolve_fake_symlink_sync(&full, &boxart_dir)
                 {
-                    let resolved_path = format!("boxart/{resolved}");
-                    dir_index
-                        .exact
-                        .insert(img_stem.to_string(), resolved_path.clone());
-                    dir_index
-                        .exact_ci
-                        .entry(img_stem.to_lowercase())
-                        .and_modify(|existing| {
-                            if resolved_path < *existing {
-                                *existing = resolved_path.clone();
-                            }
-                        })
-                        .or_insert_with(|| resolved_path.clone());
-                    let bt = base_title(img_stem);
-                    let vs = thumbnails::strip_version(&bt).to_string();
-                    dir_index
-                        .fuzzy
-                        .entry(bt.clone())
-                        .and_modify(|existing| {
-                            if resolved_path < *existing {
-                                *existing = resolved_path.clone();
-                            }
-                        })
-                        .or_insert_with(|| resolved_path.clone());
-                    if vs.len() < bt.len() {
-                        dir_index
-                            .version
-                            .entry(vs)
-                            .and_modify(|existing| {
-                                if resolved_path < *existing {
-                                    *existing = resolved_path.clone();
-                                }
-                            })
-                            .or_insert_with(|| resolved_path.clone());
-                    }
-                    let agg = replay_control_core::title_utils::normalize_aggressive(&bt);
-                    dir_index
-                        .aggressive
-                        .entry(agg)
-                        .and_modify(|existing| {
-                            if resolved_path < *existing {
-                                *existing = resolved_path.clone();
-                            }
-                        })
-                        .or_insert(resolved_path);
+                    dir_index.insert(img_stem, format!("boxart/{resolved}"));
                 }
             }
         }
@@ -330,95 +288,49 @@ mod tests {
 
     /// Build a minimal ImageIndex with given (stem, path) entries and no manifest.
     fn image_index_from(entries: &[(&str, &str)]) -> ImageIndex {
-        let mut exact: HashMap<String, String> = HashMap::new();
-        let mut exact_ci: HashMap<String, String> = HashMap::new();
-        let mut fuzzy: HashMap<String, String> = HashMap::new();
-        let mut version: HashMap<String, String> = HashMap::new();
-        let mut aggressive: HashMap<String, String> = HashMap::new();
-        let mut aggressive_compact: HashMap<String, String> = HashMap::new();
-        let mut numeral: HashMap<String, String> = HashMap::new();
-
+        let mut dir_index = image_matching::DirIndex::default();
         for &(stem, path) in entries {
-            use crate::thumbnails::{base_title, strip_version};
-            use replay_control_core::title_utils::{
-                normalize_aggressive, normalize_aggressive_compact, normalize_numeral_compact,
-            };
-
-            exact.insert(stem.to_string(), path.to_string());
-            exact_ci
-                .entry(stem.to_lowercase())
-                .and_modify(|existing| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            let bt = base_title(stem);
-            let vs = strip_version(&bt).to_string();
-            fuzzy
-                .entry(bt.clone())
-                .and_modify(|existing| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            if vs.len() < bt.len() {
-                version
-                    .entry(vs)
-                    .and_modify(|existing| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
-            let agg = normalize_aggressive(&bt);
-            aggressive
-                .entry(agg)
-                .and_modify(|existing| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            let agg_compact = normalize_aggressive_compact(&bt);
-            if !agg_compact.is_empty() {
-                aggressive_compact
-                    .entry(agg_compact)
-                    .and_modify(|existing| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
-            let num_compact = normalize_numeral_compact(&bt);
-            if !num_compact.is_empty() {
-                numeral
-                    .entry(num_compact)
-                    .and_modify(|existing| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
+            dir_index.insert(stem, path.to_string());
         }
-
         ImageIndex {
-            dir_index: image_matching::DirIndex {
-                exact,
-                exact_ci,
-                fuzzy,
-                version,
-                aggressive,
-                aggressive_compact,
-                numeral,
-            },
+            dir_index,
             db_paths: HashMap::new(),
             manifest: None,
         }
+    }
+
+    #[test]
+    fn build_image_index_fake_symlink_resolves_via_aggressive_tier() {
+        // Regression: the fake-symlink resolution pass must populate the same
+        // tiers as the directory scan. A Roman-numeral cover stored as a
+        // libretro fake symlink should be reachable from a digit-form ROM name
+        // via the aggressive tier's Roman-numeral fold (issue #66 follow-up).
+        use crate::storage::RC_DIR;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let storage_root = tmp.path();
+        let system = "ibm_pc";
+        let boxart = storage_root
+            .join(RC_DIR)
+            .join("media")
+            .join(system)
+            .join("boxart");
+        std::fs::create_dir_all(&boxart).unwrap();
+
+        // A real box-art image (>=200 bytes, so it indexes as a real file).
+        std::fs::write(boxart.join("Real Cover.png"), vec![0u8; 256]).unwrap();
+        // A libretro fake symlink: a tiny text file naming the real target,
+        // titled with a Roman numeral so only the aggressive fold can bridge it.
+        std::fs::write(boxart.join("Doom II.png"), "Real Cover.png").unwrap();
+
+        let index = build_image_index(system, storage_root, HashMap::new(), Vec::new());
+
+        let arcade = ArcadeInfoLookup::default();
+        let result = resolve_box_art_with_hash(&index, &arcade, system, "Doom 2.zip", None);
+        assert!(
+            matches!(&result, BoxArtResult::Found(p) if p == "boxart/Real Cover.png"),
+            "Doom 2 should resolve the fake-symlinked \"Doom II\" art via the aggressive fold"
+        );
     }
 
     #[tokio::test]

@@ -20,7 +20,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - Fixed missing box art for arcade games whose names contain an ampersand or apostrophe — for example **Dungeons & Dragons: Shadow over Mystara**, **Street Fighter Alpha: Warriors' Dreams**, and other CPS2 titles. The game info was already correct, but the photos were missing; the underlying game names are now read correctly so the artwork matches.
 - Fixed Amiga (WHDLoad) game names being cut off at an ampersand — **4th & Inches** no longer shows as just "4th" — and these games now line up with their library entry instead of being listed twice.
-- Fixed box art not appearing when a game's filename uses a digit where the artwork uses a Roman numeral (or the reverse), such as MS-DOS **DOOM2** now matching **Doom II**.
+- Fixed box art not appearing when a game's name uses a digit where the artwork uses a Roman numeral (or the reverse), such as MS-DOS **Doom 2** now matching **Doom II** and **Arkanoid 2** matching **Arkanoid II**.
+- Fixed console game metadata imported from the games database (titles, publisher, developer, genres) being cut off at an ampersand or apostrophe — genres such as **Action & Adventure** and titles or studios containing "&" now read in full instead of being run together.
 
 ---
 

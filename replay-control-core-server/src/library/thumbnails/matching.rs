@@ -10,14 +10,14 @@ use crate::thumbnails::{
     base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
 };
 use replay_control_core::title_utils::{
-    normalize_aggressive, normalize_aggressive_compact, normalize_numeral_compact,
-    strip_n64dd_prefix, strip_tags,
+    normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix, strip_tags,
 };
 
 /// Directory index for matching ROM filenames to image files.
 ///
 /// Built from a single readdir scan, provides O(1) lookups at multiple
 /// fuzziness tiers: exact, case-insensitive, base_title, and version-stripped.
+#[derive(Default)]
 pub struct DirIndex {
     /// Exact thumbnail_filename stem → relative path (e.g., "boxart/Name.png")
     pub exact: HashMap<String, String>,
@@ -34,11 +34,49 @@ pub struct DirIndex {
     /// Catches "Galaga '88.png" ↔ catalog "Galaga88" both collapsing to
     /// "galaga88".
     pub aggressive_compact: HashMap<String, String>,
-    /// Numeral-compact normalization: like `aggressive_compact` but also folds
-    /// Roman numerals to Arabic digits. Mirrors
-    /// `ManifestFuzzyIndex::by_numeral_compact`. Catches "DOOM2" ↔ "Doom II"
-    /// both collapsing to "doom2".
-    pub numeral: HashMap<String, String>,
+}
+
+impl DirIndex {
+    /// Insert one image — identified by its filename `stem` and relative
+    /// `path` — into every matching tier.
+    ///
+    /// Both the directory scan (`build_dir_index`) and the fake-symlink
+    /// resolution pass (`build_image_index`) funnel through here so the set of
+    /// populated tiers can never drift between the two. For the fuzzy tiers,
+    /// ties resolve to the alphabetically-first path so results are independent
+    /// of directory iteration order.
+    pub fn insert(&mut self, stem: &str, path: String) {
+        // Keep the alphabetically-first path for a fuzzy key (deterministic).
+        fn keep_first(map: &mut HashMap<String, String>, key: String, path: &str) {
+            map.entry(key)
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
+                .or_insert_with(|| path.to_string());
+        }
+
+        self.exact.insert(stem.to_string(), path.clone());
+        keep_first(&mut self.exact_ci, stem.to_lowercase(), &path);
+
+        let bt = base_title(stem);
+        keep_first(&mut self.fuzzy, bt.clone(), &path);
+
+        let vs = strip_version(&bt).to_string();
+        if vs.len() < bt.len() {
+            keep_first(&mut self.version, vs, &path);
+        }
+
+        // Aggressive: strip all punctuation, keep spaces.
+        keep_first(&mut self.aggressive, normalize_aggressive(&bt), &path);
+
+        // Aggressive-compact: also strips spaces.
+        let agg_compact = normalize_aggressive_compact(&bt);
+        if !agg_compact.is_empty() {
+            keep_first(&mut self.aggressive_compact, agg_compact, &path);
+        }
+    }
 }
 
 /// Build a `DirIndex` by scanning a media subdirectory (boxart or snap).
@@ -48,14 +86,7 @@ pub struct DirIndex {
 ///
 /// Only indexes `.png` and `.jpg` files that are at least 200 bytes (to skip fake symlinks/stubs).
 pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
-    let mut exact = HashMap::new();
-    let mut exact_ci = HashMap::new();
-    let mut fuzzy = HashMap::new();
-    let mut version = HashMap::new();
-    let mut aggressive = HashMap::new();
-    let mut aggressive_compact = HashMap::new();
-    let mut numeral = HashMap::new();
-
+    let mut index = DirIndex::default();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -65,87 +96,11 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                 if !is_valid_image_sync(&entry.path()) {
                     continue;
                 }
-                let path = format!("{kind}/{name_str}");
-                exact.insert(img_stem.to_string(), path.clone());
-                exact_ci
-                    .entry(img_stem.to_lowercase())
-                    .and_modify(|existing| {
-                        if path < *existing {
-                            *existing = path.clone();
-                        }
-                    })
-                    .or_insert_with(|| path.clone());
-                let bt = base_title(img_stem);
-                let vs = strip_version(&bt).to_string();
-                fuzzy
-                    .entry(bt.clone())
-                    .and_modify(|existing| {
-                        if path < *existing {
-                            *existing = path.clone();
-                        }
-                    })
-                    .or_insert_with(|| path.clone());
-                if vs.len() < bt.len() {
-                    version
-                        .entry(vs)
-                        .and_modify(|existing| {
-                            if path < *existing {
-                                *existing = path.clone();
-                            }
-                        })
-                        .or_insert_with(|| path.clone());
-                }
-                // Aggressive: strip all punctuation, keep spaces.
-                let agg = normalize_aggressive(&bt);
-                aggressive
-                    .entry(agg)
-                    .and_modify(|existing| {
-                        if path < *existing {
-                            *existing = path.clone();
-                        }
-                    })
-                    .or_insert_with(|| path.clone());
-
-                // Aggressive-compact: also strips spaces. See doc on the
-                // `aggressive_compact` field.
-                let agg_compact = normalize_aggressive_compact(&bt);
-                if !agg_compact.is_empty() {
-                    aggressive_compact
-                        .entry(agg_compact)
-                        .and_modify(|existing| {
-                            if path < *existing {
-                                *existing = path.clone();
-                            }
-                        })
-                        .or_insert_with(|| path.clone());
-                }
-
-                // Numeral-compact: folds Roman numerals to digits. See doc on
-                // the `numeral` field.
-                let num_compact = normalize_numeral_compact(&bt);
-                if !num_compact.is_empty() {
-                    numeral
-                        .entry(num_compact)
-                        .and_modify(|existing| {
-                            if path < *existing {
-                                *existing = path.clone();
-                            }
-                        })
-                        .or_insert(path);
-                }
+                index.insert(img_stem, format!("{kind}/{name_str}"));
             }
         }
     }
-
-    DirIndex {
-        exact,
-        exact_ci,
-        fuzzy,
-        version,
-        aggressive,
-        aggressive_compact,
-        numeral,
-    }
+    index
 }
 
 /// Find the best matching image for a ROM in a `DirIndex`.
@@ -263,16 +218,6 @@ pub fn find_best_match(
         {
             return Some(path.clone());
         }
-
-        // Tier 9: numeral-compact — folds Roman numerals to digits so a
-        // digit/glued name ("DOOM2") matches a Roman-numeral thumbnail
-        // ("Doom II"). Same no-internal-space guard as the compact tier.
-        let num_compact = normalize_numeral_compact(&base);
-        if !num_compact.is_empty()
-            && let Some(path) = index.numeral.get(&num_compact)
-        {
-            return Some(path.clone());
-        }
     }
 
     None
@@ -373,86 +318,11 @@ mod tests {
 
     /// Helper to build a DirIndex from a list of (stem, relative_path) pairs.
     fn index_from(entries: &[(&str, &str)]) -> DirIndex {
-        let mut exact = HashMap::new();
-        let mut exact_ci = HashMap::new();
-        let mut fuzzy = HashMap::new();
-        let mut version = HashMap::new();
-        let mut aggressive = HashMap::new();
-        let mut aggressive_compact = HashMap::new();
-        let mut numeral = HashMap::new();
-
+        let mut index = DirIndex::default();
         for &(stem, path) in entries {
-            exact.insert(stem.to_string(), path.to_string());
-            exact_ci
-                .entry(stem.to_lowercase())
-                .and_modify(|existing: &mut String| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            let bt = base_title(stem);
-            let vs = strip_version(&bt).to_string();
-            fuzzy
-                .entry(bt.clone())
-                .and_modify(|existing: &mut String| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            if vs.len() < bt.len() {
-                version
-                    .entry(vs)
-                    .and_modify(|existing: &mut String| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
-            let agg = normalize_aggressive(&bt);
-            aggressive
-                .entry(agg)
-                .and_modify(|existing: &mut String| {
-                    if path < existing.as_str() {
-                        *existing = path.to_string();
-                    }
-                })
-                .or_insert_with(|| path.to_string());
-            let agg_compact = normalize_aggressive_compact(&bt);
-            if !agg_compact.is_empty() {
-                aggressive_compact
-                    .entry(agg_compact)
-                    .and_modify(|existing: &mut String| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
-            let num_compact = normalize_numeral_compact(&bt);
-            if !num_compact.is_empty() {
-                numeral
-                    .entry(num_compact)
-                    .and_modify(|existing: &mut String| {
-                        if path < existing.as_str() {
-                            *existing = path.to_string();
-                        }
-                    })
-                    .or_insert_with(|| path.to_string());
-            }
+            index.insert(stem, path.to_string());
         }
-
-        DirIndex {
-            exact,
-            exact_ci,
-            fuzzy,
-            version,
-            aggressive,
-            aggressive_compact,
-            numeral,
-        }
+        index
     }
 
     #[test]
@@ -710,26 +580,27 @@ mod tests {
     }
 
     #[test]
-    fn numeral_tier_matches_arabic_rom_against_roman_thumbnail() {
+    fn aggressive_tier_matches_digit_rom_against_roman_thumbnail() {
         // Issue #66: libretro-thumbnails/DOS ships "Doom II.png"; the user's
-        // ROM is "DOOM2.zip". Earlier tiers can't bridge "2" vs "II".
+        // ROM is "Doom 2.zip". The aggressive tier folds "II" -> "2" so both
+        // sides normalize to "doom 2".
         let index = index_from(&[
             ("Doom", "boxart/Doom.png"),
             ("Doom II", "boxart/Doom II.png"),
         ]);
         assert_eq!(
-            find_best_match(&index, "DOOM2.zip", None, None).as_deref(),
+            find_best_match(&index, "Doom 2.zip", None, None).as_deref(),
             Some("boxart/Doom II.png"),
         );
         // The plain "Doom" still matches its own art, not the sequel.
         assert_eq!(
-            find_best_match(&index, "DOOM.zip", None, None).as_deref(),
+            find_best_match(&index, "Doom.zip", None, None).as_deref(),
             Some("boxart/Doom.png"),
         );
     }
 
     #[test]
-    fn numeral_tier_does_not_match_single_letter_numerals() {
+    fn aggressive_tier_does_not_fold_single_letter_numerals() {
         // "Mega Man X" must NOT match a "Mega Man 10" thumbnail (X is a name).
         let index = index_from(&[("Mega Man 10", "boxart/Mega Man 10.png")]);
         assert_eq!(find_best_match(&index, "Mega Man X.zip", None, None), None);

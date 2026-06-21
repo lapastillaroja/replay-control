@@ -616,11 +616,6 @@ pub struct ManifestFuzzyIndex {
     /// and the other doesn't, e.g. arcade catalog `"Galaga88"` vs libretro
     /// `"Galaga '88"` — both collapse to `"galaga88"` here.
     pub by_aggressive_compact: HashMap<String, ManifestMatch>,
-    /// Numeral-compact normalization (compact-aggressive plus Roman→Arabic
-    /// numeral folding) -> ManifestMatch. Bridges a digit/glued sequel name
-    /// against a Roman-numeral thumbnail, e.g. `"DOOM2"` vs `"Doom II"` — both
-    /// collapse to `"doom2"` here.
-    pub by_numeral_compact: HashMap<String, ManifestMatch>,
 }
 
 /// Load the raw `(url_name, branch, entries)` triples for a list of libretro
@@ -669,7 +664,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
     repo_data: &[(String, String, Vec<ThumbnailManifestEntry>)],
 ) -> ManifestFuzzyIndex {
     use replay_control_core::title_utils::{
-        base_title, normalize_aggressive, normalize_aggressive_compact, normalize_numeral_compact,
+        base_title, normalize_aggressive, normalize_aggressive_compact,
     };
     use thumbnails::{strip_tags, strip_version};
 
@@ -680,7 +675,6 @@ pub fn build_manifest_fuzzy_index_from_raw(
     let mut by_base_title = HashMap::new();
     let mut by_aggressive = HashMap::new();
     let mut by_aggressive_compact = HashMap::new();
-    let mut by_numeral_compact = HashMap::new();
 
     for (url_name, branch, entries) in repo_data {
         for entry in entries {
@@ -728,16 +722,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
             // ManifestFuzzyIndex::by_aggressive_compact for the rationale.
             let agg_compact = normalize_aggressive_compact(&bt);
             if !agg_compact.is_empty() {
-                by_aggressive_compact
-                    .entry(agg_compact)
-                    .or_insert_with(|| m.clone());
-            }
-
-            // Tier 7: numeral-compact (compact + Roman→Arabic folding). See doc
-            // on ManifestFuzzyIndex::by_numeral_compact.
-            let num_compact = normalize_numeral_compact(&bt);
-            if !num_compact.is_empty() {
-                by_numeral_compact.entry(num_compact).or_insert(m);
+                by_aggressive_compact.entry(agg_compact).or_insert(m);
             }
         }
     }
@@ -750,7 +735,6 @@ pub fn build_manifest_fuzzy_index_from_raw(
         by_base_title,
         by_aggressive,
         by_aggressive_compact,
-        by_numeral_compact,
     }
 }
 
@@ -773,7 +757,7 @@ pub fn find_in_manifest<'a>(
 ) -> Option<&'a ManifestMatch> {
     use replay_control_core::title_utils::{
         base_title, filename_stem, normalize_aggressive, normalize_aggressive_compact,
-        normalize_numeral_compact, strip_n64dd_prefix,
+        strip_n64dd_prefix,
     };
     use thumbnails::{strip_tags, strip_version, thumbnail_filename};
 
@@ -917,16 +901,6 @@ pub fn find_in_manifest<'a>(
         let agg_compact_key = normalize_aggressive_compact(&base);
         if !agg_compact_key.is_empty()
             && let Some(m) = index.by_aggressive_compact.get(&agg_compact_key)
-        {
-            return Some(m);
-        }
-
-        // Tier 10: numeral-compact — folds Roman numerals to digits so a
-        // digit/glued name ("DOOM2") matches a Roman-numeral thumbnail
-        // ("Doom II"). Same no-internal-space guard as the compact tier.
-        let num_compact_key = normalize_numeral_compact(&base);
-        if !num_compact_key.is_empty()
-            && let Some(m) = index.by_numeral_compact.get(&num_compact_key)
         {
             return Some(m);
         }
@@ -1593,7 +1567,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
@@ -1628,7 +1601,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         let result = find_in_manifest(&index, "Game (USA).md", None);
@@ -1663,7 +1635,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // ROM stem after tag stripping matches
@@ -1748,7 +1719,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // Simulate: ROM "anmlbskt.zip" resolves via arcade_db to
@@ -1789,7 +1759,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // After thumbnail_filename and strip_tags, the search key would be
@@ -1823,7 +1792,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // Source has "&" not "/", so " _ " splitting should be suppressed.
@@ -1858,7 +1826,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         let source = "Spider-Man & Venom - Maximum Carnage (USA)";
@@ -1920,10 +1887,10 @@ mod tests {
     }
 
     #[test]
-    fn find_in_manifest_numeral_tier_bridges_doom2() {
+    fn find_in_manifest_folds_roman_numeral_for_doom2() {
         // Issue #66: the real libretro-thumbnails/DOS repo ships "Doom" and
-        // "Doom II"; the user's DOS ROM is "DOOM2.zip" (display name "DOOM2").
-        // The numeral tier folds "II" → "2" so both collapse to "doom2".
+        // "Doom II"; the user's DOS ROM is "Doom 2.zip". The aggressive tier
+        // folds "II" -> "2" so both sides normalize to "doom 2".
         let dos_entries = vec![
             ThumbnailManifestEntry {
                 filename: "Doom".to_string(),
@@ -1937,10 +1904,10 @@ mod tests {
         let repo_data = vec![("DOS".to_string(), "master".to_string(), dos_entries)];
         let index = build_manifest_fuzzy_index_from_raw(&repo_data);
 
-        let hit = find_in_manifest(&index, "DOOM2.zip", None).expect("DOOM2 must match Doom II");
+        let hit = find_in_manifest(&index, "Doom 2.zip", None).expect("Doom 2 must match Doom II");
         assert_eq!(hit.filename, "Doom II");
         // Plain DOOM still resolves to its own art, not the sequel.
-        let hit = find_in_manifest(&index, "DOOM.zip", None).expect("DOOM must match Doom");
+        let hit = find_in_manifest(&index, "Doom.zip", None).expect("Doom must match Doom");
         assert_eq!(hit.filename, "Doom");
     }
 
@@ -1974,7 +1941,6 @@ mod tests {
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
             by_aggressive_compact: HashMap::new(),
-            by_numeral_compact: HashMap::new(),
         };
 
         // Parent: MAME 2003+ display "Galaga '88 (set 1)".

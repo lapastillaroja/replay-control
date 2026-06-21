@@ -906,6 +906,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_sf2_colon_in_display_name() {
+        crate::catalog_pool::init_test_catalog().await;
         let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_fbneo").await;
         // "Street Fighter II: The World Warrior (...)"
         // thumbnail_filename replaces ':' with '_'
@@ -944,6 +945,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_mame_system_also_uses_arcade_db() {
+        crate::catalog_pool::init_test_catalog().await;
         let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_mame").await;
         assert!(
             thumb_name.contains("Street Fighter II"),
@@ -953,6 +955,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_dc_system_uses_arcade_db() {
+        crate::catalog_pool::init_test_catalog().await;
         let (thumb_name, _) = resolve_pipeline("ikaruga.zip", "arcade_dc").await;
         assert!(
             thumb_name.starts_with("Ikaruga"),

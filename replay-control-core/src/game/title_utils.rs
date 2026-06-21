@@ -268,11 +268,16 @@ pub fn normalize_aggressive(name: &str) -> String {
             out.push(' ');
         }
     }
-    // Collapse multiple spaces, trim, lowercase.
+    // Collapse runs of whitespace, lowercase, and fold standalone multi-character
+    // Roman numerals to Arabic digits so "Doom II" and "Doom 2" both become
+    // "doom 2" (single letters like the "X" in "Mega Man X" are left alone).
     out.split_whitespace()
+        .map(|tok| match roman_token_to_arabic(tok) {
+            Some(value) => value.to_string(),
+            None => tok.to_lowercase(),
+        })
         .collect::<Vec<_>>()
         .join(" ")
-        .to_lowercase()
 }
 
 /// Compact-aggressive normalization: like `normalize_aggressive` but ALSO
@@ -302,37 +307,10 @@ pub fn normalize_aggressive_compact(name: &str) -> String {
     out
 }
 
-/// Compact normalization that also folds sequel numerals: like
-/// `normalize_aggressive_compact`, but first rewrites standalone Roman-numeral
-/// words (`II`, `III`, `IV`, ...) to Arabic digits so digit- and Roman-form
-/// sequel titles collapse to the same key.
-///
-/// Concrete case from the wild (issue #66): a user's DOS game named `"DOOM2"`
-/// has display name `"DOOM2"` while libretro-thumbnails ships `"Doom II.png"`.
-/// `normalize_aggressive_compact` yields `"doom2"` vs `"doomii"` — no match.
-/// Folding `"II"` → `"2"` first collapses both sides to `"doom2"`.
-///
-/// Only multi-character Roman numerals are folded; the single-letter forms
-/// (`I`, `V`, `X`) are deliberately excluded because in titles they are usually
-/// names, not numbers ("Mega Man X", "Project X", "X-Men"). Same last-resort
-/// false-positive caveat as `normalize_aggressive_compact` — only callers that
-/// have exhausted every other tier should rely on it.
-pub fn normalize_numeral_compact(name: &str) -> String {
-    let folded = name
-        .split_whitespace()
-        .map(|tok| match roman_token_to_arabic(tok) {
-            Some(value) => value.to_string(),
-            None => tok.to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    normalize_aggressive_compact(&folded)
-}
-
 /// Convert a whitespace-delimited token to its Arabic value when the token's
 /// alphabetic characters spell a multi-character Roman numeral (case-insensitive).
 /// Returns `None` otherwise. Single-letter numerals (`i`, `v`, `x`) are excluded
-/// on purpose — see `normalize_numeral_compact`.
+/// on purpose — see `normalize_aggressive`.
 fn roman_token_to_arabic(token: &str) -> Option<u32> {
     // Compare on letters only so "II," or "(IV)" still resolve.
     let letters: String = token.chars().filter(|c| c.is_alphabetic()).collect();
@@ -825,48 +803,31 @@ mod tests {
         );
     }
 
-    // --- normalize_numeral_compact ---
-
     #[test]
-    fn numeral_compact_bridges_arabic_and_roman_sequels() {
-        // Issue #66: user's "DOOM2" vs libretro-thumbnails "Doom II".
-        assert_eq!(normalize_numeral_compact("DOOM2"), "doom2");
-        assert_eq!(normalize_numeral_compact("Doom II"), "doom2");
-        assert_eq!(normalize_numeral_compact("Doom 2"), "doom2");
-        // A range of common sequel numerals.
+    fn normalize_aggressive_folds_roman_numerals_to_digits() {
+        // Issue #66: a digit-named ROM ("Doom 2") must match Roman-numeral art
+        // ("Doom II") at the aggressive tier — both fold to "doom 2".
+        assert_eq!(normalize_aggressive("Doom II"), "doom 2");
+        assert_eq!(normalize_aggressive("Doom 2"), "doom 2");
         assert_eq!(
-            normalize_numeral_compact("Quake III"),
-            normalize_numeral_compact("Quake 3")
+            normalize_aggressive("Arkanoid 2 - Revenge of Doh"),
+            normalize_aggressive("Arkanoid II - Revenge of Doh")
         );
         assert_eq!(
-            normalize_numeral_compact("Final Fantasy VII"),
-            normalize_numeral_compact("Final Fantasy 7")
-        );
-        // Punctuation around the numeral still resolves.
-        assert_eq!(normalize_numeral_compact("Doom (II)"), "doom2");
-    }
-
-    #[test]
-    fn numeral_compact_excludes_single_letter_numerals() {
-        // "X"/"V"/"I" are names here, not numbers — must NOT become digits.
-        assert_eq!(normalize_numeral_compact("Mega Man X"), "megamanx");
-        assert_eq!(normalize_numeral_compact("Project X"), "projectx");
-        assert_eq!(normalize_numeral_compact("X-Men"), "xmen");
-        // So a digit-form game does not collide with an X-named one.
-        assert_ne!(
-            normalize_numeral_compact("Mega Man X"),
-            normalize_numeral_compact("Mega Man 10")
+            normalize_aggressive("Final Fantasy VII"),
+            normalize_aggressive("Final Fantasy 7")
         );
     }
 
     #[test]
-    fn numeral_compact_does_not_fold_non_numeral_words() {
-        // A word that merely contains numeral letters is untouched.
-        assert_eq!(normalize_numeral_compact("Civilization"), "civilization");
-        // Different games stay distinct.
+    fn normalize_aggressive_leaves_single_letter_numerals_alone() {
+        // "X"/"V" are names here, not numbers — must NOT become digits, so a
+        // digit-form game does not collide with an X-named one.
+        assert_eq!(normalize_aggressive("Mega Man X"), "mega man x");
+        assert_eq!(normalize_aggressive("X-Men"), "x men");
         assert_ne!(
-            normalize_numeral_compact("Doom"),
-            normalize_numeral_compact("Doom II")
+            normalize_aggressive("Mega Man X"),
+            normalize_aggressive("Mega Man 10")
         );
     }
 
