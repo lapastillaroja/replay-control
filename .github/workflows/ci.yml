@@ -34,6 +34,9 @@ jobs:
       - name: Clippy (core)
         run: cargo clippy -p replay-control-core -- -D warnings
 
+      - name: Clippy (core-server)
+        run: cargo clippy -p replay-control-core-server --all-features -- -D warnings
+
       - name: Clippy (app, SSR)
         run: cargo clippy -p replay-control-app --features ssr -- -D warnings
 
@@ -96,6 +99,9 @@ jobs:
 
       - name: Unit tests (core)
         run: cargo test -p replay-control-core
+
+      - name: Unit tests (core-server)
+        run: cargo test -p replay-control-core-server --all-features
 
       - name: Unit tests (app)
         run: cargo test -p replay-control-app --features ssr

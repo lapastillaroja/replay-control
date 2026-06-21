@@ -82,6 +82,7 @@ Four test layers; each is independent and runs from the repo root.
 ```bash
 # 1. Rust tests (unit + in-process integration). Fastest. ~1100 tests.
 cargo test --features ssr
+cargo test -p replay-control-core-server --all-features
 
 # 2. Container HTTP smoke. Boots the app inside a network-isolated
 #    podman/docker container and runs HTTP-level assertions with curl.
