@@ -540,79 +540,87 @@ impl LibraryDb {
             return Ok(GameLibrarySystemStats::default());
         };
 
-        let clone_count = count_where(conn, system, "is_clone = 1")?;
-        let hack_count = count_where(conn, system, "is_hack = 1")?;
-        let translation_count = count_where(conn, system, "is_translation = 1")?;
-        let special_count = count_where(conn, system, "is_special = 1")?;
-        let release_date_known_count = count_where(
-            conn,
-            system,
-            "release_date IS NOT NULL AND release_date != ''",
-        )?;
-        let developer_known_count = count_where(conn, system, "developer != ''")?;
-        let rating_known_count = count_where(conn, system, "rating IS NOT NULL")?;
-        let boxart_count = count_where(conn, system, "box_art_url IS NOT NULL")?;
-        let coop_count = count_where(conn, system, "cooperative = 1")?;
-        let verified_count = conn
+        // All single-column flag/identity counts + the release-year range in one
+        // scan of the system's rows, via conditional aggregation. This replaces
+        // ~13 separate `COUNT(*) WHERE system=?1 AND <predicate>` queries that
+        // each re-scanned the same rows. COALESCE guards the all-rows-NULL case
+        // (a system whose meta row exists but has no game_library rows yet).
+        let (
+            clone_count,
+            hack_count,
+            translation_count,
+            special_count,
+            release_date_known_count,
+            developer_known_count,
+            rating_known_count,
+            boxart_count,
+            coop_count,
+            ra_id_count,
+            verified_count,
+            release_year_min,
+            release_year_max,
+        ) = conn
             .query_row(
-                "SELECT COUNT(*)
+                "SELECT
+                    COALESCE(SUM(is_clone = 1), 0),
+                    COALESCE(SUM(is_hack = 1), 0),
+                    COALESCE(SUM(is_translation = 1), 0),
+                    COALESCE(SUM(is_special = 1), 0),
+                    COALESCE(SUM(release_date IS NOT NULL AND release_date != ''), 0),
+                    COALESCE(SUM(developer != ''), 0),
+                    COALESCE(SUM(rating IS NOT NULL), 0),
+                    COALESCE(SUM(box_art_url IS NOT NULL), 0),
+                    COALESCE(SUM(cooperative = 1), 0),
+                    COALESCE(SUM(ra_id != ''), 0),
+                    COALESCE(SUM(
+                        identity_state = ?2 OR hash_matched_name IS NOT NULL OR ra_id != ''
+                    ), 0),
+                    MIN(CASE WHEN release_date GLOB '[0-9][0-9][0-9][0-9]*'
+                             THEN CAST(substr(release_date, 1, 4) AS INTEGER) END),
+                    MAX(CASE WHEN release_date GLOB '[0-9][0-9][0-9][0-9]*'
+                             THEN CAST(substr(release_date, 1, 4) AS INTEGER) END)
                  FROM game_library
-                 WHERE system = ?1
-                   AND (identity_state = ?2 OR hash_matched_name IS NOT NULL OR ra_id != '')",
+                 WHERE system = ?1",
                 params![system, super::IdentityState::CompleteMatched.as_i64()],
-                |row| row.get::<_, i64>(0),
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? as usize,
+                        row.get::<_, i64>(1)? as usize,
+                        row.get::<_, i64>(2)? as usize,
+                        row.get::<_, i64>(3)? as usize,
+                        row.get::<_, i64>(4)? as usize,
+                        row.get::<_, i64>(5)? as usize,
+                        row.get::<_, i64>(6)? as usize,
+                        row.get::<_, i64>(7)? as usize,
+                        row.get::<_, i64>(8)? as usize,
+                        row.get::<_, i64>(9)? as usize,
+                        row.get::<_, i64>(10)? as usize,
+                        row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, Option<i64>>(12)?,
+                    ))
+                },
             )
-            .map_err(|e| Error::Other(format!("query verified identity stats: {e}")))?
-            as usize;
-        let ra_id_count = count_where(conn, system, "ra_id != ''")?;
-        let (release_year_min, release_year_max) = conn
-            .query_row(
-                "SELECT MIN(CAST(substr(release_date, 1, 4) AS INTEGER)),
-                        MAX(CAST(substr(release_date, 1, 4) AS INTEGER))
-                 FROM game_library
-                 WHERE system = ?1
-                   AND release_date IS NOT NULL
-                   AND release_date GLOB '[0-9][0-9][0-9][0-9]*'",
-                params![system],
-                |row| Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, Option<i64>>(1)?)),
-            )
-            .map_err(|e| Error::Other(format!("query release-year stats: {e}")))?;
+            .map_err(|e| Error::Other(format!("query system flag/identity stats: {e}")))?;
 
-        let description_count = conn
+        // Description + publisher coverage from one scan of game_detail_metadata.
+        let (description_count, publisher_known_count) = conn
             .query_row(
-                "SELECT COUNT(*)
+                "SELECT
+                    COALESCE(SUM(description IS NOT NULL AND description != ''), 0),
+                    COALESCE(SUM(publisher IS NOT NULL AND publisher != ''), 0)
                  FROM game_detail_metadata
-                 WHERE system = ?1
-                   AND description IS NOT NULL
-                   AND description != ''",
-                params![system],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|e| Error::Other(format!("query description stats: {e}")))?
-            as usize;
-        let publisher_known_count =
-            conn.query_row(
-                "SELECT COUNT(*)
-                 FROM game_detail_metadata
-                 WHERE system = ?1
-                   AND publisher IS NOT NULL
-                   AND publisher != ''",
-                params![system],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|e| Error::Other(format!("query publisher stats: {e}")))? as usize;
-
-        let manual_count = resource_rom_count(conn, system, resource_kind::MANUAL)?;
-        let video_count = resource_rom_count(conn, system, resource_kind::VIDEO)?;
-        let resource_count =
-            conn.query_row(
-                "SELECT COUNT(*)
-                 FROM library_game_resource
                  WHERE system = ?1",
                 params![system],
-                |row| row.get::<_, i64>(0),
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? as usize,
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                },
             )
-            .map_err(|e| Error::Other(format!("query resource stats: {e}")))? as usize;
+            .map_err(|e| Error::Other(format!("query detail-metadata stats: {e}")))?;
+
+        let (manual_count, video_count, resource_count) = resource_counts(conn, system)?;
 
         Ok(GameLibrarySystemStats {
             system: system.to_string(),
@@ -744,23 +752,39 @@ impl LibraryDb {
     }
 }
 
-fn count_where(conn: &Connection, system: &str, predicate: &str) -> Result<usize> {
-    let sql = format!("SELECT COUNT(*) FROM game_library WHERE system = ?1 AND {predicate}");
-    conn.query_row(&sql, params![system], |row| row.get::<_, i64>(0))
-        .map(|count| count as usize)
-        .map_err(|e| Error::Other(format!("query system stats count: {e}")))
-}
-
-fn resource_rom_count(conn: &Connection, system: &str, resource_type: &str) -> Result<usize> {
-    conn.query_row(
-        "SELECT COUNT(DISTINCT rom_filename)
-         FROM library_game_resource
-         WHERE system = ?1 AND resource_type = ?2",
-        params![system, resource_type],
-        |row| row.get::<_, i64>(0),
-    )
-    .map(|count| count as usize)
-    .map_err(|e| Error::Other(format!("query resource coverage stats: {e}")))
+/// Manual coverage, video coverage, and total resource count for a system in a
+/// single scan of `library_game_resource`. Manual/video are distinct-ROM counts
+/// (a ROM with several manuals counts once); the total counts every resource row.
+fn resource_counts(conn: &Connection, system: &str) -> Result<(usize, usize, usize)> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT resource_type, COUNT(*), COUNT(DISTINCT rom_filename)
+             FROM library_game_resource
+             WHERE system = ?1
+             GROUP BY resource_type",
+        )
+        .map_err(|e| Error::Other(format!("prepare resource coverage stats: {e}")))?;
+    let rows = stmt
+        .query_map(params![system], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)? as usize,
+                row.get::<_, i64>(2)? as usize,
+            ))
+        })
+        .map_err(|e| Error::Other(format!("query resource coverage stats: {e}")))?;
+    let (mut manual, mut video, mut total) = (0usize, 0usize, 0usize);
+    for row in rows {
+        let (resource_type, count, distinct_roms) =
+            row.map_err(|e| Error::Other(format!("read resource coverage stats: {e}")))?;
+        total += count;
+        match resource_type.as_str() {
+            resource_kind::MANUAL => manual = distinct_roms,
+            resource_kind::VIDEO => video = distinct_roms,
+            _ => {}
+        }
+    }
+    Ok((manual, video, total))
 }
 
 fn counts_json(conn: &Connection, system: &str, column: &str) -> Result<Option<String>> {

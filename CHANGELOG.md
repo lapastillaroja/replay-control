@@ -26,6 +26,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed hydration warnings caused by resource actions reading Leptos resources outside Suspense during client-side interaction.
 - Fixed GDI and multi-file disc sizes being shown as `0 KB` when the main descriptor file was small.
 
+### Performance
+
+- The Game Library page's per-system coverage stats are recomputed faster during library scans — each system's counts are now gathered in a single database pass instead of many repeated queries (measured ~1.5× faster on the device).
+
 ---
 
 ## [0.8.0]
