@@ -1593,11 +1593,11 @@
     min-width: 0;
     flex: 1 1 auto;
     max-width: 100%;
+    max-height: calc(1.18em * 3);
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--control-gap);
     line-height: 1.18;
     overflow-wrap: anywhere;
     text-wrap: balance;
