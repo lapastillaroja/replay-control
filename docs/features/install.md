@@ -28,7 +28,9 @@ After you are connected to the Pi, paste this command:
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-The installer downloads the latest stable release, installs the service, and starts Replay Control. When it finishes, type `exit`, then open `http://replay.local:8080` in your browser.
+The installer downloads the latest stable release, installs the service, and starts Replay Control. When it finishes, type `exit`, then open `https://replay.local:8443` in your browser.
+
+Replay Control uses a local self-signed HTTPS certificate. Your browser will show a security warning the first time you open it; choose the advanced or continue option to approve the exception for your Pi.
 
 ### If `replay.local` doesn't resolve
 
@@ -44,7 +46,7 @@ Replace `192.168.1.50` with your Pi's real IP address. After you are connected, 
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-Find the IP in your router's connected-devices list. Use the same IP in the browser too: `http://192.168.1.50:8080`.
+Find the IP in your router's connected-devices list. Use the same IP in the browser too: `https://192.168.1.50:8443`.
 
 ## Install from another computer (no SSH session)
 
@@ -133,11 +135,11 @@ The app will start automatically when the Pi boots. Uninstall isn't supported in
 | `/etc/default/replay-control` | Environment configuration. |
 | `/etc/avahi/services/replay-control.service` | mDNS service advertisement. |
 
-The service starts automatically on boot and listens on port 8080. Customise behaviour by editing `/etc/default/replay-control`:
+The service starts automatically on boot. The app listens on HTTPS port `8443`; HTTP port `8080` shows a page that points browsers to HTTPS. Customise behaviour by editing `/etc/default/replay-control`:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `REPLAY_PORT` | `8080` | Web UI port. |
+| `REPLAY_PORT` | `8080` | HTTP guidance page port. |
 | `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static-assets path. |
 | `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path. |
 | `REPLAY_CONFIG_PATH` | (auto-detected) | Override the RePlayOS config path. |
@@ -154,4 +156,4 @@ The service starts automatically on boot and listens on port 8080. Customise beh
 
 **Windows: `ssh` command not found.** OpenSSH client ships with Windows 10 build 1809 (Oct 2018) and later, and with all Windows 11 versions. If it's missing, enable it from **Settings → Apps → Optional Features → Add a feature → OpenSSH Client**.
 
-**Windows: `replay.local` doesn't resolve.** Use the Pi's IP address from your router's connected-devices list, then `ssh root@<ip>` and `http://<ip>:8080`. Common on Windows in VMs, where multicast often doesn't cross between host and guest.
+**Windows: `replay.local` doesn't resolve.** Use the Pi's IP address from your router's connected-devices list, then `ssh root@<ip>` and `https://<ip>:8443`. Common on Windows in VMs, where multicast often doesn't cross between host and guest.

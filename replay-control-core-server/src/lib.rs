@@ -12,6 +12,7 @@ pub mod external_metadata;
 pub mod launch;
 pub mod replay_api;
 pub mod replay_service;
+pub mod security;
 pub mod settings;
 pub mod sqlite;
 pub mod storage_id;

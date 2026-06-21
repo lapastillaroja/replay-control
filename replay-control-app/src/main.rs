@@ -6,11 +6,23 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(feature = "ssr")]
 mod ssr {
+    use axum::extract::connect_info::ConnectInfo;
+    use axum::http::StatusCode;
+    use axum::http::header::HOST;
+    use axum::http::{HeaderMap, Request};
+    use axum::response::Response;
+    use axum::response::{Html, IntoResponse};
+    use axum::routing::MethodRouter;
+    use axum_server::tls_rustls::RustlsConfig;
     use clap::Parser;
     use leptos::config::LeptosOptions;
     use replay_control_core::skins;
+    use replay_control_core_server::security::tls::{
+        ensure_self_signed_certificate, regenerate_self_signed_certificate,
+    };
     use replay_control_core_server::update::read_available_update;
     use serde::Serialize;
+    use std::net::SocketAddr;
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
@@ -31,9 +43,17 @@ mod ssr {
         about = "Replay Control — companion app for RePlayOS"
     )]
     struct Cli {
-        /// Port to listen on
+        /// HTTP port. With HTTPS enabled, this serves the HTTPS guidance page.
         #[arg(short, long, default_value = "8080")]
         port: u16,
+
+        /// HTTPS port for the main Replay Control app.
+        #[arg(long, default_value = "8443")]
+        https_port: u16,
+
+        /// Disable HTTPS and serve the app over plain HTTP. Dangerous: for local debugging only.
+        #[arg(long)]
+        dangerous_disable_https: bool,
 
         /// Storage root path override (auto-detected if not set)
         #[arg(long)]
@@ -58,6 +78,301 @@ mod ssr {
         /// Path to the site root (where pkg/ and style.css live)
         #[arg(long, default_value = "target/site")]
         site_root: String,
+    }
+
+    fn http_guidance_router(
+        https_port: u16,
+        state: api::AppState,
+        media_handler: MethodRouter,
+        captures_handler: MethodRouter,
+        manuals_handler: MethodRouter,
+        owned_manuals_handler: MethodRouter,
+        rom_docs_handler: MethodRouter,
+    ) -> axum::Router {
+        let loopback_compat_routes = axum::Router::new()
+            .nest("/api/core", api::core_routes().with_state(state))
+            .route("/captures/*path", captures_handler)
+            .route("/manuals/*path", manuals_handler)
+            .route("/owned-manuals/*path", owned_manuals_handler)
+            .route("/rom-docs/*path", rom_docs_handler)
+            .route("/media/*path", media_handler)
+            .route_layer(axum::middleware::from_fn(require_loopback));
+
+        axum::Router::new()
+            .merge(loopback_compat_routes)
+            .route(
+                "/api/version",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "version": replay_control_app::VERSION,
+                        "git_hash": replay_control_app::GIT_HASH,
+                    }))
+                }),
+            )
+            .route(
+                "/static/branding/logo-oneline-transparent.png",
+                axum::routing::get(|| async {
+                    (
+                        [
+                            ("content-type", "image/png"),
+                            ("cache-control", api::CACHE_IMMUTABLE),
+                        ],
+                        include_bytes!("../static/branding/logo-oneline-transparent.png")
+                            .as_slice(),
+                    )
+                }),
+            )
+            .fallback(axum::routing::any(move |headers: HeaderMap| async move {
+                https_guidance_response(&headers, https_port)
+            }))
+    }
+
+    async fn require_loopback(
+        request: Request<axum::body::Body>,
+        next: axum::middleware::Next,
+    ) -> Response {
+        let is_loopback = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .is_some_and(|ConnectInfo(addr)| addr.ip().is_loopback());
+        if is_loopback {
+            next.run(request).await
+        } else {
+            StatusCode::FORBIDDEN.into_response()
+        }
+    }
+
+    fn https_guidance_response(headers: &HeaderMap, https_port: u16) -> axum::response::Response {
+        let https_url = https_url_for_request(headers, https_port);
+        let https_url_html = escape_html(&https_url);
+        Html(format!(
+            r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use HTTPS - Replay Control</title>
+  <style>
+    :root {{
+      color-scheme: light dark;
+      --accent: #7dd3fc;
+      --accent-strong: #e0f2fe;
+      --surface: #111827;
+      --text: #f9fafb;
+      --muted: #d1d5db;
+      --subtle: #9ca3af;
+    }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--surface);
+      color: var(--text);
+    }}
+    main {{
+      width: min(34rem, calc(100vw - 2rem));
+      padding: 2rem;
+      box-sizing: border-box;
+    }}
+    .logo {{
+      display: block;
+      width: min(18rem, 82vw);
+      height: auto;
+      margin: 0 0 1.5rem;
+    }}
+    h1 {{ margin: 0 0 0.75rem; font-size: 1.75rem; letter-spacing: 0; }}
+    p {{ margin: 0 0 1rem; line-height: 1.55; color: var(--muted); }}
+    a {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.75rem;
+      padding: 0 1rem;
+      border-radius: 0.375rem;
+      background: var(--accent-strong);
+      color: #111827;
+      font-weight: 650;
+      text-decoration: none;
+    }}
+    code {{ overflow-wrap: anywhere; }}
+    .note {{ margin-top: 1rem; font-size: 0.95rem; color: var(--subtle); }}
+    .language {{
+      margin-top: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      color: var(--subtle);
+      font-size: 0.9rem;
+    }}
+    select {{
+      min-height: 2.25rem;
+      border: 1px solid color-mix(in srgb, var(--accent), transparent 45%);
+      border-radius: 0.375rem;
+      padding: 0 0.625rem;
+      background: #f9fafb;
+      color: #111827;
+      accent-color: var(--accent);
+    }}
+    option {{
+      background: #f9fafb;
+      color: #111827;
+    }}
+    select:focus {{
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="/static/branding/logo-oneline-transparent.png" alt="Replay Control">
+    <h1 data-i18n="title">Use HTTPS</h1>
+    <p data-i18n="body">Replay Control is available over an encrypted local HTTPS connection.</p>
+    <p><a href="{https_url_html}" data-i18n="button">Open Replay Control over HTTPS</a></p>
+    <p class="note"><span data-i18n="note_before">This device uses a local self-signed certificate. Your browser will show a security warning the first time you open</span> <code>{https_url_html}</code>. <span data-i18n="note_after">Choose the advanced or continue option to approve the security exception for this device.</span></p>
+    <label class="language">
+      <span data-i18n="language">Language</span>
+      <select id="language-select" aria-label="Language">
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="ja">日本語</option>
+      </select>
+    </label>
+  </main>
+  <script>
+    const messages = {{
+      en: {{
+        title: "Use HTTPS",
+        body: "Replay Control is available over an encrypted local HTTPS connection.",
+        button: "Open Replay Control over HTTPS",
+        note_before: "This device uses a local self-signed certificate. Your browser will show a security warning the first time you open",
+        note_after: "Choose the advanced or continue option to approve the security exception for this device.",
+        language: "Language",
+      }},
+      es: {{
+        title: "Usa HTTPS",
+        body: "Replay Control está disponible mediante una conexión HTTPS local cifrada.",
+        button: "Abrir Replay Control con HTTPS",
+        note_before: "Este dispositivo usa un certificado local autofirmado. El navegador mostrará una advertencia de seguridad la primera vez que abras",
+        note_after: "Elige la opción avanzada o continuar para aprobar la excepción de seguridad de este dispositivo.",
+        language: "Idioma",
+      }},
+      ja: {{
+        title: "HTTPSを使用",
+        body: "Replay Controlは暗号化されたローカルHTTPS接続で利用できます。",
+        button: "HTTPSでReplay Controlを開く",
+        note_before: "このデバイスはローカルの自己署名証明書を使用しています。初めて開くと、ブラウザーにセキュリティ警告が表示されます:",
+        note_after: "詳細または続行のオプションを選び、このデバイスのセキュリティ例外を承認してください。",
+        language: "言語",
+      }},
+    }};
+
+    const supported = Object.keys(messages);
+    const select = document.getElementById("language-select");
+
+    function normalizeLanguage(language) {{
+      const base = String(language || "").toLowerCase().split("-")[0];
+      return supported.includes(base) ? base : null;
+    }}
+
+    function browserLanguage() {{
+      const languages = navigator.languages && navigator.languages.length
+        ? navigator.languages
+        : [navigator.language];
+      return languages.map(normalizeLanguage).find(Boolean) || "en";
+    }}
+
+    function applyLanguage(language) {{
+      const selected = messages[language] ? language : "en";
+      document.documentElement.lang = selected;
+      document.title = `${{messages[selected].title}} - Replay Control`;
+      document.querySelectorAll("[data-i18n]").forEach((node) => {{
+        node.textContent = messages[selected][node.dataset.i18n];
+      }});
+      select.value = selected;
+    }}
+
+    select.addEventListener("change", (event) => applyLanguage(event.target.value));
+    applyLanguage(browserLanguage());
+  </script>
+</body>
+</html>"#
+        ))
+        .into_response()
+    }
+
+    fn https_url_for_request(headers: &HeaderMap, https_port: u16) -> String {
+        let host = headers
+            .get(HOST)
+            .and_then(|value| value.to_str().ok())
+            .and_then(validated_host_without_port)
+            .unwrap_or_else(|| "replay.local".to_string());
+        format!("https://{host}:{https_port}/")
+    }
+
+    fn validated_host_without_port(host: &str) -> Option<String> {
+        let host = host.trim();
+        if host.is_empty() {
+            return None;
+        }
+        if host.starts_with('[') {
+            let end = host.find(']')?;
+            let address = &host[1..end];
+            let remainder = &host[end + 1..];
+            if !(remainder.is_empty()
+                || remainder.strip_prefix(':').is_some_and(|port| {
+                    !port.is_empty() && port.chars().all(|ch| ch.is_ascii_digit())
+                }))
+            {
+                return None;
+            }
+            let ip: std::net::IpAddr = address.parse().ok()?;
+            return ip.is_ipv6().then(|| format!("[{ip}]"));
+        }
+        let name = host.split_once(':').map_or(host, |(name, port)| {
+            if port.chars().all(|ch| ch.is_ascii_digit()) {
+                name
+            } else {
+                ""
+            }
+        });
+        if name.is_empty() {
+            return None;
+        }
+        if let Ok(ip) = name.parse::<std::net::IpAddr>() {
+            return ip.is_ipv4().then(|| ip.to_string());
+        }
+        is_valid_dns_name(name).then(|| name.to_ascii_lowercase())
+    }
+
+    fn is_valid_dns_name(name: &str) -> bool {
+        name.len() <= 253
+            && name.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+            })
+    }
+
+    fn escape_html(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len());
+        for ch in value.chars() {
+            match ch {
+                '&' => escaped.push_str("&amp;"),
+                '<' => escaped.push_str("&lt;"),
+                '>' => escaped.push_str("&gt;"),
+                '"' => escaped.push_str("&quot;"),
+                '\'' => escaped.push_str("&#39;"),
+                _ => escaped.push(ch),
+            }
+        }
+        escaped
     }
 
     /// Broadcast-based SSE stream for activity state changes.
@@ -915,6 +1230,11 @@ mod ssr {
 
         // Clone state for the storage guard middleware before build_router consumes it.
         let guard_state = app_state.clone();
+        let http_media_handler = media_handler.clone();
+        let http_captures_handler = captures_handler.clone();
+        let http_manuals_handler = manuals_handler.clone();
+        let http_owned_manuals_handler = owned_manuals_handler.clone();
+        let http_rom_docs_handler = rom_docs_handler.clone();
 
         let app = api::build_router(app_state, leptos_options)
             // DEPRECATED: Remove /more redirects in next-next beta release
@@ -1026,13 +1346,136 @@ mod ssr {
             .layer(CompressionLayer::new().gzip(true))
             .layer(CorsLayer::permissive());
 
-        let app = api::with_storage_guard(app, guard_state);
+        let app = api::with_storage_guard(app, guard_state.clone());
 
-        let addr = format!("0.0.0.0:{}", cli.port);
-        tracing::info!("Starting server on {addr}");
+        if cli.dangerous_disable_https {
+            let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
+            tracing::warn!(
+                "dangerous_disable_https is set; serving Replay Control over plain HTTP on {addr}"
+            );
+            let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+            return;
+        }
 
-        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app).await.unwrap();
+        let certificate_paths = ensure_self_signed_certificate(&guard_state.data_dir)
+            .unwrap_or_else(|error| {
+                tracing::error!("failed to prepare HTTPS certificate: {error}");
+                std::process::exit(1);
+            });
+        let tls_config = match RustlsConfig::from_pem_file(
+            &certificate_paths.cert,
+            &certificate_paths.key,
+        )
+        .await
+        {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::warn!(
+                    "failed to load HTTPS certificate, regenerating self-signed certificate: {error}"
+                );
+                let regenerated_paths = regenerate_self_signed_certificate(&guard_state.data_dir)
+                    .unwrap_or_else(|error| {
+                        tracing::error!("failed to regenerate HTTPS certificate: {error}");
+                        std::process::exit(1);
+                    });
+                RustlsConfig::from_pem_file(&regenerated_paths.cert, &regenerated_paths.key)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!("failed to load regenerated HTTPS certificate: {error}");
+                        std::process::exit(1);
+                    })
+            }
+        };
+
+        let http_addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
+        let https_addr = SocketAddr::from(([0, 0, 0, 0], cli.https_port));
+        let http_app = http_guidance_router(
+            cli.https_port,
+            guard_state.clone(),
+            http_media_handler,
+            http_captures_handler,
+            http_manuals_handler,
+            http_owned_manuals_handler,
+            http_rom_docs_handler,
+        );
+
+        tracing::info!("Starting HTTPS app on https://0.0.0.0:{}", cli.https_port);
+        tracing::info!(
+            "HTTP guidance page available on http://0.0.0.0:{}",
+            cli.port
+        );
+        tracing::info!(
+            "Try https://replay.local:{} or use this device's LAN IP address",
+            cli.https_port
+        );
+
+        let http_listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
+        let http_server = axum::serve(
+            http_listener,
+            http_app.into_make_service_with_connect_info::<SocketAddr>(),
+        );
+        let https_server = axum_server::bind_rustls(https_addr, tls_config)
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+
+        tokio::select! {
+            result = http_server => result.unwrap(),
+            result = https_server => result.unwrap(),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{https_url_for_request, validated_host_without_port};
+        use axum::http::{HeaderMap, HeaderValue, header};
+
+        #[test]
+        fn builds_https_url_from_http_host_header() {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::HOST, HeaderValue::from_static("replay.local:8080"));
+
+            assert_eq!(
+                https_url_for_request(&headers, 8443),
+                "https://replay.local:8443/"
+            );
+        }
+
+        #[test]
+        fn validates_hosts_before_using_them_in_guidance_page() {
+            assert_eq!(
+                validated_host_without_port("192.168.1.30:8080").as_deref(),
+                Some("192.168.1.30")
+            );
+            assert_eq!(
+                validated_host_without_port("[fd00::1]:8080").as_deref(),
+                Some("[fd00::1]")
+            );
+            assert_eq!(
+                validated_host_without_port("replay.local").as_deref(),
+                Some("replay.local")
+            );
+            assert_eq!(validated_host_without_port("[fd00::1]:bad"), None);
+            assert_eq!(validated_host_without_port("bad\"><script>"), None);
+        }
+
+        #[test]
+        fn hostile_host_header_falls_back_to_replay_local() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::HOST,
+                HeaderValue::from_str("bad\"><script>").unwrap(),
+            );
+
+            assert_eq!(
+                https_url_for_request(&headers, 8443),
+                "https://replay.local:8443/"
+            );
+        }
     }
 }
 

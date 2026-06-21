@@ -29,10 +29,12 @@ If `replay.local` doesn't resolve, find the Pi's IP in your router's connected-d
 Open a browser and go to:
 
 ```
-http://replay.local:8080
+https://replay.local:8443
 ```
 
-If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `http://your-pi-ip:8080`).
+If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `https://your-pi-ip:8443`).
+
+Replay Control uses a local self-signed HTTPS certificate. Your browser will show a security warning the first time you open it; approve the exception for your Pi to continue.
 
 > **Tip:** To find your Pi's IP address, check your router's connected devices list, or run `hostname -I` on the Pi.
 

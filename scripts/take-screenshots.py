@@ -23,7 +23,7 @@ the locale to English afterwards.
 
 Usage:
     python scripts/take-screenshots.py
-    APP_URL=http://replay.local:8080 python scripts/take-screenshots.py
+    APP_URL=https://replay.local:8443 python scripts/take-screenshots.py
     python scripts/take-screenshots.py --skip-prep   # capture only
 """
 
@@ -674,7 +674,8 @@ def main():
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page()
+        context = browser.new_context(ignore_https_errors=True)
+        page = context.new_page()
 
         # Check app is running
         try:
@@ -682,6 +683,7 @@ def main():
         except (PlaywrightTimeout, Exception) as e:
             print(f"Error: cannot reach {APP_URL} — is the app running?")
             print(f"  ({e})")
+            context.close()
             browser.close()
             sys.exit(1)
 
@@ -760,6 +762,7 @@ def main():
                 if game_pages and launch_now_playing(page, game["rom"]):
                     capture_pages(page, game_pages, is_device, output_dir, errors)
 
+        context.close()
         browser.close()
 
     if errors:

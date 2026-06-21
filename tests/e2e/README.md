@@ -13,7 +13,7 @@ Browser-based tests using Playwright. Two flavours of test live here:
 
 ## Prerequisites
 
-- Raspberry Pi running Replay Control at `replay.local:8080`
+- Raspberry Pi running Replay Control at `https://replay.local:8443`
 - Python 3.10+ with Playwright + pytest-timeout in a venv (`pip install`
   outside a venv is blocked by PEP 668 on modern Debian/Ubuntu/Fedora;
   the `--timeout` flag in the examples below is a `pytest-timeout`

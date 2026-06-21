@@ -91,7 +91,8 @@
           <p class="text-center mb-3" style="color: #ccc;">Open PowerShell, Terminal, or any shell. Connect to the Pi first, then paste the installer:</p>
           {{ highlight "ssh root@replay.local\n# default password: replayos\ncurl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash" "bash" "" }}
           <p class="mt-3 text-center" style="color: #888; font-size: 0.85rem;">If <code>replay.local</code> doesn't resolve (common on Windows and in VMs), find the Pi's IP in your router and use <code>ssh root@&lt;ip&gt;</code> instead.</p>
-          <p class="mt-2 text-center">Then open <code>http://replay.local:8080</code> in your browser.</p>
+          <p class="mt-2 text-center">Then open <code>https://replay.local:8443</code> in your browser.</p>
+          <p class="mt-2 text-center" style="color: #888; font-size: 0.85rem;">Your browser will show a security warning for the local self-signed certificate. Approve the exception for your Pi to continue.</p>
           <p class="mt-4 text-center" style="color: #888; font-size: 0.85rem;">See the <a href="{{ relref . "docs/features/install.md" }}">install guide</a> for beta builds, SD-card install, and other options.</p>
         </div>
       </div>

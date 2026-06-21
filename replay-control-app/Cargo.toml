@@ -1,6 +1,6 @@
 [package]
 name = "replay-control-app"
-version = "0.10.0-beta.1"
+version = "0.10.0-beta.2"
 edition = "2024"
 description = "Replay Control web app for RePlayOS"
 license.workspace = true
@@ -35,6 +35,7 @@ replay-control-core-server = { path = "../replay-control-core-server", default-f
 # SSR-only
 # axum and leptos_axum are part of the exact-pinned Leptos set above.
 axum = { version = "=0.7.9", features = ["multipart"], optional = true }
+axum-server = { version = "0.7.2", features = ["tls-rustls"], optional = true }
 leptos_axum = { version = "=0.7.8", optional = true }
 tower-http = { version = "0.7.0", features = ["fs", "cors", "compression-gzip", "set-header"], optional = true }
 tower = { version = "0.5.3", optional = true }
@@ -108,6 +109,7 @@ ssr = [
     "replay-control-core-server/library",
     "dep:replay-control-core-server",
     "dep:axum",
+    "dep:axum-server",
     "dep:leptos_axum",
     "dep:tower-http",
     "dep:tower",

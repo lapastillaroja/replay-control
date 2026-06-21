@@ -33,7 +33,7 @@ do_start() {
     # this, when an exec session (e.g. a test step) starts the service, the
     # app inherits the exec's pipe and dies with SIGPIPE the moment the
     # session closes — the new instance lives only a few ms.
-    $APP_BIN --port "$PORT" --site-root /usr/local/share/replay/site --storage-path /media/usb \
+    $APP_BIN --dangerous-disable-https --port "$PORT" --site-root /usr/local/share/replay/site --storage-path /media/usb \
         </dev/null >/proc/1/fd/1 2>/proc/1/fd/2 &
     echo $! > "$PIDFILE"
     echo "Started replay-control (pid $!)"

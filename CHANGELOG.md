@@ -4,6 +4,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.10.0-beta.2]
+
+> Replay Control now serves the app over local HTTPS by default, while keeping a safe HTTP landing page for setup and troubleshooting.
+
+### Added
+
+- Added local HTTPS on port `8443` by default, with an automatically generated self-signed certificate for `replay.local`, the device hostname, localhost, and current LAN IP addresses. The certificate is regenerated when the advertised hostname or LAN IP set changes, and startup can recover by regenerating it if the stored PEM files are corrupt or partially written.
+- Added an HTTP guidance page on port `8080` that points browsers to the HTTPS URL, includes the Replay Control logo, supports English, Spanish, and Japanese based on the browser language, and validates request hostnames before rendering links.
+- Added a `--dangerous-disable-https` debug flag for development and test environments that need the old plain-HTTP behavior.
+
+### Changed
+
+- Updated install, getting-started, docs-site, screenshot, and e2e guidance to use `https://replay.local:8443`.
+- Kept the libretro core's localhost HTTP API and media routes available on port `8080`, restricted to loopback access, so TV-side browsing continues to work while LAN browsers use HTTPS.
+- Container and test launch paths now explicitly opt into dangerous HTTP mode when they only expose port `8080`.
+
+---
+
 ## [0.10.0-beta.1]
 
 > Box art now appears for more games — arcade titles with "&" or "'" in their names, Amiga titles, and sequels named with digits.

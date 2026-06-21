@@ -7,7 +7,7 @@ to a local directory so the layouts can be inspected side by side.
 
 Usage:
     python scripts/check-layout-sizes.py
-    APP_URL=http://192.168.10.30:8080 python scripts/check-layout-sizes.py
+    APP_URL=https://192.168.10.30:8443 python scripts/check-layout-sizes.py
     python scripts/check-layout-sizes.py --page settings --viewport 1440x900
 """
 
@@ -85,11 +85,13 @@ def main() -> int:
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page()
+        context = browser.new_context(ignore_https_errors=True)
+        page = context.new_page()
         try:
             page.goto(APP_URL, timeout=5000)
         except (PlaywrightTimeout, Exception) as exc:
             print(f"Error: cannot reach {APP_URL} ({exc})")
+            context.close()
             browser.close()
             return 1
 
@@ -103,6 +105,7 @@ def main() -> int:
                 out_path = output_dir / f"{page_name}-{viewport_name}.png"
                 page.screenshot(path=str(out_path), full_page=False)
 
+        context.close()
         browser.close()
 
     print(f"Saved screenshots to {output_dir}/")

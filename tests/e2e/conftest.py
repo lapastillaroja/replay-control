@@ -33,10 +33,13 @@ CONTAINER_ENGINE = os.environ.get("CONTAINER_ENGINE", "")
 
 # App URL
 PI_IP = os.environ.get("PI_IP", "192.168.10.30")
-DEFAULT_PORT = "8080"
+DEFAULT_HTTP_PORT = "8080"
+DEFAULT_HTTPS_PORT = "8443"
 PI_URL = os.environ.get(
     "APP_URL",
-    f"http://{PI_IP}:{DEFAULT_PORT}" if not CONTAINER else f"http://127.0.0.1:{DEFAULT_PORT}",
+    f"https://{PI_IP}:{DEFAULT_HTTPS_PORT}"
+    if not CONTAINER
+    else f"http://127.0.0.1:{DEFAULT_HTTP_PORT}",
 )
 
 # SSH settings (Pi mode only)
@@ -125,7 +128,7 @@ ssh_cmd = exec_cmd
 
 
 def get_pi_version() -> dict:
-    raw = exec_cmd(f"curl -s http://localhost:{DEFAULT_PORT}/api/version")
+    raw = exec_cmd(f"curl -s http://localhost:{DEFAULT_HTTP_PORT}/api/version")
     return json.loads(raw)
 
 
@@ -212,9 +215,10 @@ def browser():
 @pytest.fixture()
 def page(browser):
     """Per-test browser page with automatic cleanup."""
-    p = browser.new_page()
+    context = browser.new_context(ignore_https_errors=True)
+    p = context.new_page()
     yield p
-    p.close()
+    context.close()
 
 
 @pytest.fixture(scope="session")

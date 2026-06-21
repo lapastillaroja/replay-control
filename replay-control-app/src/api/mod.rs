@@ -1562,6 +1562,11 @@ pub fn build_router(
         .with_state(app_state)
 }
 
+/// Stable REST routes consumed by the in-repo libretro core.
+pub fn core_routes() -> axum::Router<AppState> {
+    core_api::routes()
+}
+
 /// Paths that bypass the storage guard middleware.
 /// When storage is unavailable, all other requests redirect to `/waiting`.
 pub fn is_allowed_without_storage(path: &str) -> bool {
