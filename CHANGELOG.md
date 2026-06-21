@@ -20,6 +20,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Kept the libretro core's localhost HTTP API and media routes available on port `8080`, restricted to loopback access, so TV-side browsing continues to work while LAN browsers use HTTPS.
 - Container and test launch paths now explicitly opt into dangerous HTTP mode when they only expose port `8080`.
 
+### Fixed
+
+- Fixed a console warning logged when clearing metadata or the search index from the Game Library page.
+
 ---
 
 ## [0.10.0-beta.1]

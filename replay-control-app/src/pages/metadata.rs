@@ -732,7 +732,7 @@ fn DataManagementSection(
             match server_fns::clear_thumbnail_index().await {
                 Ok(()) => {
                     index_result.set(Some(
-                        t(i18n.locale.get(), Key::MetadataIndexCleared).to_string(),
+                        t(i18n.locale.get_untracked(), Key::MetadataIndexCleared).to_string(),
                     ));
                 }
                 Err(e) => {
@@ -754,7 +754,7 @@ fn DataManagementSection(
             match server_fns::clear_metadata().await {
                 Ok(()) => {
                     metadata_result.set(Some(
-                        t(i18n.locale.get(), Key::MetadataMetadataCleared).to_string(),
+                        t(i18n.locale.get_untracked(), Key::MetadataMetadataCleared).to_string(),
                     ));
                     snapshot.refetch();
                 }
