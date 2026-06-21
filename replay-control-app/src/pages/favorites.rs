@@ -118,10 +118,14 @@ where
     // The latest added favorite for the hero card.
     let featured = move || by_date().into_iter().next();
 
-    // Recently added favorites (~10, excluding the featured one), newest-first.
+    // Recently added favorites (excluding the featured one), newest-first.
     let recent_items = move || {
         let sorted = by_date();
-        sorted.into_iter().skip(1).take(10).collect::<Vec<_>>()
+        sorted
+            .into_iter()
+            .skip(1)
+            .take(crate::MAX_PICKS)
+            .collect::<Vec<_>>()
     };
 
     // System summary: for each system, count and the most recently added favorite.

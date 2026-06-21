@@ -175,6 +175,12 @@ pub async fn get_related_games(
                 .unwrap_or_default();
 
             // Series siblings: prefer Wikidata (has ordering), fall back to algorithmic series_key.
+            //
+            // Capped at 20 below, which truncates the largest franchises on purpose.
+            // For reference (measured 2026-06-21): curated Wikidata series reach
+            // ~38 distinct titles (Saga Bomberman; DDR 31, Mega Man 27, Zelda 23),
+            // and the algorithmic series_key fallback groups up to ~80 (Pokémon).
+            // Raise the limit or add a "see all" if showing full franchises matters.
             let (mut series_raw, series_name_raw) = {
                 let wikidata = LibraryDb::wikidata_series_siblings(
                     conn,
@@ -240,9 +246,14 @@ pub async fn get_related_games(
             let similar = if detail_genre.is_empty() {
                 Vec::new()
             } else {
-                let limit = if is_arcade { 24 } else { 8 };
-                LibraryDb::similar_by_genre(conn, &system_cl, &detail_genre, &filename_cl, limit)
-                    .unwrap_or_default()
+                LibraryDb::similar_by_genre(
+                    conn,
+                    &system_cl,
+                    &detail_genre,
+                    &filename_cl,
+                    crate::MAX_PICKS,
+                )
+                .unwrap_or_default()
             };
 
             let all_system_roms: Vec<String> = if is_arcade {
@@ -497,15 +508,18 @@ pub async fn get_related_games(
     // Build similar games. The two-tier similar_by_genre query already orders
     // by exact genre match first (relevance=2) then genre_group (relevance=1),
     // so we just take the top results.
-    let similar_games: Vec<RecommendedGame> =
-        similar_pool.iter().take(8).map(to_recommended).collect();
+    let similar_games: Vec<RecommendedGame> = similar_pool
+        .iter()
+        .take(crate::MAX_PICKS)
+        .map(to_recommended)
+        .collect();
 
     // Build "more on this board" row: other games on the same board, excluding
     // the current title. Links to the dedicated /board/<tag> page.
     let same_board: Vec<RecommendedGame> = same_board_pool
         .iter()
         .filter(|e| e.base_title != base_title)
-        .take(8)
+        .take(crate::MAX_PICKS)
         .map(to_recommended)
         .collect();
     let same_board_href = if same_board.is_empty() {

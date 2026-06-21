@@ -12,6 +12,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - Recent games can now be removed from the home page. A **×** button appears on hover (always visible on touch devices) for each card in the "Last Played" and "Recently Played" rows. Removal is confirmed before taking effect and is immediately reflected in the UI.
 
+### Changed
+
+- The home **Recently Played** row, the **Recently Added** favorites row, and the **More like this** and **More on this board** rows on a game's page now show up to 12 games (previously 8–10), filling out the rows on larger screens.
+
 ### Fixed
 
 - Fixed missing box art for arcade games whose names contain an ampersand or apostrophe — for example **Dungeons & Dragons: Shadow over Mystara**, **Street Fighter Alpha: Warriors' Dreams**, and other CPS2 titles. The game info was already correct, but the photos were missing; the underlying game names are now read correctly so the artwork matches.

@@ -5,6 +5,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Git commit hash, embedded at build time.
 pub const GIT_HASH: &str = env!("GIT_HASH");
 
+/// Max games surfaced in a compact game list (recently played, recently added
+/// favorites, "more like this", "more on this board"). Sized to fill whole rows
+/// of the card grid, which is 4 or 6 columns wide on larger screens — 12 divides
+/// both. Revisit if those grid column counts change.
+pub const MAX_PICKS: usize = 12;
+
 pub mod components;
 pub mod hooks;
 pub mod i18n;
