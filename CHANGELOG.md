@@ -4,6 +4,29 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.9.0]
+
+> A richer game detail page with saved resources, user captures, and clearer recommendations.
+
+### Highlights
+
+- **Game detail pages now organize everything you need around the game itself.** Game info has a denser summary, expandable descriptions, and a full metadata table; screenshots and user captures share one gallery and lightbox; and related games are grouped under a clear **Recommendations** section.
+- **Resources are now first-class.** Manuals, guides, links, and videos can be saved to a game, while suggested catalog resources stay separate and shrink back once you have your own saved items. Suggested manuals download as manuals, videos can be searched or pasted, duplicate links are rejected consistently, and saved resources update immediately in the UI.
+- **User captures can be managed from the detail page.** Captures appear alongside provided screenshots with matching thumbnail sizing, update live as new screenshots are taken, and can be deleted with confirmation from the gallery or lightbox.
+
+### Changed
+
+- Back buttons, game-title wrapping, resource rows, pending save indicators, and expanded video embeds were aligned with the app's shared control styling.
+- The detail page now keeps long game titles readable at the normal title size, wrapping up to three lines instead of shrinking text.
+
+### Fixed
+
+- Fixed saved resource links with superficial URL differences, such as trailing slashes or casing, being stored as hidden duplicates that could reappear after deletion.
+- Fixed hydration warnings caused by resource actions reading Leptos resources outside Suspense during client-side interaction.
+- Fixed GDI and multi-file disc sizes being shown as `0 KB` when the main descriptor file was small.
+
+---
+
 ## [0.8.0]
 
 > RetroAchievements library flagging, Amiga identification, and cleaner game names.

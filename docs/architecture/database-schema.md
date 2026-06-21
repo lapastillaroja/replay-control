@@ -720,6 +720,31 @@ User-saved manual resources for a game. Downloaded manuals are stored under `<st
 | `game_manual_resource_idx_base_title` | `(system, base_title)` | Sharing saved manuals across ROM variants of the same game |
 | `game_manual_resource_idx_resource_key` | `(system, rom_filename, resource_key)` | Suppressing duplicate suggestions after a manual is saved |
 
+### game_resource_link
+
+User-saved external links for a game. These are non-downloadable resources such as strategy guides, wiki pages, and non-video links pinned from suggested resources or added by the user.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| system | TEXT | System folder name (PK part 1) |
+| base_title | TEXT | Base title for cross-ROM link sharing |
+| rom_filename | TEXT | ROM filename that originally saved the link (PK part 2) |
+| link_id | TEXT | Stable saved-link ID, currently a URL hash (PK part 3) |
+| url | TEXT | Link URL |
+| title | TEXT | Display title |
+| source | TEXT | Optional source/provider attribution, e.g. `"shmups_wiki"` |
+| resource_type | TEXT | Resource kind, e.g. `"strategy_guide"`, `"video_index"`, or `"link"` |
+| added_at | INTEGER | Unix timestamp |
+
+**PRIMARY KEY**: `(system, rom_filename, link_id)`
+
+**Indexes**:
+
+| Index | Columns | Covers |
+|-------|---------|--------|
+| `game_resource_link_idx_base_title` | `(system, base_title)` | Sharing saved links across ROM variants of the same game |
+| `game_resource_link_idx_url` | `(system, rom_filename, url)` | Suppressing duplicate suggestions after a link is saved |
+
 ## Schema Migrations
 
 `library.db` has a versioned migration handler in `LibraryDb::run_migrations`. The current `SCHEMA_VERSION` is **9**. Recent library-build pipeline shape changes also use open-time schema validation: if rebuildable `library.db` tables are missing required columns or indexes, the table is recreated and startup discovery repopulates it.

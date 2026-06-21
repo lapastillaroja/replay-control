@@ -15,7 +15,7 @@ use replay_control_core::error::{Error, Result};
 /// Filename for the SQLite user data database.
 pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
-pub use replay_control_core::user_data_db::VideoEntry;
+pub use replay_control_core::user_data_db::{ResourceEntry, VideoEntry};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManualOrigin {
@@ -64,7 +64,12 @@ pub struct UserDataDb;
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_manual_resource"];
+    pub const TABLES: &[&str] = &[
+        "box_art_overrides",
+        "game_videos",
+        "game_manual_resource",
+        "game_resource_link",
+    ];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
     /// without touching the filesystem. Useful for callers that need the path
@@ -152,7 +157,25 @@ impl UserDataDb {
                 CREATE INDEX IF NOT EXISTS game_manual_resource_idx_base_title
                     ON game_manual_resource(system, base_title);
                 CREATE INDEX IF NOT EXISTS game_manual_resource_idx_resource_key
-                    ON game_manual_resource(system, rom_filename, resource_key);",
+                    ON game_manual_resource(system, rom_filename, resource_key);
+
+                CREATE TABLE IF NOT EXISTS game_resource_link (
+                    system TEXT NOT NULL,
+                    base_title TEXT NOT NULL DEFAULT '',
+                    rom_filename TEXT NOT NULL,
+                    link_id TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    source TEXT,
+                    resource_type TEXT NOT NULL,
+                    added_at INTEGER NOT NULL,
+                    PRIMARY KEY (system, rom_filename, link_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS game_resource_link_idx_base_title
+                    ON game_resource_link(system, base_title);
+                CREATE INDEX IF NOT EXISTS game_resource_link_idx_url
+                    ON game_resource_link(system, rom_filename, url);",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Self::migrate_tables(conn)?;
@@ -318,9 +341,23 @@ impl UserDataDb {
         base_title: &str,
         entry: &VideoEntry,
     ) -> Result<()> {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM game_videos
+                 WHERE system = ?1 AND base_title = ?2 AND video_id = ?3
+                 LIMIT 1",
+                params![system, base_title, &entry.id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to check game_video duplicate: {e}")))?;
+        if exists.is_some() {
+            return Err(Error::Other("This video is already saved.".to_string()));
+        }
+
         let affected = conn
             .execute(
-                "INSERT OR IGNORE INTO game_videos
+                "INSERT INTO game_videos
                     (system, base_title, rom_filename, video_id, url, platform,
                      platform_video_id, title, added_at, from_recommendation, tag)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -353,12 +390,23 @@ impl UserDataDb {
         rom_filename: &str,
         video_id: &str,
     ) -> Result<()> {
-        conn.execute(
-            "DELETE FROM game_videos
+        let base_title = conn
+            .query_row(
+                "SELECT base_title FROM game_videos
                  WHERE system = ?1 AND rom_filename = ?2 AND video_id = ?3",
-            params![system, rom_filename, video_id],
-        )
-        .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
+                params![system, rom_filename, video_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to query game_video: {e}")))?;
+        if let Some(base_title) = base_title {
+            conn.execute(
+                "DELETE FROM game_videos
+                 WHERE system = ?1 AND base_title = ?2 AND video_id = ?3",
+                params![system, base_title, video_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
+        }
         Ok(())
     }
 
@@ -496,7 +544,144 @@ impl UserDataDb {
         Ok(entry)
     }
 
-    /// Delete all user data entries for a ROM (box art overrides, videos, manuals).
+    pub fn get_game_resource_links(
+        conn: &Connection,
+        system: &str,
+        base_titles: &[&str],
+    ) -> Result<Vec<ResourceEntry>> {
+        if base_titles.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders: Vec<String> = (0..base_titles.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect();
+        let sql = format!(
+            "SELECT link_id, url, title, source, resource_type, added_at, rom_filename
+             FROM game_resource_link
+             WHERE system = ?1 AND base_title IN ({})
+             ORDER BY added_at DESC",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare get_game_resource_links: {e}")))?;
+
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            Vec::with_capacity(1 + base_titles.len());
+        param_values.push(Box::new(system.to_string()));
+        for bt in base_titles {
+            param_values.push(Box::new(bt.to_string()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok(ResourceEntry {
+                    id: row.get(0)?,
+                    url: row.get(1)?,
+                    title: row.get(2)?,
+                    source: row.get(3)?,
+                    resource_type: row.get(4)?,
+                    added_at: row.get::<_, i64>(5)? as u64,
+                    rom_filename: row.get(6)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query game_resource_link: {e}")))?;
+
+        let mut seen = std::collections::HashSet::new();
+        let mut links = Vec::new();
+        for row in rows.flatten() {
+            if seen.insert(normalized_resource_url_key(&row.url)) {
+                links.push(row);
+            }
+        }
+        Ok(links)
+    }
+
+    pub fn add_game_resource_link(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        base_title: &str,
+        entry: &ResourceEntry,
+    ) -> Result<()> {
+        let normalized_url = normalized_resource_url_key(&entry.url);
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM game_resource_link
+                 WHERE system = ?1
+                   AND base_title = ?2
+                   AND (link_id = ?3 OR lower(rtrim(url, '/')) = ?4)
+                 LIMIT 1",
+                params![system, base_title, &entry.id, normalized_url],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|e| {
+                Error::Other(format!("Failed to check game_resource_link duplicate: {e}"))
+            })?;
+        if exists.is_some() {
+            return Err(Error::Other("This link is already saved.".to_string()));
+        }
+
+        let affected = conn
+            .execute(
+                "INSERT INTO game_resource_link
+                    (system, base_title, rom_filename, link_id, url, title, source,
+                     resource_type, added_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    system,
+                    base_title,
+                    rom_filename,
+                    &entry.id,
+                    &entry.url,
+                    &entry.title,
+                    &entry.source,
+                    &entry.resource_type,
+                    entry.added_at as i64,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to add game_resource_link: {e}")))?;
+
+        if affected == 0 {
+            return Err(Error::Other("This link is already saved.".to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn remove_game_resource_link(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        link_id: &str,
+    ) -> Result<()> {
+        let row = conn
+            .query_row(
+                "SELECT base_title, url FROM game_resource_link
+                 WHERE system = ?1 AND rom_filename = ?2 AND link_id = ?3",
+                params![system, rom_filename, link_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to query game_resource_link: {e}")))?;
+        if let Some((base_title, url)) = row {
+            let normalized_url = normalized_resource_url_key(&url);
+            conn.execute(
+                "DELETE FROM game_resource_link
+                 WHERE system = ?1
+                   AND base_title = ?2
+                   AND (link_id = ?3 OR lower(rtrim(url, '/')) = ?4)",
+                params![system, base_title, link_id, normalized_url],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove game_resource_link: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// Delete all user data entries for a ROM (box art overrides, videos, manuals, links).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -508,6 +693,10 @@ impl UserDataDb {
         );
         let _ = conn.execute(
             "DELETE FROM game_manual_resource WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+        let _ = conn.execute(
+            "DELETE FROM game_resource_link WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
     }
@@ -531,6 +720,12 @@ impl UserDataDb {
             params![system, old_filename, new_filename],
         ) {
             tracing::warn!("Failed to update game_manual_resource: {e}");
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE game_resource_link SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_resource_link: {e}");
         }
     }
 }
@@ -601,4 +796,221 @@ mod tests {
             UserDataDb::get_game_manuals(&conn, "nintendo_snes", &["super mario world"]).unwrap();
         assert!(rows.is_empty());
     }
+
+    #[test]
+    fn resource_link_round_trips_and_deletes() {
+        let (conn, _tmp) = open_temp();
+        let entry = ResourceEntry {
+            id: "urlhash:abc".to_string(),
+            url: "https://example.com/guide".to_string(),
+            title: "Strategy guide".to_string(),
+            source: Some("shmups_wiki".to_string()),
+            resource_type: "strategy_guide".to_string(),
+            added_at: 42,
+            rom_filename: "DoDonPachi DaiOuJou.zip".to_string(),
+        };
+        UserDataDb::add_game_resource_link(
+            &conn,
+            "arcade",
+            "DoDonPachi DaiOuJou.zip",
+            "dodonpachi daioujou",
+            &entry,
+        )
+        .unwrap();
+
+        let rows =
+            UserDataDb::get_game_resource_links(&conn, "arcade", &["dodonpachi daioujou"]).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].url, entry.url);
+        assert_eq!(rows[0].source.as_deref(), Some("shmups_wiki"));
+
+        UserDataDb::remove_game_resource_link(
+            &conn,
+            "arcade",
+            "DoDonPachi DaiOuJou.zip",
+            "urlhash:abc",
+        )
+        .unwrap();
+        let rows =
+            UserDataDb::get_game_resource_links(&conn, "arcade", &["dodonpachi daioujou"]).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn video_duplicate_detection_and_removal_use_base_title() {
+        let (conn, _tmp) = open_temp();
+        let entry = VideoEntry {
+            id: "youtube-abc123".to_string(),
+            url: "https://www.youtube.com/watch?v=abc123".to_string(),
+            platform: "youtube".to_string(),
+            video_id: "abc123".to_string(),
+            title: Some("Gameplay".to_string()),
+            added_at: 42,
+            from_recommendation: true,
+            tag: Some("gameplay".to_string()),
+            rom_filename: "Sonic (USA).md".to_string(),
+        };
+        UserDataDb::add_game_video(&conn, "sega_smd", "Sonic (USA).md", "sonic", &entry).unwrap();
+
+        let mut duplicate = entry.clone();
+        duplicate.rom_filename = "Sonic (Europe).md".to_string();
+        assert!(
+            UserDataDb::add_game_video(
+                &conn,
+                "sega_smd",
+                "Sonic (Europe).md",
+                "sonic",
+                &duplicate,
+            )
+            .is_err()
+        );
+
+        conn.execute(
+            "INSERT INTO game_videos
+                (system, base_title, rom_filename, video_id, url, platform,
+                 platform_video_id, title, added_at, from_recommendation, tag)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                "sega_smd",
+                "sonic",
+                "Sonic (Europe).md",
+                &duplicate.id,
+                &duplicate.url,
+                &duplicate.platform,
+                &duplicate.video_id,
+                &duplicate.title,
+                duplicate.added_at as i64,
+                duplicate.from_recommendation as i64,
+                &duplicate.tag,
+            ],
+        )
+        .unwrap();
+
+        UserDataDb::remove_game_video(&conn, "sega_smd", "Sonic (USA).md", "youtube-abc123")
+            .unwrap();
+        let rows = UserDataDb::get_game_videos(&conn, "sega_smd", &["sonic"]).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn resource_link_duplicate_detection_and_removal_use_base_title() {
+        let (conn, _tmp) = open_temp();
+        let entry = ResourceEntry {
+            id: "urlhash:guide".to_string(),
+            url: "https://example.com/guide".to_string(),
+            title: "Guide".to_string(),
+            source: Some("shmups_wiki".to_string()),
+            resource_type: "strategy_guide".to_string(),
+            added_at: 42,
+            rom_filename: "Sonic (USA).md".to_string(),
+        };
+        UserDataDb::add_game_resource_link(&conn, "sega_smd", "Sonic (USA).md", "sonic", &entry)
+            .unwrap();
+
+        let mut duplicate = entry.clone();
+        duplicate.rom_filename = "Sonic (Europe).md".to_string();
+        assert!(
+            UserDataDb::add_game_resource_link(
+                &conn,
+                "sega_smd",
+                "Sonic (Europe).md",
+                "sonic",
+                &duplicate,
+            )
+            .is_err()
+        );
+
+        conn.execute(
+            "INSERT INTO game_resource_link
+                (system, base_title, rom_filename, link_id, url, title, source,
+                 resource_type, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "sega_smd",
+                "sonic",
+                "Sonic (Europe).md",
+                &duplicate.id,
+                &duplicate.url,
+                &duplicate.title,
+                &duplicate.source,
+                &duplicate.resource_type,
+                duplicate.added_at as i64,
+            ],
+        )
+        .unwrap();
+
+        UserDataDb::remove_game_resource_link(&conn, "sega_smd", "Sonic (USA).md", "urlhash:guide")
+            .unwrap();
+        let rows = UserDataDb::get_game_resource_links(&conn, "sega_smd", &["sonic"]).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn resource_link_duplicate_detection_and_removal_use_normalized_url() {
+        let (conn, _tmp) = open_temp();
+        let entry = ResourceEntry {
+            id: "urlhash:guide-normalized".to_string(),
+            url: "https://example.com/Guide".to_string(),
+            title: "Guide".to_string(),
+            source: Some("saved".to_string()),
+            resource_type: "link".to_string(),
+            added_at: 42,
+            rom_filename: "Sonic (USA).md".to_string(),
+        };
+        UserDataDb::add_game_resource_link(&conn, "sega_smd", "Sonic (USA).md", "sonic", &entry)
+            .unwrap();
+
+        let duplicate = ResourceEntry {
+            id: "urlhash:guide-trailing-slash".to_string(),
+            url: "https://example.com/guide/".to_string(),
+            title: "Guide duplicate".to_string(),
+            source: Some("saved".to_string()),
+            resource_type: "link".to_string(),
+            added_at: 43,
+            rom_filename: "Sonic (Europe).md".to_string(),
+        };
+        assert!(
+            UserDataDb::add_game_resource_link(
+                &conn,
+                "sega_smd",
+                "Sonic (Europe).md",
+                "sonic",
+                &duplicate,
+            )
+            .is_err()
+        );
+
+        conn.execute(
+            "INSERT INTO game_resource_link
+                (system, base_title, rom_filename, link_id, url, title, source,
+                 resource_type, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "sega_smd",
+                "sonic",
+                "Sonic (Europe).md",
+                &duplicate.id,
+                &duplicate.url,
+                &duplicate.title,
+                &duplicate.source,
+                &duplicate.resource_type,
+                duplicate.added_at as i64,
+            ],
+        )
+        .unwrap();
+
+        UserDataDb::remove_game_resource_link(
+            &conn,
+            "sega_smd",
+            "Sonic (USA).md",
+            "urlhash:guide-normalized",
+        )
+        .unwrap();
+        let rows = UserDataDb::get_game_resource_links(&conn, "sega_smd", &["sonic"]).unwrap();
+        assert!(rows.is_empty());
+    }
+}
+
+fn normalized_resource_url_key(url: &str) -> String {
+    url.trim_end_matches('/').to_ascii_lowercase()
 }

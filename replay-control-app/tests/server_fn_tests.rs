@@ -182,6 +182,51 @@ async fn sfn_random_game_for_system_returns_requested_system() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn sfn_delete_user_capture_removes_only_owned_png() {
+    setup();
+    let env = TestEnv::new().await;
+    let captures_dir = env.tmp.join("captures/nintendo_nes");
+    std::fs::create_dir_all(&captures_dir).unwrap();
+    let owned = captures_dir.join("TestGame.nes_20260310_015805.png");
+    let neighbor = captures_dir.join("TestGame.nes2_20260310_015805.png");
+    std::fs::write(&owned, b"png").unwrap();
+    std::fs::write(&neighbor, b"png").unwrap();
+
+    let app = test_router(env.state.clone());
+    let status = invoke_server_fn::<server_fns::DeleteUserCapture>(
+        app,
+        form_body(&[
+            ("system", "nintendo_nes"),
+            ("rom_filename", "TestGame.nes"),
+            ("screenshot_filename", "TestGame.nes_20260310_015805.png"),
+        ]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "delete capture should succeed");
+    assert!(!owned.exists(), "owned capture should be deleted");
+    assert!(neighbor.exists(), "neighbor capture should remain");
+
+    let app = test_router(env.state.clone());
+    let status = invoke_server_fn::<server_fns::DeleteUserCapture>(
+        app,
+        form_body(&[
+            ("system", "nintendo_nes"),
+            ("rom_filename", "TestGame.nes"),
+            ("screenshot_filename", "TestGame.nes2_20260310_015805.png"),
+        ]),
+    )
+    .await;
+
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "delete capture should reject another ROM's prefix"
+    );
+    assert!(neighbor.exists(), "rejected capture should remain");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_global_search_whitespace_query_returns_empty_results() {
     setup();
     let env = TestEnv::new().await;

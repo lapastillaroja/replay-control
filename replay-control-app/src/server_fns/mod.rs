@@ -14,6 +14,7 @@ mod metadata;
 pub(crate) mod recommendations;
 mod related;
 mod replay_api;
+mod resources;
 mod roms;
 mod save_states;
 mod search;
@@ -30,6 +31,7 @@ pub use metadata::*;
 pub use recommendations::*;
 pub use related::*;
 pub use replay_api::*;
+pub use resources::*;
 pub use roms::*;
 pub use save_states::*;
 pub use search::*;
@@ -329,6 +331,27 @@ pub fn format_error(e: server_fn::ServerFnError) -> String {
     msg.strip_prefix("error running server function: ")
         .unwrap_or(&msg)
         .to_string()
+}
+
+/// Stable, content-derived id for a saved URL (`urlhash:<sha256-hex>`).
+/// Shared by the manuals and resources server functions.
+#[cfg(feature = "ssr")]
+pub(crate) fn stable_url_id(url: &str) -> String {
+    let digest = ring::digest::digest(&ring::digest::SHA256, url.as_bytes());
+    let mut out = String::from("urlhash:");
+    for byte in digest.as_ref() {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+/// Current wall-clock time as whole seconds since the Unix epoch.
+#[cfg(feature = "ssr")]
+pub(crate) fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 /// Build full game metadata for the detail page from a `GameEntry` (DB source of truth).

@@ -1,4 +1,5 @@
 use crate::storage::StorageLocation;
+use replay_control_core::error::{Error, Result};
 
 /// A user-taken screenshot found on disk.
 #[derive(Debug, Clone)]
@@ -35,12 +36,7 @@ pub fn find_screenshots_for_rom(
             if !name.ends_with(".png") {
                 return None;
             }
-            // Must start with the exact ROM filename, followed by `_` or `.`
-            if !name.starts_with(rom_filename) {
-                return None;
-            }
-            let rest = &name[rom_filename.len()..];
-            if !rest.starts_with('_') && !rest.starts_with('.') {
+            if !screenshot_belongs_to_rom(&name, rom_filename) {
                 return None;
             }
 
@@ -56,6 +52,59 @@ pub fn find_screenshots_for_rom(
     // timestamp (legacy format) sort last.
     screenshots.sort_by_key(|s| std::cmp::Reverse(s.timestamp));
     screenshots
+}
+
+/// Delete one user capture screenshot owned by `rom_filename`.
+///
+/// The filename must be a single PNG basename under `<storage>/captures/<system>`
+/// and must start with the exact ROM filename followed by `_` or `.`.
+pub fn delete_screenshot_for_rom(
+    storage: &StorageLocation,
+    system: &str,
+    rom_filename: &str,
+    screenshot_filename: &str,
+) -> Result<()> {
+    validate_path_component(system, "system")?;
+    validate_path_component(rom_filename, "ROM filename")?;
+    validate_path_component(screenshot_filename, "screenshot filename")?;
+
+    if !screenshot_belongs_to_rom(screenshot_filename, rom_filename) {
+        return Err(Error::Other(
+            "Screenshot does not belong to this ROM".to_string(),
+        ));
+    }
+
+    let path = storage
+        .captures_dir()
+        .join(system)
+        .join(screenshot_filename);
+    if !path.exists() {
+        return Err(Error::RomNotFound(path));
+    }
+
+    std::fs::remove_file(&path).map_err(|e| Error::io(&path, e))
+}
+
+fn validate_path_component(value: &str, label: &str) -> Result<()> {
+    if value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+    {
+        return Err(Error::Other(format!("Invalid {label}")));
+    }
+    Ok(())
+}
+
+pub fn screenshot_belongs_to_rom(screenshot_filename: &str, rom_filename: &str) -> bool {
+    if !screenshot_filename.ends_with(".png") || !screenshot_filename.starts_with(rom_filename) {
+        return false;
+    }
+    matches!(
+        screenshot_filename.as_bytes().get(rom_filename.len()),
+        Some(b'_' | b'.')
+    )
 }
 
 /// Parse the `_YYYYMMDD_HHMMSS.png` suffix from a screenshot filename.
@@ -140,5 +189,79 @@ mod tests {
     fn test_rsplit_at_char() {
         assert_eq!(rsplit_at_char("a_b_c", '_'), Some(("a_b", "c")));
         assert_eq!(rsplit_at_char("abc", '_'), None);
+    }
+
+    #[test]
+    fn screenshot_ownership_requires_rom_prefix_boundary_and_png() {
+        assert!(screenshot_belongs_to_rom(
+            "Sonic.md_20260310_015805.png",
+            "Sonic.md"
+        ));
+        assert!(screenshot_belongs_to_rom("Sonic.md.png", "Sonic.md"));
+        assert!(!screenshot_belongs_to_rom(
+            "Sonic.md-20260310_015805.png",
+            "Sonic.md"
+        ));
+        assert!(!screenshot_belongs_to_rom("Sonic.md_1.jpg", "Sonic.md"));
+        assert!(!screenshot_belongs_to_rom(
+            "Sonic.md2_20260310_015805.png",
+            "Sonic.md"
+        ));
+    }
+
+    #[test]
+    fn delete_screenshot_only_removes_owned_png_under_system_captures() {
+        let root = unique_test_root("capture-delete");
+        let captures = root.join("captures/nintendo_nes");
+        std::fs::create_dir_all(&captures).unwrap();
+        let owned = captures.join("TestGame.nes_20260310_015805.png");
+        let neighbor = captures.join("TestGame.nes2_20260310_015805.png");
+        let non_png = captures.join("TestGame.nes_20260310_015805.jpg");
+        std::fs::write(&owned, b"png").unwrap();
+        std::fs::write(&neighbor, b"png").unwrap();
+        std::fs::write(&non_png, b"jpg").unwrap();
+
+        let storage = StorageLocation::from_path(root.clone(), crate::storage::StorageKind::Folder);
+
+        delete_screenshot_for_rom(
+            &storage,
+            "nintendo_nes",
+            "TestGame.nes",
+            "TestGame.nes_20260310_015805.png",
+        )
+        .unwrap();
+
+        assert!(!owned.exists());
+        assert!(neighbor.exists());
+        assert!(non_png.exists());
+
+        let result = delete_screenshot_for_rom(
+            &storage,
+            "nintendo_nes",
+            "TestGame.nes",
+            "TestGame.nes2_20260310_015805.png",
+        );
+        assert!(result.is_err());
+        assert!(neighbor.exists());
+
+        let result = delete_screenshot_for_rom(
+            &storage,
+            "nintendo_nes",
+            "TestGame.nes",
+            "../TestGame.nes_20260310_015805.png",
+        );
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn unique_test_root(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "replay-control-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        root
     }
 }

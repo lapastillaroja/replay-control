@@ -546,24 +546,6 @@ async fn saved_manual_resource_keys(
 }
 
 #[cfg(feature = "ssr")]
-fn stable_url_id(url: &str) -> String {
-    let digest = ring::digest::digest(&ring::digest::SHA256, url.as_bytes());
-    let mut out = String::from("urlhash:");
-    for byte in digest.as_ref() {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
-}
-
-#[cfg(feature = "ssr")]
-fn unix_now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-#[cfg(feature = "ssr")]
 async fn validate_downloaded_manual(
     path: &std::path::Path,
 ) -> Result<(&'static str, &'static str), String> {

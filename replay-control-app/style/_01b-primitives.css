@@ -504,12 +504,19 @@
 }
 
 :where(.back-btn) {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--control-bg, var(--surface));
     border: var(--control-border);
     border-radius: var(--radius-sm);
     color: var(--back-btn-color, var(--text));
     padding: var(--back-btn-padding, var(--action-padding-sm));
+    min-height: var(--control-height-compact);
+    font-family: inherit;
     font-size: var(--font-size-compact-default);
+    line-height: 1.2;
     text-decoration: none;
     cursor: pointer;
     touch-action: manipulation;
@@ -636,7 +643,7 @@
     font-size: var(--font-size-large-default);
 }
 
-:where(.corruption-banner-btn, .video-remove-btn, .boxart-picker-reset) {
+:where(.corruption-banner-btn, .video-remove-btn, .boxart-picker-reset, .lightbox-delete) {
     display: var(--outline-action-display, inline-flex);
     align-items: center;
     justify-content: center;
@@ -1580,4 +1587,18 @@
 
 :where(.rom-header .page-title, .settings-page .page-title) {
     --page-title-margin-bottom: 0;
+}
+
+.rom-header .page-title {
+    min-width: 0;
+    flex: 1 1 auto;
+    max-width: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
 }

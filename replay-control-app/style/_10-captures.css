@@ -52,6 +52,24 @@ button.lightbox-close {
     line-height: 1;
 }
 
+.lightbox-delete {
+    position: absolute;
+    top: calc(var(--stack-gap-lg) + 3rem);
+    right: var(--stack-gap-lg);
+    font-weight: 600;
+    min-height: var(--control-height);
+    --outline-action-padding: var(--control-padding-y) var(--control-padding-x-compact);
+    --outline-action-border: var(--control-border);
+    --outline-action-radius: var(--radius-sm);
+    --outline-action-bg: var(--translucent-control);
+    --outline-action-color: var(--text-on-overlay);
+    --outline-action-font-size: var(--font-size-compact-default);
+}
+
+.lightbox-delete:hover {
+    --outline-action-bg: var(--translucent-control-hover);
+}
+
 .lightbox-nav {
     position: absolute;
     top: 50%;

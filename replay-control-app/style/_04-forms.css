@@ -110,6 +110,12 @@ select.form-input option {
     border: var(--feedback-error-subtle-border);
 }
 
+.status-warn {
+    background: var(--feedback-warning-bg);
+    color: var(--feedback-warning-text);
+    border: var(--control-border);
+}
+
 /* Text size toggle */
 .text-size-btn {
     width: var(--control-height-large);

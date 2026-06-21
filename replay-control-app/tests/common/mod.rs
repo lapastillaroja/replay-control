@@ -140,6 +140,7 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetRomsPage>();
     server_fn::axum::register_explicit::<server_fns::GetSystemFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRomDetail>();
+    server_fn::axum::register_explicit::<server_fns::DeleteUserCapture>();
     server_fn::axum::register_explicit::<server_fns::RefreshStorage>();
     server_fn::axum::register_explicit::<server_fns::GetWifiConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveWifiConfig>();

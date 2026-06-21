@@ -7,17 +7,15 @@ use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
-use crate::components::manual_section::ManualSection;
-use crate::components::video_section::GameVideoSection;
+use crate::components::resources_section::GameResourcesSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 use replay_control_core::replay_api::ReplayApiStatus;
-use replay_control_core::resource_kind;
 use replay_control_core::systems;
 
 /// Maximum number of capture thumbnails shown before "View all".
-const INITIAL_CAPTURE_COUNT: usize = 12;
+const INITIAL_CAPTURE_COUNT: usize = 8;
 
 /// URL fragment that scrolls the page to the manual section. Set when
 /// navigating from the home "Now Playing" hero card and read back here to
@@ -40,6 +38,19 @@ fn split_filename(filename: &str) -> (String, String) {
         .unwrap_or("")
         .to_string();
     (stem, ext)
+}
+
+fn confirm_capture_delete() -> bool {
+    #[cfg(feature = "hydrate")]
+    {
+        web_sys::window()
+            .and_then(|window| window.confirm_with_message("Delete this capture?").ok())
+            .unwrap_or(false)
+    }
+    #[cfg(not(feature = "hydrate"))]
+    {
+        true
+    }
 }
 
 #[component]
@@ -243,9 +254,10 @@ fn GameDetailContent(
     let description = StoredValue::new(game.description.clone());
     let has_description = game.description.is_some();
     let description_expanded = RwSignal::new(false);
-    let description_needs_toggle = game.description.as_ref().is_some_and(|text| {
-        text.lines().count() > 6 || text.chars().count() > 540
-    });
+    let description_needs_toggle = game
+        .description
+        .as_ref()
+        .is_some_and(|text| text.lines().count() > 6 || text.chars().count() > 540);
     let description_class = move || {
         if description_expanded.get() || !description_needs_toggle {
             "game-description"
@@ -266,17 +278,7 @@ fn GameDetailContent(
     let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
-    let gamefaqs_url = StoredValue::new(
-        systems::find_system(&system).and_then(|s| s.gamefaqs_search_url(&detail.base_title)),
-    );
-    let shmups_wiki_url = StoredValue::new(detail.find_resource_url(
-        resource_kind::STRATEGY_GUIDE,
-        resource_kind::SHMUPS_WIKI_SOURCE,
-    ));
-    let shmups_wiki_video_index_url = StoredValue::new(detail.find_resource_url(
-        resource_kind::VIDEO_INDEX,
-        resource_kind::SHMUPS_WIKI_SOURCE,
-    ));
+    let library_resources = StoredValue::new(detail.library_resources.clone());
 
     // Images — box_art_url is an RwSignal so the picker can update it reactively.
     let box_art_url = RwSignal::new(game.box_art_url.clone());
@@ -305,10 +307,46 @@ fn GameDetailContent(
     let show_picker = RwSignal::new(false);
 
     // User captures
-    let user_screenshots = StoredValue::new(detail.user_screenshots.clone());
-    let has_user_screenshots = !detail.user_screenshots.is_empty();
+    let user_screenshots = RwSignal::new(detail.user_screenshots.clone());
+    let has_user_screenshots = move || !user_screenshots.read().is_empty();
     let captures_show_all = RwSignal::new(false);
     let lightbox_index = RwSignal::new(Option::<usize>::None);
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::prelude::Closure;
+
+        let refresh_in_flight = RwSignal::new(false);
+        let sys = system_sv.get_value();
+        let rom = filename_sv.get_value();
+        let interval_callback = Closure::<dyn FnMut()>::new(move || {
+            if refresh_in_flight.get_untracked() {
+                return;
+            }
+            refresh_in_flight.set(true);
+            let sys = sys.clone();
+            let rom = rom.clone();
+            leptos::task::spawn_local(async move {
+                if let Ok(latest) = server_fns::get_user_captures(sys, rom).await {
+                    user_screenshots.update(|current| {
+                        if *current != latest {
+                            *current = latest;
+                        }
+                    });
+                }
+                refresh_in_flight.set(false);
+            });
+        });
+        if let Ok(interval_id) = window().set_interval_with_callback_and_timeout_and_arguments_0(
+            interval_callback.as_ref().unchecked_ref(),
+            2_500,
+        ) {
+            interval_callback.forget();
+            on_cleanup(move || {
+                window().clear_interval_with_handle(interval_id);
+            });
+        }
+    }
 
     // Combined lightbox image list: box art (reactive — picker can swap it),
     // then title screen, in-game screenshot, then user captures. Indices below
@@ -322,28 +360,76 @@ fn GameDetailContent(
             imgs.push(LightboxImage {
                 url,
                 pixelated: false,
+                can_delete: false,
             });
         }
         if let Some(url) = title_url.get_value() {
             imgs.push(LightboxImage {
                 url,
                 pixelated: true,
+                can_delete: false,
             });
         }
         if let Some(url) = screenshot_url.get_value() {
             imgs.push(LightboxImage {
                 url,
                 pixelated: true,
+                can_delete: false,
             });
         }
-        for s in user_screenshots.get_value() {
+        for s in user_screenshots.read().iter() {
             imgs.push(LightboxImage {
-                url: s.url,
+                url: s.url.clone(),
                 pixelated: true,
+                can_delete: true,
             });
         }
         imgs
     });
+
+    let delete_capture_at = move |capture_index: usize| {
+        let capture = user_screenshots.read().get(capture_index).cloned();
+        let Some(capture) = capture else {
+            return;
+        };
+        if !confirm_capture_delete() {
+            return;
+        }
+
+        user_screenshots.update(|captures| {
+            if captures
+                .get(capture_index)
+                .is_some_and(|item| item.filename == capture.filename)
+            {
+                captures.remove(capture_index);
+            } else if let Some(pos) = captures
+                .iter()
+                .position(|item| item.filename == capture.filename)
+            {
+                captures.remove(pos);
+            }
+        });
+        lightbox_index.set(None);
+
+        let sys = system_sv.get_value();
+        let rom = filename_sv.get_value();
+        leptos::task::spawn_local(async move {
+            if server_fns::delete_user_capture(sys, rom, capture.filename.clone())
+                .await
+                .is_err()
+            {
+                user_screenshots.update(|captures| {
+                    if !captures
+                        .iter()
+                        .any(|item| item.filename == capture.filename)
+                    {
+                        let insert_at = capture_index.min(captures.len());
+                        captures.insert(insert_at, capture);
+                    }
+                });
+            }
+        });
+    };
 
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
@@ -402,7 +488,7 @@ fn GameDetailContent(
                 {move || t(i18n.locale.get(), Key::GamesBack)}
             </button>
             <div class="game-detail-title-wrap">
-                <h2 class="page-title">{game_name.clone()}</h2>
+                <h2 class="page-title" title=game_name.clone()>{game_name.clone()}</h2>
             </div>
         </div>
 
@@ -628,59 +714,51 @@ fn GameDetailContent(
                         <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRegion)}</span>
                         <span class="info-value">{r}</span>
                     </div>
-                })}
+            })}
             </div>
-            {gamefaqs_url.get_value().map(|url| view! {
-                <ExternalMetaLink url label_key=Key::GameDetailGameFaqsLink />
-            })}
-            {shmups_wiki_url.get_value().map(|url| view! {
-                <ExternalMetaLink url label_key=Key::GameDetailShmupsWikiLink />
-            })}
-            {shmups_wiki_video_index_url.get_value().map(|url| view! {
-                <ExternalMetaLink url label_key=Key::GameDetailShmupsWikiVideoIndexLink />
-            })}
         </section>
 
-        // Screenshots Gallery (hidden when no screenshots)
-        <Show when=move || has_screenshot || has_title>
-            <section class="section game-section">
-                <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailScreenshots)}</h2>
-                <div class="game-screenshots">
-                    {title_url.get_value().map(|url| view! {
-                        <div class="game-screenshot-item">
-                            <img
-                                class="game-screenshot-img game-screenshot-tappable"
-                                src=url
-                                alt="Title screen"
-                                on:click=move |_| lightbox_index.set(Some(title_offset()))
-                            />
-                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailTitleScreen)}</span>
-                        </div>
-                    })}
-                    {screenshot_url.get_value().map(|url| view! {
-                        <div class="game-screenshot-item">
-                            <img
-                                class="game-screenshot-img game-screenshot-tappable"
-                                src=url
-                                alt="In-game screenshot"
-                                on:click=move |_| lightbox_index.set(Some(screenshot_offset()))
-                            />
-                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailInGame)}</span>
-                        </div>
-                    })}
-                </div>
-            </section>
-        </Show>
-
-        // User Captures (hidden when none, with helpful prompt)
+        // Screenshots and user captures.
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailUserCaptures)}</h2>
-            <Show when=move || has_user_screenshots
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailScreenshots)}</h2>
+
+            <Show when=move || has_screenshot || has_title>
+                <div class="screenshot-group screenshot-group-provided">
+                    <div class="screenshot-thumb-grid">
+                        {title_url.get_value().map(|url| view! {
+                            <div class="screenshot-card">
+                                <img
+                                    class="screenshot-thumb screenshot-thumb-tappable"
+                                    src=url
+                                    alt="Title screen"
+                                    on:click=move |_| lightbox_index.set(Some(title_offset()))
+                                />
+                                <span class="screenshot-card-label">{move || t(i18n.locale.get(), Key::GameDetailTitleScreen)}</span>
+                            </div>
+                        })}
+                        {screenshot_url.get_value().map(|url| view! {
+                            <div class="screenshot-card">
+                                <img
+                                    class="screenshot-thumb screenshot-thumb-tappable"
+                                    src=url
+                                    alt="In-game screenshot"
+                                    on:click=move |_| lightbox_index.set(Some(screenshot_offset()))
+                                />
+                                <span class="screenshot-card-label">{move || t(i18n.locale.get(), Key::GameDetailInGame)}</span>
+                            </div>
+                        })}
+                    </div>
+                </div>
+            </Show>
+
+            <div class="screenshot-group screenshot-group-captures">
+                <div class="screenshot-group-label">{move || t(i18n.locale.get(), Key::GameDetailUserCaptures)}</div>
+            <Show when=has_user_screenshots
                 fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoCaptures)}</p> }
             >
-                <div class="user-captures-gallery">
+                <div class="screenshot-thumb-grid">
                     {move || {
-                        let all = user_screenshots.get_value();
+                        let all = user_screenshots.get();
                         let show_all = captures_show_all.get();
                         let visible = if show_all || all.len() <= INITIAL_CAPTURE_COUNT {
                             all.clone()
@@ -690,44 +768,61 @@ fn GameDetailContent(
                         visible.into_iter().enumerate().map(|(i, s)| {
                             let url = s.url.clone();
                             view! {
-                                <img
-                                    class="user-capture-thumb"
-                                    src=url
-                                    alt="Capture"
-                                    on:click=move |_| lightbox_index.set(Some(captures_offset() + i))
-                                />
+                                <div class="screenshot-card screenshot-card-capture">
+                                    <img
+                                        class="screenshot-thumb screenshot-thumb-tappable"
+                                        src=url
+                                        alt="Capture"
+                                        on:click=move |_| lightbox_index.set(Some(captures_offset() + i))
+                                    />
+                                    <button
+                                        type="button"
+                                        class="capture-delete-btn"
+                                        aria-label=move || t(i18n.locale.get(), Key::GameDetailDeleteCapture)
+                                        title=move || t(i18n.locale.get(), Key::GameDetailDeleteCapture)
+                                        on:click=move |ev| {
+                                            ev.stop_propagation();
+                                            delete_capture_at(i);
+                                        }
+                                    >
+                                        "x"
+                                    </button>
+                                </div>
                             }
                         }).collect::<Vec<_>>()
                     }}
                 </div>
-                <Show when=move || { user_screenshots.get_value().len() > INITIAL_CAPTURE_COUNT && !captures_show_all.get() }>
+                <Show when=move || { user_screenshots.read().len() > INITIAL_CAPTURE_COUNT && !captures_show_all.get() }>
                     <button
                         class="game-action-btn captures-show-all"
                         on:click=move |_| captures_show_all.set(true)
                     >
                         {move || t(i18n.locale.get(), Key::GameDetailViewAllCaptures)}
-                        {move || format!(" ({})", user_screenshots.get_value().len())}
+                        {move || format!(" ({})", user_screenshots.read().len())}
                     </button>
                 </Show>
             </Show>
+            </div>
         </section>
 
-        <ImageLightbox images=lightbox_images current_index=lightbox_index />
-
-        // Videos — base_title enables cross-variant video sharing
-        <GameVideoSection
-            system=system_sv
-            rom_filename=filename_sv
-            display_name=game_name_sv
-            base_title=base_title_sv
+        <ImageLightbox
+            images=lightbox_images
+            current_index=lightbox_index
+            delete_label=Signal::derive(move || t(i18n.locale.get(), Key::GameDetailDeleteCapture).to_string())
+            on_delete=Callback::new(move |image_index: usize| {
+                let offset = captures_offset();
+                if image_index >= offset {
+                    delete_capture_at(image_index - offset);
+                }
+            })
         />
 
-        // Manual / Documents — base_title enables cross-variant manual sharing.
-        <ManualSection
+        <GameResourcesSection
             system=system_sv
             rom_filename=filename_sv
-            display_name=game_name_sv
             base_title=base_title_sv
+            display_name=game_name_sv
+            library_resources
             section_id="manuals"
             focus_on_mount=focus_manuals
         />
@@ -1064,6 +1159,7 @@ fn RelatedGamesSection(
     system: StoredValue<String>,
     rom_filename: StoredValue<String>,
 ) -> impl IntoView {
+    let i18n = use_i18n();
     let related = Resource::new(
         move || (system.get_value(), rom_filename.get_value()),
         |(sys, fname)| server_fns::get_related_games(sys, fname),
@@ -1109,81 +1205,84 @@ fn RelatedGamesSection(
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             view! {
-                                <Show when=move || has_variants>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailRegionalVariants
-                                        chips=variant_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_translations>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailTranslations
-                                        chips=translation_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_hacks>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailHacks
-                                        chips=hack_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_alternates>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailAlternateVersions
-                                        chips=alternate_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_specials>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailSpecialVersions
-                                        chips=special_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_arcade_versions>
-                                    <GameChipRow
-                                        title_key=Key::GameDetailArcadeVersions
-                                        chips=arcade_version_chips.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_cross_system>
-                                    <SimilarGamesRow
-                                        games=data.cross_system.clone()
-                                        title_key=Key::GameDetailAlsoAvailableOn
-                                    />
-                                </Show>
-                                <Show when=move || has_aliases>
-                                    <SimilarGamesRow
-                                        games=data.alias_variants.clone()
-                                        title_key=Key::GameDetailOtherVersions
-                                    />
-                                </Show>
-                                <Show when=move || has_sequel_nav>
-                                    <PlayOrderNav
-                                        prev=data.sequel_prev.clone()
-                                        next=data.sequel_next.clone()
-                                        position=data.series_position
-                                    />
-                                </Show>
-                                <Show when=move || has_series>
-                                    <SimilarGamesRow
-                                        games=data.series_siblings.clone()
-                                        title_key=Key::GameDetailMoreInSeries
-                                        custom_title=data.series_name.clone()
-                                    />
-                                </Show>
-                                <Show when=move || has_similar>
-                                    <SimilarGamesRow
-                                        games=data.similar_games.clone()
-                                        title_key=Key::GameDetailMoreLikeThis
-                                    />
-                                </Show>
-                                <Show when=move || has_same_board>
-                                    <SimilarGamesRow
-                                        games=data.same_board.clone()
-                                        title_key=Key::GameDetailMoreOnBoard
-                                        see_all_href=data.same_board_href.clone()
-                                    />
-                                </Show>
+                                <section class="section recommendations-section">
+                                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailRecommendations)}</h2>
+                                    <Show when=move || has_variants>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailRegionalVariants
+                                            chips=variant_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_translations>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailTranslations
+                                            chips=translation_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_hacks>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailHacks
+                                            chips=hack_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_alternates>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailAlternateVersions
+                                            chips=alternate_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_specials>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailSpecialVersions
+                                            chips=special_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_arcade_versions>
+                                        <GameChipRow
+                                            title_key=Key::GameDetailArcadeVersions
+                                            chips=arcade_version_chips.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_cross_system>
+                                        <SimilarGamesRow
+                                            games=data.cross_system.clone()
+                                            title_key=Key::GameDetailAlsoAvailableOn
+                                        />
+                                    </Show>
+                                    <Show when=move || has_aliases>
+                                        <SimilarGamesRow
+                                            games=data.alias_variants.clone()
+                                            title_key=Key::GameDetailOtherVersions
+                                        />
+                                    </Show>
+                                    <Show when=move || has_sequel_nav>
+                                        <PlayOrderNav
+                                            prev=data.sequel_prev.clone()
+                                            next=data.sequel_next.clone()
+                                            position=data.series_position
+                                        />
+                                    </Show>
+                                    <Show when=move || has_series>
+                                        <SimilarGamesRow
+                                            games=data.series_siblings.clone()
+                                            title_key=Key::GameDetailMoreInSeries
+                                            custom_title=data.series_name.clone()
+                                        />
+                                    </Show>
+                                    <Show when=move || has_similar>
+                                        <SimilarGamesRow
+                                            games=data.similar_games.clone()
+                                            title_key=Key::GameDetailMoreLikeThis
+                                        />
+                                    </Show>
+                                    <Show when=move || has_same_board>
+                                        <SimilarGamesRow
+                                            games=data.same_board.clone()
+                                            title_key=Key::GameDetailMoreOnBoard
+                                            see_all_href=data.same_board_href.clone()
+                                        />
+                                    </Show>
+                                </section>
                             }.into_any()
                         }
                     }
@@ -1220,22 +1319,6 @@ fn GameChipRow(title_key: Key, chips: Vec<ChipItem>) -> impl IntoView {
                 }).collect::<Vec<_>>()}
             </div>
         </section>
-    }
-}
-
-/// One-line `<a target="_blank">` row used for the external-link section
-/// of the game info card (GameFAQs search, Shmups Wiki page, Shmups Wiki
-/// video index, …). Shares the `.game-meta-external-link` class.
-#[component]
-fn ExternalMetaLink(url: String, label_key: Key) -> impl IntoView {
-    let i18n = use_i18n();
-    view! {
-        <p class="game-meta-external-link">
-            <a href=url target="_blank" rel="noopener noreferrer">
-                {move || t(i18n.locale.get(), label_key)}
-                " ↗"
-            </a>
-        </p>
     }
 }
 

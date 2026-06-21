@@ -6,6 +6,10 @@ use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
 use replay_control_core_server::recents::add_recent;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::roms::list_rom_group;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::screenshots;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::storage::StorageLocation;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,8 +33,9 @@ pub struct RomPage {
 }
 
 /// A user-taken screenshot URL for the game detail page.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScreenshotUrl {
+    pub filename: String,
     pub url: String,
     pub timestamp: Option<i64>,
 }
@@ -257,15 +262,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         "get_rom_detail game_info resolved"
     );
 
-    let user_screenshots = replay_control_core_server::screenshots::find_screenshots_for_rom(
-        &storage, &system, &filename,
-    )
-    .into_iter()
-    .map(|s| ScreenshotUrl {
-        url: format!("/captures/{}/{}", system, s.filename),
-        timestamp: s.timestamp,
-    })
-    .collect();
+    let user_screenshots = screenshot_urls_for_rom(&storage, &system, &filename);
 
     // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
     let arcade_display =
@@ -527,6 +524,48 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     Ok(())
 }
 
+#[server(prefix = "/sfn")]
+pub async fn get_user_captures(
+    system: String,
+    rom_filename: String,
+) -> Result<Vec<ScreenshotUrl>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(screenshot_urls_for_rom(&storage, &system, &rom_filename))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn delete_user_capture(
+    system: String,
+    rom_filename: String,
+    screenshot_filename: String,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    super::require_storage_mutation_allowed(&state, "delete captures").await?;
+    let storage = state.storage();
+
+    screenshots::delete_screenshot_for_rom(&storage, &system, &rom_filename, &screenshot_filename)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn screenshot_urls_for_rom(
+    storage: &StorageLocation,
+    system: &str,
+    rom_filename: &str,
+) -> Vec<ScreenshotUrl> {
+    screenshots::find_screenshots_for_rom(storage, system, rom_filename)
+        .into_iter()
+        .map(|s| ScreenshotUrl {
+            filename: s.filename.clone(),
+            url: format!("/captures/{system}/{}", s.filename),
+            timestamp: s.timestamp,
+        })
+        .collect()
+}
+
 /// Find screenshot files matching a ROM filename prefix.
 ///
 /// Returns `(path, suffix)` pairs where suffix starts with `_` or `.`
@@ -543,7 +582,7 @@ fn find_matching_screenshots(
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if let Some(rest) = name.strip_prefix(rom_filename)
-                && (rest.starts_with('_') || rest.starts_with('.'))
+                && screenshots::screenshot_belongs_to_rom(&name, rom_filename)
             {
                 matches.push((entry.path(), rest.to_string()));
             }

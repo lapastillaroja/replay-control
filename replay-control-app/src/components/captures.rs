@@ -7,6 +7,8 @@ pub struct LightboxImage {
     /// Use nearest-neighbour upscaling — true for pixel-art (screenshots,
     /// title screens), false for photographic content like box art.
     pub pixelated: bool,
+    /// Whether this image is a user-owned capture and can show delete UI.
+    pub can_delete: bool,
 }
 
 /// Fullscreen image viewer with prev/next navigation and keyboard support.
@@ -14,6 +16,8 @@ pub struct LightboxImage {
 pub fn ImageLightbox(
     #[prop(into)] images: Signal<Vec<LightboxImage>>,
     current_index: RwSignal<Option<usize>>,
+    #[prop(into)] delete_label: Signal<String>,
+    #[prop(into)] on_delete: Callback<usize>,
 ) -> impl IntoView {
     let has_many = move || images.read().len() > 1;
 
@@ -79,8 +83,21 @@ pub fn ImageLightbox(
             .get()
             .and_then(|i| images.read().get(i).cloned())
     });
+    let current_delete_index = move || {
+        current_index
+            .get()
+            .filter(|i| images.read().get(*i).is_some_and(|img| img.can_delete))
+    };
     let current_url = move || current.get().map(|img| img.url).unwrap_or_default();
     let current_pixelated = move || current.get().is_some_and(|img| img.pixelated);
+    let current_can_delete = move || current_delete_index().is_some();
+
+    let on_delete = move |ev: leptos::ev::MouseEvent| {
+        ev.stop_propagation();
+        if let Some(index) = current_delete_index() {
+            on_delete.run(index);
+        }
+    };
 
     view! {
         <Show when=move || current_index.get().is_some() && !images.read().is_empty()>
@@ -88,6 +105,11 @@ pub fn ImageLightbox(
                 <button class="lightbox-close" on:click=on_close_btn>
                     {"\u{2715}"}
                 </button>
+                <Show when=current_can_delete>
+                    <button class="lightbox-delete" on:click=on_delete>
+                        {move || delete_label.get()}
+                    </button>
+                </Show>
                 <Show when=has_many>
                     <button class="lightbox-nav lightbox-prev" on:click=on_prev>
                         {"\u{2039}"}

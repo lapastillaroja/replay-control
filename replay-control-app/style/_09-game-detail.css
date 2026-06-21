@@ -22,6 +22,8 @@
 
 .game-detail-title-wrap {
     --stack-gap: var(--control-gap-compact);
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .game-cover-img {
@@ -43,6 +45,107 @@
     max-height: 15rem;
     --media-radius: var(--radius);
     border: var(--control-border);
+}
+
+.screenshot-group + .screenshot-group {
+    border-top: var(--divider-border);
+    margin-top: var(--panel-gap);
+    padding-top: var(--panel-gap);
+}
+
+.screenshot-group-label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-compact-default);
+    font-weight: 600;
+    margin-bottom: var(--control-gap);
+}
+
+.screenshot-thumb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+    gap: var(--control-gap);
+}
+
+.screenshot-card {
+    position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.screenshot-thumb {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: 12rem;
+    height: auto;
+    background: var(--control-bg);
+    border: var(--control-border);
+    --media-fit: contain;
+    --media-radius: var(--radius);
+    image-rendering: pixelated;
+}
+
+.screenshot-thumb:hover {
+    border-color: var(--accent);
+}
+
+.screenshot-thumb-tappable {
+    cursor: pointer;
+}
+
+.screenshot-card-label {
+    display: block;
+    margin-top: var(--space-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-compact-default);
+    line-height: 1.35;
+}
+
+.capture-delete-btn {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border: var(--control-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-small);
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition:
+        opacity var(--motion-fast),
+        transform var(--motion-fast),
+        background var(--motion-fast),
+        border-color var(--motion-fast);
+}
+
+.screenshot-card-capture:hover .capture-delete-btn,
+.screenshot-card-capture:focus-within .capture-delete-btn {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.capture-delete-btn:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+@media (hover: none), (pointer: coarse) {
+    .capture-delete-btn {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 .game-meta-label {
@@ -144,7 +247,6 @@
 }
 
 .game-info-row-filename .info-value {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
     font-size: var(--font-size-small);
     line-height: 1.45;
     overflow-x: auto;

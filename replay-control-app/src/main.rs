@@ -18,10 +18,11 @@ mod ssr {
 
     use replay_control_app::api;
     use replay_control_app::server_fns::{
-        EnableReplayApiAssisted, GetReplayApiStatus, GetReplayosSettings, GetSaveStateSlots,
-        PowerOffReplayosDevice, ReprobeReplayApi, RestartReplayosGame, SaveReplayosKioskMode,
-        SendReplayPlayerCommand, SendReplayosMessage, StartSetupMetadataDownloads,
-        VerifyReplayApiToken,
+        AddGameResourceLink, DeleteUserCapture, EnableReplayApiAssisted, GetGameResourceLinks,
+        GetReplayApiStatus, GetReplayosSettings, GetSaveStateSlots, GetUserCaptures,
+        PowerOffReplayosDevice, RemoveGameResourceLink, ReprobeReplayApi, RestartReplayosGame,
+        SaveReplayosKioskMode, SendReplayPlayerCommand, SendReplayosMessage,
+        StartSetupMetadataDownloads, VerifyReplayApiToken,
     };
 
     #[derive(Parser)]
@@ -589,6 +590,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomsPage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DeleteRom>();
+        server_fn::axum::register_explicit::<DeleteUserCapture>();
+        server_fn::axum::register_explicit::<GetUserCaptures>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RenameRom>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomFileGroup>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::LaunchGame>();
@@ -627,6 +630,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameVideos>();
+        server_fn::axum::register_explicit::<GetGameResourceLinks>();
+        server_fn::axum::register_explicit::<AddGameResourceLink>();
+        server_fn::axum::register_explicit::<RemoveGameResourceLink>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GlobalSearch>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAllGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemGenres>();

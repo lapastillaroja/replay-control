@@ -2307,10 +2307,7 @@ mod tests {
                 .sum::<u64>(),
             600
         );
-        assert_eq!(
-            group.iter().filter(|g| g.kind == FileKind::Disc).count(),
-            3
-        );
+        assert_eq!(group.iter().filter(|g| g.kind == FileKind::Disc).count(), 3);
     }
 
     #[test]
