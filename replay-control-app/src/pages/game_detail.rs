@@ -298,7 +298,7 @@ fn GameDetailContent(
         }
         _ => None,
     };
-    let is_now_playing = move || active_started_at().is_some();
+    let is_now_playing = Memo::new(move |_| active_started_at().is_some());
 
     // Box art variant picker state.
     // Suppress "Change cover" for hack and special ROMs — they should inherit the base ROM's cover.
@@ -464,22 +464,22 @@ fn GameDetailContent(
         }
     };
 
-    let fav_label = move || {
+    let fav_label = Signal::derive(move || {
         let locale = i18n.locale.get();
         if is_favorite.get() {
-            t(locale, Key::GameDetailUnfavorite)
+            t(locale, Key::GameDetailUnfavorite).to_string()
         } else {
-            t(locale, Key::GameDetailFavorite)
+            t(locale, Key::GameDetailFavorite).to_string()
         }
-    };
+    });
 
-    let fav_icon = move || {
+    let fav_icon = Signal::derive(move || {
         if is_favorite.get() {
             "\u{2605}"
         } else {
             "\u{2606}"
         }
-    };
+    });
 
     view! {
         // Header
@@ -494,7 +494,7 @@ fn GameDetailContent(
 
         // Hero / Cover Art
         <section class="section">
-            <div class="game-cover" class:game-cover-playing=move || is_now_playing()>
+            <div class="game-cover" class:game-cover-playing=move || is_now_playing.get()>
                 <Show when=move || box_art_url.read().is_some()
                     fallback=move || view! {
                         <BoxArtPlaceholder
@@ -544,9 +544,23 @@ fn GameDetailContent(
 
         // Launch on TV (prominent CTA)
         <section class="game-launch-cta">
-            <Show when=move || !is_now_playing()>
-                <GameLaunchAction relative_path=relative_path_sv return_to=return_to_sv />
-            </Show>
+            <div class="game-launch-row">
+                <GameLaunchAction
+                    relative_path=relative_path_sv
+                    return_to=return_to_sv
+                    already_playing=is_now_playing
+                />
+                <button
+                    type="button"
+                    class="game-action-btn game-action-fav game-action-fav-cta"
+                    class:game-action-fav-active=move || is_favorite.get()
+                    aria-label=fav_label
+                    title=fav_label
+                    on:click=on_toggle_fav
+                >
+                    <span class="game-action-icon">{move || fav_icon.get()}</span>
+                </button>
+            </div>
         </section>
 
         // Game Info Card
@@ -835,13 +849,8 @@ fn GameDetailContent(
 
         // Actions
         <section class="section">
-            <h2 class="section-title">{move || t(i18n.locale.get(), Key::CommonActions)}</h2>
-            <div class="game-actions" class:game-actions-playing=move || is_now_playing()>
-                <button class="game-action-btn game-action-fav" on:click=on_toggle_fav>
-                    <span class="game-action-icon">{fav_icon}</span>
-                    {fav_label}
-                </button>
-
+            <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailMoreActions)}</h2>
+            <div class="game-actions">
                 <GameRenameAction
                     is_renaming rename_value
                     filename=filename_sv
@@ -869,6 +878,7 @@ fn GameDetailContent(
 fn GameLaunchAction(
     relative_path: StoredValue<String>,
     return_to: StoredValue<String>,
+    #[prop(into)] already_playing: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let _ = return_to;
@@ -914,7 +924,7 @@ fn GameLaunchAction(
     let is_simulated =
         move || matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"));
     let is_error = move || matches!(launch_result.get(), Some(Err(_)));
-    let is_disabled = move || launching.get() || is_launched();
+    let is_disabled = move || launching.get() || is_launched() || already_playing.get();
     let is_launching =
         move || launching.get() || (launch_clicked.get() && launch_result.get().is_none());
     let error_message = move || match launch_result.get() {
@@ -924,7 +934,9 @@ fn GameLaunchAction(
 
     let label = move || {
         let locale = i18n.locale.get();
-        if is_launching() {
+        if already_playing.get() {
+            t(locale, Key::GameDetailAlreadyPlaying)
+        } else if is_launching() {
             t(locale, Key::GameDetailLaunching)
         } else if is_launched() {
             t(locale, Key::GameDetailLaunched)
@@ -957,6 +969,7 @@ fn GameLaunchAction(
                         class="game-action-launch"
                         class:game-action-launch-success=is_launched
                         class:game-action-launch-simulated=is_simulated
+                        class:game-action-launch-playing=move || already_playing.get()
                         prop:disabled=is_disabled
                         on:click=on_launch
                     >

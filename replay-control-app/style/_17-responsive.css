@@ -262,10 +262,6 @@
         width: auto;
     }
 
-    .game-launch-cta .game-action-launch {
-        width: auto;
-    }
-
     /* Game detail screenshots: side by side */
     .game-screenshots {
         display: grid;

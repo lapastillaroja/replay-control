@@ -342,11 +342,6 @@
     background: var(--surface-hover);
 }
 
-.game-actions-playing .game-action-btn,
-.game-actions-playing .game-action-launch {
-    border-color: var(--accent-border);
-}
-
 .game-action-btn:disabled {
     cursor: not-allowed;
     opacity: 0.5;
@@ -358,6 +353,10 @@
 
 .game-action-fav:hover {
     border-color: var(--star);
+}
+
+.game-action-fav-active {
+    color: var(--star);
 }
 
 .game-action-launch {
@@ -383,19 +382,48 @@
     background: #6e7681;
 }
 
+.game-action-launch-playing {
+    background: var(--surface-hover);
+    color: var(--text-secondary);
+}
+
 .game-launch-cta {
     /* Sit close to the cover — the section gap above already separates it. */
     padding: 0 var(--page-edge-padding) var(--panel-gap);
 }
 
-.game-launch-action {
+.game-launch-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--control-gap);
     width: 100%;
 }
 
+.game-launch-action {
+    align-self: stretch;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .game-launch-cta .game-action-launch {
+    flex: 1 1 auto;
     width: 100%;
+    min-height: var(--control-height-large);
     --button-padding: var(--secondary-action-padding-wide);
     font-size: var(--inline-action-font-size-default);
+}
+
+.game-action-fav-cta {
+    flex: 0 0 var(--control-height-large);
+    width: var(--control-height-large);
+    min-width: var(--control-height-large);
+    min-height: var(--control-height-large);
+    padding: var(--control-padding-y);
+}
+
+.game-action-fav-cta .game-action-icon {
+    font-size: var(--font-size-large-default);
+    line-height: 1;
 }
 
 .game-action-error {
