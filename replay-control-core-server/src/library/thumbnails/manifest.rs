@@ -1069,6 +1069,20 @@ pub fn find_boxart_variants(
         .join(ThumbnailKind::Boxart.media_dir());
 
     let mut variants = Vec::new();
+    // Dedup is by filename stem, not image content. On exFAT/NFS the media folder
+    // often holds two real files for one cover — a tag-stripped `Game.png` and the
+    // full `Game (year)(publisher).png` — which are frequently byte-identical
+    // (verified 2026-06-21: e.g. amstrad_cpc "007 - A View to a Kill" pair shares an
+    // md5). Different stems, so both surface in the picker as the same image.
+    //
+    // Content dedup (size key, hash on size-collision) was considered and
+    // deliberately deferred: the picker loads lazily on chooser-open (off the page
+    // render path), and nothing stores a size/hash ahead of time (thumbnail_manifest
+    // has only filename + symlink_target), so it would add request-time I/O for a
+    // cosmetic gain. If revisited, it MUST be content-based, never name-based —
+    // e.g. `1942.png` vs `1942 (Elite Systems).png` are genuinely different art.
+    // (Undownloaded libretro regional duplicates are already handled below via
+    // symlink_target.)
     let mut seen_stems: HashSet<String> = HashSet::new();
 
     // ── Layer 1: Filesystem scan (downloaded images, any source) ─────
