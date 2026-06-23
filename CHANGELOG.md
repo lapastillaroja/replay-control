@@ -25,6 +25,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed the channel selector and **Check for Updates** button in the Updates section rendering at different heights.
 - Fixed a console warning logged when clearing metadata or the search index from the Game Library page.
 - Fixed the game catalog build to fail fast when any upstream or curated data source is missing or empty, so a partial catalog (for example one missing developer and publisher metadata or Shmups Wiki links) can no longer be shipped.
+- Fixed missing arcade box art for games whose cover art exists online under a different name than the one shown (common for some MAME arcade games), by also matching against the alternate names from the other arcade databases.
 
 ---
 

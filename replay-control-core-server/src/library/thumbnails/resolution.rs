@@ -151,6 +151,28 @@ impl ArcadeInfoLookup {
     }
 }
 
+/// Try one `(rom_filename, display_name)` candidate against the on-disk index,
+/// then the manifest. Returns the first hit, or `None` to fall through to the
+/// next candidate. The `ManifestHit` borrow is tied to `index`.
+fn try_resolve_candidate<'a>(
+    index: &'a ImageIndex,
+    db_paths: Option<&HashMap<String, String>>,
+    rom_filename: &str,
+    display_name: Option<&str>,
+) -> Option<BoxArtResult<'a>> {
+    if let Some(path) =
+        image_matching::find_best_match(&index.dir_index, rom_filename, display_name, db_paths)
+    {
+        return Some(BoxArtResult::Found(path));
+    }
+    if let Some(ref manifest) = index.manifest
+        && let Some(m) = thumbnail_manifest::find_in_manifest(manifest, rom_filename, display_name)
+    {
+        return Some(BoxArtResult::ManifestHit(m));
+    }
+    None
+}
+
 /// Resolve box art with an optional `hash_matched_name` fallback.
 ///
 /// When the filename-based lookup fails but a No-Intro `hash_matched_name` is available,
@@ -182,66 +204,55 @@ pub fn resolve_box_art_with_hash<'a>(
     } else {
         Some(&index.db_paths)
     };
-    if let Some(path) =
-        image_matching::find_best_match(&index.dir_index, rom_filename, arcade_display, db_paths)
-    {
-        return BoxArtResult::Found(path);
+
+    // Try candidates in confidence order, each through the same on-disk-then-
+    // manifest lookup (`try_resolve_candidate`). First hit wins.
+
+    // 1. The per-system merged display name.
+    if let Some(result) = try_resolve_candidate(index, db_paths, rom_filename, arcade_display) {
+        return result;
     }
 
-    // Check manifest for a remote thumbnail to download.
-    if let Some(ref manifest) = index.manifest
-        && let Some(m) =
-            thumbnail_manifest::find_in_manifest(manifest, rom_filename, arcade_display)
-    {
-        return BoxArtResult::ManifestHit(m);
+    // 2. Alternate source names: the priority merge picked one display name, but
+    // libretro-thumbnails may file this game under another emulator's curated
+    // name (e.g. MAME 0.285 "Atomic Runner Chelnov (World)" vs the repo's
+    // "Chelnov - Atomic Runner (World)"). Real curated names, so false-positive
+    // risk is negligible. Keeps the real `rom_filename` (for db_paths).
+    if let Some(info) = arcade_info {
+        for alt in &info.alt_display_names {
+            if let Some(result) =
+                try_resolve_candidate(index, db_paths, rom_filename, Some(alt.as_str()))
+            {
+                return result;
+            }
+        }
     }
 
-    // Arcade clone fallback: if this ROM is a clone, try the parent's display name.
+    // 3. Arcade clone fallback: try the parent's display name. The synthetic
+    // parent filename makes the matcher use the parent's curated name.
     if is_arcade
         && let Some(info) = arcade_info
         && !info.parent.is_empty()
         && let Some(parent_info) = arcade_lookup.get(&info.parent)
     {
-        // Build a synthetic rom_filename from the parent codename so
-        // find_best_match uses the parent's display name for matching.
         let parent_filename = format!("{}.zip", info.parent);
-        if let Some(path) = image_matching::find_best_match(
-            &index.dir_index,
+        if let Some(result) = try_resolve_candidate(
+            index,
+            db_paths,
             &parent_filename,
             Some(parent_info.display_name.as_str()),
-            db_paths,
         ) {
-            return BoxArtResult::Found(path);
-        }
-
-        // Also try manifest with parent.
-        if let Some(ref manifest) = index.manifest
-            && let Some(m) = thumbnail_manifest::find_in_manifest(
-                manifest,
-                &parent_filename,
-                Some(parent_info.display_name.as_str()),
-            )
-        {
-            return BoxArtResult::ManifestHit(m);
+            return result;
         }
     }
 
-    // Hash-matched name fallback: if we have a No-Intro canonical name from CRC matching,
-    // try it as an alternative ROM filename. This works for all ROMs (including translations/
-    // hacks/specials — showing the original game's box art is correct).
+    // 4. No-Intro canonical name from CRC matching, as a synthetic ROM filename.
+    // Works for all ROMs (incl. translations/hacks/specials — the original
+    // game's box art is correct).
     if let Some(matched_name) = hash_matched_name {
         let synthetic_filename = format!("{matched_name}.rom");
-        if let Some(path) =
-            image_matching::find_best_match(&index.dir_index, &synthetic_filename, None, db_paths)
-        {
-            return BoxArtResult::Found(path);
-        }
-        // Also try manifest with hash_matched_name.
-        if let Some(ref manifest) = index.manifest
-            && let Some(m) =
-                thumbnail_manifest::find_in_manifest(manifest, &synthetic_filename, None)
-        {
-            return BoxArtResult::ManifestHit(m);
+        if let Some(result) = try_resolve_candidate(index, db_paths, &synthetic_filename, None) {
+            return result;
         }
     }
 

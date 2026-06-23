@@ -143,7 +143,11 @@ pub static SYSTEMS: &[System] = &[
         launchbox_platforms: &["Arcade"],
         hidden: false,
         uses_megabit: true,
-        thumbnail_repos: &["MAME"],
+        // MAME primary, FBNeo fallback — same two-repo lookup as arcade_mame
+        // (each libretro-thumbnails repo has box arts the other lacks). MAME
+        // 2003+ romsets share names with full MAME, so the FBNeo fallback adds
+        // covers MAME's repo is missing.
+        thumbnail_repos: &["MAME", "FBNeo - Arcade Games"],
         has_retroachievements: true,
         core_supports_retroachievements: false,
     },

@@ -51,6 +51,14 @@ pub struct ArcadeGameInfo {
     /// romset has no RA set. (The matched hash itself stays in the catalog as
     /// `arcade_game.ra_hash` and is not read at runtime.)
     pub ra_id: String,
+    /// Distinct display names from the *non-winning* sources, for thumbnail
+    /// matching only. The per-system priority merge picks one `display_name`,
+    /// but libretro-thumbnails may file a game under a different emulator's
+    /// name (e.g. MAME 0.285 "Atomic Runner Chelnov (World)" vs the repo's
+    /// MAME-current "Chelnov - Atomic Runner (World)"). Trying these recovers
+    /// covers that exist upstream under an alternate curated name. Excludes
+    /// `display_name` and empties; order follows [`ArcadeSource::ALL`].
+    pub alt_display_names: Vec<String>,
 }
 
 /// Single-source row as stored in the `arcade_game` table.
@@ -169,6 +177,7 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         normalized_genre: String::new(),
         board: None,
         ra_id: String::new(),
+        alt_display_names: Vec::new(),
     };
     let mut got_bool_decision = false;
 
@@ -221,6 +230,20 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
     for src in ArcadeSource::ALL {
         if !priority.contains(&src) {
             apply(src);
+        }
+    }
+
+    // Collect the other sources' distinct display names as thumbnail-matching
+    // alternates (see `alt_display_names`). Order follows `ArcadeSource::ALL`.
+    for src in ArcadeSource::ALL {
+        if let Some(row) = rows[src.idx()].as_ref() {
+            let name = &row.display_name;
+            if !name.is_empty()
+                && *name != info.display_name
+                && !info.alt_display_names.contains(name)
+            {
+                info.alt_display_names.push(name.clone());
+            }
         }
     }
 
@@ -491,6 +514,64 @@ mod tests {
         init_test_catalog().await;
         let name = arcade_display_name_for_system("arcade_mame", "mslug6").await;
         assert_eq!(name, "Metal Slug 6");
+    }
+
+    /// Minimal `SourceRow` carrying only the fields the merge cares about here.
+    fn src_row(source: ArcadeSource, display_name: &str) -> SourceRow {
+        SourceRow {
+            rom_name: "chelnov".to_string(),
+            source,
+            display_name: display_name.to_string(),
+            year: String::new(),
+            manufacturer: String::new(),
+            players: 0,
+            rotation: Rotation::Unknown,
+            status: DriverStatus::Unknown,
+            is_clone: false,
+            is_bios: false,
+            parent: String::new(),
+            category: String::new(),
+            normalized_genre: String::new(),
+            board: None,
+            ra_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn merge_collects_distinct_non_winner_alt_names() {
+        // chelnov: MAME 0.285 and FBNeo agree on one name; MAME 2003+ differs
+        // (the name libretro-thumbnails actually files the cover under).
+        let mut rows: SourceRows = Default::default();
+        rows[ArcadeSource::Mame.idx()] =
+            Some(src_row(ArcadeSource::Mame, "Atomic Runner Chelnov (World)"));
+        rows[ArcadeSource::Fbneo.idx()] = Some(src_row(
+            ArcadeSource::Fbneo,
+            "Atomic Runner Chelnov (World)",
+        ));
+        rows[ArcadeSource::Mame2k3p.idx()] = Some(src_row(
+            ArcadeSource::Mame2k3p,
+            "Chelnov - Atomic Runner (World)",
+        ));
+
+        // arcade_mame priority is [Mame, Mame2k3p, Fbneo] -> MAME name wins.
+        let info = merge_for_system("chelnov", &rows, "arcade_mame");
+        assert_eq!(info.display_name, "Atomic Runner Chelnov (World)");
+        // The winner is excluded and the FBNeo duplicate is deduped, leaving
+        // exactly the one distinct alternate (the matching libretro name).
+        assert_eq!(
+            info.alt_display_names,
+            vec!["Chelnov - Atomic Runner (World)".to_string()]
+        );
+    }
+
+    #[test]
+    fn merge_has_no_alts_when_all_sources_agree() {
+        let mut rows: SourceRows = Default::default();
+        rows[ArcadeSource::Mame.idx()] = Some(src_row(ArcadeSource::Mame, "Metal Slug 6"));
+        rows[ArcadeSource::Fbneo.idx()] = Some(src_row(ArcadeSource::Fbneo, "Metal Slug 6"));
+        let info = merge_for_system("mslug6", &rows, "arcade_mame");
+        assert_eq!(info.display_name, "Metal Slug 6");
+        assert!(info.alt_display_names.is_empty());
     }
 
     #[tokio::test]
