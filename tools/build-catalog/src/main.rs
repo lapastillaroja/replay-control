@@ -38,6 +38,13 @@ struct Args {
     /// Use fixture data from replay-control-core/fixtures/ instead of data/
     #[arg(long)]
     stub: bool,
+
+    /// Downgrade missing-source preflight errors to warnings and build a
+    /// partial catalog anyway. For local/dev builds without every input (e.g.
+    /// no TGDB API key) and keyless throwaway CI builds. Production/release
+    /// builds must NOT pass this — a missing source is a shipping defect.
+    #[arg(long)]
+    allow_partial: bool,
 }
 
 // =============================================================================
@@ -3584,54 +3591,156 @@ fn catalog_enrichment_inputs_version(conn: &Connection) -> rusqlite::Result<Stri
 // Preflight
 // =============================================================================
 
-/// Source files that must be present for a production (non-stub) catalog build.
-/// Missing entries would silently produce a catalog with coverage gaps
-/// (e.g. missing MAME 0.285 games), so we fail fast here.
+/// A source the production catalog build reads. Every input that contributes
+/// rows or enrichment is listed — a missing one silently produces a catalog
+/// with coverage gaps (e.g. no shmups links, no RA flags, no player counts),
+/// which is a shipping defect, so a full build fails fast here.
 ///
-/// Truly optional inputs (catver, nplayers, tgdb-*, libretro-meta) are
-/// skipped individually at parse time — they only enrich existing entries.
-// Paths relative to the data dir. Downloaded inputs live under `upstream/`;
-// `wikidata/series.json` is committed and stays at the data-dir root.
-const REQUIRED_SOURCES: &[&str] = &[
-    "upstream/fbneo-arcade.dat",
-    "upstream/mame2003plus.xml",
-    "upstream/mame0285-arcade.xml",
-    "upstream/no-intro",
-    "upstream/thegamesdb-latest.json",
-    "wikidata/series.json",
+/// `--stub` builds skip preflight (they read fixtures). `--allow-partial`
+/// downgrades the failure to a warning for keyless local/throwaway builds.
+enum RequiredSource {
+    /// A single file that must exist and be non-empty.
+    File(&'static str),
+    /// A directory that must exist and contain at least one entry whose name
+    /// ends with `suffix` (the per-system/per-repo collections).
+    Dir {
+        path: &'static str,
+        suffix: &'static str,
+    },
+}
+
+/// Paths relative to the data dir. Downloaded inputs live under `upstream/`;
+/// committed curated data (`wikidata/`, `shmups-wiki/`, `retroachievements/`,
+/// `community/`, `arcade/`) stays at the data-dir root.
+const REQUIRED_SOURCES: &[RequiredSource] = &[
+    // ── Core game data (rows) ──
+    RequiredSource::File("upstream/fbneo-arcade.dat"),
+    RequiredSource::File("upstream/mame2003plus.xml"),
+    RequiredSource::File("upstream/mame0285-arcade.xml"),
+    RequiredSource::Dir {
+        path: "upstream/no-intro",
+        suffix: ".dat",
+    },
+    RequiredSource::File("upstream/thegamesdb-latest.json"),
+    RequiredSource::File("arcade/flycast_games.csv"),
+    // ── Arcade overlays (categories, player counts) ──
+    RequiredSource::File("upstream/catver.ini"),
+    RequiredSource::File("upstream/catver-mame-current.ini"),
+    RequiredSource::File("upstream/nplayers.ini"),
+    // ── TGDB ID→name lookups (need a TGDB API key; see download-tgdb-lookups.sh) ──
+    RequiredSource::File("upstream/tgdb-developers.json"),
+    RequiredSource::File("upstream/tgdb-publishers.json"),
+    RequiredSource::File("upstream/tgdb-genres.json"),
+    // ── libretro metadata overlays ──
+    RequiredSource::Dir {
+        path: "upstream/libretro-meta/maxusers",
+        suffix: ".dat",
+    },
+    RequiredSource::Dir {
+        path: "upstream/libretro-meta/genre",
+        suffix: ".dat",
+    },
+    // ── Amiga identification ──
+    RequiredSource::File("upstream/amiga/whdload_db.xml"),
+    RequiredSource::Dir {
+        path: "upstream/amiga",
+        suffix: ".dat",
+    },
+    // ── Manual indexes ──
+    RequiredSource::Dir {
+        path: "upstream/mister-manuals",
+        suffix: ".csv",
+    },
+    RequiredSource::Dir {
+        path: "upstream/retrokit-manuals",
+        suffix: "-sources.tsv",
+    },
+    // ── Committed curated data ──
+    RequiredSource::File("wikidata/series.json"),
+    RequiredSource::File("shmups-wiki/games.json"),
+    RequiredSource::Dir {
+        path: "retroachievements",
+        suffix: ".json",
+    },
+    RequiredSource::Dir {
+        path: "community",
+        suffix: ".json",
+    },
 ];
 
-fn preflight_check(sources_dir: &Path) -> Result<(), String> {
-    let missing: Vec<&str> = REQUIRED_SOURCES
+/// Return `Some(reason)` if the source is missing/empty, else `None`.
+fn missing_source_reason(sources_dir: &Path, source: &RequiredSource) -> Option<String> {
+    match source {
+        RequiredSource::File(rel) => {
+            let path = sources_dir.join(rel);
+            match std::fs::metadata(&path) {
+                Ok(meta) if meta.is_file() && meta.len() > 0 => None,
+                Ok(meta) if meta.len() == 0 => Some(format!("{rel} (empty)")),
+                Ok(_) => Some(format!("{rel} (not a file)")),
+                Err(_) => Some(format!("{rel} (missing)")),
+            }
+        }
+        RequiredSource::Dir { path, suffix } => {
+            let dir = sources_dir.join(path);
+            let has_entry = std::fs::read_dir(&dir).ok().is_some_and(|mut entries| {
+                entries.any(|e| {
+                    e.ok().is_some_and(|e| {
+                        e.file_name().to_string_lossy().ends_with(suffix)
+                            && e.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                    })
+                })
+            });
+            (!has_entry).then(|| format!("{path}/ (no non-empty *{suffix})"))
+        }
+    }
+}
+
+/// Check that every required source is present and non-empty.
+///
+/// When `allow_partial` is set, missing sources are logged as warnings and the
+/// build proceeds (producing a partial catalog); otherwise the first missing
+/// source aborts the build.
+fn preflight_check(sources_dir: &Path, allow_partial: bool) -> Result<(), String> {
+    let missing: Vec<String> = REQUIRED_SOURCES
         .iter()
-        .filter(|rel| !sources_dir.join(rel).exists())
-        .copied()
+        .filter_map(|source| missing_source_reason(sources_dir, source))
         .collect();
     if missing.is_empty() {
         return Ok(());
     }
+
     let mut msg = String::new();
     msg.push_str(&format!(
-        "Missing {} required source file(s) under {}:\n",
+        "{} required source(s) missing or empty under {}:\n",
         missing.len(),
         sources_dir.display(),
     ));
-    for rel in &missing {
-        msg.push_str(&format!("  - {rel}\n"));
+    for reason in &missing {
+        msg.push_str(&format!("  - {reason}\n"));
     }
     msg.push_str(
         "\nRun the data download scripts to produce them:\n\
          \n  ./scripts/download-arcade-data.sh\n\
          \n  ./scripts/download-metadata.sh\n\
+         \n  TGDB_API_KEY=... ./scripts/download-tgdb-lookups.sh\n\
          \n  python3 scripts/wikidata-series-extract.py > data/wikidata/series.json\n\
          \nmame0285-arcade.xml additionally needs `7z` (p7zip-full) and `python3` \
          installed on the build host; without them download-arcade-data.sh skips it \
          with a warning, producing a catalog that omits MAME 0.285 games.\n\
+         \nThe TGDB lookups need a TheGamesDB API key — see scripts/.env / \
+         download-tgdb-lookups.sh.\n\
          \nRelease builds use the committed data/wikidata/series.json snapshot and \
          should not query live Wikidata SPARQL.\n\
-         \nOr pass --stub to build from replay-control-core/fixtures/ instead.\n",
+         \nPass --stub to build from replay-control-core/fixtures/ instead, or \
+         --allow-partial to build a deliberately partial catalog anyway.\n",
     );
-    Err(msg)
+
+    if allow_partial {
+        eprintln!("build-catalog: WARNING — building a PARTIAL catalog (--allow-partial)\n\n{msg}");
+        Ok(())
+    } else {
+        Err(msg)
+    }
 }
 
 // =============================================================================
@@ -3661,7 +3770,7 @@ fn main() {
     eprintln!("build-catalog: output      = {}", args.output.display());
 
     if !args.stub
-        && let Err(msg) = preflight_check(&sources_dir)
+        && let Err(msg) = preflight_check(&sources_dir, args.allow_partial)
     {
         eprintln!("build-catalog: ERROR\n\n{msg}");
         std::process::exit(1);
@@ -3766,6 +3875,78 @@ mod tests {
         let path = dir.join(name);
         fs::write(&path, content).unwrap();
         path
+    }
+
+    /// Materialize a complete, valid source tree from `REQUIRED_SOURCES`:
+    /// a non-empty file for every `File`, and a dir holding one non-empty
+    /// matching entry for every `Dir`.
+    fn materialize_required_sources(dir: &Path) {
+        for source in REQUIRED_SOURCES {
+            match source {
+                RequiredSource::File(rel) => {
+                    let path = dir.join(rel);
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(&path, b"x").unwrap();
+                }
+                RequiredSource::Dir { path, suffix } => {
+                    let d = dir.join(path);
+                    fs::create_dir_all(&d).unwrap();
+                    fs::write(d.join(format!("entry{suffix}")), b"x").unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn preflight_passes_with_complete_sources() {
+        let dir = temp_sources_dir();
+        materialize_required_sources(&dir);
+        assert!(preflight_check(&dir, false).is_ok());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preflight_fails_on_missing_source_unless_allow_partial() {
+        let dir = temp_sources_dir();
+        materialize_required_sources(&dir);
+
+        // A missing required file fails the strict check…
+        fs::remove_file(dir.join("upstream/tgdb-developers.json")).unwrap();
+        let err = preflight_check(&dir, false).unwrap_err();
+        assert!(err.contains("tgdb-developers.json"), "{err}");
+
+        // …and --allow-partial downgrades it to a warning.
+        assert!(preflight_check(&dir, true).is_ok());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preflight_rejects_empty_files_and_empty_collection_dirs() {
+        let dir = temp_sources_dir();
+        materialize_required_sources(&dir);
+
+        // An empty required file is "not available".
+        let empty = dir.join("shmups-wiki/games.json");
+        fs::write(&empty, b"").unwrap();
+        assert!(
+            preflight_check(&dir, false)
+                .unwrap_err()
+                .contains("games.json")
+        );
+        fs::write(&empty, b"x").unwrap();
+
+        // A collection dir with no matching entry is "not available".
+        let nointro = dir.join("upstream/no-intro");
+        fs::remove_dir_all(&nointro).unwrap();
+        fs::create_dir_all(&nointro).unwrap();
+        assert!(
+            preflight_check(&dir, false)
+                .unwrap_err()
+                .contains("no-intro")
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

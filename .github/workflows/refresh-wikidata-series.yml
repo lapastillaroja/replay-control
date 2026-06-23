@@ -81,7 +81,9 @@ jobs:
           PY
 
       - name: Build catalog with refreshed snapshot
-        run: cargo run --release -p build-catalog -- --output /tmp/catalog-wikidata-refresh.sqlite
+        # Throwaway catalog to validate the refreshed snapshot; this job has no
+        # TGDB API key, so the TGDB lookups are absent — build partial on purpose.
+        run: cargo run --release -p build-catalog -- --output /tmp/catalog-wikidata-refresh.sqlite --allow-partial
 
       - name: Open pull request
         env:

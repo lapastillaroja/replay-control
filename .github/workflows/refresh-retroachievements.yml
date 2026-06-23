@@ -74,7 +74,9 @@ jobs:
           PY
 
       - name: Build catalog with refreshed RA data
-        run: cargo run --release -p build-catalog -- --output /tmp/catalog-ra-refresh.sqlite
+        # Throwaway catalog to validate the refreshed RA data; this job has no
+        # TGDB API key, so the TGDB lookups are absent — build partial on purpose.
+        run: cargo run --release -p build-catalog -- --output /tmp/catalog-ra-refresh.sqlite --allow-partial
 
       - name: Open pull request
         env:

@@ -6,13 +6,19 @@
 #
 # Usage: TGDB_API_KEY=your_key ./scripts/download-tgdb-lookups.sh
 #
-# The resulting JSON files are small (~400KB total) and committed to the repo
-# so that builds don't require an API key. Only the maintainer needs the key.
+# The resulting JSON files (~400KB total) land in data/upstream/ — which is
+# gitignored and regenerated per build, NOT committed. They map TGDB numeric
+# developer/publisher/genre ids (embedded in thegamesdb-latest.json) to names;
+# without them a build has empty developer/publisher fields. build-catalog's
+# preflight requires them, so a full build needs this key (CI uses the
+# TGDB_API_KEY secret); pass build-catalog --allow-partial for a keyless build.
 
 set -euo pipefail
 
-# Source .env if it exists (for local development)
-SCRIPT_DIR_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Source scripts/.env if it exists (for local development) — the single local
+# secrets file, alongside this script and scripts/.env.example (also holds
+# RETROACHIEVEMENTS_KEY, read by retroachievements-gamelist-extract.py).
+SCRIPT_DIR_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_ENV/.env" ]]; then
     set -a
     source "$SCRIPT_DIR_ENV/.env"
@@ -21,7 +27,7 @@ fi
 
 if [[ -z "${TGDB_API_KEY:-}" ]]; then
     echo "ERROR: Set TGDB_API_KEY environment variable" >&2
-    echo "  Option 1: Create .env file with TGDB_API_KEY=your_key" >&2
+    echo "  Option 1: Add TGDB_API_KEY=your_key to scripts/.env" >&2
     echo "  Option 2: TGDB_API_KEY=your_key ./scripts/download-tgdb-lookups.sh" >&2
     echo "  Get a free key at https://api.thegamesdb.net/key.php" >&2
     exit 1
@@ -61,5 +67,5 @@ print()
 done
 
 echo
-echo "Done. Commit these files to the repo."
+echo "Done. These land in data/upstream/ (gitignored) — re-fetched per build, not committed."
 echo "Re-run periodically to pick up new developers/publishers (rarely changes)."
