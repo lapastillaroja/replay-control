@@ -136,6 +136,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::AccessCertificateTrustHint => {
             "証明書を再生成すると、ローカルのセキュリティ例外を再度承認する必要がある場合があります。"
         }
+        Key::AccessDowngradeUnavailableHint => {
+            "アクセスコードでサインインして管理者に昇格した場合にのみ利用できます。"
+        }
         Key::AccessNormalUserTitle => "通常ユーザーアクセス",
         Key::AccessNormalUserReplayOs => {
             "ゲーム起動とプレイヤー操作にはRePlayOS Net Controlのペアリングコードを使用します。"

@@ -22,6 +22,34 @@ pub fn confirm_action(message: &str) -> bool {
     }
 }
 
+/// Reload the page after `delay_ms`. Used after regenerating the TLS certificate:
+/// the service restarts with a new cert whose fingerprint the browser hasn't
+/// accepted, so every subsequent fetch fails. A full reload routes the user
+/// through the browser's certificate-accept flow instead of a broken SPA.
+#[cfg(target_arch = "wasm32")]
+pub fn reload_after_ms(delay_ms: i32) {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let cb = Closure::<dyn Fn()>::new(move || {
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().reload();
+        }
+    });
+    let func: web_sys::js_sys::Function = cb
+        .as_ref()
+        .unchecked_ref::<web_sys::js_sys::Function>()
+        .clone();
+    cb.forget();
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&func, delay_ms);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn reload_after_ms(_delay_ms: i32) {}
+
 /// Format a number with thousands separators (e.g., 15440 -> "15,440").
 pub fn format_number(n: usize) -> String {
     let s = n.to_string();

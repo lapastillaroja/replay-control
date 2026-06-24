@@ -545,11 +545,12 @@ async fn access_security_page_normal_user_renders_inline_admin_unlock_form() {
     assert!(html.contains("access-admin-password"));
     assert!(html.contains("Admin access"));
     assert!(html.contains("SHA-256 fingerprint"));
-    assert!(!html.contains("Regenerate certificate"));
+    // The regenerate button is now always rendered, disabled for non-admins.
+    assert!(html.contains("Regenerate certificate"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn access_security_page_direct_admin_does_not_offer_downgrade() {
+async fn access_security_page_direct_admin_shows_disabled_downgrade() {
     setup();
     let mut env = TestEnv::new().await;
     env.state.mode = Mode::Device;
@@ -587,7 +588,10 @@ async fn access_security_page_direct_admin_does_not_offer_downgrade() {
     assert!(html.contains("Admin"));
     assert!(html.contains("Sign out"));
     assert!(html.contains("Sign out all sessions"));
-    assert!(!html.contains("Switch to normal user"));
+    // A direct admin has no user session to return to, so the downgrade control
+    // is shown but disabled, with a hint explaining when it is available.
+    assert!(html.contains("Switch to normal user"));
+    assert!(html.contains("Available only when you sign in with the access code"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

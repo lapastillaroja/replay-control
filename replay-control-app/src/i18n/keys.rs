@@ -122,6 +122,7 @@ pub enum Key {
     AccessCertificateRegenerateConfirm,
     AccessCertificateRegenerated,
     AccessCertificateTrustHint,
+    AccessDowngradeUnavailableHint,
     AccessNormalUserTitle,
     AccessNormalUserReplayOs,
     AccessManageReplayOs,

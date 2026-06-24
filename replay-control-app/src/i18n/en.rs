@@ -136,6 +136,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::AccessCertificateTrustHint => {
             "Regenerating the certificate may require accepting the local security exception again."
         }
+        Key::AccessDowngradeUnavailableHint => {
+            "Available only when you sign in with the access code and then elevate to admin."
+        }
         Key::AccessNormalUserTitle => "Normal user access",
         Key::AccessNormalUserReplayOs => {
             "Uses the RePlayOS Net Control pairing code for launch and player controls."

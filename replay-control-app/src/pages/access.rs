@@ -83,6 +83,19 @@ fn AccessSecurityContent(
     let admin_unlocked = move || admin_settings_unlocked(&status.read());
     let auth_active = move || status.read().auth_required;
 
+    let certificate = RwSignal::new(initial_certificate);
+    // The certificate info is admin-only, so a page that loaded as a non-admin
+    // fetched nothing. Re-fetch once the session is elevated to admin.
+    Effect::new(move |_| {
+        if admin_unlocked() && certificate.get_untracked().is_none() {
+            leptos::task::spawn_local(async move {
+                if let Ok(info) = server_fns::get_tls_certificate_info().await {
+                    certificate.set(Some(info));
+                }
+            });
+        }
+    });
+
     view! {
         <section class="apply-section">
             <h3 class="form-label">{move || t(i18n.locale.get(), Key::LoginCurrentRole)}</h3>
@@ -188,7 +201,7 @@ fn AccessSecurityContent(
         <section class="apply-section">
             <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessHttpsTitle)}</h3>
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessCertificateTrustHint)}</p>
-            <CertificateSection initial=initial_certificate can_regenerate=Signal::derive(admin_unlocked) i18n />
+            <CertificateSection certificate can_regenerate=Signal::derive(admin_unlocked) i18n />
         </section>
     }
 }
@@ -232,15 +245,16 @@ fn AdminSessionTimeoutForm(
     };
 
     view! {
-        <select
-            class="form-input"
-            on:change=on_change
-            prop:value=move || selected.get()
-            disabled=move || saving.get()
-        >
-            <option value="1h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutOneHour)}</option>
-            <option value="3h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutThreeHours)}</option>
-            <option value="12h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutTwelveHours)}</option>
+        <select class="form-input" on:change=on_change disabled=move || saving.get()>
+            <option value="1h" selected=move || selected.get() == "1h">
+                {move || t(i18n.locale.get(), Key::AccessAdminTimeoutOneHour)}
+            </option>
+            <option value="3h" selected=move || selected.get() == "3h">
+                {move || t(i18n.locale.get(), Key::AccessAdminTimeoutThreeHours)}
+            </option>
+            <option value="12h" selected=move || selected.get() == "12h">
+                {move || t(i18n.locale.get(), Key::AccessAdminTimeoutTwelveHours)}
+            </option>
         </select>
         {move || error.get().map(|message| view! {
             <div class="status-msg status-err">{message}</div>
@@ -360,11 +374,11 @@ fn SessionActions(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoV
             {move || error.get().map(|message| view! {
                 <div class="status-msg status-err">{message}</div>
             })}
-            <Show when=move || status.read().auth_required && status.read().can_downgrade>
+            <Show when=move || status.read().auth_required && status.read().role == AuthRole::Admin>
                 <button
                     class="form-btn form-btn-secondary"
                     on:click=on_downgrade
-                    disabled=move || saving.get()
+                    disabled=move || saving.get() || !status.read().can_downgrade
                 >
                     {move || {
                         let locale = locale.get();
@@ -375,6 +389,11 @@ fn SessionActions(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoV
                         }
                     }}
                 </button>
+                <Show when=move || !status.read().can_downgrade>
+                    <p class="form-hint">
+                        {move || t(locale.get(), Key::AccessDowngradeUnavailableHint)}
+                    </p>
+                </Show>
             </Show>
             <Show when=move || status.read().auth_required && status.read().role != AuthRole::Anonymous>
                 <button
@@ -498,25 +517,11 @@ fn AdminLoginInline(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl Int
 
 #[component]
 fn CertificateSection(
-    initial: Option<TlsCertificateInfo>,
-    #[prop(into)] can_regenerate: Signal<bool>,
-    i18n: I18nContext,
-) -> impl IntoView {
-    if let Some(info) = initial {
-        view! { <CertificatePanel initial=info can_regenerate i18n /> }.into_any()
-    } else {
-        view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }.into_any()
-    }
-}
-
-#[component]
-fn CertificatePanel(
-    initial: TlsCertificateInfo,
+    certificate: RwSignal<Option<TlsCertificateInfo>>,
     #[prop(into)] can_regenerate: Signal<bool>,
     i18n: I18nContext,
 ) -> impl IntoView {
     let locale = i18n.locale;
-    let info = RwSignal::new(initial);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
@@ -532,11 +537,16 @@ fn CertificatePanel(
         leptos::task::spawn_local(async move {
             match server_fns::regenerate_tls_certificate_info().await {
                 Ok(updated) => {
-                    info.set(updated);
+                    certificate.set(Some(updated));
                     status.set(Some((
                         true,
                         t(locale.get_untracked(), Key::AccessCertificateRegenerated).to_string(),
                     )));
+                    // The service restarts with a new-fingerprint cert; reload so
+                    // the browser re-prompts to accept it instead of failing every
+                    // later fetch. Delay covers the restart-to-ready time (~3.3s on
+                    // the Pi); reloading sooner would hit a not-yet-listening server.
+                    crate::util::reload_after_ms(4000);
                 }
                 Err(error) => {
                     status.set(Some((false, server_fns::format_error(error))));
@@ -546,6 +556,40 @@ fn CertificatePanel(
         });
     };
 
+    view! {
+        // Certificate details are admin-only — render them only when we have the
+        // info (a non-admin fetch returns nothing), never leaking paths/SANs.
+        {move || certificate.get().map(|info| view! { <CertificateDetails info i18n /> })}
+
+        {move || status.get().map(|(ok, msg)| {
+            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+            view! { <div class=class>{msg}</div> }
+        })}
+
+        // Always visible; disabled (with a hint) for non-admins.
+        <button
+            class="form-btn form-btn-secondary"
+            on:click=on_regenerate
+            disabled=move || saving.get() || !can_regenerate.get()
+        >
+            {move || {
+                let locale = i18n.locale.get();
+                if saving.get() {
+                    t(locale, Key::SettingsSaving)
+                } else {
+                    t(locale, Key::AccessCertificateRegenerate)
+                }
+            }}
+        </button>
+        <Show when=move || !can_regenerate.get()>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p>
+        </Show>
+    }
+}
+
+#[component]
+fn CertificateDetails(info: TlsCertificateInfo, i18n: I18nContext) -> impl IntoView {
+    let info = RwSignal::new(info);
     let missing_coverage = Signal::derive(move || {
         info.with(|info| {
             if info.has_missing_coverage() {
@@ -570,27 +614,6 @@ fn CertificatePanel(
             <AccessValueRow label_key=Key::AccessCertificateCurrentNames value=Signal::derive(move || info.with(|i| joined_names(&i.current_dns_names, &i.current_ip_addresses))) i18n />
             <AccessValueRow label_key=Key::AccessCertificateMissingCoverage value=missing_coverage i18n />
         </div>
-
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
-
-        <Show
-            when=move || can_regenerate.get()
-            fallback=move || view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }
-        >
-            <button class="form-btn form-btn-secondary" on:click=on_regenerate disabled=move || saving.get()>
-                {move || {
-                    let locale = i18n.locale.get();
-                    if saving.get() {
-                        t(locale, Key::SettingsSaving)
-                    } else {
-                        t(locale, Key::AccessCertificateRegenerate)
-                    }
-                }}
-            </button>
-        </Show>
     }
 }
 

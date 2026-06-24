@@ -137,7 +137,7 @@ select.form-input option {
 .status-msg {
     padding: var(--surface-inset-sm);
     border-radius: var(--radius-sm);
-    margin: var(--status-gap) 0 0;
+    margin: var(--status-gap) 0;
 }
 
 .status-ok {

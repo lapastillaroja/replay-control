@@ -38,9 +38,30 @@ pub struct SetupStatus {
 /// Pass `force: true` (via `/?setup` query param) to always show the card —
 /// the real `has_metadata` / `has_thumbnail_index` values are still queried
 /// so the UI can label buttons "Update" instead of "Start".
+// TODO: this spans auth role, Net Control, root password, and metadata/thumbnail
+// state — it isn't metadata-specific. Consider moving it (and `SetupStatus`) to
+// its own setup module, e.g. server_fns/setup.rs.
 #[server(prefix = "/sfn")]
 pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let is_device = state.mode.is_device();
+    let admin_access = super::auth::current_auth_role(&state).await? == AuthRole::Admin;
+
+    // Invited (non-admin) users on the device only browse and play games; the
+    // setup checklist is admin-only work and would just confuse them, so never
+    // show it to them — not even with ?setup. This also keeps the metadata scan
+    // and the password KDF off the non-admin request path.
+    if is_device && !admin_access {
+        return Ok(SetupStatus {
+            show_setup: false,
+            has_metadata: true,
+            has_thumbnail_index: true,
+            is_device,
+            admin_access: false,
+            replay_api_active: true,
+            default_root_password_active: false,
+        });
+    }
 
     if !force {
         let dismissed = state
@@ -53,8 +74,8 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
                 show_setup: false,
                 has_metadata: true,
                 has_thumbnail_index: true,
-                is_device: state.mode.is_device(),
-                admin_access: false,
+                is_device,
+                admin_access,
                 replay_api_active: true,
                 default_root_password_active: false,
             });
@@ -62,8 +83,6 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
     }
 
     let (has_metadata, has_thumbnail_index) = setup_metadata_status(&state).await;
-    let is_device = state.mode.is_device();
-    let admin_access = super::auth::current_auth_role(&state).await? == AuthRole::Admin;
     let replay_api_active = match state.replay_api.as_ref() {
         Some(api) if api.status().is_active() => true,
         Some(api) if api.client().has_token() => api.probe().await.is_active(),
