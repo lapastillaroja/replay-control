@@ -115,6 +115,8 @@ pub enum Key {
     MoreDiskAvailable,
     MoreEthernetIp,
     MoreWifiIp,
+    MoreEthernetMac,
+    MoreWifiMac,
     MoreNotConnected,
     MoreModel,
     MoreCpuTemperature,

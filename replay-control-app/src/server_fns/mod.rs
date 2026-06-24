@@ -313,6 +313,11 @@ pub struct SystemLiveStats {
     pub disk_available_bytes: u64,
     pub ethernet_ip: Option<String>,
     pub wifi_ip: Option<String>,
+    /// Hardware MAC of the wired / wireless interface, read from sysfs. Present
+    /// whenever the adapter exists (independent of link state); `None` only when
+    /// there is no such interface. Static — does not change at runtime.
+    pub ethernet_mac: Option<String>,
+    pub wifi_mac: Option<String>,
     pub model: Option<String>,
     pub cpu_temperature_c: Option<f64>,
     pub available_ram_mb: Option<u64>,

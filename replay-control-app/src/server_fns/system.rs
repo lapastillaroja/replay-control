@@ -43,8 +43,8 @@ const RUST_LOG_DEBUG: &str =
 #[cfg(feature = "ssr")]
 async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
     let storage = state.storage();
-    let (disk_result, (ethernet_ip, wifi_ip)) =
-        tokio::join!(storage.disk_usage(), get_network_ips());
+    let (disk_result, (ethernet_ip, wifi_ip), (ethernet_mac, wifi_mac)) =
+        tokio::join!(storage.disk_usage(), get_network_ips(), get_network_macs());
     let disk = disk_result.unwrap_or(DiskUsage {
         total_bytes: 0,
         available_bytes: 0,
@@ -67,6 +67,8 @@ async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
         disk_available_bytes: disk.available_bytes,
         ethernet_ip,
         wifi_ip,
+        ethernet_mac,
+        wifi_mac,
         model,
         cpu_temperature_c,
         available_ram_mb,
@@ -200,6 +202,52 @@ async fn get_network_ips() -> (Option<String>, Option<String>) {
     let eth = extract_from_output("eth").or_else(|| extract_from_output("enp"));
     let wifi = extract_from_output("wlan").or_else(|| extract_from_output("wlp"));
     (eth, wifi)
+}
+
+/// Pick the Ethernet and Wi-Fi MAC from `(interface_name, mac)` pairs, using the
+/// same interface-name prefixes as the IP picker — wired (`eth*`/`enp*`) and
+/// wireless (`wlan*`/`wlp*`). First prefix with a match wins; callers pass a
+/// name-sorted list so the choice is deterministic across interfaces.
+#[cfg(feature = "ssr")]
+fn classify_macs(interfaces: &[(String, String)]) -> (Option<String>, Option<String>) {
+    let pick = |prefixes: &[&str]| -> Option<String> {
+        prefixes.iter().find_map(|prefix| {
+            interfaces
+                .iter()
+                .find(|(name, _)| name.starts_with(prefix))
+                .map(|(_, mac)| mac.clone())
+        })
+    };
+    (pick(&["eth", "enp"]), pick(&["wlan", "wlp"]))
+}
+
+/// Read the wired / wireless interface MACs from sysfs.
+///
+/// Unlike the IPs, MACs come from hardware and exist whether or not the link is
+/// up, so this enumerates `/sys/class/net` directly (in-kernel, microsecond
+/// reads — no subprocess) rather than reusing the `ip addr` output, which only
+/// lists connected interfaces.
+#[cfg(feature = "ssr")]
+async fn get_network_macs() -> (Option<String>, Option<String>) {
+    let Ok(mut entries) = tokio::fs::read_dir("/sys/class/net").await else {
+        return (None, None);
+    };
+    let mut interfaces: Vec<(String, String)> = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == "lo" {
+            continue;
+        }
+        if let Ok(mac) = tokio::fs::read_to_string(format!("/sys/class/net/{name}/address")).await {
+            let mac = mac.trim().to_string();
+            // Skip placeholder MACs that virtual/down interfaces report.
+            if !mac.is_empty() && mac != "00:00:00:00:00:00" {
+                interfaces.push((name, mac));
+            }
+        }
+    }
+    interfaces.sort();
+    classify_macs(&interfaces)
 }
 
 #[server(prefix = "/sfn")]
@@ -483,4 +531,47 @@ pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
     })
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+
+    fn ifaces(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, m)| (n.to_string(), m.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn classify_macs_picks_wired_and_wireless_by_prefix() {
+        let interfaces = ifaces(&[
+            ("docker0", "02:42:aa:bb:cc:dd"),
+            ("eth0", "aa:bb:cc:dd:ee:ff"),
+            ("wlan0", "11:22:33:44:55:66"),
+        ]);
+        let (eth, wifi) = classify_macs(&interfaces);
+        assert_eq!(eth.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+        assert_eq!(wifi.as_deref(), Some("11:22:33:44:55:66"));
+    }
+
+    #[test]
+    fn classify_macs_handles_predictable_names_and_missing_wifi() {
+        // `enp*` / `wlp*` predictable names, no wireless adapter present.
+        let (eth, wifi) = classify_macs(&ifaces(&[("enp3s0", "de:ad:be:ef:00:01")]));
+        assert_eq!(eth.as_deref(), Some("de:ad:be:ef:00:01"));
+        assert_eq!(wifi, None);
+    }
+
+    #[test]
+    fn classify_macs_prefers_eth_over_enp() {
+        // Both naming schemes present (sorted input): `eth*` wins, matching the
+        // IP picker's `eth` then `enp` order.
+        let (eth, _) = classify_macs(&ifaces(&[
+            ("enp3s0", "de:ad:be:ef:00:01"),
+            ("eth0", "aa:bb:cc:dd:ee:ff"),
+        ]));
+        assert_eq!(eth.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+    }
 }

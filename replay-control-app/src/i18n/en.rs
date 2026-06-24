@@ -123,6 +123,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreDiskAvailable => "Disk Available",
         Key::MoreEthernetIp => "Ethernet IP",
         Key::MoreWifiIp => "Wi-Fi IP",
+        Key::MoreEthernetMac => "Ethernet MAC",
+        Key::MoreWifiMac => "Wi-Fi MAC",
         Key::MoreNotConnected => "Not connected",
         Key::MoreModel => "Model",
         Key::MoreCpuTemperature => "CPU temperature",

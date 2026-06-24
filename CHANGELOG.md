@@ -13,6 +13,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Added local HTTPS on port `8443` by default, with an automatically generated self-signed certificate for `replay.local`, the device hostname, localhost, and current LAN IP addresses. The certificate is regenerated when the advertised hostname or LAN IP set changes, and startup can recover by regenerating it if the stored PEM files are corrupt or partially written.
 - Added an HTTP guidance page on port `8080` that points browsers to the HTTPS URL, includes the Replay Control logo, supports English, Spanish, and Japanese based on the browser language, and validates request hostnames before rendering links.
 - Added a `--dangerous-disable-https` debug flag for development and test environments that need the old plain-HTTP behavior.
+- Added the Ethernet and Wi-Fi MAC addresses to the System section of the Settings page.
 
 ### Changed
 
