@@ -50,6 +50,7 @@ Read task-specific docs as needed:
 - Browser e2e: `tests/e2e/*.py` — Playwright; see `tests/e2e/README.md`
 - During local e2e development, prefer the debug container path to avoid slow release rebuilds: `BUILD_PROFILE=debug SKIP_DATA=1 PODMAN_DIRECT_BRIDGE=1 PYTEST_ARGS='tests/e2e/test_library_build_pipeline.py::<test_name> -v' ./tests/container/run.sh`. This uses `./dev.sh --build-only` for fast dev artifacts; use the default release path before final validation when performance or release-only behavior matters.
 - See [CONTRIBUTING.md "Running Tests"](CONTRIBUTING.md#running-tests) for the full command set, including useful subsets and the local-dev-server path
+- **Wait for hydration before any client interaction in Playwright.** The app renders a global loading overlay (`.initial-loading-shell`) that only gets its `is-hidden` class from a client-only `Effect` once hydration completes — so `page.locator(".initial-loading-shell").wait_for(state="hidden")` is the reliable "app is interactive" signal. Until it hides, the Leptos router has not attached its click interceptor, so clicking an in-app `<a>`/`<A>` link triggers a **full page reload instead of a client-side transition** — silently masking any transition-only bug. This matters most with the unoptimized dev/`dev-fast` WASM bundle (tens of MB), where hydration can take ~15s. Prefer this global signal, or a per-feature `.is-hydrated` marker where one exists (e.g. `.update-controls-row.is-hydrated`), over fixed `wait_for_timeout` sleeps.
 
 ## Docs Site
 
@@ -66,7 +67,7 @@ Read task-specific docs as needed:
 - Use `root` as the SSH user. The default password is `replayos`, or `PI_PASS` if the environment overrides it.
 - Prefer `./dev.sh --pi` for build/deploy because it already handles the default host, `SSH_ASKPASS`, SSH options, ControlMaster reuse, rsync, service stop/start, and catalog/site deployment.
 - To deploy to a specific address, run `./dev.sh --pi <ip-or-hostname>`.
-- Never set `CARGO_TARGET_DIR` to a custom value unless the user explicitly asks for it. If an existing custom `CARGO_TARGET_DIR` could affect build or deploy artifacts, unset it for that command with `env -u CARGO_TARGET_DIR ...` instead of choosing another target directory.
+- Never set or unset `CARGO_TARGET_DIR` unless the user explicitly asks for it. Use the environment as-is for build and deploy commands.
 - For ad hoc SSH commands, use the askpass pattern from `dev.sh` — plain `ssh` with a password requires `SSH_ASKPASS`:
   ```sh
   ASKPASS=$(mktemp) && printf '#!/bin/sh\necho "%s"\n' "${PI_PASS:-replayos}" > "$ASKPASS" && chmod +x "$ASKPASS"
@@ -256,6 +257,12 @@ Prefer `<Show>` over `if/else` closures inside `view!`:
     <Active />
 </Show>
 ```
+
+### Keep hydration structure stable
+
+For SSR pages, avoid changing the root element shape across server render and hydration. If a control can be enabled or disabled based on async/auth/device state, prefer one stable element with disabled styling/attributes over switching between different tags such as `<A>` and `<div>`.
+
+When rendering children from `Suspend`, `Transition`, or other delayed async closures, capture shared contexts such as i18n in the parent page and pass them into child components as props. Do not call `use_context`/`expect_context` inside components that are only created after an async boundary unless that component is also used in a normal rooted render path. This avoids context panics and SSR/client marker mismatches.
 
 ### Use `#[prop(into)]` for flexible component APIs
 
