@@ -8,6 +8,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 > Replay Control now serves the app over local HTTPS by default and introduces session-based app access for normal users and admins.
 
+### Highlights
+
+- **Local HTTPS by default** — the app serves over `https://replay.local:8443` with an auto-generated self-signed certificate (covering `replay.local`, the device hostname, localhost, and LAN IPs); a guidance page on `8080` points devices to it. Regenerating the certificate or changing the hostname now restarts the service and reloads so the new certificate takes effect immediately.
+- **Session-based app access** — normal users sign in with the adopted RePlayOS Net Control code and admins with the device password, behind opaque HttpOnly cookies. A one-time first-setup explains the model, and pages, server functions, REST endpoints, SSE, and media routes are now role-enforced (guest browsing removed).
+- **Admin session controls** — downgrade to normal user, logout, a configurable admin unlock duration (1h/3h/12h), separate normal-user vs admin sign-in rate limits, and CSRF Origin/Referer checks.
+- **More arcade coverage** — board pages and board-aware search for Gaelco 3D, Namco System 10, and Midway Vegas; fixed hardware-board attribution for current-MAME arcade games (Sega Model 1/2, ST-V, Rave Racer, …) and better arcade box-art matching via alternate names.
+- **Settings** — Ethernet and Wi-Fi MAC addresses added; low-risk preferences stay interactive while system information refreshes in its own section.
+
 ### Added
 
 - Added local HTTPS on port `8443` by default, with an automatically generated self-signed certificate for `replay.local`, the device hostname, localhost, and current LAN IP addresses. Hostname changes made through Replay Control regenerate the certificate automatically, while the Access & Security page shows current certificate coverage and offers manual regeneration for IP/address changes.
@@ -28,12 +36,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Removed the SD-card install method; install over SSH or directly on the device against a running RePlayOS instance instead.
 - Served authenticated library media, manuals, captures, and ROM documents with private cache headers instead of public cache headers.
 - Removed guest browsing mode; signed-out sessions can only reach sign-in, first setup, static assets, and health/version bootstrap endpoints.
-- The first-run setup checklist now sends normal users to **Access & Security** for admin unlock before running admin-only setup actions.
+- The first-run setup checklist is now hidden from normal users on the device; only admins see it (on standalone it still sends users to **Access & Security** for admin unlock before admin-only actions).
 - Admin unlock duration now defaults to 1 hour and can be changed from **Access & Security** to 1 hour, 3 hours, or 12 hours; changing it refreshes the current admin session from the time of the change.
 - The Settings page keeps low-risk preferences inline and independently interactive while dynamic system information refreshes in its own section.
+- HTTPS certificate details (file paths and the LAN address list) on the Access & Security page are now visible to admins only.
+- Regenerating the HTTPS certificate, and changing the hostname, now restart Replay Control and reload the page so the new certificate is served and re-accepted immediately. The regenerate button is always shown, disabled for non-admins.
+- The admin-to-normal-user downgrade control is now shown disabled, with an explanation, when signed in directly as an admin.
+- Sign-in rate limiting now tracks normal-user and admin attempts separately, so failed attempts on one no longer lock out the other.
 
 ### Fixed
 
+- Fixed ROM library scans dropping games when a transient filesystem error interrupted a scan, and made symlinked folders follow safely without looping on symlink cycles.
+- Fixed sign-in not persisting when HTTPS is disabled, because the session cookie kept its Secure attribute over plain HTTP.
+- Fixed the device password change accepting control characters; newlines and similar characters are now rejected before the password is applied.
+- Fixed the admin being signed out after changing the device password; the admin session is now re-issued.
+- Fixed per-game play time possibly matching a same-named game from another system.
+- Fixed HTTPS certificate details not appearing after elevating a normal-user session to admin.
+- Fixed the admin unlock duration selector showing the wrong value until a page refresh.
+- Fixed status and confirmation messages lacking consistent bottom spacing on settings pages.
 - Fixed signed-in visits to `/login` returning to **Access & Security** after local app data was cleared and sign-in completed; they now return to the top page.
 - Fixed generated systemd service templates so `REPLAY_EXTRA_ARGS` with multiple flags is split into separate command-line arguments.
 - Fixed the Settings and Access pages rendering with hydration mismatches after full refreshes.
