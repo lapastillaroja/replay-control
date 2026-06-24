@@ -6,6 +6,7 @@ use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
+mod auth;
 mod boxart;
 mod favorites;
 mod images;
@@ -23,6 +24,7 @@ mod system;
 mod thumbnails;
 mod videos;
 
+pub use auth::*;
 pub use boxart::*;
 pub use favorites::*;
 pub use images::*;

@@ -18,23 +18,26 @@ mod ssr {
     use leptos::config::LeptosOptions;
     use replay_control_core::skins;
     use replay_control_core_server::security::tls::{
-        ensure_self_signed_certificate, regenerate_self_signed_certificate,
+        ensure_self_signed_certificate, install_default_crypto_provider,
+        regenerate_self_signed_certificate,
     };
     use replay_control_core_server::update::read_available_update;
     use serde::Serialize;
     use std::net::SocketAddr;
     use tower_http::compression::CompressionLayer;
-    use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
     use tower_http::set_header::SetResponseHeaderLayer;
 
     use replay_control_app::api;
     use replay_control_app::server_fns::{
-        AddGameResourceLink, DeleteUserCapture, EnableReplayApiAssisted, GetGameResourceLinks,
-        GetReplayApiStatus, GetReplayosSettings, GetSaveStateSlots, GetUserCaptures,
-        PowerOffReplayosDevice, RemoveGameResourceLink, ReprobeReplayApi, RestartReplayosGame,
-        SaveReplayosKioskMode, SendReplayPlayerCommand, SendReplayosMessage,
-        StartSetupMetadataDownloads, VerifyReplayApiToken,
+        AddGameResourceLink, CompleteFirstSetup, DeleteUserCapture, DowngradeAdminToUser,
+        EnableReplayApiAssisted, GetAdminSessionTimeout, GetAuthStatus, GetGamePlaytime,
+        GetGameResourceLinks, GetLibraryPlaytime, GetLiveStats, GetReplayApiStatus,
+        GetReplayosSettings, GetSaveStateSlots, GetTlsCertificateInfo, GetUserCaptures, LoginAdmin,
+        LoginWithReplayCode, Logout, LogoutAllBrowsers, PowerOffReplayosDevice,
+        RegenerateTlsCertificateInfo, RemoveGameResourceLink, ReprobeReplayApi,
+        RestartReplayosGame, SaveReplayosKioskMode, SendReplayPlayerCommand, SendReplayosMessage,
+        SetAdminSessionTimeout, StartSetupMetadataDownloads, VerifyReplayApiToken,
     };
 
     #[derive(Parser)]
@@ -51,9 +54,17 @@ mod ssr {
         #[arg(long, default_value = "8443")]
         https_port: u16,
 
+        /// Enable HTTPS in standalone mode. Device mode enables HTTPS by default.
+        #[arg(long)]
+        enable_https: bool,
+
         /// Disable HTTPS and serve the app over plain HTTP. Dangerous: for local debugging only.
         #[arg(long)]
         dangerous_disable_https: bool,
+
+        /// Allow session cookies over plain HTTP when HTTPS is disabled. Dangerous: credentials and sessions cross the LAN unencrypted.
+        #[arg(long)]
+        dangerous_allow_insecure_auth_over_http: bool,
 
         /// Storage root path override (auto-detected if not set)
         #[arg(long)]
@@ -80,6 +91,10 @@ mod ssr {
         site_root: String,
     }
 
+    fn https_enabled(enable_https: bool, dangerous_disable_https: bool, is_device: bool) -> bool {
+        !dangerous_disable_https && (is_device || enable_https)
+    }
+
     fn http_guidance_router(
         https_port: u16,
         state: api::AppState,
@@ -89,6 +104,7 @@ mod ssr {
         owned_manuals_handler: MethodRouter,
         rom_docs_handler: MethodRouter,
     ) -> axum::Router {
+        let guidance_skin_css = skins::theme_css(state.effective_skin()).unwrap_or_default();
         let loopback_compat_routes = axum::Router::new()
             .nest("/api/core", api::core_routes().with_state(state))
             .route("/captures/*path", captures_handler)
@@ -122,8 +138,9 @@ mod ssr {
                     )
                 }),
             )
-            .fallback(axum::routing::any(move |headers: HeaderMap| async move {
-                https_guidance_response(&headers, https_port)
+            .fallback(axum::routing::any(move |headers: HeaderMap| {
+                let guidance_skin_css = guidance_skin_css.clone();
+                async move { https_guidance_response(&headers, https_port, &guidance_skin_css) }
             }))
     }
 
@@ -131,18 +148,25 @@ mod ssr {
         request: Request<axum::body::Body>,
         next: axum::middleware::Next,
     ) -> Response {
-        let is_loopback = request
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .is_some_and(|ConnectInfo(addr)| addr.ip().is_loopback());
-        if is_loopback {
+        if request_peer_is_loopback(&request) {
             next.run(request).await
         } else {
             StatusCode::FORBIDDEN.into_response()
         }
     }
 
-    fn https_guidance_response(headers: &HeaderMap, https_port: u16) -> axum::response::Response {
+    fn request_peer_is_loopback(request: &Request<axum::body::Body>) -> bool {
+        request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .is_some_and(|ConnectInfo(addr)| addr.ip().is_loopback())
+    }
+
+    fn https_guidance_response(
+        headers: &HeaderMap,
+        https_port: u16,
+        skin_css: &str,
+    ) -> axum::response::Response {
         let https_url = https_url_for_request(headers, https_port);
         let https_url_html = escape_html(&https_url);
         Html(format!(
@@ -155,55 +179,71 @@ mod ssr {
   <style>
     :root {{
       color-scheme: light dark;
-      --accent: #7dd3fc;
-      --accent-strong: #e0f2fe;
-      --surface: #111827;
+      --bg: #0f1115;
+      --surface: #1a1d23;
+      --surface-shell-bg: var(--surface);
       --text: #f9fafb;
-      --muted: #d1d5db;
-      --subtle: #9ca3af;
+      --text-secondary: #d1d5db;
+      --accent: #7dd3fc;
+      --accent-hover: #bae6fd;
+      --text-on-accent: #111827;
+      --border: rgba(255,255,255,0.16);
     }}
+    {skin_css}
+    * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       min-height: 100vh;
+      min-height: 100dvh;
       display: grid;
-      place-items: center;
+      align-items: start;
+      justify-items: center;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: max(clamp(1.125rem, 7dvh, 2rem), env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(clamp(1.125rem, 7dvh, 2rem), env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--surface);
+      background: var(--surface-shell-bg);
       color: var(--text);
+      line-height: 1.5;
     }}
     main {{
-      width: min(34rem, calc(100vw - 2rem));
-      padding: 2rem;
-      box-sizing: border-box;
+      width: min(34rem, 100%);
     }}
     .logo {{
       display: block;
-      width: min(18rem, 82vw);
+      width: min(18rem, 72vw);
       height: auto;
       margin: 0 0 1.5rem;
     }}
     h1 {{ margin: 0 0 0.75rem; font-size: 1.75rem; letter-spacing: 0; }}
-    p {{ margin: 0 0 1rem; line-height: 1.55; color: var(--muted); }}
+    p {{ margin: 0 0 1rem; line-height: 1.55; color: var(--text-secondary); }}
     a {{
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      width: min(100%, 22rem);
       min-height: 2.75rem;
       padding: 0 1rem;
       border-radius: 0.375rem;
-      background: var(--accent-strong);
-      color: #111827;
+      background: var(--accent);
+      color: var(--text-on-accent);
       font-weight: 650;
       text-decoration: none;
     }}
+    a:focus-visible,
+    select:focus {{
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }}
     code {{ overflow-wrap: anywhere; }}
-    .note {{ margin-top: 1rem; font-size: 0.95rem; color: var(--subtle); }}
+    .note {{ margin-top: 1rem; font-size: 0.95rem; color: var(--text-secondary); }}
     .language {{
       margin-top: 2rem;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 0.625rem;
-      color: var(--subtle);
+      color: var(--text-secondary);
       font-size: 0.9rem;
     }}
     select {{
@@ -219,9 +259,20 @@ mod ssr {
       background: #f9fafb;
       color: #111827;
     }}
-    select:focus {{
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+    @media (min-width: 700px) and (min-height: 760px) {{
+      body {{ align-items: center; }}
+    }}
+    @media (max-width: 520px) {{
+      body {{
+        padding-right: max(0.875rem, env(safe-area-inset-right));
+        padding-left: max(0.875rem, env(safe-area-inset-left));
+      }}
+      .logo {{
+        width: min(14rem, 72vw);
+        margin-bottom: 1.125rem;
+      }}
+      h1 {{ font-size: 1.35rem; }}
+      a {{ width: 100%; }}
     }}
   </style>
 </head>
@@ -810,7 +861,7 @@ mod ssr {
             _ => "application/octet-stream",
         };
 
-        serve_file_etagged(&file_path, content_type, &headers, api::CACHE_1D).await
+        serve_file_etagged(&file_path, content_type, &headers, api::CACHE_PRIVATE_1D).await
     }
 
     /// Resolve the catalog SQLite path. If the supplied path is relative and
@@ -834,6 +885,8 @@ mod ssr {
     }
 
     pub async fn run() {
+        install_default_crypto_provider();
+
         use std::io::IsTerminal;
         tracing_subscriber::fmt()
             .with_ansi(std::io::stderr().is_terminal())
@@ -868,15 +921,38 @@ mod ssr {
         }
         tracing::info!("catalog loaded from {}", catalog_path.display());
 
-        let app_state = match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir)
+        let mut app_state =
+            match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir) {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::error!("Failed to initialize: {e}");
+                    tracing::info!(
+                        "Hint: use --storage-path to point to a RePlayOS storage location"
+                    );
+                    std::process::exit(1);
+                }
+            };
+        let device_mode = app_state.mode.is_device();
+        let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, device_mode);
+
+        if device_mode && cli.dangerous_disable_https && cli.dangerous_allow_insecure_auth_over_http
         {
-            Ok(state) => state,
-            Err(e) => {
-                tracing::error!("Failed to initialize: {e}");
-                tracing::info!("Hint: use --storage-path to point to a RePlayOS storage location");
-                std::process::exit(1);
-            }
-        };
+            tracing::warn!(
+                "dangerous_allow_insecure_auth_over_http is set; session cookies will be sent over plain HTTP"
+            );
+            app_state.auth.cookie_policy.allow_insecure_transport();
+        } else if device_mode && cli.dangerous_disable_https {
+            tracing::warn!(
+                "dangerous_disable_https is set without dangerous_allow_insecure_auth_over_http; session cookies keep the Secure attribute and browser login may not persist over HTTP"
+            );
+        } else if cli.dangerous_allow_insecure_auth_over_http {
+            tracing::warn!(
+                "dangerous_allow_insecure_auth_over_http was set without dangerous_disable_https; keeping Secure session cookies"
+            );
+        }
+        if cli.dangerous_disable_https && cli.enable_https {
+            tracing::warn!("dangerous_disable_https overrides enable_https; serving without HTTPS");
+        }
 
         // The external_metadata DB pool is constructed inside AppState::new
         // (alongside library_pool / user_data_pool); no extra wiring here.
@@ -894,6 +970,16 @@ mod ssr {
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetInfo>();
+        server_fn::axum::register_explicit::<GetLiveStats>();
+        server_fn::axum::register_explicit::<GetAuthStatus>();
+        server_fn::axum::register_explicit::<LoginWithReplayCode>();
+        server_fn::axum::register_explicit::<LoginAdmin>();
+        server_fn::axum::register_explicit::<CompleteFirstSetup>();
+        server_fn::axum::register_explicit::<GetAdminSessionTimeout>();
+        server_fn::axum::register_explicit::<SetAdminSessionTimeout>();
+        server_fn::axum::register_explicit::<DowngradeAdminToUser>();
+        server_fn::axum::register_explicit::<Logout>();
+        server_fn::axum::register_explicit::<LogoutAllBrowsers>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMode>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavorites>();
@@ -931,6 +1017,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ChangeRootPassword>();
+        server_fn::axum::register_explicit::<GetTlsCertificateInfo>();
+        server_fn::axum::register_explicit::<RegenerateTlsCertificateInfo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
@@ -1022,6 +1110,8 @@ mod ssr {
         server_fn::axum::register_explicit::<StartSetupMetadataDownloads>();
         server_fn::axum::register_explicit::<EnableReplayApiAssisted>();
         server_fn::axum::register_explicit::<GetReplayApiStatus>();
+        server_fn::axum::register_explicit::<GetLibraryPlaytime>();
+        server_fn::axum::register_explicit::<GetGamePlaytime>();
         server_fn::axum::register_explicit::<GetReplayosSettings>();
         server_fn::axum::register_explicit::<PowerOffReplayosDevice>();
         server_fn::axum::register_explicit::<ReprobeReplayApi>();
@@ -1078,7 +1168,8 @@ mod ssr {
                         "application/octet-stream"
                     };
 
-                    serve_file_etagged(&file_path, content_type, &headers, api::CACHE_1D).await
+                    serve_file_etagged(&file_path, content_type, &headers, api::CACHE_PRIVATE_1D)
+                        .await
                 }
             },
         );
@@ -1104,7 +1195,7 @@ mod ssr {
                             StatusCode::OK,
                             [
                                 ("content-type", "image/png"),
-                                ("cache-control", api::CACHE_IMMUTABLE),
+                                ("cache-control", api::CACHE_PRIVATE_IMMUTABLE),
                             ],
                             data,
                         )
@@ -1143,7 +1234,7 @@ mod ssr {
                                 StatusCode::OK,
                                 [
                                     ("content-type", content_type),
-                                    ("cache-control", api::CACHE_1D),
+                                    ("cache-control", api::CACHE_PRIVATE_1D),
                                 ],
                                 data,
                             )
@@ -1183,7 +1274,7 @@ mod ssr {
                                 StatusCode::OK,
                                 [
                                     ("content-type", content_type),
-                                    ("cache-control", api::CACHE_1D),
+                                    ("cache-control", api::CACHE_PRIVATE_1D),
                                 ],
                                 data,
                             )
@@ -1343,23 +1434,35 @@ mod ssr {
                     )
                 }),
             )
-            .layer(CompressionLayer::new().gzip(true))
-            .layer(CorsLayer::permissive());
+            .layer(CompressionLayer::new().gzip(true));
 
         let app = api::with_storage_guard(app, guard_state.clone());
+        let app = api::with_auth_guard(app, guard_state.clone());
 
-        if cli.dangerous_disable_https {
+        if !serve_https {
             let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
-            tracing::warn!(
-                "dangerous_disable_https is set; serving Replay Control over plain HTTP on {addr}"
-            );
-            let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-            axum::serve(
+            if device_mode {
+                tracing::warn!(
+                    "dangerous_disable_https is set; serving Replay Control over plain HTTP on {addr}"
+                );
+            } else {
+                tracing::info!("Starting standalone Replay Control on http://{addr}");
+            }
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!("failed to bind HTTP listener on {addr}: {error}");
+                    std::process::exit(1);
+                });
+            if let Err(error) = axum::serve(
                 listener,
                 app.into_make_service_with_connect_info::<SocketAddr>(),
             )
             .await
-            .unwrap();
+            {
+                tracing::error!("HTTP server stopped with error: {error}");
+                std::process::exit(1);
+            }
             return;
         }
 
@@ -1410,12 +1513,24 @@ mod ssr {
             "HTTP guidance page available on http://0.0.0.0:{}",
             cli.port
         );
-        tracing::info!(
-            "Try https://replay.local:{} or use this device's LAN IP address",
-            cli.https_port
-        );
+        if device_mode {
+            tracing::info!(
+                "Try https://replay.local:{} or use this device's LAN IP address",
+                cli.https_port
+            );
+        } else {
+            tracing::info!(
+                "Standalone HTTPS was enabled explicitly; open https://localhost:{}",
+                cli.https_port
+            );
+        }
 
-        let http_listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
+        let http_listener = tokio::net::TcpListener::bind(http_addr)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!("failed to bind HTTP guidance listener on {http_addr}: {error}");
+                std::process::exit(1);
+            });
         let http_server = axum::serve(
             http_listener,
             http_app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -1424,15 +1539,52 @@ mod ssr {
             .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
         tokio::select! {
-            result = http_server => result.unwrap(),
-            result = https_server => result.unwrap(),
+            result = http_server => {
+                if let Err(error) = result {
+                    tracing::error!("HTTP guidance server stopped with error: {error}");
+                    std::process::exit(1);
+                }
+            }
+            result = https_server => {
+                if let Err(error) = result {
+                    tracing::error!("HTTPS server stopped with error: {error}");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::{https_url_for_request, validated_host_without_port};
-        use axum::http::{HeaderMap, HeaderValue, header};
+        use super::{
+            https_enabled, https_url_for_request, request_peer_is_loopback,
+            validated_host_without_port,
+        };
+        use axum::body::Body;
+        use axum::extract::connect_info::ConnectInfo;
+        use axum::http::{HeaderMap, HeaderValue, Request, header};
+        use std::net::SocketAddr;
+
+        #[test]
+        fn device_mode_enables_https_by_default() {
+            assert!(https_enabled(false, false, true));
+        }
+
+        #[test]
+        fn standalone_mode_uses_plain_http_by_default() {
+            assert!(!https_enabled(false, false, false));
+        }
+
+        #[test]
+        fn standalone_mode_can_opt_into_https() {
+            assert!(https_enabled(true, false, false));
+        }
+
+        #[test]
+        fn dangerous_disable_https_overrides_device_default_and_standalone_opt_in() {
+            assert!(!https_enabled(false, true, true));
+            assert!(!https_enabled(true, true, false));
+        }
 
         #[test]
         fn builds_https_url_from_http_host_header() {
@@ -1475,6 +1627,34 @@ mod ssr {
                 https_url_for_request(&headers, 8443),
                 "https://replay.local:8443/"
             );
+        }
+
+        #[test]
+        fn loopback_compatibility_uses_socket_peer_not_headers() {
+            let mut loopback = Request::builder()
+                .uri("/api/core/recents")
+                .body(Body::empty())
+                .unwrap();
+            loopback
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 8080))));
+            assert!(request_peer_is_loopback(&loopback));
+
+            let mut lan = Request::builder()
+                .uri("/api/core/recents")
+                .body(Body::empty())
+                .unwrap();
+            lan.extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 40], 8080))));
+            assert!(!request_peer_is_loopback(&lan));
+
+            let spoofed = Request::builder()
+                .uri("/api/core/recents")
+                .header(header::HOST, "127.0.0.1:8080")
+                .header("x-forwarded-for", "127.0.0.1")
+                .body(Body::empty())
+                .unwrap();
+            assert!(!request_peer_is_loopback(&spoofed));
         }
     }
 }

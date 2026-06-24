@@ -33,6 +33,10 @@ reqwest = { workspace = true, features = ["stream", "query"] }
 tempfile = "3.27.0"
 getrandom = "0.4.3"
 rcgen = "0.13.2"
+base64 = "0.22.1"
+time = "0.3.49"
+rustls = { version = "0.23.40", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2.2.0"
 
 [[bin]]
 name = "library_report"

@@ -6,25 +6,38 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.10.0-beta.2]
 
-> Replay Control now serves the app over local HTTPS by default, while keeping a safe HTTP landing page for setup and troubleshooting.
+> Replay Control now serves the app over local HTTPS by default and introduces session-based app access for normal users and admins.
 
 ### Added
 
-- Added local HTTPS on port `8443` by default, with an automatically generated self-signed certificate for `replay.local`, the device hostname, localhost, and current LAN IP addresses. The certificate is regenerated when the advertised hostname or LAN IP set changes, and startup can recover by regenerating it if the stored PEM files are corrupt or partially written.
-- Added an HTTP guidance page on port `8080` that points browsers to the HTTPS URL, includes the Replay Control logo, supports English, Spanish, and Japanese based on the browser language, and validates request hostnames before rendering links.
-- Added a `--dangerous-disable-https` debug flag for development and test environments that need the old plain-HTTP behavior.
+- Added local HTTPS on port `8443` by default, with an automatically generated self-signed certificate for `replay.local`, the device hostname, localhost, and current LAN IP addresses. Hostname changes made through Replay Control regenerate the certificate automatically, while the Access & Security page shows current certificate coverage and offers manual regeneration for IP/address changes.
+- Added an HTTP guidance page on port `8080` that points devices to the HTTPS URL, includes the Replay Control logo, supports English, Spanish, and Japanese based on the preferred language, and validates request hostnames before rendering links.
+- Added sign-in with the adopted RePlayOS Net Control code for normal users and device-password sign-in for admin access. Sessions use only an opaque HttpOnly cookie.
+- Added a one-time first setup page for device mode. It explains the new normal-user/admin permission model, tells fresh-image users the default password is `replayos`, verifies the current root password, marks `first_setup_done`, and opens an admin session before showing the existing setup checklist.
+- Added role enforcement for app pages, server functions, REST endpoints, SSE streams, and media routes. Signed-out sessions can only reach sign-in, setup, static assets, and health/version bootstrap endpoints.
+- Added admin session downgrade, logout, login rate limiting, CSRF Origin/Referer checks, unauthorized-state detection when RePlayOS rejects the stored Net Control code, and session invalidation when Replay Control stores a replacement Net Control code.
+- Added `--dangerous-disable-https` and `--dangerous-allow-insecure-auth-over-http` debug flags for development and recovery scenarios that explicitly need plain HTTP.
 - Added the Ethernet and Wi-Fi MAC addresses to the System section of the Settings page.
 - Added arcade board pages and board-aware search for three more arcade hardware boards: Gaelco 3D, Namco System 10, and Midway Vegas.
 
 ### Changed
 
-- Updated install, getting-started, docs-site, screenshot, and e2e guidance to use `https://replay.local:8443`.
-- Kept the libretro core's localhost HTTP API and media routes available on port `8080`, restricted to loopback access, so TV-side browsing continues to work while LAN browsers use HTTPS.
+- Updated install, getting-started, and e2e guidance to use `https://replay.local:8443`.
+- Kept the libretro core's localhost HTTP API and media routes available on port `8080`, restricted to loopback access, so TV-side browsing continues to work while LAN devices use HTTPS.
 - Container and test launch paths now explicitly opt into dangerous HTTP mode when they only expose port `8080`.
 - Removed the SD-card install method; install over SSH or directly on the device against a running RePlayOS instance instead.
+- Served authenticated library media, manuals, captures, and ROM documents with private cache headers instead of public cache headers.
+- Removed guest browsing mode; signed-out sessions can only reach sign-in, first setup, static assets, and health/version bootstrap endpoints.
+- The first-run setup checklist now sends normal users to **Access & Security** for admin unlock before running admin-only setup actions.
+- Admin unlock duration now defaults to 1 hour and can be changed from **Access & Security** to 1 hour, 3 hours, or 12 hours; changing it refreshes the current admin session from the time of the change.
+- The Settings page keeps low-risk preferences inline and independently interactive while dynamic system information refreshes in its own section.
 
 ### Fixed
 
+- Fixed signed-in visits to `/login` returning to **Access & Security** after local app data was cleared and sign-in completed; they now return to the top page.
+- Fixed generated systemd service templates so `REPLAY_EXTRA_ARGS` with multiple flags is split into separate command-line arguments.
+- Fixed the Settings and Access pages rendering with hydration mismatches after full refreshes.
+- Fixed thumbnail retry processing so permanently failing jobs stop being resubmitted after the attempt cap without recursive worker calls that could exhaust the service stack.
 - Fixed the channel selector and **Check for Updates** button in the Updates section rendering at different heights.
 - Fixed a console warning logged when clearing metadata or the search index from the Game Library page.
 - Fixed the game catalog build to fail fast when any upstream or curated data source is missing or empty, so a partial catalog (for example one missing developer and publisher metadata or Shmups Wiki links) can no longer be shipped.

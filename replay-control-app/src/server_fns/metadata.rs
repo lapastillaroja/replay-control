@@ -1,5 +1,9 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core::auth::AuthRole;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::auth::{PasswordSubject, verify_os_password};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::external_metadata::{
     clear_launchbox, get_data_source_stats, launchbox_game_count,
 };
@@ -19,8 +23,13 @@ pub struct SetupStatus {
     pub has_thumbnail_index: bool,
     /// Running on the RePlayOS device rather than standalone development mode.
     pub is_device: bool,
+    /// Current browser has admin access.
+    #[serde(default)]
+    pub admin_access: bool,
     /// RePlayOS Net Control integration is connected and ready.
     pub replay_api_active: bool,
+    /// The device still accepts the factory default root password.
+    pub default_root_password_active: bool,
 }
 
 /// Check whether the first-run setup card should be displayed.
@@ -45,28 +54,37 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
                 has_metadata: true,
                 has_thumbnail_index: true,
                 is_device: state.mode.is_device(),
+                admin_access: false,
                 replay_api_active: true,
+                default_root_password_active: false,
             });
         }
     }
 
     let (has_metadata, has_thumbnail_index) = setup_metadata_status(&state).await;
     let is_device = state.mode.is_device();
+    let admin_access = super::auth::current_auth_role(&state).await? == AuthRole::Admin;
     let replay_api_active = match state.replay_api.as_ref() {
         Some(api) if api.status().is_active() => true,
         Some(api) if api.client().has_token() => api.probe().await.is_active(),
         _ => false,
     };
+    let default_root_password_active =
+        is_device && verify_os_password(PasswordSubject::Root, "replayos").unwrap_or(false);
 
-    let show_setup =
-        force || !has_metadata || !has_thumbnail_index || (is_device && !replay_api_active);
+    let show_setup = force
+        || !has_metadata
+        || !has_thumbnail_index
+        || (is_device && (!replay_api_active || default_root_password_active));
 
     Ok(SetupStatus {
         show_setup,
         has_metadata,
         has_thumbnail_index,
         is_device,
+        admin_access,
         replay_api_active,
+        default_root_password_active,
     })
 }
 

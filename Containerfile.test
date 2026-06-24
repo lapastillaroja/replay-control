@@ -47,4 +47,4 @@ HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
 
 EXPOSE 8080
 
-CMD ["/app/replay-control-app", "--dangerous-disable-https", "--port", "8080", "--site-root", "/app/site", "--storage-path", "/storage"]
+CMD ["/app/replay-control-app", "--dangerous-disable-https", "--dangerous-allow-insecure-auth-over-http", "--port", "8080", "--site-root", "/app/site", "--storage-path", "/storage"]

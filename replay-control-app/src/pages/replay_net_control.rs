@@ -14,7 +14,7 @@ use server_fn::ServerFnError;
 use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, ReplayOsSettings};
-use crate::util::confirm_action;
+use crate::util::{confirm_action, numeric_code};
 
 #[component]
 pub fn ReplayNetControlPage() -> impl IntoView {
@@ -102,6 +102,9 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                 reenter.set(false);
             },
         );
+    };
+    let on_code_input = move |ev| {
+        code.set(numeric_code(&event_target_value(&ev), 6));
     };
     let on_reprobe =
         move |_| run_status_action(busy, error, status, server_fns::reprobe_replay_api(), || ());
@@ -218,10 +221,11 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                             class="form-input net-control-code-input"
                             type="text"
                             inputmode="numeric"
+                            pattern="[0-9]*"
                             autocomplete="off"
-                            maxlength="6"
                             placeholder="123456"
-                            bind:value=code
+                            prop:value=move || code.get()
+                            on:input=on_code_input
                         />
                         <button
                             class="form-btn"

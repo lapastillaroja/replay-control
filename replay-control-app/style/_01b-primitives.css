@@ -1017,8 +1017,7 @@
     .recent-searches-label,
     .organize-preview-label,
     .manual-subsection-title,
-    .video-subsection-title,
-    .settings-section-header
+    .video-subsection-title
 ) {
     color: var(--text-secondary);
     font-size: var(--overline-font-size);
@@ -1558,7 +1557,6 @@
     .boxart-picker-header,
     .data-source-header,
     .section-header,
-    .settings-section-header,
     .search-group-header,
     .system-row-header,
     .form-field-check
@@ -1569,16 +1567,12 @@
     gap: var(--row-gap);
 }
 
-:where(.rom-header, .page-header, .video-item-header, .boxart-picker-header, .data-source-header, .section-header, .settings-section-header) {
+:where(.rom-header, .page-header, .video-item-header, .boxart-picker-header, .data-source-header, .section-header) {
     margin-bottom: var(--header-margin-bottom, 0);
 }
 
 :where(.rom-header, .section-header, .boxart-picker-header) {
     --header-margin-bottom: var(--header-margin-bottom-spacious);
-}
-
-:where(.video-item-header, .settings-section-header) {
-    --header-margin-bottom: var(--header-margin-bottom-tight);
 }
 
 :where(.page-title) {

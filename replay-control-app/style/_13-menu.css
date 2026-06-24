@@ -2,6 +2,146 @@
    Menu — Settings page sections, sidebar, menu list, info grid
    ================================================================ */
 
+/* ── Standalone login ─────────────────────────────────────────── */
+
+.login-standalone {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    align-items: start;
+    justify-items: center;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: max(clamp(var(--space-8), 7dvh, var(--section-gap)), env(safe-area-inset-top)) max(var(--page-edge-padding), env(safe-area-inset-right)) max(clamp(var(--space-8), 7dvh, var(--section-gap)), env(safe-area-inset-bottom)) max(var(--page-edge-padding), env(safe-area-inset-left));
+    background: var(--surface-shell-bg);
+}
+
+.login-page {
+    width: min(34rem, 100%);
+    min-width: 0;
+}
+
+.login-brand {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) min(6.5rem, 22vw);
+    gap: var(--control-gap);
+    align-items: center;
+    margin-bottom: var(--panel-gap);
+}
+
+.login-logo {
+    display: block;
+    width: min(19rem, 68vw);
+    height: auto;
+    margin: 0;
+}
+
+.login-character {
+    display: block;
+    width: 100%;
+    max-height: 6.5rem;
+    object-fit: contain;
+    object-position: center right;
+}
+
+.login-title {
+    margin: 0 0 var(--control-gap);
+    color: var(--text);
+    font-size: var(--font-size-emphasis-default);
+    line-height: 1.15;
+}
+
+.login-intro {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: var(--line-height-body);
+}
+
+.login-form {
+    margin-top: var(--stack-gap-lg);
+}
+
+.login-form .info-grid {
+    margin-bottom: var(--stack-gap-lg);
+}
+
+.login-form .form-input {
+    --input-min-height: var(--control-height);
+    --input-font-size: 16px;
+}
+
+.login-form .form-btn {
+    width: 100%;
+}
+
+.login-form .login-field-error {
+    margin-top: var(--control-gap-tight);
+    margin-bottom: var(--control-gap);
+    padding: var(--control-gap-tight) var(--control-gap);
+}
+
+.login-form .form-btn + .form-btn,
+.login-form .apply-section + .form-btn {
+    margin-top: var(--control-gap);
+}
+
+.access-action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--control-gap);
+}
+
+.access-action-stack .status-msg {
+    margin-top: 0;
+}
+
+.access-inline-admin {
+    margin: 0;
+}
+
+.access-inline-admin .form-input {
+    --input-font-size: 16px;
+}
+
+@media (min-width: 700px) and (min-height: 760px) {
+    .login-standalone {
+        align-items: center;
+    }
+}
+
+@media (max-width: 520px) {
+    .login-standalone {
+        padding-right: max(var(--page-edge-padding-mobile), env(safe-area-inset-right));
+        padding-left: max(var(--page-edge-padding-mobile), env(safe-area-inset-left));
+    }
+
+    .login-brand {
+        grid-template-columns: minmax(0, 1fr) min(5.25rem, 25vw);
+        gap: var(--control-gap-tight);
+    }
+
+    .login-logo {
+        width: min(15rem, 62vw);
+    }
+
+    .login-character {
+        max-height: 5.25rem;
+    }
+
+    .login-title {
+        font-size: var(--font-size-base-default);
+    }
+
+    .login-intro {
+        font-size: var(--font-size-regular-default);
+    }
+
+    .info-grid .info-row {
+        grid-template-columns: minmax(6.5rem, 42%) minmax(0, 1fr);
+        column-gap: var(--control-gap);
+    }
+}
+
 /* ── Two-pane layout (desktop) ───────────────────────────────── */
 
 .settings-layout {
@@ -47,27 +187,35 @@
     width: 100%;
 }
 
+.settings-page > .page-title {
+    margin-bottom: var(--stack-gap-lg);
+}
+
+@media (max-width: 899px) {
+    .settings-page > .page-title {
+        display: none;
+    }
+}
+
 /* ── Settings sections ───────────────────────────────────────── */
 
 .settings-section {
-    margin-bottom: var(--section-gap);
-}
-
-.settings-section:last-child {
     margin-bottom: 0;
+    padding: var(--stack-gap-lg) 0 var(--space-5);
+    border-top: var(--divider-border);
 }
 
-.settings-section-header {
-    padding-bottom: var(--header-margin-bottom-tight);
-    border-bottom: var(--divider-border);
+.settings-section:first-child {
+    padding-top: 0;
+    border-top: none;
 }
 
 .settings-section-body {
-    padding-top: var(--control-gap-tight);
+    padding-top: 0;
 }
 
 .settings-section-body > .menu-list {
-    margin-bottom: var(--stack-gap-lg);
+    margin-bottom: var(--space-5);
 }
 
 .settings-section-body > .menu-list:last-child {
@@ -116,9 +264,27 @@
     background: transparent;
 }
 
-/* Info grid (system info rows) */
+/* Info grid (settings, auth, and game detail rows) */
 .info-grid {
     margin-bottom: var(--stack-gap-lg);
+}
+
+.info-grid .info-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 32%) minmax(0, 1fr);
+    column-gap: var(--space-9);
+    align-items: start;
+}
+
+.info-grid .info-label,
+.info-grid .info-value {
+    min-width: 0;
+}
+
+.info-grid .info-value {
+    --value-text-display: block;
+    --value-text-word-break: break-word;
+    text-align: left;
 }
 
 .update-version {

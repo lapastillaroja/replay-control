@@ -431,6 +431,10 @@ Durable per-storage artwork download queue. Rebuild/rescan queues missing artwor
 
 **Index**: `idx_library_thumbnail_job_system_priority_status ON library_thumbnail_job(system, priority, state)` — supports priority queue fetches.
 
+Failed rows are retained, but the pending-job loader skips rows once their
+`attempts` value reaches the runtime cap. A later manifest change for the same
+primary key resets the attempt count and makes the job eligible again.
+
 ### library_build_sequence
 
 Small rebuildable counter table used by library build phases.

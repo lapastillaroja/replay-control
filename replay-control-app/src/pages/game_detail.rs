@@ -9,7 +9,11 @@ use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
 use crate::i18n::{Key, t, tf, use_i18n};
+#[cfg(feature = "hydrate")]
+use crate::server_fns::PlaytimeAvailability;
 use crate::server_fns::{self, RecommendedGame, RomDetail};
+#[cfg(feature = "hydrate")]
+use crate::util::format_elapsed_short;
 use crate::util::format_size_for_system;
 use replay_control_core::replay_api::ReplayApiStatus;
 use replay_control_core::systems;
@@ -147,6 +151,28 @@ fn GameDetailContent(
     ));
     let system_sv = StoredValue::new(system.clone());
     let base_title_sv = StoredValue::new(detail.base_title.clone());
+
+    // Total play time for this game. Browser-only fetch so a slow or
+    // unimplemented `get_playtime` endpoint never blocks the SSR response.
+    #[cfg(feature = "hydrate")]
+    let game_playtime = LocalResource::new(move || {
+        server_fns::get_game_playtime(system_sv.get_value(), filename_sv.get_value())
+    });
+    #[cfg(feature = "hydrate")]
+    let playtime_display = move || {
+        let locale = i18n.locale.get();
+        match game_playtime.get() {
+            None => "\u{2026}".to_string(),
+            Some(result) => match result.take() {
+                Ok(p) if p.availability == PlaytimeAvailability::Tracked => {
+                    format_elapsed_short(p.seconds)
+                }
+                _ => t(locale, Key::PlaytimeUnavailable).to_string(),
+            },
+        }
+    };
+    #[cfg(not(feature = "hydrate"))]
+    let playtime_display = move || t(i18n.locale.get(), Key::PlaytimeUnavailable).to_string();
     let system_display = game.system_display.clone();
     let size_display = format_size_for_system(detail.size_bytes, &system);
     let has_arcade = game.rotation.is_some();
@@ -742,6 +768,13 @@ fn GameDetailContent(
                         <span class="info-value">{r}</span>
                     </div>
             })}
+
+                // Total play time, always shown (placeholder when tracking is
+                // off or the device doesn't report play time yet).
+                <div class="info-row game-info-row">
+                    <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailPlaytime)}</span>
+                    <span class="info-value">{playtime_display}</span>
+                </div>
             </div>
         </section>
 

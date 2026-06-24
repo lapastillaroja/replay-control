@@ -109,8 +109,93 @@ pub fn translate(key: Key) -> &'static str {
         // Settings page
         Key::SettingsTitle => "設定",
         Key::SettingsSectionAppearance => "外観",
-        Key::SettingsSectionNetwork => "ネットワークとセキュリティ",
+        Key::SettingsSectionLibraryGames => "ライブラリとゲーム",
+        Key::SettingsSectionDeviceNetwork => "デバイスネットワーク",
+        Key::SettingsSectionAccess => "アクセスとセキュリティ",
         Key::SettingsSectionSystem => "システム",
+        Key::AccessSecurityTitle => "アクセスとセキュリティ",
+        Key::AccessHttpsTitle => "HTTPS",
+        Key::AccessHttpsEnabled => "ポート8443で安全なローカルアクセス",
+        Key::AccessCertificateTitle => "証明書",
+        Key::AccessCertificateLocal => "自己署名証明書を自動管理",
+        Key::AccessCertificateMode => "モード",
+        Key::AccessCertificateGenerated => "生成日",
+        Key::AccessCertificateExpires => "有効期限",
+        Key::AccessCertificateFingerprint => "SHA-256フィンガープリント",
+        Key::AccessCertificateCoveredNames => "証明書に含まれる名前",
+        Key::AccessCertificateCurrentNames => "現在のデバイス名",
+        Key::AccessCertificateMissingCoverage => "不足している証明書範囲",
+        Key::AccessCertificateCovered => "現在のアクセス名はすべて証明書に含まれています",
+        Key::AccessCertificateRegenerate => "証明書を再生成",
+        Key::AccessCertificateRegenerateConfirm => {
+            "HTTPS証明書を再生成しますか？ローカルのセキュリティ例外をもう一度承認する必要がある場合があります。"
+        }
+        Key::AccessCertificateRegenerated => "証明書を再生成しました",
+        Key::AccessCertificateTrustHint => {
+            "証明書を再生成すると、ローカルのセキュリティ例外を再度承認する必要がある場合があります。"
+        }
+        Key::AccessNormalUserTitle => "通常ユーザーアクセス",
+        Key::AccessNormalUserReplayOs => {
+            "ゲーム起動とプレイヤー操作にはRePlayOS Net Controlのペアリングコードを使用します。"
+        }
+        Key::AccessManageReplayOs => "RePlayOS接続を管理",
+        Key::AccessDevicePasswordTitle => "デバイスパスワード",
+        Key::AccessDevicePasswordSummary => "デバイスレベルの変更に使うrootパスワード",
+        Key::AccessDevicePasswordHint => {
+            "管理者レベルのデバイスアクセスに使うRePlayOSのrootパスワードを変更します。"
+        }
+        Key::AccessAdminTimeoutTitle => "管理者解除の時間",
+        Key::AccessAdminTimeoutHint => {
+            "デバイスパスワードを入力した後、管理者アクセスを維持する時間です。"
+        }
+        Key::AccessAdminTimeoutOneHour => "1時間",
+        Key::AccessAdminTimeoutThreeHours => "3時間",
+        Key::AccessAdminTimeoutTwelveHours => "12時間",
+        Key::LoginTitle => "サインイン",
+        Key::LoginWelcomeTitle => "Replay Controlへようこそ",
+        Key::LoginWelcomeBody => {
+            "ここでサインインします。通常アクセスはNet Controlコード、管理者設定はデバイスパスワードを使います。"
+        }
+        Key::LoginUserTitle => "通常ユーザーアクセス",
+        Key::LoginUserCodeLabel => "Net Controlコード",
+        Key::LoginUserCodeHint => {
+            "TVで SYSTEM > OPTIONS から NET CONTROL を有効にし、SYSTEM > INFORMATION の NET CONTROL CODE を入力します。"
+        }
+        Key::LoginUserSubmit => "コードでサインイン",
+        Key::LoginAdminTitle => "管理者アクセス",
+        Key::LoginAdminPasswordLabel => "デバイスパスワード",
+        Key::LoginAdminHint => {
+            "RePlayOSのrootパスワードを使います。Wi-Fi、NFS、ホスト名、アップデートなどのデバイス変更用です。"
+        }
+        Key::LoginAdminSubmit => "管理者としてサインイン",
+        Key::LoginSuccessUser => "通常ユーザーとしてサインインしました",
+        Key::LoginSuccessAdmin => "管理者としてサインインしました",
+        Key::LoginDowngrade => "通常ユーザーに切り替え",
+        Key::LoginDowngradeSuccess => "通常ユーザーアクセスに切り替えました",
+        Key::LoginLogout => "サインアウト",
+        Key::LoginLogoutAll => "すべてのセッションをサインアウト",
+        Key::LoginLogoutAllConfirm => "すべてのReplay Controlセッションをサインアウトしますか？",
+        Key::LoginContinue => "続行",
+        Key::LoginCurrentRole => "現在のアクセス",
+        Key::LoginAdminTimeRemaining => "管理者時間の残り",
+        Key::LoginSessionTimeRemaining => "セッション時間の残り",
+        Key::LoginStandaloneOpenTitle => "オープンなスタンドアロンモード",
+        Key::LoginStandaloneOpenHint => {
+            "このデバイス外のライブラリはローカルで開かれています。サインインはRePlayOSデバイス上でのみ使用します。"
+        }
+        Key::FirstSetupTitle => "初回セットアップ",
+        Key::FirstSetupBody => {
+            "ここでアクセスを設定します。管理者として続行するため、デバイスパスワードを一度確認してください。"
+        }
+        Key::FirstSetupPasswordTitle => "デバイスアクセスを確認",
+        Key::FirstSetupPasswordHint => {
+            "現在のRePlayOS rootパスワードを入力してください。新しいイメージのデフォルトパスワードはreplayosです。"
+        }
+        Key::FirstSetupSubmit => "管理者として続行",
+        Key::AuthRoleAnonymous => "未サインイン",
+        Key::AuthRoleOpen => "オープンアクセス",
+        Key::AuthRoleUser => "通常ユーザー",
+        Key::AuthRoleAdmin => "管理者",
 
         // More page (legacy keys)
         Key::MoreSectionGamePreferences => "ゲーム設定",
@@ -134,7 +219,7 @@ pub fn translate(key: Key) -> &'static str {
         // App language (UI locale selector)
         Key::LocaleTitle => "アプリの言語",
         Key::LocaleSaved => "言語を保存しました",
-        Key::LocaleAuto => "ブラウザと同じ",
+        Key::LocaleAuto => "自動",
         Key::LocaleEn => "英語 - English",
         Key::LocaleEs => "スペイン語 - Español",
         Key::LocaleJa => "日本語",
@@ -222,6 +307,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsReboot => "システムを再起動",
         Key::SettingsRebooting => "再起動中...",
         Key::SettingsDeviceOnlyDisabled => "RePlayOSデバイスでのみ利用できます。",
+        Key::SettingsAdminOnlyDisabled => {
+            "これらの設定を変更するには管理者としてサインインしてください。"
+        }
         Key::SettingsPasswordEnter => "パスワードを入力",
 
         // Game detail page
@@ -258,6 +346,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
+        Key::GameDetailPlaytime => "プレイ時間",
 
         Key::GameDetailEmulation => "互換性",
         Key::GameDetailRawCategory => "MAMEカテゴリ",
@@ -302,9 +391,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManualInvalidFileType => {
             "アップロードできるマニュアルはPDFまたはテキストファイルのみです。"
         }
-        Key::GameDetailManualUploadBrowserOnly => {
-            "マニュアルのアップロードはブラウザでのみ利用できます。"
-        }
+        Key::GameDetailManualUploadBrowserOnly => "ここではマニュアルをアップロードできません。",
         Key::GameDetailViewManual => "表示",
         Key::GameDetailNoManualResults => "マニュアルが見つかりません",
         Key::GameDetailManualSaved => "マニュアルを保存しました",
@@ -448,6 +535,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummarySystems => "システム数",
         Key::MetadataSummaryStorage => "ストレージ",
         Key::MetadataSummaryDownloadedArt => "取得済み画像",
+        Key::MetadataSummaryPlaytime => "プレイ時間",
+        Key::PlaytimeUnavailable => "利用不可",
 
         // System accordion rows
         Key::MetadataSystemCoverage => "充実度",
@@ -462,6 +551,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowTitleScreens => "タイトル画面",
         Key::MetadataRowManuals => "マニュアル",
         Key::MetadataRowVideos => "動画",
+        Key::MetadataRowPlaytime => "プレイ時間",
         Key::MetadataRowDownloadedMedia => "取得済みメディア:",
         Key::MetadataRowRegions => "地域:",
         Key::MetadataRowGenreGroups => "ジャンル:",
@@ -631,6 +721,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupReplayosTitle => "RePlayOS連携を有効化",
         Key::SetupReplayosHint => {
             "RePlayOS Net Controlを有効化し、RePlayOSを再起動してNet Controlコードを読み取るため、操作は不要です"
+        }
+        Key::SetupPasswordTitle => "デフォルトのデバイスパスワードを変更",
+        Key::SetupPasswordHint => {
+            "管理者アクセスを保護します。RePlayOSのrootパスワードがまだデフォルトの場合に推奨されます。"
         }
         Key::SetupSkip => "スキップ",
         Key::SetupDismiss => "閉じる",

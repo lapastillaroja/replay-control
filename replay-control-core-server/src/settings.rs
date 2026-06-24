@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::AppSettings;
+use crate::config::{AdminSessionTimeout, AppSettings};
 use crate::storage::{RC_DIR, SETTINGS_FILE};
 use replay_control_core::error::Result;
 use replay_control_core::locale::Locale;
@@ -53,6 +53,7 @@ impl SettingsStore {
         settings.save(&self.settings_path())
     }
 
+    //TODO remove this migration for 1.0
     /// One-time migration from old storage-level settings to this store.
     /// Moves settings.cfg from `<storage_root>/.replay-control/` to this
     /// store's directory. Uses atomic rename when possible, falls back to
@@ -114,6 +115,7 @@ pub struct UserPreferences {
     pub region_secondary: Option<RegionPreference>,
     pub font_size: String,
     pub setup_dismissed: bool,
+    pub first_setup_done: bool,
 }
 
 impl Default for UserPreferences {
@@ -125,6 +127,7 @@ impl Default for UserPreferences {
             region_secondary: None,
             font_size: "normal".to_string(),
             setup_dismissed: false,
+            first_setup_done: false,
         }
     }
 }
@@ -142,6 +145,7 @@ impl UserPreferences {
                 .map(RegionPreference::from_str_value),
             font_size: settings.font_size().to_string(),
             setup_dismissed: settings.setup_dismissed(),
+            first_setup_done: settings.first_setup_done(),
         }
     }
 }
@@ -389,6 +393,37 @@ pub fn write_setup_dismissed(store: &SettingsStore, dismissed: bool) -> Result<(
     store.save(&settings)
 }
 
+/// Read whether the first setup sign-in/explanation has been completed.
+/// Returns `false` if the file doesn't exist or the key is missing.
+pub fn read_first_setup_done(store: &SettingsStore) -> bool {
+    store.load().first_setup_done()
+}
+
+/// Write the first setup completion flag.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_first_setup_done(store: &SettingsStore, done: bool) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_first_setup_done(done);
+    store.save(&settings)
+}
+
+/// Read the configured admin elevation duration.
+/// Returns 1 hour when the file doesn't exist, the key is missing, or the value is unknown.
+pub fn read_admin_session_timeout(store: &SettingsStore) -> AdminSessionTimeout {
+    store.load().admin_session_timeout()
+}
+
+/// Write the admin elevation duration.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_admin_session_timeout(
+    store: &SettingsStore,
+    timeout: AdminSessionTimeout,
+) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_admin_session_timeout(timeout);
+    store.save(&settings)
+}
+
 /// Read the GitHub API key from settings.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(store: &SettingsStore) -> Option<String> {
@@ -534,6 +569,63 @@ mod tests {
         let content = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
         assert!(content.contains("other_key = \"value\""));
         assert!(content.contains("region_preference = \"japan\""));
+    }
+
+    #[test]
+    fn first_setup_done_defaults_to_false() {
+        let store = test_store();
+        assert!(!read_first_setup_done(&store));
+    }
+
+    #[test]
+    fn write_and_read_first_setup_done() {
+        let store = test_store();
+        write_first_setup_done(&store, true).unwrap();
+        assert!(read_first_setup_done(&store));
+        write_first_setup_done(&store, false).unwrap();
+        assert!(!read_first_setup_done(&store));
+    }
+
+    #[test]
+    fn first_setup_done_preserves_other_keys() {
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        write_first_setup_done(&store, true).unwrap();
+
+        assert_eq!(read_region_preference(&store), RegionPreference::Japan);
+        assert!(read_first_setup_done(&store));
+    }
+
+    #[test]
+    fn admin_session_timeout_defaults_to_one_hour() {
+        let store = test_store();
+        assert_eq!(
+            read_admin_session_timeout(&store),
+            AdminSessionTimeout::OneHour
+        );
+    }
+
+    #[test]
+    fn write_and_read_admin_session_timeout() {
+        let store = test_store();
+        write_admin_session_timeout(&store, AdminSessionTimeout::TwelveHours).unwrap();
+        assert_eq!(
+            read_admin_session_timeout(&store),
+            AdminSessionTimeout::TwelveHours
+        );
+    }
+
+    #[test]
+    fn invalid_admin_session_timeout_falls_back_to_default() {
+        let store = test_store();
+        let dir = store.dir();
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(SETTINGS_FILE), "admin_session_timeout = \"2h\"\n").unwrap();
+
+        assert_eq!(
+            read_admin_session_timeout(&store),
+            AdminSessionTimeout::OneHour
+        );
     }
 
     // --- Secondary region preference tests ---

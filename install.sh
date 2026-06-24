@@ -24,6 +24,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 ENV_FILE="/etc/default/${SERVICE_NAME}"
 AVAHI_FILE="/etc/avahi/services/${SERVICE_NAME}.service"
 DEFAULT_PORT="8080"
+DEFAULT_HTTPS_PORT="8443"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 
@@ -519,10 +520,15 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
+Environment=REPLAY_PORT=8080
+Environment=REPLAY_HTTPS_PORT=8443
+Environment=REPLAY_EXTRA_ARGS=
 EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
-    --site-root ${REPLAY_SITE_ROOT}
+    --https-port ${REPLAY_HTTPS_PORT} \
+    --site-root ${REPLAY_SITE_ROOT} \
+    $REPLAY_EXTRA_ARGS
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/replay-control.log
@@ -539,8 +545,15 @@ env_file_content() {
 # Port for the web UI
 REPLAY_PORT=8080
 
+# HTTPS port for the main app
+REPLAY_HTTPS_PORT=8443
+
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
+
+# Extra CLI args. Dangerous debug flags must be explicit here, for example:
+#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
+REPLAY_EXTRA_ARGS=
 
 # Uncomment to override auto-detected storage path
 #REPLAY_STORAGE_PATH=/media/sd
@@ -564,8 +577,8 @@ avahi_service_content() {
 <service-group>
   <name>Replay Control</name>
   <service>
-    <type>_http._tcp</type>
-    <port>8080</port>
+    <type>_https._tcp</type>
+    <port>8443</port>
   </service>
 </service-group>
 AVAHI
@@ -645,7 +658,7 @@ install_local() {
 
     echo ""
     success "${BOLD}Replay Control installed!${RESET}"
-    echo "  Open ${GREEN}http://$(hostname).local:${DEFAULT_PORT}${RESET} in your browser."
+    echo "  Open ${GREEN}https://$(hostname).local:${DEFAULT_HTTPS_PORT}${RESET} in your browser."
     echo ""
 }
 
@@ -676,7 +689,7 @@ install_ssh() {
         dry "  - Clean up temp files on Pi"
         echo ""
         dry "Would verify service is running"
-        dry "App would be available at: http://${PI_ADDR}:${DEFAULT_PORT}"
+        dry "App would be available at: https://${PI_ADDR}:${DEFAULT_HTTPS_PORT}"
         return
     fi
 
@@ -742,10 +755,15 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
+Environment=REPLAY_PORT=8080
+Environment=REPLAY_HTTPS_PORT=8443
+Environment=REPLAY_EXTRA_ARGS=
 EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
-    --site-root ${REPLAY_SITE_ROOT}
+    --https-port ${REPLAY_HTTPS_PORT} \
+    --site-root ${REPLAY_SITE_ROOT} \
+    $REPLAY_EXTRA_ARGS
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/replay-control.log
@@ -762,8 +780,15 @@ if [ ! -f /etc/default/replay-control ]; then
 # Port for the web UI
 REPLAY_PORT=8080
 
+# HTTPS port for the main app
+REPLAY_HTTPS_PORT=8443
+
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
+
+# Extra CLI args. Dangerous debug flags must be explicit here, for example:
+#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
+REPLAY_EXTRA_ARGS=
 
 # Uncomment to override auto-detected storage path
 #REPLAY_STORAGE_PATH=/media/sd
@@ -792,8 +817,8 @@ if command -v avahi-daemon &>/dev/null; then
 <service-group>
   <name>Replay Control</name>
   <service>
-    <type>_http._tcp</type>
-    <port>8080</port>
+    <type>_https._tcp</type>
+    <port>8443</port>
   </service>
 </service-group>
 AVAHI
@@ -825,7 +850,7 @@ REMOTE_INSTALL
 
     echo ""
     success "${BOLD}Replay Control installed!${RESET}"
-    echo "  Open ${GREEN}http://${PI_ADDR}:${DEFAULT_PORT}${RESET} in your browser."
+    echo "  Open ${GREEN}https://${PI_ADDR}:${DEFAULT_HTTPS_PORT}${RESET} in your browser."
     echo ""
 }
 

@@ -38,6 +38,11 @@ The downloader keeps request concurrency bounded. If GitHub responds with
 temporary throttling or service-unavailable errors, Replay Control retries a few
 times with backoff instead of opening many requests at once.
 
+Download jobs that keep failing are retained for troubleshooting, but Replay
+Control stops resubmitting them after a small attempt cap. If a future thumbnail
+manifest update changes the source entry for the same image, the job becomes
+eligible again with a fresh attempt budget.
+
 After scan/rebuild and thumbnail update maintenance, Replay Control refreshes
 stored artwork totals from the downloaded media folders, split by box art,
 title screens, and screenshots. The metadata page reads those stored totals

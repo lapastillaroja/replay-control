@@ -13,6 +13,8 @@ use super::{
     ThumbnailPhaseState, library_meta, unix_now,
 };
 
+const MAX_THUMBNAIL_JOB_ATTEMPTS: i64 = 5;
+
 /// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
 ///
 /// The column order must match the positional indices in `row_to_game_entry()`.
@@ -1469,7 +1471,24 @@ impl LibraryDb {
                 repo_url_name = excluded.repo_url_name,
                 branch = excluded.branch,
                 is_symlink = excluded.is_symlink,
-                state = excluded.state,
+                state = CASE
+                    WHEN library_thumbnail_job.attempts >= ?11
+                     AND library_thumbnail_job.repo_url_name = excluded.repo_url_name
+                     AND library_thumbnail_job.branch = excluded.branch
+                     AND library_thumbnail_job.is_symlink = excluded.is_symlink
+                    THEN library_thumbnail_job.state
+                    ELSE excluded.state
+                END,
+                attempts = CASE
+                    WHEN library_thumbnail_job.attempts >= ?11
+                     AND (
+                        library_thumbnail_job.repo_url_name != excluded.repo_url_name
+                        OR library_thumbnail_job.branch != excluded.branch
+                        OR library_thumbnail_job.is_symlink != excluded.is_symlink
+                     )
+                    THEN 0
+                    ELSE library_thumbnail_job.attempts
+                END,
                 priority = excluded.priority,
                 updated_at = excluded.updated_at",
             params![
@@ -1483,6 +1502,7 @@ impl LibraryDb {
                 ThumbnailJobState::Queued.as_i64(),
                 super::thumbnail_priority(kind),
                 unix_now(),
+                MAX_THUMBNAIL_JOB_ATTEMPTS,
             ],
         )
         .map_err(|e| Error::Other(format!("upsert thumbnail job for {system}: {e}")))
@@ -1509,7 +1529,24 @@ impl LibraryDb {
                     repo_url_name = excluded.repo_url_name,
                     branch = excluded.branch,
                     is_symlink = excluded.is_symlink,
-                    state = excluded.state,
+                    state = CASE
+                        WHEN library_thumbnail_job.attempts >= ?11
+                         AND library_thumbnail_job.repo_url_name = excluded.repo_url_name
+                         AND library_thumbnail_job.branch = excluded.branch
+                         AND library_thumbnail_job.is_symlink = excluded.is_symlink
+                        THEN library_thumbnail_job.state
+                        ELSE excluded.state
+                    END,
+                    attempts = CASE
+                        WHEN library_thumbnail_job.attempts >= ?11
+                         AND (
+                            library_thumbnail_job.repo_url_name != excluded.repo_url_name
+                            OR library_thumbnail_job.branch != excluded.branch
+                            OR library_thumbnail_job.is_symlink != excluded.is_symlink
+                         )
+                        THEN 0
+                        ELSE library_thumbnail_job.attempts
+                    END,
                     priority = excluded.priority,
                     updated_at = excluded.updated_at",
             )
@@ -1529,6 +1566,7 @@ impl LibraryDb {
                     ThumbnailJobState::Queued.as_i64(),
                     job.priority(),
                     now,
+                    MAX_THUMBNAIL_JOB_ATTEMPTS,
                 ])
                 .map_err(|e| {
                     Error::Other(format!("upsert thumbnail job for {}: {e}", job.system))
@@ -1579,8 +1617,9 @@ impl LibraryDb {
                  WHERE system = ?1
                    AND priority = ?2
                    AND state IN (?3, ?4)
+                   AND attempts < ?5
                  ORDER BY state, rom_filename, kind
-                 LIMIT ?5",
+                 LIMIT ?6",
             )
             .map_err(|e| Error::Other(format!("Prepare load_pending_thumbnail_jobs: {e}")))?;
         let rows = stmt
@@ -1590,6 +1629,7 @@ impl LibraryDb {
                     priority,
                     ThumbnailJobState::Queued.as_i64(),
                     ThumbnailJobState::Failed.as_i64(),
+                    MAX_THUMBNAIL_JOB_ATTEMPTS,
                     limit as i64
                 ],
                 |row| {
@@ -3304,6 +3344,127 @@ mod tests {
                 crate::thumbnails::ThumbnailKind::Snap
             ]
         );
+    }
+
+    #[test]
+    fn thumbnail_jobs_are_retained_but_skipped_after_attempt_cap() {
+        let (mut conn, _dir) = open_temp_db();
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "nintendo_snes",
+            &[make_game_entry("nintendo_snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        let manifest = crate::thumbnail_manifest::ManifestMatch {
+            filename: "Image".into(),
+            repo_url_name: "Repo".into(),
+            branch: "master".into(),
+            is_symlink: false,
+        };
+        LibraryDb::upsert_thumbnail_job(
+            &conn,
+            "nintendo_snes",
+            "Mario.sfc",
+            crate::thumbnails::ThumbnailKind::Boxart,
+            &manifest,
+        )
+        .unwrap();
+
+        for _ in 0..super::MAX_THUMBNAIL_JOB_ATTEMPTS {
+            LibraryDb::fail_thumbnail_jobs_for_key(
+                &mut conn,
+                "nintendo_snes",
+                crate::thumbnails::ThumbnailKind::Boxart,
+                "Image",
+            )
+            .unwrap();
+        }
+
+        let jobs = LibraryDb::load_pending_thumbnail_jobs(&conn, 10).unwrap();
+        assert!(jobs.is_empty());
+        let retained: (i64, i64) = conn
+            .query_row(
+                "SELECT state, attempts
+                 FROM library_thumbnail_job
+                 WHERE system = ?1 AND rom_filename = ?2 AND kind = ?3 AND filename = ?4",
+                rusqlite::params![
+                    "nintendo_snes",
+                    "Mario.sfc",
+                    crate::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                    "Image"
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(retained.0, super::super::ThumbnailJobState::Failed.as_i64());
+        assert_eq!(retained.1, super::MAX_THUMBNAIL_JOB_ATTEMPTS);
+    }
+
+    #[test]
+    fn changed_thumbnail_manifest_resets_capped_job_attempts() {
+        let (mut conn, _dir) = open_temp_db();
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "nintendo_snes",
+            &[make_game_entry("nintendo_snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        let manifest = crate::thumbnail_manifest::ManifestMatch {
+            filename: "Image".into(),
+            repo_url_name: "Repo".into(),
+            branch: "master".into(),
+            is_symlink: true,
+        };
+        LibraryDb::upsert_thumbnail_job(
+            &conn,
+            "nintendo_snes",
+            "Mario.sfc",
+            crate::thumbnails::ThumbnailKind::Boxart,
+            &manifest,
+        )
+        .unwrap();
+        for _ in 0..super::MAX_THUMBNAIL_JOB_ATTEMPTS {
+            LibraryDb::fail_thumbnail_jobs_for_key(
+                &mut conn,
+                "nintendo_snes",
+                crate::thumbnails::ThumbnailKind::Boxart,
+                "Image",
+            )
+            .unwrap();
+        }
+
+        let changed_manifest = crate::thumbnail_manifest::ManifestMatch {
+            is_symlink: false,
+            ..manifest
+        };
+        LibraryDb::upsert_thumbnail_job(
+            &conn,
+            "nintendo_snes",
+            "Mario.sfc",
+            crate::thumbnails::ThumbnailKind::Boxart,
+            &changed_manifest,
+        )
+        .unwrap();
+
+        let jobs = LibraryDb::load_pending_thumbnail_jobs(&conn, 10).unwrap();
+        assert_eq!(jobs.len(), 1);
+        let attempts: i64 = conn
+            .query_row(
+                "SELECT attempts
+                 FROM library_thumbnail_job
+                 WHERE system = ?1 AND rom_filename = ?2 AND kind = ?3 AND filename = ?4",
+                rusqlite::params![
+                    "nintendo_snes",
+                    "Mario.sfc",
+                    crate::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                    "Image"
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(attempts, 0);
     }
 
     #[test]

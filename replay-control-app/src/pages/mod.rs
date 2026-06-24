@@ -1,11 +1,14 @@
+pub mod access;
 pub mod board;
 pub mod developer;
 pub mod favorites;
+pub mod first_setup;
 pub mod game_detail;
 pub mod games;
 pub mod github;
 pub mod home;
 pub mod hostname;
+pub mod login;
 pub mod logs;
 pub mod metadata;
 pub mod nfs;

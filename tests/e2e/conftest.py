@@ -135,8 +135,17 @@ def get_pi_version() -> dict:
 def set_channel(channel: str):
     exec_cmd(
         f'sed -i "/^update_channel/d" /media/usb/.replay-control/settings.cfg 2>/dev/null; '
-        f'echo \'update_channel = "{channel}"\' >> /media/usb/.replay-control/settings.cfg'
+        f'echo \'update_channel = "{channel}"\' >> /media/usb/.replay-control/settings.cfg; '
+        "systemctl restart replay-control"
     )
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            get_pi_version()
+            return
+        except Exception:
+            time.sleep(0.5)
+    raise RuntimeError("Replay Control did not restart after changing update channel")
 
 
 def clean_update_state():

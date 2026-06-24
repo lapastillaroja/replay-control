@@ -20,7 +20,7 @@ Replay Control documentation, organized into two sections:
 | [Arcade Boards](features/arcade-boards.md) | Board badge, board pages, board search, board recommendations |
 | [Storage](features/storage.md) | Storage detection, automatic updates, config boundary |
 | [Thumbnails](features/thumbnails.md) | Box art, screenshots, title screens, image matching |
-| [Settings](features/settings.md) | System configuration, user preferences |
+| [Settings](features/settings.md) | System configuration, user preferences, access and security |
 | [Benchmarks](features/benchmarks.md) | Performance measurements on Raspberry Pi |
 | [Libretro Core](features/libretro-core.md) | TV display proof of concept |
 

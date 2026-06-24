@@ -106,6 +106,49 @@ pub struct VersionResponse {
     pub version: String,
 }
 
+/// `get_playtime` payload: cumulative tracked play time, optionally filtered to
+/// one `system` and/or `game_file`.
+///
+/// Documented in the RePlayOS REST API but **not yet implemented on 1.7.4** (it
+/// 404s on-device), so callers must degrade gracefully. We read only the raw
+/// `*_seconds` counts and format them ourselves; RePlayOS's preformatted
+/// `all`/`time` strings are ignored (serde drops unknown fields).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlaytimeResponse {
+    /// Whether RePlayOS is tracking play time at all. When `false`, the counts
+    /// are meaningless and the UI shows the unavailable placeholder.
+    #[serde(default)]
+    pub tracking_enabled: bool,
+    /// Total tracked seconds across the whole library, or across the filtered
+    /// subset when `system`/`game_file` narrow the query.
+    #[serde(default)]
+    pub all_seconds: u64,
+    #[serde(default)]
+    pub systems: Vec<PlaytimeSystem>,
+    #[serde(default)]
+    pub games: Vec<PlaytimeGame>,
+}
+
+/// Per-system entry in [`PlaytimeResponse::systems`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlaytimeSystem {
+    #[serde(default)]
+    pub system: String,
+    #[serde(default)]
+    pub seconds: u64,
+}
+
+/// Per-game entry in [`PlaytimeResponse::games`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlaytimeGame {
+    #[serde(default)]
+    pub system: String,
+    #[serde(default)]
+    pub game: String,
+    #[serde(default)]
+    pub seconds: u64,
+}
+
 /// Minimum RePlayOS version Replay Control supports as `(major, minor, patch)`.
 ///
 /// 1.7.4 renamed the config endpoints (`get_replay_config` →

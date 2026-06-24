@@ -6,16 +6,50 @@ use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
     self, Activity, CountBucket, DriverStatusCounts, ImportState, LibrarySummary,
-    MetadataLibraryOverview, MetadataPageSnapshot, RebuildProgress, SystemCoverage,
-    SystemStatsRefreshState, ThumbnailPhase,
+    MetadataLibraryOverview, MetadataPageSnapshot, PlaytimeAvailability, RebuildProgress,
+    SystemCoverage, SystemStatsRefreshState, ThumbnailPhase,
 };
-use crate::util::{format_number, format_size, format_year_range, pct};
+use crate::util::{format_elapsed_short, format_number, format_size, format_year_range, pct};
 use replay_control_core::systems::{
     system_core_supports_retroachievements, system_has_retroachievements,
 };
+use std::collections::HashMap;
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 type OverviewRes = Resource<Result<MetadataLibraryOverview, ServerFnError>>;
+
+/// Client-only play time state, provided via context to the summary card and
+/// the per-system accordion rows. `Disabled` (tracking off on the TV) and the
+/// unavailable cases both collapse to `Placeholder`; `Loading` is the transient
+/// pre-fetch state.
+#[derive(Clone, PartialEq)]
+enum PlaytimeUi {
+    Loading,
+    Placeholder,
+    Ready {
+        all_seconds: u64,
+        by_system: HashMap<String, u64>,
+    },
+}
+
+/// Render one play time figure from the shared state: an ellipsis while
+/// loading, the i18n placeholder when unavailable/disabled, else the formatted
+/// duration. `pick` selects the relevant seconds from the loaded totals (the
+/// grand total for the summary card, a per-system lookup for an accordion row).
+fn playtime_value(
+    ui: &PlaytimeUi,
+    pick: impl FnOnce(u64, &HashMap<String, u64>) -> u64,
+    locale: crate::i18n::Locale,
+) -> String {
+    match ui {
+        PlaytimeUi::Loading => "\u{2026}".to_string(),
+        PlaytimeUi::Placeholder => t(locale, Key::PlaytimeUnavailable).to_string(),
+        PlaytimeUi::Ready {
+            all_seconds,
+            by_system,
+        } => format_elapsed_short(pick(*all_seconds, by_system)),
+    }
+}
 
 fn format_rebuild_progress(locale: crate::i18n::Locale, p: &RebuildProgress) -> Option<String> {
     crate::components::metadata_banner::format_rebuild_progress_label(locale, p)
@@ -30,6 +64,31 @@ pub fn MetadataPage() -> impl IntoView {
     let overview: OverviewRes =
         Resource::new(|| (), |_| server_fns::get_metadata_library_overview());
     let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
+
+    // Play time is fetched client-side only — a `LocalResource` never runs
+    // during SSR, so a slow or unimplemented `get_playtime` endpoint can't
+    // block or delay the page. One fetch per page load; no polling. The summary
+    // card and the per-system accordion rows read the result via context.
+    let playtime = LocalResource::new(server_fns::get_library_playtime);
+    let playtime_ui = Memo::new(move |_| {
+        let Some(result) = playtime.get() else {
+            return PlaytimeUi::Loading;
+        };
+        match result.take() {
+            Ok(summary) if summary.availability == PlaytimeAvailability::Tracked => {
+                PlaytimeUi::Ready {
+                    all_seconds: summary.all_seconds,
+                    by_system: summary
+                        .systems
+                        .into_iter()
+                        .map(|s| (s.system, s.seconds))
+                        .collect(),
+                }
+            }
+            _ => PlaytimeUi::Placeholder,
+        }
+    });
+    provide_context(playtime_ui);
 
     // App-level activity signal (populated by SseEventsListener at the App
     // root). Shared with banners, the setup checklist, and other consumers
@@ -1038,6 +1097,25 @@ fn SummaryCards(
             <StatCard compact=true
                 value=storage_label
                 label=t(locale, Key::MetadataSummaryStorage) />
+            <PlaytimeStatCard />
+        </div>
+    }
+}
+
+/// Total library play time card. Reads the client-only [`PlaytimeUi`] context,
+/// so it shows the placeholder on standalone builds and on firmware without the
+/// `get_playtime` endpoint, and the formatted total once tracking data loads.
+#[component]
+fn PlaytimeStatCard() -> impl IntoView {
+    let i18n = use_i18n();
+    let playtime = use_context::<Memo<PlaytimeUi>>().expect("PlaytimeUi context");
+    let value = move || playtime.with(|ui| playtime_value(ui, |all, _| all, i18n.locale.get()));
+    view! {
+        <div class="stat-card compact">
+            <div class="stat-value">{value}</div>
+            <div class="stat-label">
+                {move || t(i18n.locale.get(), Key::MetadataSummaryPlaytime)}
+            </div>
         </div>
     }
 }
@@ -1167,6 +1245,24 @@ fn SystemRowHeader(cov: StoredValue<SystemCoverage>) -> impl IntoView {
 fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
     let i18n = use_i18n();
 
+    // Per-system play time, from the client-only context. Placeholder until the
+    // fetch resolves, or when tracking is off / unavailable.
+    let playtime = use_context::<Memo<PlaytimeUi>>().expect("PlaytimeUi context");
+    let system_key = StoredValue::new(cov.with_value(|c| c.system.clone()));
+    let playtime_line = move || {
+        let locale = i18n.locale.get();
+        let value = playtime.with(|ui| {
+            playtime_value(
+                ui,
+                |_, by_system| {
+                    system_key.with_value(|key| by_system.get(key).copied().unwrap_or(0))
+                },
+                locale,
+            )
+        });
+        format!("{} \u{00B7} {}", t(locale, Key::MetadataRowPlaytime), value)
+    };
+
     view! {
         <div class="system-row-details" on:click=|ev| ev.stop_propagation()>
             <CoverageBarRow cov field=CoverageField::Genre />
@@ -1195,6 +1291,8 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
             <div class="composition-row">
                 {move || composition_text(cov, i18n.locale.get())}
             </div>
+
+            <div class="footer-row">{playtime_line}</div>
 
             {move || media_row_view(cov, i18n.locale.get())}
 

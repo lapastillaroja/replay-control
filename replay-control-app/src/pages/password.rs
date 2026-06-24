@@ -1,40 +1,12 @@
 use leptos::prelude::*;
-use leptos_router::components::A;
-use server_fn::ServerFnError;
 
-use crate::components::device_only_notice::DeviceOnlyNotice;
-use crate::i18n::{Key, t, use_i18n};
+use crate::i18n::{I18nContext, Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]
-pub fn PasswordPage() -> impl IntoView {
-    let i18n = use_i18n();
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
-
-    view! {
-        <div class="page settings-page">
-            <div class="rom-header">
-                <A href="/settings" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), Key::GamesBack)}
-                </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), Key::PasswordTitle)}</h2>
-            </div>
-
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                {move || Suspend::new(async move {
-                    if !mode.await.map(|p| p.is_device()).unwrap_or(false) {
-                        return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
-                    }
-                    Ok::<_, ServerFnError>(view! { <PasswordForm /> }.into_any())
-                })}
-            </Suspense>
-        </div>
-    }
-}
-
-#[component]
-fn PasswordForm() -> impl IntoView {
-    let i18n = use_i18n();
+pub fn PasswordForm(#[prop(optional)] i18n: Option<I18nContext>) -> impl IntoView {
+    let i18n = i18n.unwrap_or_else(use_i18n);
+    let locale_signal = i18n.locale;
 
     let current_password = RwSignal::new(String::new());
     let new_password = RwSignal::new(String::new());
@@ -64,9 +36,9 @@ fn PasswordForm() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::change_root_password(current, new_pw).await {
                 Ok(server_msg) => {
-                    let locale = use_i18n().locale.get_untracked();
                     // The server returns either the success message or a dev-mode skip message.
                     // Map both to appropriate translated keys.
+                    let locale = locale_signal.get_untracked();
                     let msg = if server_msg.contains("skipped") {
                         t(locale, Key::PasswordDevSkip).to_string()
                     } else {
@@ -79,7 +51,7 @@ fn PasswordForm() -> impl IntoView {
                     confirm_password.set(String::new());
                 }
                 Err(e) => {
-                    let locale = use_i18n().locale.get_untracked();
+                    let locale = locale_signal.get_untracked();
                     let raw = server_fns::format_error(e);
                     // Map known server-side error strings to translated keys.
                     let msg = if raw.contains("incorrect") {

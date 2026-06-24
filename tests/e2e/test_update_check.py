@@ -142,9 +142,7 @@ class TestChannelDropdown:
         set_channel("stable")
         goto_settings(page)
 
-        expect(page.locator(SEL_BANNER)).not_to_be_visible(timeout=3000)
-
         page.locator(SEL_CHANNEL_SELECT).select_option("beta")
 
-        # Banner should appear after re-check
-        expect(page.locator(SEL_BANNER)).to_be_visible(timeout=30000)
+        # Banner should appear or refresh after the channel change.
+        wait_for_banner_text(page, MOCK_BETA_VERSION)

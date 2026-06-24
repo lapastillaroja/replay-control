@@ -224,25 +224,26 @@
     margin-top: var(--panel-gap);
 }
 
-.game-info-row {
+.game-detail .game-info-table .game-info-row {
     --row-align: stretch;
     --row-gap: var(--control-gap-tight);
     display: block;
     min-width: 0;
 }
 
-.game-info-row .info-label {
+.game-detail .game-info-table .game-info-row .info-label {
     display: block;
     margin-bottom: var(--space-1);
 }
 
-.game-info-row .info-value {
+.game-detail .game-info-table .game-info-row .info-value {
     display: block;
     min-width: 0;
+    text-align: inherit;
     word-break: break-word;
 }
 
-.game-info-row .game-meta-status {
+.game-detail .game-info-table .game-info-row .game-meta-status {
     justify-content: flex-start;
 }
 

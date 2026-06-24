@@ -86,6 +86,7 @@ const ENTRY_COLS: &str = "re.filename_stem, re.region, re.crc32, \
 
 const CANONICAL_COLS: &str = "cg.display_name, cg.year, cg.genre, cg.developer, cg.publisher, \
      cg.players, cg.coop, cg.rating, cg.normalized_genre, cg.description, cg.source";
+const CATALOG_BATCH_VALUES: usize = 512;
 
 /// Look up game metadata by filename stem (without extension) for a system.
 pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry> {
@@ -154,13 +155,20 @@ pub async fn lookup_games_batch(system: &str, stems: &[&str]) -> HashMap<String,
     if stems.is_empty() {
         return HashMap::new();
     }
-    let stems_json = serde_json::to_string(stems).unwrap_or_else(|_| "[]".into());
-    batch_lookup(system, stems_json, entry_join_sql("filename_stem"), |row| {
-        let entry = row_to_game_entry(row)?;
-        Ok((entry.canonical_name.clone(), entry))
-    })
-    .await
-    .unwrap_or_default()
+    let mut out = HashMap::new();
+    for chunk in stems.chunks(CATALOG_BATCH_VALUES) {
+        let stems_json = serde_json::to_string(chunk).unwrap_or_else(|_| "[]".into());
+        let entries = batch_lookup(system, stems_json, entry_join_sql("filename_stem"), |row| {
+            let entry = row_to_game_entry(row)?;
+            Ok((entry.canonical_name.clone(), entry))
+        })
+        .await
+        .unwrap_or_default();
+        for (key, value) in entries {
+            out.entry(key).or_insert(value);
+        }
+    }
+    out
 }
 
 /// Look up game metadata by CRC32 hash for a system.
@@ -187,14 +195,21 @@ pub async fn lookup_by_crcs_batch(system: &str, crcs: &[u32]) -> HashMap<u32, Ga
     if crcs.is_empty() {
         return HashMap::new();
     }
-    let crcs_i64: Vec<i64> = crcs.iter().map(|c| *c as i64).collect();
-    let crcs_json = serde_json::to_string(&crcs_i64).unwrap_or_else(|_| "[]".into());
-    batch_lookup(system, crcs_json, entry_join_sql("crc32"), |row| {
-        let entry = row_to_game_entry(row)?;
-        Ok((entry.crc32, entry))
-    })
-    .await
-    .unwrap_or_default()
+    let mut out = HashMap::new();
+    for chunk in crcs.chunks(CATALOG_BATCH_VALUES) {
+        let crcs_i64: Vec<i64> = chunk.iter().map(|c| *c as i64).collect();
+        let crcs_json = serde_json::to_string(&crcs_i64).unwrap_or_else(|_| "[]".into());
+        let entries = batch_lookup(system, crcs_json, entry_join_sql("crc32"), |row| {
+            let entry = row_to_game_entry(row)?;
+            Ok((entry.crc32, entry))
+        })
+        .await
+        .unwrap_or_default();
+        for (key, value) in entries {
+            out.entry(key).or_insert(value);
+        }
+    }
+    out
 }
 
 /// Batch lookup of RetroAchievements ids by runtime-computed `rc_hash`.
@@ -218,14 +233,21 @@ pub async fn lookup_ra_id_by_rc_hash_batch(
     if hashes.is_empty() {
         return Some(HashMap::new());
     }
-    let hashes_json = serde_json::to_string(hashes).unwrap_or_else(|_| "[]".into());
     let sql = "SELECT hash, ra_id FROM ra_hash \
                WHERE system = ?1 AND hash IN (SELECT value FROM json_each(?2))"
         .to_string();
-    batch_lookup(system, hashes_json, sql, |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })
-    .await
+    let mut out = HashMap::new();
+    for chunk in hashes.chunks(CATALOG_BATCH_VALUES) {
+        let hashes_json = serde_json::to_string(chunk).unwrap_or_else(|_| "[]".into());
+        let entries = batch_lookup(system, hashes_json, sql.clone(), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .await?;
+        for (key, value) in entries {
+            out.entry(key).or_insert(value);
+        }
+    }
+    Some(out)
 }
 
 /// Look up a canonical game by normalized title for a system.
@@ -259,44 +281,50 @@ pub async fn lookup_by_normalized_titles_batch(
         if normalized.is_empty() {
             return HashMap::new();
         }
-        let system = system.to_string();
-        let norms_json = serde_json::to_string(normalized).unwrap_or_else(|_| "[]".into());
-        return crate::catalog_pool::with_catalog(move |conn| {
-            let mut stmt = conn.prepare_cached(&format!(
-                "SELECT re.normalized_title, {CANONICAL_COLS} \
-                 FROM rom_entry re \
-                 JOIN canonical_game cg ON cg.id = re.canonical_game_id \
-                 WHERE re.system = ?1 \
-                   AND re.normalized_title IN (SELECT value FROM json_each(?2))"
-            ))?;
-            let rows = stmt.query_map(rusqlite::params![system, norms_json], |row| {
-                let norm: String = row.get(0)?;
-                let coop_val: Option<i64> = row.get(7)?;
-                let cg = CanonicalGame {
-                    display_name: row.get(1)?,
-                    year: row.get::<_, i64>(2)? as u16,
-                    genre: row.get(3)?,
-                    developer: row.get(4)?,
-                    publisher: row.get(5)?,
-                    players: row.get::<_, i64>(6)? as u8,
-                    coop: coop_val.map(|v| v != 0),
-                    rating: row.get(8)?,
-                    normalized_genre: row.get(9)?,
-                    description: row.get(10)?,
-                    source: row.get(11)?,
-                };
-                Ok((norm, cg))
-            })?;
-            // Deduplicate: first match per normalized_title wins.
-            let mut map: HashMap<String, CanonicalGame> = HashMap::new();
-            for row in rows {
-                let (k, v) = row?;
-                map.entry(k).or_insert(v);
+        let mut out = HashMap::new();
+        for chunk in normalized.chunks(CATALOG_BATCH_VALUES) {
+            let system = system.to_string();
+            let norms_json = serde_json::to_string(chunk).unwrap_or_else(|_| "[]".into());
+            let entries = crate::catalog_pool::with_catalog(move |conn| {
+                let mut stmt = conn.prepare_cached(&format!(
+                    "SELECT re.normalized_title, {CANONICAL_COLS} \
+                     FROM rom_entry re \
+                     JOIN canonical_game cg ON cg.id = re.canonical_game_id \
+                     WHERE re.system = ?1 \
+                       AND re.normalized_title IN (SELECT value FROM json_each(?2))"
+                ))?;
+                let rows = stmt.query_map(rusqlite::params![system, norms_json], |row| {
+                    let norm: String = row.get(0)?;
+                    let coop_val: Option<i64> = row.get(7)?;
+                    let cg = CanonicalGame {
+                        display_name: row.get(1)?,
+                        year: row.get::<_, i64>(2)? as u16,
+                        genre: row.get(3)?,
+                        developer: row.get(4)?,
+                        publisher: row.get(5)?,
+                        players: row.get::<_, i64>(6)? as u8,
+                        coop: coop_val.map(|v| v != 0),
+                        rating: row.get(8)?,
+                        normalized_genre: row.get(9)?,
+                        description: row.get(10)?,
+                        source: row.get(11)?,
+                    };
+                    Ok((norm, cg))
+                })?;
+                let mut map: HashMap<String, CanonicalGame> = HashMap::new();
+                for row in rows {
+                    let (k, v) = row?;
+                    map.entry(k).or_insert(v);
+                }
+                Ok(map)
+            })
+            .await
+            .unwrap_or_default();
+            for (key, value) in entries {
+                out.entry(key).or_insert(value);
             }
-            Ok(map)
-        })
-        .await
-        .unwrap_or_default();
+        }
+        out
     }
 }
 

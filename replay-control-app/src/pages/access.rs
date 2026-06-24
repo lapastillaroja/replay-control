@@ -1,0 +1,622 @@
+use leptos::prelude::*;
+#[cfg(feature = "hydrate")]
+use leptos_router::NavigateOptions;
+use leptos_router::components::A;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_navigate;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_query_map;
+use server_fn::ServerFnError;
+
+use crate::components::device_only_notice::DeviceOnlyNotice;
+use crate::i18n::{I18nContext, Key, t, use_i18n};
+use crate::pages::password::PasswordForm;
+use crate::server_fns;
+use crate::server_fns::TlsCertificateInfo;
+use crate::util::confirm_action;
+#[cfg(feature = "hydrate")]
+use crate::util::sanitize_next_path;
+use replay_control_core::auth::{AuthRole, AuthStatus};
+
+#[component]
+pub fn AccessSecurityPage() -> impl IntoView {
+    let i18n = use_i18n();
+    let snapshot = Resource::new_blocking(
+        || (),
+        |_| async {
+            let status = server_fns::get_auth_status().await?;
+            let on_device = server_fns::get_mode()
+                .await
+                .map(|profile| profile.is_device())
+                .unwrap_or(false);
+            let admin_timeout = if admin_settings_unlocked(&status) {
+                server_fns::get_admin_session_timeout().await.ok()
+            } else {
+                None
+            };
+            let certificate = server_fns::get_tls_certificate_info().await.ok();
+            Ok::<_, ServerFnError>((status, on_device, admin_timeout, certificate))
+        },
+    );
+
+    view! {
+        <div class="page settings-page">
+            <div class="rom-header">
+                <A href="/settings" attr:class="back-btn">
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
+                </A>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::AccessSecurityTitle)}</h2>
+            </div>
+
+            <div class="settings-form">
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                    {move || match snapshot.get() {
+                        Some(Ok((status, on_device, admin_timeout, certificate))) => view! {
+                            <AccessSecurityContent
+                                initial_status=status
+                                initial_admin_timeout=admin_timeout
+                                initial_certificate=certificate
+                                i18n
+                                on_device
+                            />
+                        }
+                            .into_any(),
+                        Some(Err(err)) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        None => view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }
+                            .into_any(),
+                    }}
+                </Suspense>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn AccessSecurityContent(
+    initial_status: AuthStatus,
+    initial_admin_timeout: Option<String>,
+    initial_certificate: Option<TlsCertificateInfo>,
+    i18n: I18nContext,
+    on_device: bool,
+) -> impl IntoView {
+    let status = RwSignal::new(initial_status);
+    let admin_unlocked = move || admin_settings_unlocked(&status.read());
+    let auth_active = move || status.read().auth_required;
+
+    view! {
+        <section class="apply-section">
+            <h3 class="form-label">{move || t(i18n.locale.get(), Key::LoginCurrentRole)}</h3>
+            <div class="info-grid">
+                <div class="info-row">
+                    <span class="info-label">{move || t(i18n.locale.get(), Key::LoginCurrentRole)}</span>
+                    <span class="info-value">{move || t(i18n.locale.get(), role_label_key(&status.read()))}</span>
+                </div>
+                <Show when=move || {
+                    let status = status.read();
+                    status.auth_required
+                        && status.role == AuthRole::Admin
+                        && status.admin_seconds_remaining.is_some()
+                }>
+                    <div class="info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::LoginAdminTimeRemaining)}</span>
+                        <span class="info-value">{move || {
+                            status
+                                .read()
+                                .admin_seconds_remaining
+                                .map(compact_duration)
+                                .unwrap_or_default()
+                        }}</span>
+                    </div>
+                </Show>
+                <Show when=move || {
+                    let status = status.read();
+                    status.auth_required
+                        && status.role == AuthRole::User
+                        && status.session_seconds_remaining.is_some()
+                }>
+                    <div class="info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::LoginSessionTimeRemaining)}</span>
+                        <span class="info-value">{move || {
+                            status
+                                .read()
+                                .session_seconds_remaining
+                                .map(compact_duration)
+                                .unwrap_or_default()
+                        }}</span>
+                    </div>
+                </Show>
+            </div>
+            <SessionActions status i18n />
+        </section>
+
+        {move || {
+            if !auth_active() {
+                view! {
+                    <section class="apply-section">
+                        <h3 class="form-label">{move || t(i18n.locale.get(), Key::LoginStandaloneOpenTitle)}</h3>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::LoginStandaloneOpenHint)}</p>
+                    </section>
+                }.into_any()
+            } else if status.read().role == AuthRole::Admin {
+                view! {
+                    <section class="apply-section">
+                        <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessNormalUserTitle)}</h3>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessNormalUserReplayOs)}</p>
+                        <A href="/settings/replayos" attr:class="form-btn form-btn-secondary">
+                            {move || t(i18n.locale.get(), Key::AccessManageReplayOs)}
+                        </A>
+                    </section>
+                }.into_any()
+            } else {
+                view! {
+                    <section class="apply-section">
+                        <AdminLoginInline status i18n />
+                    </section>
+                }.into_any()
+            }
+        }}
+
+        <Show when=move || admin_unlocked()>
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutTitle)}</h3>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutHint)}</p>
+                <AdminSessionTimeoutForm
+                    initial=initial_admin_timeout
+                        .clone()
+                        .filter(|value| is_admin_timeout_value(value))
+                        .unwrap_or_else(|| "1h".to_string())
+                    status
+                    i18n
+                />
+            </section>
+        </Show>
+
+        <section class="apply-section">
+            <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessDevicePasswordTitle)}</h3>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessDevicePasswordHint)}</p>
+            {move || {
+                if !on_device {
+                    view! { <DeviceOnlyNotice i18n /> }.into_any()
+                } else if admin_unlocked() {
+                    view! { <PasswordForm i18n /> }.into_any()
+                } else {
+                    view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }.into_any()
+                }
+            }}
+        </section>
+
+        <section class="apply-section">
+            <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessHttpsTitle)}</h3>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessCertificateTrustHint)}</p>
+            <CertificateSection initial=initial_certificate can_regenerate=Signal::derive(admin_unlocked) i18n />
+        </section>
+    }
+}
+
+#[component]
+fn AdminSessionTimeoutForm(
+    initial: String,
+    status: RwSignal<AuthStatus>,
+    i18n: I18nContext,
+) -> impl IntoView {
+    let selected = RwSignal::new(if is_admin_timeout_value(&initial) {
+        initial
+    } else {
+        "1h".to_string()
+    });
+    let saving = RwSignal::new(false);
+    let error = RwSignal::new(Option::<String>::None);
+
+    let on_change = move |ev: leptos::ev::Event| {
+        if saving.get_untracked() {
+            return;
+        }
+        let value = leptos::prelude::event_target_value(&ev);
+        if !is_admin_timeout_value(&value) {
+            return;
+        }
+        let previous = selected.get_untracked();
+        selected.set(value.clone());
+        saving.set(true);
+        error.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::set_admin_session_timeout(value).await {
+                Ok(updated) => status.set(updated),
+                Err(err) => {
+                    selected.set(previous);
+                    error.set(Some(server_fns::format_error(err)));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    view! {
+        <select
+            class="form-input"
+            on:change=on_change
+            prop:value=move || selected.get()
+            disabled=move || saving.get()
+        >
+            <option value="1h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutOneHour)}</option>
+            <option value="3h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutThreeHours)}</option>
+            <option value="12h">{move || t(i18n.locale.get(), Key::AccessAdminTimeoutTwelveHours)}</option>
+        </select>
+        {move || error.get().map(|message| view! {
+            <div class="status-msg status-err">{message}</div>
+        })}
+    }
+}
+
+fn is_admin_timeout_value(value: &str) -> bool {
+    matches!(value, "1h" | "3h" | "12h")
+}
+
+fn role_label_key(status: &AuthStatus) -> Key {
+    if !status.auth_required {
+        return Key::AuthRoleOpen;
+    }
+    match status.role {
+        AuthRole::Anonymous => Key::AuthRoleAnonymous,
+        AuthRole::User => Key::AuthRoleUser,
+        AuthRole::Admin => Key::AuthRoleAdmin,
+    }
+}
+
+fn admin_settings_unlocked(status: &AuthStatus) -> bool {
+    !status.auth_required || status.role == AuthRole::Admin
+}
+
+fn compact_duration(seconds: u64) -> String {
+    if seconds < 60 {
+        "<1m".to_string()
+    } else if seconds < 60 * 60 {
+        format!("{}m", seconds.div_ceil(60))
+    } else if seconds < 24 * 60 * 60 {
+        format!("{}h", seconds.div_ceil(60 * 60))
+    } else {
+        format!("{}d", seconds.div_ceil(24 * 60 * 60))
+    }
+}
+
+#[component]
+fn SessionActions(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoView {
+    let locale = i18n.locale;
+    let saving = RwSignal::new(false);
+    let error = RwSignal::new(Option::<String>::None);
+    #[cfg(feature = "hydrate")]
+    let navigate = StoredValue::new(use_navigate());
+
+    let on_downgrade = move |_| {
+        saving.set(true);
+        error.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::downgrade_admin_to_user().await {
+                Ok(updated) => {
+                    status.set(updated);
+                    saving.set(false);
+                }
+                Err(err) => {
+                    error.set(Some(server_fns::format_error(err)));
+                    saving.set(false);
+                }
+            }
+        });
+    };
+    let on_logout = move |_| {
+        saving.set(true);
+        error.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::logout().await {
+                Ok(updated) => {
+                    status.set(updated);
+                    saving.set(false);
+                    #[cfg(feature = "hydrate")]
+                    navigate.get_value()(
+                        "/login",
+                        NavigateOptions {
+                            replace: true,
+                            ..Default::default()
+                        },
+                    );
+                }
+                Err(err) => {
+                    error.set(Some(server_fns::format_error(err)));
+                    saving.set(false);
+                }
+            }
+        });
+    };
+    let on_logout_all = move |_| {
+        if !confirm_action(t(locale.get_untracked(), Key::LoginLogoutAllConfirm)) {
+            return;
+        }
+        saving.set(true);
+        error.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::logout_all_browsers().await {
+                Ok(updated) => {
+                    status.set(updated);
+                    saving.set(false);
+                    #[cfg(feature = "hydrate")]
+                    navigate.get_value()(
+                        "/login",
+                        NavigateOptions {
+                            replace: true,
+                            ..Default::default()
+                        },
+                    );
+                }
+                Err(err) => {
+                    error.set(Some(server_fns::format_error(err)));
+                    saving.set(false);
+                }
+            }
+        });
+    };
+
+    view! {
+        <div class="access-action-stack">
+            {move || error.get().map(|message| view! {
+                <div class="status-msg status-err">{message}</div>
+            })}
+            <Show when=move || status.read().auth_required && status.read().can_downgrade>
+                <button
+                    class="form-btn form-btn-secondary"
+                    on:click=on_downgrade
+                    disabled=move || saving.get()
+                >
+                    {move || {
+                        let locale = locale.get();
+                        if saving.get() {
+                            t(locale, Key::SettingsSaving)
+                        } else {
+                            t(locale, Key::LoginDowngrade)
+                        }
+                    }}
+                </button>
+            </Show>
+            <Show when=move || status.read().auth_required && status.read().role != AuthRole::Anonymous>
+                <button
+                    class="form-btn form-btn-secondary"
+                    on:click=on_logout
+                    disabled=move || saving.get()
+                >
+                    {move || {
+                        let locale = locale.get();
+                        if saving.get() {
+                            t(locale, Key::SettingsSaving)
+                        } else {
+                            t(locale, Key::LoginLogout)
+                        }
+                    }}
+                </button>
+            </Show>
+            <Show when=move || status.read().auth_required && status.read().role == AuthRole::Admin>
+                <button
+                    class="form-btn form-btn-danger"
+                    on:click=on_logout_all
+                    disabled=move || saving.get()
+                >
+                    {move || {
+                        let locale = locale.get();
+                        if saving.get() {
+                            t(locale, Key::SettingsSaving)
+                        } else {
+                            t(locale, Key::LoginLogoutAll)
+                        }
+                    }}
+                </button>
+            </Show>
+        </div>
+    }
+}
+
+#[component]
+fn AdminLoginInline(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoView {
+    let locale = i18n.locale;
+    let admin_password = RwSignal::new(String::new());
+    let saving = RwSignal::new(false);
+    let error = RwSignal::new(Option::<String>::None);
+    #[cfg(feature = "hydrate")]
+    let next_after_unlock = {
+        let query = use_query_map();
+        StoredValue::new({
+            let next = sanitize_next_path(query.get_untracked().get("next"));
+            (next != "/").then_some(next)
+        })
+    };
+    #[cfg(feature = "hydrate")]
+    let navigate = StoredValue::new(use_navigate());
+
+    let login_admin = move || {
+        if saving.get_untracked() {
+            return;
+        }
+        let password = admin_password.get();
+        saving.set(true);
+        error.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::login_admin(password).await {
+                Ok(updated) => {
+                    status.set(updated);
+                    admin_password.set(String::new());
+                    #[cfg(feature = "hydrate")]
+                    if let Some(target) = next_after_unlock.get_value() {
+                        navigate.get_value()(
+                            &target,
+                            NavigateOptions {
+                                replace: true,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+                Err(err) => error.set(Some(server_fns::format_error(err))),
+            }
+            saving.set(false);
+        });
+    };
+    let on_submit = move |ev: leptos::ev::SubmitEvent| {
+        ev.prevent_default();
+        login_admin();
+    };
+
+    view! {
+        <form class="access-inline-admin" on:submit=on_submit>
+            <h3 class="form-label">{move || t(i18n.locale.get(), Key::LoginAdminTitle)}</h3>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::LoginAdminHint)}</p>
+            <div class="form-field">
+                <label class="form-label" for="access-admin-password">
+                    {move || t(i18n.locale.get(), Key::LoginAdminPasswordLabel)}
+                </label>
+                <input
+                    id="access-admin-password"
+                    class="form-input"
+                    type="password"
+                    autocomplete="current-password"
+                    enterkeyhint="go"
+                    bind:value=admin_password
+                />
+            </div>
+            {move || error.get().map(|message| view! {
+                <div class="status-msg status-err">{message}</div>
+            })}
+            <button class="form-btn" type="submit" disabled=move || saving.get()>
+                {move || {
+                    let locale = locale.get();
+                    if saving.get() {
+                        t(locale, Key::SettingsSaving)
+                    } else {
+                        t(locale, Key::LoginAdminSubmit)
+                    }
+                }}
+            </button>
+        </form>
+    }
+}
+
+#[component]
+fn CertificateSection(
+    initial: Option<TlsCertificateInfo>,
+    #[prop(into)] can_regenerate: Signal<bool>,
+    i18n: I18nContext,
+) -> impl IntoView {
+    if let Some(info) = initial {
+        view! { <CertificatePanel initial=info can_regenerate i18n /> }.into_any()
+    } else {
+        view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }.into_any()
+    }
+}
+
+#[component]
+fn CertificatePanel(
+    initial: TlsCertificateInfo,
+    #[prop(into)] can_regenerate: Signal<bool>,
+    i18n: I18nContext,
+) -> impl IntoView {
+    let locale = i18n.locale;
+    let info = RwSignal::new(initial);
+    let saving = RwSignal::new(false);
+    let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    let on_regenerate = move |_| {
+        if !confirm_action(t(
+            locale.get_untracked(),
+            Key::AccessCertificateRegenerateConfirm,
+        )) {
+            return;
+        }
+        saving.set(true);
+        status.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::regenerate_tls_certificate_info().await {
+                Ok(updated) => {
+                    info.set(updated);
+                    status.set(Some((
+                        true,
+                        t(locale.get_untracked(), Key::AccessCertificateRegenerated).to_string(),
+                    )));
+                }
+                Err(error) => {
+                    status.set(Some((false, server_fns::format_error(error))));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let missing_coverage = Signal::derive(move || {
+        info.with(|info| {
+            if info.has_missing_coverage() {
+                join_values(
+                    info.missing_dns_names
+                        .iter()
+                        .chain(info.missing_ip_addresses.iter()),
+                )
+            } else {
+                t(i18n.locale.get(), Key::AccessCertificateCovered).to_string()
+            }
+        })
+    });
+
+    view! {
+        <div class="info-grid">
+            <AccessValueRow label_key=Key::AccessCertificateMode value=Signal::derive(move || t(i18n.locale.get(), Key::AccessCertificateLocal).to_string()) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateGenerated value=Signal::derive(move || info.with(|i| i.generated_at.clone().unwrap_or_else(|| "-".to_string()))) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateExpires value=Signal::derive(move || info.with(|i| i.expires_at.clone().unwrap_or_else(|| "-".to_string()))) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateFingerprint value=Signal::derive(move || info.with(|i| i.fingerprint_sha256.clone().unwrap_or_else(|| "-".to_string()))) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateCoveredNames value=Signal::derive(move || info.with(|i| joined_names(&i.covered_dns_names, &i.covered_ip_addresses))) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateCurrentNames value=Signal::derive(move || info.with(|i| joined_names(&i.current_dns_names, &i.current_ip_addresses))) i18n />
+            <AccessValueRow label_key=Key::AccessCertificateMissingCoverage value=missing_coverage i18n />
+        </div>
+
+        {move || status.get().map(|(ok, msg)| {
+            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+            view! { <div class=class>{msg}</div> }
+        })}
+
+        <Show
+            when=move || can_regenerate.get()
+            fallback=move || view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }
+        >
+            <button class="form-btn form-btn-secondary" on:click=on_regenerate disabled=move || saving.get()>
+                {move || {
+                    let locale = i18n.locale.get();
+                    if saving.get() {
+                        t(locale, Key::SettingsSaving)
+                    } else {
+                        t(locale, Key::AccessCertificateRegenerate)
+                    }
+                }}
+            </button>
+        </Show>
+    }
+}
+
+#[component]
+fn AccessValueRow(
+    label_key: Key,
+    #[prop(into)] value: Signal<String>,
+    i18n: I18nContext,
+) -> impl IntoView {
+    view! {
+        <div class="info-row">
+            <span class="info-label">{move || t(i18n.locale.get(), label_key)}</span>
+            <span class="info-value">{move || value.get()}</span>
+        </div>
+    }
+}
+
+fn joined_names(dns_names: &[String], ip_addresses: &[String]) -> String {
+    let joined = join_values(dns_names.iter().chain(ip_addresses.iter()));
+    if joined.is_empty() {
+        "-".to_string()
+    } else {
+        joined
+    }
+}
+
+fn join_values<'a>(values: impl Iterator<Item = &'a String>) -> String {
+    values.cloned().collect::<Vec<_>>().join(", ")
+}

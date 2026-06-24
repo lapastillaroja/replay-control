@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use replay_control_app::api::AppState;
+use replay_control_core::systems::visible_systems;
 
 static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -34,7 +35,7 @@ async fn populate_test_library(state: &replay_control_app::api::AppState) {
     let region_secondary = state.region_preference_secondary();
     let pool = state.library_writer.clone();
 
-    for system in replay_control_core::systems::visible_systems() {
+    for system in visible_systems() {
         let system_dir = storage.roms_dir().join(system.folder_name);
         if !system_dir.exists() {
             continue;
@@ -133,14 +134,32 @@ pub fn register_server_fns() {
     use replay_control_app::server_fns;
 
     server_fn::axum::register_explicit::<server_fns::GetInfo>();
+    server_fn::axum::register_explicit::<server_fns::GetLiveStats>();
+    server_fn::axum::register_explicit::<server_fns::GetAuthStatus>();
+    server_fn::axum::register_explicit::<server_fns::LoginWithReplayCode>();
+    server_fn::axum::register_explicit::<server_fns::LoginAdmin>();
+    server_fn::axum::register_explicit::<server_fns::CompleteFirstSetup>();
+    server_fn::axum::register_explicit::<server_fns::DowngradeAdminToUser>();
+    server_fn::axum::register_explicit::<server_fns::Logout>();
+    server_fn::axum::register_explicit::<server_fns::LogoutAllBrowsers>();
     server_fn::axum::register_explicit::<server_fns::GetMode>();
     server_fn::axum::register_explicit::<server_fns::GetSystems>();
     server_fn::axum::register_explicit::<server_fns::GetFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRecents>();
+    server_fn::axum::register_explicit::<server_fns::DeleteRecent>();
+    server_fn::axum::register_explicit::<server_fns::AddFavorite>();
+    server_fn::axum::register_explicit::<server_fns::RemoveFavorite>();
+    server_fn::axum::register_explicit::<server_fns::GroupFavorites>();
+    server_fn::axum::register_explicit::<server_fns::FlattenFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRomsPage>();
     server_fn::axum::register_explicit::<server_fns::GetSystemFavorites>();
+    server_fn::axum::register_explicit::<server_fns::DeleteRom>();
     server_fn::axum::register_explicit::<server_fns::GetRomDetail>();
     server_fn::axum::register_explicit::<server_fns::DeleteUserCapture>();
+    server_fn::axum::register_explicit::<server_fns::GetUserCaptures>();
+    server_fn::axum::register_explicit::<server_fns::RenameRom>();
+    server_fn::axum::register_explicit::<server_fns::GetRomFileGroup>();
+    server_fn::axum::register_explicit::<server_fns::LaunchGame>();
     server_fn::axum::register_explicit::<server_fns::RefreshStorage>();
     server_fn::axum::register_explicit::<server_fns::GetWifiConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveWifiConfig>();
@@ -148,17 +167,62 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::SaveNfsConfig>();
     server_fn::axum::register_explicit::<server_fns::GetRetroachievementsConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveRetroachievementsConfigAndRestart>();
+    server_fn::axum::register_explicit::<server_fns::RebootSystem>();
+    server_fn::axum::register_explicit::<server_fns::OrganizeFavorites>();
+    server_fn::axum::register_explicit::<server_fns::GetSkins>();
+    server_fn::axum::register_explicit::<server_fns::SetSkin>();
+    server_fn::axum::register_explicit::<server_fns::SetSkinSync>();
+    server_fn::axum::register_explicit::<server_fns::GetHostname>();
+    server_fn::axum::register_explicit::<server_fns::SaveHostname>();
+    server_fn::axum::register_explicit::<server_fns::ChangeRootPassword>();
+    server_fn::axum::register_explicit::<server_fns::GetTlsCertificateInfo>();
+    server_fn::axum::register_explicit::<server_fns::RegenerateTlsCertificateInfo>();
+    server_fn::axum::register_explicit::<server_fns::ClearMetadata>();
+    server_fn::axum::register_explicit::<server_fns::RegenerateMetadata>();
+    server_fn::axum::register_explicit::<server_fns::DownloadMetadata>();
+    server_fn::axum::register_explicit::<server_fns::ClearImages>();
+    server_fn::axum::register_explicit::<server_fns::CleanupOrphanedImages>();
     server_fn::axum::register_explicit::<server_fns::GetSystemLogs>();
     server_fn::axum::register_explicit::<server_fns::GetLogLevelConfig>();
     server_fn::axum::register_explicit::<server_fns::SaveLogLevelConfig>();
+    server_fn::axum::register_explicit::<server_fns::GetGameVideos>();
+    server_fn::axum::register_explicit::<server_fns::GetProviderGameVideos>();
+    server_fn::axum::register_explicit::<server_fns::AddGameVideo>();
+    server_fn::axum::register_explicit::<server_fns::RemoveGameVideo>();
+    server_fn::axum::register_explicit::<server_fns::SearchGameVideos>();
+    server_fn::axum::register_explicit::<server_fns::GetGameResourceLinks>();
+    server_fn::axum::register_explicit::<server_fns::AddGameResourceLink>();
+    server_fn::axum::register_explicit::<server_fns::RemoveGameResourceLink>();
     server_fn::axum::register_explicit::<server_fns::GlobalSearch>();
     server_fn::axum::register_explicit::<server_fns::GetAllGenres>();
     server_fn::axum::register_explicit::<server_fns::GetSystemGenres>();
     server_fn::axum::register_explicit::<server_fns::RandomGame>();
     server_fn::axum::register_explicit::<server_fns::RandomGameForSystem>();
+    server_fn::axum::register_explicit::<server_fns::SearchByDeveloper>();
+    server_fn::axum::register_explicit::<server_fns::GetDeveloperGames>();
+    server_fn::axum::register_explicit::<server_fns::GetDeveloperGenres>();
+    server_fn::axum::register_explicit::<server_fns::GetBoardGames>();
+    server_fn::axum::register_explicit::<server_fns::GetBoardGenres>();
+    server_fn::axum::register_explicit::<server_fns::SearchByBoard>();
     server_fn::axum::register_explicit::<server_fns::GetRegionPreference>();
+    server_fn::axum::register_explicit::<server_fns::SaveRegionPreference>();
+    server_fn::axum::register_explicit::<server_fns::GetRegionPreferenceSecondary>();
+    server_fn::axum::register_explicit::<server_fns::SaveRegionPreferenceSecondary>();
+    server_fn::axum::register_explicit::<server_fns::GetFontSize>();
+    server_fn::axum::register_explicit::<server_fns::SaveFontSize>();
     server_fn::axum::register_explicit::<server_fns::GetRecommendations>();
+    server_fn::axum::register_explicit::<server_fns::GetFavoritesRecommendations>();
+    server_fn::axum::register_explicit::<server_fns::UpdateThumbnails>();
+    server_fn::axum::register_explicit::<server_fns::CancelThumbnailUpdate>();
+    server_fn::axum::register_explicit::<server_fns::ClearThumbnailIndex>();
+    server_fn::axum::register_explicit::<server_fns::GetGithubApiKey>();
+    server_fn::axum::register_explicit::<server_fns::SaveGithubApiKey>();
+    server_fn::axum::register_explicit::<server_fns::GetBoxartVariants>();
+    server_fn::axum::register_explicit::<server_fns::SetBoxartOverride>();
+    server_fn::axum::register_explicit::<server_fns::ResetBoxartOverride>();
+    server_fn::axum::register_explicit::<server_fns::GetRelatedGames>();
     server_fn::axum::register_explicit::<server_fns::RebuildCorruptLibrary>();
+    server_fn::axum::register_explicit::<server_fns::RebuildGameLibrary>();
     server_fn::axum::register_explicit::<server_fns::RepairCorruptUserData>();
     server_fn::axum::register_explicit::<server_fns::RestoreUserDataBackup>();
     server_fn::axum::register_explicit::<server_fns::CheckForUpdates>();
@@ -170,13 +234,33 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetSetupStatus>();
     server_fn::axum::register_explicit::<server_fns::DismissSetup>();
     server_fn::axum::register_explicit::<server_fns::GetReplayApiStatus>();
+    server_fn::axum::register_explicit::<server_fns::GetLibraryPlaytime>();
+    server_fn::axum::register_explicit::<server_fns::GetGamePlaytime>();
     server_fn::axum::register_explicit::<server_fns::ReprobeReplayApi>();
     server_fn::axum::register_explicit::<server_fns::VerifyReplayApiToken>();
     server_fn::axum::register_explicit::<server_fns::EnableReplayApiAssisted>();
     server_fn::axum::register_explicit::<server_fns::GetMetadataLibraryOverview>();
+    server_fn::axum::register_explicit::<server_fns::GetMetadataPageSnapshot>();
+    server_fn::axum::register_explicit::<server_fns::GetGameDocuments>();
     server_fn::axum::register_explicit::<server_fns::GetLocalManuals>();
+    server_fn::axum::register_explicit::<server_fns::GetGameManualSuggestions>();
     server_fn::axum::register_explicit::<server_fns::DownloadManual>();
     server_fn::axum::register_explicit::<server_fns::DeleteManual>();
+    server_fn::axum::register_explicit::<server_fns::GetLanguagePreference>();
+    server_fn::axum::register_explicit::<server_fns::SaveLanguagePreference>();
+    server_fn::axum::register_explicit::<server_fns::GetPreferredLanguages>();
+    server_fn::axum::register_explicit::<server_fns::GetLocale>();
+    server_fn::axum::register_explicit::<server_fns::SaveLocale>();
+    server_fn::axum::register_explicit::<server_fns::GetAnalyticsPreference>();
+    server_fn::axum::register_explicit::<server_fns::SaveAnalyticsPreference>();
+    server_fn::axum::register_explicit::<server_fns::StartSetupMetadataDownloads>();
+    server_fn::axum::register_explicit::<server_fns::GetReplayosSettings>();
+    server_fn::axum::register_explicit::<server_fns::PowerOffReplayosDevice>();
+    server_fn::axum::register_explicit::<server_fns::RestartReplayosGame>();
+    server_fn::axum::register_explicit::<server_fns::SaveReplayosKioskMode>();
+    server_fn::axum::register_explicit::<server_fns::GetSaveStateSlots>();
+    server_fn::axum::register_explicit::<server_fns::SendReplayPlayerCommand>();
+    server_fn::axum::register_explicit::<server_fns::SendReplayosMessage>();
 }
 
 /// Initialize the Leptos async executor for SSR.

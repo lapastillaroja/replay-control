@@ -3,7 +3,13 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::replay_api::{ConfigKind, ReplayApiStatus, SetCommand};
 #[cfg(feature = "ssr")]
+use replay_control_core_server::auth::{PasswordSubject, verify_os_password};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::config::ReplayConfig;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::security::tls::{
+    TlsCertificateStatus, regenerate_self_signed_certificate, tls_certificate_status,
+};
 
 /// WiFi configuration (password is never sent to the client).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +49,27 @@ pub struct SkinInfo {
     pub text_secondary: String,
     pub accent: String,
     pub accent_hover: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsCertificateInfo {
+    pub certificate_path: String,
+    pub key_path: String,
+    pub fingerprint_sha256: Option<String>,
+    pub generated_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub covered_dns_names: Vec<String>,
+    pub covered_ip_addresses: Vec<String>,
+    pub current_dns_names: Vec<String>,
+    pub current_ip_addresses: Vec<String>,
+    pub missing_dns_names: Vec<String>,
+    pub missing_ip_addresses: Vec<String>,
+}
+
+impl TlsCertificateInfo {
+    pub fn has_missing_coverage(&self) -> bool {
+        !self.missing_dns_names.is_empty() || !self.missing_ip_addresses.is_empty()
+    }
 }
 
 #[cfg(feature = "ssr")]
@@ -483,7 +510,8 @@ pub async fn get_hostname() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
-    if !expect_context::<crate::api::AppState>().mode.is_device() {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.mode.is_device() {
         return Ok("Hostname change skipped (standalone mode)".to_string());
     }
 
@@ -538,7 +566,79 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
         .args(["restart", "avahi-daemon"])
         .output();
 
-    Ok(format!("Hostname set to {hostname}"))
+    match regenerate_self_signed_certificate(&state.data_dir) {
+        Ok(_) => Ok(format!(
+            "Hostname set to {hostname}. HTTPS certificate regenerated; open https://{hostname}.local:8443/ and accept the new certificate if prompted."
+        )),
+        Err(error) => Ok(format!(
+            "Hostname set to {hostname}, but HTTPS certificate regeneration failed: {error}"
+        )),
+    }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_tls_certificate_info() -> Result<TlsCertificateInfo, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(tls_status_to_info(tls_certificate_status(&state.data_dir)))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    regenerate_self_signed_certificate(&state.data_dir)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(tls_status_to_info(tls_certificate_status(&state.data_dir)))
+}
+
+#[cfg(feature = "ssr")]
+fn tls_status_to_info(status: TlsCertificateStatus) -> TlsCertificateInfo {
+    TlsCertificateInfo {
+        certificate_path: status.cert_path.display().to_string(),
+        key_path: status.key_path.display().to_string(),
+        fingerprint_sha256: status.fingerprint_sha256,
+        generated_at: status.generated_at_unix.map(format_unix_date_utc),
+        expires_at: status.expires_at,
+        covered_dns_names: status.dns_names,
+        covered_ip_addresses: status
+            .ip_addresses
+            .into_iter()
+            .map(|ip| ip.to_string())
+            .collect(),
+        current_dns_names: status.current_dns_names,
+        current_ip_addresses: status
+            .current_ip_addresses
+            .into_iter()
+            .map(|ip| ip.to_string())
+            .collect(),
+        missing_dns_names: status.missing_dns_names,
+        missing_ip_addresses: status
+            .missing_ip_addresses
+            .into_iter()
+            .map(|ip| ip.to_string())
+            .collect(),
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn format_unix_date_utc(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let (year, month, day) = civil_from_unix_days(days);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+#[cfg(feature = "ssr")]
+fn civil_from_unix_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    (year as i32, month as u32, day as u32)
 }
 
 /// Skin page data: (active_skin_index, sync_enabled, skins_list).
@@ -811,64 +911,9 @@ pub async fn change_root_password(
         return Err(ServerFnError::new("Password cannot be empty"));
     }
 
-    // Verify the current password against /etc/shadow.
-    // Both `su` and `unix_chkpwd` skip authentication when called by root,
-    // so we must verify directly.
-    let shadow = std::fs::read_to_string("/etc/shadow")
-        .map_err(|e| ServerFnError::new(format!("Cannot read shadow file: {e}")))?;
-
-    let stored_hash = shadow
-        .lines()
-        .find(|line| line.starts_with("root:"))
-        .and_then(|line| line.split(':').nth(1))
-        .ok_or_else(|| ServerFnError::new("Cannot find root password hash"))?;
-
-    if stored_hash == "*" || stored_hash == "!" || stored_hash.is_empty() {
-        return Err(ServerFnError::new("Root account has no password set"));
-    }
-
-    // Verify via libcrypt's crypt() called through Python3 ctypes.
-    // This avoids cross-compilation issues with libcrypt soname mismatches
-    // and supports all hash algorithms including yescrypt ($y$).
-    // Password is sent via stdin to avoid exposing it in /proc/cmdline.
-    let mut child = Command::new("python3")
-        .args([
-            "-c",
-            "import sys,ctypes; d=sys.stdin.read().split('\\n',1); \
-             l=ctypes.CDLL('libcrypt.so.1'); l.crypt.restype=ctypes.c_char_p; \
-             r=l.crypt(d[0].encode(),d[1].encode()); print(r.decode() if r else '')",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
-
+    if !verify_os_password(PasswordSubject::Root, &current_password)
+        .map_err(|e| ServerFnError::new(e.to_string()))?
     {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ServerFnError::new("Failed to open stdin"))?;
-        stdin
-            .write_all(format!("{current_password}\n{stored_hash}").as_bytes())
-            .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
-        // stdin is dropped here, closing the pipe so Python sees EOF.
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ServerFnError::new(format!(
-            "Password verification failed: {stderr}"
-        )));
-    }
-
-    let computed_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if computed_hash != stored_hash {
         return Err(ServerFnError::new("Current password is incorrect"));
     }
 

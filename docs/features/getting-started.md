@@ -36,9 +36,11 @@ If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `htt
 
 Replay Control uses a local self-signed HTTPS certificate. Your browser will show a security warning the first time you open it; approve the exception for your Pi to continue.
 
+Replay Control then shows a first setup page. Enter the current RePlayOS root password to confirm admin access; on a fresh image the default password is `replayos`. Password changes are optional and can be done later from **Settings > Access & Security**.
+
 > **Tip:** To find your Pi's IP address, check your router's connected devices list, or run `hostname -I` on the Pi.
 
-On first launch, you will see a "Scanning game library..." banner while the app indexes your ROMs. This runs in the background -- the UI is usable immediately, and your library fills in as systems are scanned.
+After first setup, you will see a "Scanning game library..." banner while the app indexes your ROMs. This runs in the background -- the UI is usable immediately, and your library fills in as systems are scanned.
 
 A **setup checklist** will also appear on the home page with two optional steps:
 

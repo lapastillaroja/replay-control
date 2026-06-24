@@ -4,6 +4,42 @@ use std::path::{Path, PathBuf};
 
 use replay_control_core::error::{Error, Result};
 
+/// Allowed admin elevation durations for Replay Control sign-in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AdminSessionTimeout {
+    #[default]
+    OneHour,
+    ThreeHours,
+    TwelveHours,
+}
+
+impl AdminSessionTimeout {
+    pub fn from_str_value(value: &str) -> Option<Self> {
+        match value {
+            "1h" => Some(Self::OneHour),
+            "3h" => Some(Self::ThreeHours),
+            "12h" => Some(Self::TwelveHours),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OneHour => "1h",
+            Self::ThreeHours => "3h",
+            Self::TwelveHours => "12h",
+        }
+    }
+
+    pub fn seconds(self) -> u64 {
+        match self {
+            Self::OneHour => 60 * 60,
+            Self::ThreeHours => 3 * 60 * 60,
+            Self::TwelveHours => 12 * 60 * 60,
+        }
+    }
+}
+
 /// Default location of `replay.cfg` on the RePlayOS device.
 pub const DEFAULT_REPLAY_CFG: &str = "/media/sd/config/replay.cfg";
 
@@ -413,6 +449,19 @@ impl AppSettings {
         self.inner.get("analytics") != Some("false")
     }
 
+    /// Whether the first setup sign-in/explanation has been completed.
+    /// Default: false so upgraded installs see the new permission model once.
+    pub fn first_setup_done(&self) -> bool {
+        self.inner.get("first_setup_done") == Some("true")
+    }
+
+    pub fn admin_session_timeout(&self) -> AdminSessionTimeout {
+        self.inner
+            .get("admin_session_timeout")
+            .and_then(AdminSessionTimeout::from_str_value)
+            .unwrap_or_default()
+    }
+
     // ── Write accessors ──────────────────────────────────────────
 
     pub fn set_region_preference(&mut self, value: &str) {
@@ -474,6 +523,15 @@ impl AppSettings {
     pub fn set_analytics(&mut self, enabled: bool) {
         self.inner
             .set("analytics", if enabled { "true" } else { "false" });
+    }
+
+    pub fn set_first_setup_done(&mut self, done: bool) {
+        self.inner
+            .set("first_setup_done", if done { "true" } else { "false" });
+    }
+
+    pub fn set_admin_session_timeout(&mut self, timeout: AdminSessionTimeout) {
+        self.inner.set("admin_session_timeout", timeout.as_str());
     }
 
     /// Whether the first-run setup checklist has been dismissed.
@@ -710,6 +768,11 @@ mod tests {
         assert_eq!(settings.github_api_key(), None);
         assert_eq!(settings.update_channel(), "stable");
         assert_eq!(settings.skipped_version(), None);
+        assert!(!settings.first_setup_done());
+        assert_eq!(
+            settings.admin_session_timeout(),
+            AdminSessionTimeout::OneHour
+        );
     }
 
     #[test]
@@ -748,6 +811,37 @@ mod tests {
         assert!(settings.setup_dismissed());
         settings.set_setup_dismissed(false);
         assert!(!settings.setup_dismissed());
+    }
+
+    #[test]
+    fn first_setup_done_roundtrip() {
+        let mut settings = AppSettings::empty();
+        assert!(!settings.first_setup_done());
+        settings.set_first_setup_done(true);
+        assert!(settings.first_setup_done());
+        settings.set_first_setup_done(false);
+        assert!(!settings.first_setup_done());
+    }
+
+    #[test]
+    fn admin_session_timeout_accepts_only_known_values() {
+        let mut settings = AppSettings::empty();
+        assert_eq!(
+            settings.admin_session_timeout(),
+            AdminSessionTimeout::OneHour
+        );
+
+        settings.set_admin_session_timeout(AdminSessionTimeout::ThreeHours);
+        assert_eq!(
+            settings.admin_session_timeout(),
+            AdminSessionTimeout::ThreeHours
+        );
+
+        settings.inner.set("admin_session_timeout", "99h");
+        assert_eq!(
+            settings.admin_session_timeout(),
+            AdminSessionTimeout::OneHour
+        );
     }
 
     #[test]

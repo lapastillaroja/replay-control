@@ -741,6 +741,10 @@ fn table_has_column(conn: &Connection, table: &str, column: &str) -> bool {
         .any(|name| name == column)
 }
 
+fn normalized_resource_url_key(url: &str) -> String {
+    url.trim_end_matches('/').to_ascii_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1009,8 +1013,4 @@ mod tests {
         let rows = UserDataDb::get_game_resource_links(&conn, "sega_smd", &["sonic"]).unwrap();
         assert!(rows.is_empty());
     }
-}
-
-fn normalized_resource_url_key(url: &str) -> String {
-    url.trim_end_matches('/').to_ascii_lowercase()
 }

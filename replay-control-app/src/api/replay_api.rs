@@ -10,8 +10,9 @@
 //! (`replay_api_token`). It is acquired exactly two ways — manual entry on the
 //! Net Control settings page, or the assisted flow's one-time replay.cfg read
 //! after enabling `system_net_control`. A TV-side code reset surfaces as 401 →
-//! [`ReplayApiStatus::Unauthorized`] → the user re-onboards. Never silently
-//! re-read or hot-swapped.
+//! [`ReplayApiStatus::Unauthorized`] so the UI can ask the user to refresh Net
+//! Control access. Browser login sessions are independent and must not be
+//! deleted by background API probes.
 
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -139,9 +140,9 @@ impl ReplayApi {
     }
 
     /// Classify an error observed by a live call site (now-playing poll,
-    /// launch, player controls) into the status machine. 401 stops everything
-    /// until the user re-onboards; unreachable outside a restart window is a
-    /// transient `Error` the maintenance loop recovers from.
+    /// launch, player controls) into the status machine. 401 stops Net Control
+    /// actions until the user refreshes access; unreachable outside a restart
+    /// window is a transient `Error` the maintenance loop recovers from.
     pub fn report_error(&self, error: &ApiError) {
         match error {
             ApiError::Unauthorized => self.set_status(ReplayApiStatus::Unauthorized),
@@ -214,6 +215,9 @@ pub async fn run_replay_api_maintenance(state: super::AppState) {
 
 #[cfg(test)]
 mod tests {
+    use replay_control_core::auth::AuthRole;
+    use replay_control_core_server::auth::AuthStore;
+    use replay_control_core_server::settings::{SettingsStore, write_replay_api_token};
     use replay_control_core_server::test_utils::{mock_replay_api, refused_replay_api};
 
     use super::*;
@@ -336,6 +340,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unauthorized_status_does_not_invalidate_browser_sessions() {
+        let temp = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::new(temp.path().join("settings"));
+        write_replay_api_token(&settings, "123456").unwrap();
+        let auth_store = AuthStore::open_at(temp.path().join("auth-cookie.key")).unwrap();
+        let user = auth_store.create_user_session(&settings).unwrap();
+        let (events_tx, _events_rx) = broadcast::channel(8);
+        let api = ReplayApi::from_client(
+            ReplayApiClient::new(refused_replay_api(), Some("old-code".to_string())),
+            events_tx,
+        );
+
+        api.set_status(ReplayApiStatus::Unauthorized);
+
+        assert_eq!(
+            auth_store.resolve_session(&user.token, &settings).unwrap(),
+            Some(AuthRole::User)
+        );
+    }
+
+    #[tokio::test]
     async fn report_error_maps_into_the_state_machine() {
         let (api, _rx) = api_with(refused_replay_api(), Some("123456"));
         api.set_status(ReplayApiStatus::Active {
@@ -364,7 +389,7 @@ mod tests {
         });
         assert!(matches!(api.status(), ReplayApiStatus::Error { .. }));
 
-        // 401 always wins: re-onboard required.
+        // 401 always wins for Net Control state, without touching browser auth.
         api.report_error(&ApiError::Unauthorized);
         assert_eq!(api.status(), ReplayApiStatus::Unauthorized);
     }

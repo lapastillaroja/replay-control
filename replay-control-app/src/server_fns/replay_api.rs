@@ -16,6 +16,8 @@ use super::*;
 #[cfg(feature = "ssr")]
 use crate::api::{AppState, replay_api::ReplayApi};
 #[cfg(feature = "ssr")]
+use crate::util::is_valid_net_control_code;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::replay_api::{ApiError, ReplayApiClient};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::settings::write_replay_api_token;
@@ -43,6 +45,46 @@ pub enum ReplayPlayerCommand {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayOsSettings {
     pub kiosk_mode: bool,
+}
+
+/// Whether RePlayOS could report play time. Disabled and Unavailable both
+/// render the same i18n placeholder in the UI; they are distinct so a future
+/// surface can tell "tracking is off on the TV" from "this firmware/build has
+/// no play-time data".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PlaytimeAvailability {
+    /// Not on a device, Net Control not connected, the endpoint 404s
+    /// (unimplemented on current firmware), or the call errored.
+    #[default]
+    Unavailable,
+    /// RePlayOS answered but `tracking_enabled` is false.
+    Disabled,
+    /// Real tracked totals are present.
+    Tracked,
+}
+
+/// Play time for one system, in seconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemPlaytime {
+    pub system: String,
+    pub seconds: u64,
+}
+
+/// Library-wide play time for the settings library page: a grand total plus
+/// per-system seconds. Empty/`Unavailable` on standalone builds and on firmware
+/// that doesn't implement `get_playtime`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PlaytimeSummary {
+    pub availability: PlaytimeAvailability,
+    pub all_seconds: u64,
+    pub systems: Vec<SystemPlaytime>,
+}
+
+/// Play time for a single game, for the game detail page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct GamePlaytime {
+    pub availability: PlaytimeAvailability,
+    pub seconds: u64,
 }
 
 impl ReplayPlayerCommand {
@@ -83,6 +125,94 @@ pub async fn get_replay_api_status() -> Result<ReplayApiStatus, ServerFnError> {
         .as_ref()
         .map(|api| api.status())
         .unwrap_or_default())
+}
+
+/// Library-wide play time totals for the settings library page. Fetched
+/// client-side (never during SSR) so a slow or missing endpoint never blocks
+/// the page. Any "not available" condition — standalone build, Net Control not
+/// connected, the documented-but-unimplemented endpoint 404ing, or a call
+/// error — collapses to `Unavailable`; `tracking_enabled=false` is `Disabled`.
+/// Both render the placeholder.
+#[server(prefix = "/sfn")]
+pub async fn get_library_playtime() -> Result<PlaytimeSummary, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let Some(api) = state.replay_api.clone() else {
+        return Ok(PlaytimeSummary::default());
+    };
+    if !api.status().is_active() {
+        return Ok(PlaytimeSummary::default());
+    }
+
+    match api.client().get_playtime(None, None).await {
+        Ok(response) if response.tracking_enabled => Ok(PlaytimeSummary {
+            availability: PlaytimeAvailability::Tracked,
+            all_seconds: response.all_seconds,
+            systems: response
+                .systems
+                .into_iter()
+                .map(|s| SystemPlaytime {
+                    system: s.system,
+                    seconds: s.seconds,
+                })
+                .collect(),
+        }),
+        Ok(_) => Ok(PlaytimeSummary {
+            availability: PlaytimeAvailability::Disabled,
+            ..Default::default()
+        }),
+        Err(error) => {
+            // 404 (unimplemented) is a no-op for the status machine; only a
+            // genuinely unreachable frontend flips it to Error.
+            api.report_error(&error);
+            Ok(PlaytimeSummary::default())
+        }
+    }
+}
+
+/// Total play time for one game, for the game detail page. Same graceful-
+/// degradation contract as [`get_library_playtime`]. The `game_file` identity
+/// mirrors the launch path (system folder + ROM filename); since the endpoint
+/// is unimplemented on current firmware, the exact match key is a best-effort
+/// assumption that falls back to the filtered total.
+#[server(prefix = "/sfn")]
+pub async fn get_game_playtime(
+    system: String,
+    game_file: String,
+) -> Result<GamePlaytime, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let Some(api) = state.replay_api.clone() else {
+        return Ok(GamePlaytime::default());
+    };
+    if !api.status().is_active() {
+        return Ok(GamePlaytime::default());
+    }
+
+    match api
+        .client()
+        .get_playtime(Some(&system), Some(&game_file))
+        .await
+    {
+        Ok(response) if response.tracking_enabled => {
+            let seconds = response
+                .games
+                .iter()
+                .find(|g| g.game == game_file && (g.system.is_empty() || g.system == system))
+                .map(|g| g.seconds)
+                .unwrap_or(response.all_seconds);
+            Ok(GamePlaytime {
+                availability: PlaytimeAvailability::Tracked,
+                seconds,
+            })
+        }
+        Ok(_) => Ok(GamePlaytime {
+            availability: PlaytimeAvailability::Disabled,
+            seconds: 0,
+        }),
+        Err(error) => {
+            api.report_error(&error);
+            Ok(GamePlaytime::default())
+        }
+    }
 }
 
 /// Re-probe the API and return the resulting status. Backs the "Check again" /
@@ -413,10 +543,23 @@ fn adopt_token(
     api: &crate::api::replay_api::ReplayApi,
     token: String,
 ) -> Result<(), ServerFnError> {
+    let token = normalize_adopted_replay_api_token(token)?;
     write_replay_api_token(&state.settings, &token)
         .map_err(|e| ServerFnError::new(format!("Failed to store the code: {e}")))?;
     api.swap_local_token(Some(token));
     Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn normalize_adopted_replay_api_token(token: String) -> Result<String, ServerFnError> {
+    let token = token.trim().to_string();
+    if is_valid_net_control_code(&token) {
+        Ok(token)
+    } else {
+        Err(ServerFnError::new(
+            "RePlayOS wrote an invalid Net Control code; regenerate the code from RePlayOS and try again",
+        ))
+    }
 }
 
 #[cfg(feature = "ssr")]
@@ -438,11 +581,6 @@ fn require_active_replay_api(
 }
 
 #[cfg(feature = "ssr")]
-fn is_valid_net_control_code(code: &str) -> bool {
-    code.len() == 6 && code.chars().all(|c| c.is_ascii_digit())
-}
-
-#[cfg(feature = "ssr")]
 fn replay_api_status_detail(status: &ReplayApiStatus) -> String {
     match status {
         ReplayApiStatus::NotConfigured => "no Net Control code is stored".to_string(),
@@ -458,15 +596,17 @@ fn replay_api_status_detail(status: &ReplayApiStatus) -> String {
 
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
-    use super::is_valid_net_control_code;
+    use super::normalize_adopted_replay_api_token;
 
     #[test]
-    fn net_control_code_is_exactly_six_digits() {
-        assert!(is_valid_net_control_code("123456"));
-        assert!(!is_valid_net_control_code(""));
-        assert!(!is_valid_net_control_code("12345"));
-        assert!(!is_valid_net_control_code("1234567"));
-        assert!(!is_valid_net_control_code("12345a"));
-        assert!(!is_valid_net_control_code("１２３４５６"));
+    fn adopted_replay_api_token_must_be_six_ascii_digits() {
+        assert_eq!(
+            normalize_adopted_replay_api_token(" 123456 ".to_string()).unwrap(),
+            "123456"
+        );
+        assert!(normalize_adopted_replay_api_token("12345".to_string()).is_err());
+        assert!(normalize_adopted_replay_api_token("1234567".to_string()).is_err());
+        assert!(normalize_adopted_replay_api_token("12345a".to_string()).is_err());
+        assert!(normalize_adopted_replay_api_token("１２３４５６".to_string()).is_err());
     }
 }

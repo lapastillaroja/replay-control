@@ -32,6 +32,8 @@ The installer downloads the latest stable release, installs the service, and sta
 
 Replay Control uses a local self-signed HTTPS certificate. Your browser will show a security warning the first time you open it; choose the advanced or continue option to approve the exception for your Pi.
 
+On the first browser visit after install or after upgrading to the access-control release, Replay Control shows a first setup page. Enter the current RePlayOS root password to confirm admin access; on a fresh image the default password is `replayos`. Password changes are optional and can be done later from **Settings > Access & Security**.
+
 ### If `replay.local` doesn't resolve
 
 Some Windows networks cannot find `replay.local`. Use the Pi's IP address instead:
@@ -122,10 +124,12 @@ The service starts automatically on boot. The app listens on HTTPS port `8443`; 
 | Variable | Default | Effect |
 |---|---|---|
 | `REPLAY_PORT` | `8080` | HTTP guidance page port. |
+| `REPLAY_HTTPS_PORT` | `8443` | HTTPS app/API port. |
 | `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static-assets path. |
 | `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path. |
 | `REPLAY_CONFIG_PATH` | (auto-detected) | Override the RePlayOS config path. |
 | `REPLAY_CONTROL_IDENTITY_WORKERS` | `2` | Advanced: hash-identification workers for library rebuilds and rescans. Valid range: 1-4. |
+| `REPLAY_EXTRA_ARGS` | (empty) | Extra CLI flags. Dangerous debugging flags must be explicit here, such as `--dangerous-disable-https --dangerous-allow-insecure-auth-over-http`. |
 | `RUST_LOG` | `replay_control_app=info,replay_control_core=info` | Log level. |
 
 ## Troubleshooting

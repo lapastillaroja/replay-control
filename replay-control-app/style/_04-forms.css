@@ -4,6 +4,7 @@
 
 .settings-form {
     margin-top: var(--stack-gap-lg);
+    max-width: min(100%, 58rem);
 }
 
 .form-field {
@@ -12,6 +13,16 @@
 
 .form-label {
     display: block;
+    margin-bottom: var(--control-gap-compact);
+}
+
+.apply-section > h3.form-label {
+    color: var(--text);
+    font-size: var(--font-size-md);
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.25;
+    text-transform: none;
     margin-bottom: var(--control-gap-compact);
 }
 
@@ -103,6 +114,24 @@ select.form-input option {
     margin-top: var(--section-gap-compact);
     padding-top: var(--stack-gap-lg);
     border-top: var(--control-border);
+}
+
+.settings-form > .apply-section:first-child,
+.settings-form > section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.settings-form section > h3.form-label,
+.settings-form .apply-section > h3.form-label,
+.settings-form .access-inline-admin > h3.form-label {
+    color: var(--text);
+    font-size: var(--font-size-base-default);
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.25;
+    text-transform: none;
 }
 
 .status-msg {

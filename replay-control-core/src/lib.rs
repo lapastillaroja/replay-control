@@ -1,4 +1,5 @@
 pub mod asset_health;
+pub mod auth;
 pub mod error;
 pub mod languages;
 pub mod locale;

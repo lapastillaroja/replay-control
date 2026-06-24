@@ -5,6 +5,7 @@
 // `replay-control-core` and are either re-exported at each module level here
 // or referenced directly via `replay_control_core::*`.
 
+pub mod auth;
 pub mod catalog_pool;
 pub mod data_dir;
 pub mod db_pool;

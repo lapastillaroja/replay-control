@@ -140,6 +140,26 @@ impl ReplayApiClient {
         self.get_json("get_media_status", &[]).await
     }
 
+    /// Cumulative tracked play time, optionally filtered to one `system` and/or
+    /// `game_file`. Documented but not yet implemented on RePlayOS 1.7.4, so a
+    /// `BadStatus { status: 404 }` is the expected "tracking unavailable" reply
+    /// on current firmware — callers treat it as unavailable rather than an
+    /// error.
+    pub async fn get_playtime(
+        &self,
+        system: Option<&str>,
+        game_file: Option<&str>,
+    ) -> Result<PlaytimeResponse, ApiError> {
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(system) = system {
+            query.push(("system", system.to_string()));
+        }
+        if let Some(game_file) = game_file {
+            query.push(("game_file", game_file.to_string()));
+        }
+        self.get_json("get_playtime", &query).await
+    }
+
     /// Apply one or more config changes in a single atomic request
     /// (`set_config?type=…&option=…&value=…`, up to 64 pairs). RePlayOS
     /// validates the whole request before writing anything and owns
@@ -325,6 +345,32 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.is_media_boundary());
+    }
+
+    #[tokio::test]
+    async fn get_playtime_parses_totals_and_systems() {
+        let base = serve(
+            "200 OK",
+            r#"{"tracking_enabled":true,"all_seconds":7320,"all":"2h 2m","systems":[{"system":"sega_smd","seconds":3600,"time":"1h"},{"system":"snes","seconds":3720,"time":"1h 2m"}],"games":[]}"#,
+        );
+        let playtime = client_for(base).get_playtime(None, None).await.unwrap();
+        assert!(playtime.tracking_enabled);
+        assert_eq!(playtime.all_seconds, 7320);
+        assert_eq!(playtime.systems.len(), 2);
+        assert_eq!(playtime.systems[0].system, "sega_smd");
+        assert_eq!(playtime.systems[0].seconds, 3600);
+    }
+
+    #[tokio::test]
+    async fn get_playtime_unimplemented_endpoint_is_bad_status() {
+        // Current firmware (1.7.4) 404s this documented-but-unimplemented
+        // endpoint; the server fn maps BadStatus to "unavailable".
+        let base = serve("404 Not Found", r#"{"error":"Not Found"}"#);
+        let err = client_for(base)
+            .get_playtime(Some("snes"), Some("g.sfc"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApiError::BadStatus { status: 404, .. }));
     }
 
     #[tokio::test]

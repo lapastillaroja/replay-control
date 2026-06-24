@@ -373,10 +373,10 @@ check_pi_connectivity() {
 # install.sh emits via systemd_service_content + env_file_content; keep them
 # in sync. No-op when the unit already exists, so it stays cheap on every run.
 bootstrap_pi_if_needed() {
-    if run_ssh "systemctl cat $PI_SERVICE >/dev/null 2>&1"; then
+    if run_ssh "systemctl cat $PI_SERVICE 2>/dev/null | grep -q -- '--https-port'"; then
         return 0
     fi
-    info "Service unit missing on Pi — writing systemd unit + env file..."
+    info "Service unit missing or outdated on Pi — writing systemd unit + env file..."
     run_ssh "bash -s" <<'BOOTSTRAP'
 set -euo pipefail
 
@@ -392,10 +392,15 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
+Environment=REPLAY_PORT=8080
+Environment=REPLAY_HTTPS_PORT=8443
+Environment=REPLAY_EXTRA_ARGS=
 EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
-    --site-root ${REPLAY_SITE_ROOT}
+    --https-port ${REPLAY_HTTPS_PORT} \
+    --site-root ${REPLAY_SITE_ROOT} \
+    $REPLAY_EXTRA_ARGS
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/replay-control.log
@@ -411,8 +416,15 @@ if [ ! -f /etc/default/replay-control ]; then
 # Port for the web UI
 REPLAY_PORT=8080
 
+# HTTPS port for the main app
+REPLAY_HTTPS_PORT=8443
+
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
+
+# Extra CLI args. Dangerous debug flags must be explicit here, for example:
+#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
+REPLAY_EXTRA_ARGS=
 
 # Advanced: hash-identification workers for library rebuilds/rescans.
 # Default is 2 workers for every storage class. Valid range: 1-4.
@@ -489,7 +501,7 @@ deploy_to_pi() {
     info "Starting service..."
     run_ssh "systemctl start $PI_SERVICE"
 
-    # Quick health check
+    # Quick health check.
     if run_ssh "systemctl is-active $PI_SERVICE" &>/dev/null; then
         success "Service is running"
     else
@@ -497,7 +509,7 @@ deploy_to_pi() {
     fi
 
     echo ""
-    echo "    ${GREEN}${BOLD}http://${PI_IP}:8080${RESET}"
+    echo "    ${GREEN}${BOLD}https://${PI_IP}:8443${RESET}"
     echo ""
 }
 

@@ -44,6 +44,33 @@ pub fn pct(count: usize, total: usize) -> u32 {
     }
 }
 
+pub fn numeric_code(value: &str, max_len: usize) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_digit())
+        .take(max_len)
+        .collect()
+}
+
+pub fn is_valid_net_control_code(code: &str) -> bool {
+    code.len() == 6 && code.chars().all(|ch| ch.is_ascii_digit())
+}
+
+pub fn sanitize_next_path(next: Option<String>) -> String {
+    let Some(next) = next else {
+        return "/".to_string();
+    };
+    if next.starts_with('/')
+        && !next.starts_with("//")
+        && !next.starts_with("/\\")
+        && !next.starts_with("/login")
+    {
+        next
+    } else {
+        "/".to_string()
+    }
+}
+
 /// Format a min/max year pair as "1985–1999" (or single year, or empty).
 pub fn format_year_range(min: Option<u16>, max: Option<u16>) -> Option<String> {
     match (min, max) {
@@ -314,6 +341,35 @@ pub fn format_size_short(bytes: u64) -> (String, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn next_path_accepts_only_local_non_login_paths() {
+        assert_eq!(
+            sanitize_next_path(Some("/settings".to_string())),
+            "/settings"
+        );
+        assert_eq!(
+            sanitize_next_path(Some("/settings/wifi?from=login".to_string())),
+            "/settings/wifi?from=login"
+        );
+        assert_eq!(sanitize_next_path(None), "/");
+        assert_eq!(
+            sanitize_next_path(Some("https://example.com".to_string())),
+            "/"
+        );
+        assert_eq!(sanitize_next_path(Some("//example.com".to_string())), "/");
+        assert_eq!(sanitize_next_path(Some("/login".to_string())), "/");
+    }
+
+    #[test]
+    fn net_control_code_is_exactly_six_digits() {
+        assert!(is_valid_net_control_code("123456"));
+        assert!(!is_valid_net_control_code(""));
+        assert!(!is_valid_net_control_code("12345"));
+        assert!(!is_valid_net_control_code("1234567"));
+        assert!(!is_valid_net_control_code("12345a"));
+        assert!(!is_valid_net_control_code("１２３４５６"));
+    }
 
     #[test]
     fn elapsed_shows_zero_minutes_immediately() {

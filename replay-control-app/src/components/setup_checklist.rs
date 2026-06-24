@@ -1,4 +1,8 @@
 use leptos::prelude::*;
+#[cfg(feature = "hydrate")]
+use leptos_router::NavigateOptions;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_query_map;
 use replay_control_core::replay_api::ReplayApiStatus;
 
@@ -39,6 +43,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     let metadata_done = RwSignal::new(status.has_metadata);
     let thumbnail_done = RwSignal::new(status.has_thumbnail_index);
     let replay_api_done_local = RwSignal::new(status.replay_api_active);
+    let password_done = RwSignal::new(!status.default_root_password_active);
     let replay_api_status = use_context::<RwSignal<ReplayApiStatus>>();
     let replay_api_done = Signal::derive(move || {
         replay_api_done_local.get()
@@ -47,8 +52,11 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                 .is_some_and(|status| status.read().is_active())
     });
     let has_replayos_step = status.is_device;
+    let has_password_step = status.is_device;
+    let admin_access = status.admin_access;
     let metadata_error = RwSignal::new(None::<String>);
     let replay_api_error = RwSignal::new(None::<String>);
+    let password_error = RwSignal::new(None::<String>);
     // Local "pending" flags give immediate visual feedback on click — the
     // server fn round-trip + SSE delivery takes a beat, and without these
     // the row sits on the Start button for that beat (looks like the click
@@ -64,15 +72,17 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     // can see the result and re-run if needed.
     let metadata_sources_done = Signal::derive(move || metadata_done.get() && thumbnail_done.get());
     let setup_progress = Signal::derive(move || {
-        let total = 1 + usize::from(has_replayos_step);
+        let total = 1 + usize::from(has_replayos_step) + usize::from(has_password_step);
         let completed = usize::from(metadata_sources_done.get())
-            + usize::from(has_replayos_step && replay_api_done.get());
+            + usize::from(has_replayos_step && replay_api_done.get())
+            + usize::from(has_password_step && password_done.get());
         format!("{completed}/{total}")
     });
     let show_complete_view = !force
         && status.has_metadata
         && status.has_thumbnail_index
-        && (!status.is_device || status.replay_api_active);
+        && (!status.is_device
+            || (status.replay_api_active && !status.default_root_password_active));
 
     // Read the app-level activity signal (populated by SseEventsListener at
     // the App root). Per-row busy flags derive from it, so activity from
@@ -93,6 +103,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
             })
     });
     let replay_api_busy = Memo::new(move |_| replay_api_pending.get());
+    let password_busy = Memo::new(move |_| false);
 
     // Clear pending once SSE confirms the matching activity is running. Once
     // confirmed, the global signal drives `..._busy` and `pending` is no
@@ -160,8 +171,22 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
         });
     });
 
+    #[cfg(feature = "hydrate")]
+    let navigate = StoredValue::new(use_navigate());
+
     let on_setup_metadata = move |_: leptos::ev::MouseEvent| {
         if is_busy.get() || metadata_sources_done.get() {
+            return;
+        }
+        if has_replayos_step && !admin_access {
+            #[cfg(feature = "hydrate")]
+            navigate.get_value()(
+                "/settings/access?next=%2F%3Fsetup",
+                NavigateOptions {
+                    replace: false,
+                    ..Default::default()
+                },
+            );
             return;
         }
         metadata_error.set(None);
@@ -176,6 +201,17 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
 
     let on_setup_replayos_token = move |_: leptos::ev::MouseEvent| {
         if is_busy.get() || !has_replayos_step || replay_api_done.get() {
+            return;
+        }
+        if !admin_access {
+            #[cfg(feature = "hydrate")]
+            navigate.get_value()(
+                "/settings/access?next=%2F%3Fsetup",
+                NavigateOptions {
+                    replace: false,
+                    ..Default::default()
+                },
+            );
             return;
         }
         replay_api_error.set(None);
@@ -196,6 +232,18 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                 }
             }
         });
+    };
+    let on_setup_password = move |_: leptos::ev::MouseEvent| {
+        if !password_done.get() {
+            #[cfg(feature = "hydrate")]
+            navigate.get_value()(
+                "/settings/access",
+                NavigateOptions {
+                    replace: false,
+                    ..Default::default()
+                },
+            );
+        }
     };
 
     let on_dismiss = move |_: leptos::ev::MouseEvent| {
@@ -238,6 +286,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                                     done=metadata_sources_done
                                     busy=metadata_busy
                                     global_busy=is_busy
+                                    ignore_global_busy=false
                                     enabled=Signal::derive(move || !metadata_sources_done.get())
                                     error=metadata_error
                                     title_key=Key::SetupMetadataTitle
@@ -246,11 +295,12 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                                 />
                                 <Show when=move || has_replayos_step>
                                     <SetupTaskRow
-                                        step="2"
-                                        done=replay_api_done
-                                        busy=replay_api_busy
-                                        global_busy=is_busy
-                                        enabled=has_replayos_step
+                                    step="2"
+                                    done=replay_api_done
+                                    busy=replay_api_busy
+                                    global_busy=is_busy
+                                    ignore_global_busy=false
+                                    enabled=has_replayos_step
                                         error=replay_api_error
                                         title_key=Key::SetupReplayosTitle
                                         hint_key=Key::SetupReplayosHint
@@ -266,6 +316,20 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                                             }}
                                         </a>
                                     </Show>
+                                </Show>
+                                <Show when=move || has_password_step>
+                                    <SetupTaskRow
+                                        step="3"
+                                        done=password_done
+                                        busy=password_busy
+                                        global_busy=is_busy
+                                        ignore_global_busy=true
+                                        enabled=Signal::derive(move || !password_done.get())
+                                        error=password_error
+                                        title_key=Key::SetupPasswordTitle
+                                        hint_key=Key::SetupPasswordHint
+                                        on_go=on_setup_password
+                                    />
                                 </Show>
                             </div>
                             <Show when=move || is_busy.get()>
@@ -314,6 +378,7 @@ fn SetupTaskRow(
     #[prop(into)] done: Signal<bool>,
     busy: Memo<bool>,
     global_busy: Memo<bool>,
+    ignore_global_busy: bool,
     #[prop(into)] enabled: Signal<bool>,
     error: RwSignal<Option<String>>,
     title_key: Key,
@@ -367,7 +432,7 @@ fn SetupTaskRow(
                                 <button
                                     class="btn btn-accent btn-sm"
                                     on:click=move |ev| on_go.with_value(|f| f(ev))
-                                    disabled=move || global_busy.get() || !enabled.get()
+                                    disabled=move || (!ignore_global_busy && global_busy.get()) || !enabled.get()
                                 >
                                     {t(i18n.locale.get(), Key::SetupStart)}
                                 </button>

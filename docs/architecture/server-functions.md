@@ -117,9 +117,28 @@ Broadcasts `Activity` enum as tagged JSON. Clients receive import progress, thum
 ### /sse/config
 Broadcasts skin changes, storage changes, available-update notifications, and database-corruption flag transitions. Sends an initial state snapshot on connect (which seeds the client's corruption banner among other things), then event-driven updates. Keep-alive every 30 seconds. The corruption events come from the pool-level callback in `DbPool::set_corruption_callback`; see [Connection Pooling](connection-pooling.md#corruption-detection).
 
+## Authorization Guard
+
+Device mode wraps app pages, REST handlers, SSE streams, media routes, and server functions in one authorization middleware. Standalone mode stays open by default because it runs off-device as a local ROM manager; stale device cookies are ignored there.
+
+Sessions are stateless HMAC-signed cookies. The server stores only the signing key, rate-limit state, and app settings, not per-session rows. Rotating the signing key invalidates every session. Session claims include the current role, base role, expiration, optional admin-elevation expiration, and fingerprints tied to the RePlayOS Net Control code stored by Replay Control or device password state, so changing those stored credentials invalidates old cookies without an auth database. A TV-side Net Control code reset is detected separately when API probes/actions return unauthorized; that detection does not delete app sessions by itself.
+
+Normal-user sessions last 30 days. Admin access defaults to 1 hour and can be configured to 1 hour, 3 hours, or 12 hours in `settings.cfg`. A direct device-password login expires back to anonymous, while a normal user who temporarily unlocks admin expires back to normal user access and can also downgrade from **Settings > Access & Security**. Changing the admin unlock duration refreshes the current admin cookie from the time of the change.
+
+Server functions are explicitly classified by function name before they reach their per-function handler:
+
+- **Public** functions support auth bootstrap and status checks.
+- **User** functions support normal app usage such as browsing, favorites, launching, player controls, and read/write user actions.
+- **Admin** functions change device state, credentials, network/storage identity, metadata, logs, updates, or certificates.
+
+Unknown server functions fail closed as admin-only. A regression test scans `src/server_fns/*.rs` so adding a new server-function file requires updating the authorization inventory.
+
+Signed-out sessions can only reach sign-in, setup, static assets, and health/version bootstrap endpoints. App browsing, media routes, REST endpoints, SSE streams, and non-bootstrap server functions require at least normal-user access. Authenticated unsafe requests also pass a CSRF check using Fetch Metadata and Origin/Referer validation.
+
 ## Storage Guard Middleware
 
 When storage is unavailable, a middleware redirects ALL requests to `/waiting` (a static HTML page with auto-refresh). Only these paths bypass the guard:
 - `/waiting` itself
 - `/static/*` (CSS, JS, WASM)
 - `/api/version`
+- Auth bootstrap paths needed before storage is ready: `/login`, `/first-setup`, and anonymous server functions such as auth status, sign-in, first setup completion, and logout

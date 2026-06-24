@@ -23,6 +23,7 @@ pub const LIBRARY_DB_FILE: &str = "library.db";
 
 /// Mirrors `external_metadata::EXTERNAL_METADATA_DB_FILE`.
 pub const EXTERNAL_METADATA_DB_FILE: &str = "external_metadata.db";
+pub const AUTH_COOKIE_KEY_FILE: &str = "auth-cookie.key";
 
 /// Subdirectory under the data root for downloaded source files (e.g.
 /// LaunchBox XML). Created on demand by the refresh path.
@@ -62,6 +63,10 @@ impl DataDir {
     /// not under a per-storage subdir.
     pub fn external_metadata_db_path(&self) -> PathBuf {
         self.root.join(EXTERNAL_METADATA_DB_FILE)
+    }
+
+    pub fn auth_cookie_key_path(&self) -> PathBuf {
+        self.root.join(AUTH_COOKIE_KEY_FILE)
     }
 
     /// Directory used for downloaded source files awaiting parse

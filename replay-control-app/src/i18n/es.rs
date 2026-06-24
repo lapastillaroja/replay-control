@@ -109,8 +109,93 @@ pub fn translate(key: Key) -> &'static str {
         // Settings page
         Key::SettingsTitle => "Ajustes",
         Key::SettingsSectionAppearance => "Apariencia",
-        Key::SettingsSectionNetwork => "Red y seguridad",
+        Key::SettingsSectionLibraryGames => "Biblioteca y juegos",
+        Key::SettingsSectionDeviceNetwork => "Red del dispositivo",
+        Key::SettingsSectionAccess => "Acceso y seguridad",
         Key::SettingsSectionSystem => "Sistema",
+        Key::AccessSecurityTitle => "Acceso y seguridad",
+        Key::AccessHttpsTitle => "HTTPS",
+        Key::AccessHttpsEnabled => "Acceso local seguro en el puerto 8443",
+        Key::AccessCertificateTitle => "Certificado",
+        Key::AccessCertificateLocal => "Certificado autofirmado gestionado automáticamente",
+        Key::AccessCertificateMode => "Modo",
+        Key::AccessCertificateGenerated => "Generado",
+        Key::AccessCertificateExpires => "Caduca",
+        Key::AccessCertificateFingerprint => "Huella SHA-256",
+        Key::AccessCertificateCoveredNames => "Nombres cubiertos",
+        Key::AccessCertificateCurrentNames => "Nombres actuales del dispositivo",
+        Key::AccessCertificateMissingCoverage => "Cobertura faltante",
+        Key::AccessCertificateCovered => "Todos los nombres de acceso actuales están cubiertos",
+        Key::AccessCertificateRegenerate => "Regenerar certificado",
+        Key::AccessCertificateRegenerateConfirm => {
+            "¿Regenerar el certificado HTTPS? Es posible que tengas que aceptar de nuevo la excepción de seguridad local."
+        }
+        Key::AccessCertificateRegenerated => "Certificado regenerado",
+        Key::AccessCertificateTrustHint => {
+            "Al regenerar el certificado, puede que tengas que aceptar de nuevo la excepción de seguridad local."
+        }
+        Key::AccessNormalUserTitle => "Acceso de usuario normal",
+        Key::AccessNormalUserReplayOs => {
+            "Usa el código de emparejamiento de RePlayOS Net Control para iniciar juegos y usar los controles."
+        }
+        Key::AccessManageReplayOs => "Gestionar conexión de RePlayOS",
+        Key::AccessDevicePasswordTitle => "Contraseña del dispositivo",
+        Key::AccessDevicePasswordSummary => "Contraseña root para cambios del dispositivo",
+        Key::AccessDevicePasswordHint => {
+            "Cambia la contraseña root de RePlayOS usada para el acceso de administración del dispositivo."
+        }
+        Key::AccessAdminTimeoutTitle => "Duración del acceso admin",
+        Key::AccessAdminTimeoutHint => {
+            "Cuánto tiempo queda desbloqueado el acceso de administrador tras introducir la contraseña del dispositivo."
+        }
+        Key::AccessAdminTimeoutOneHour => "1 hora",
+        Key::AccessAdminTimeoutThreeHours => "3 horas",
+        Key::AccessAdminTimeoutTwelveHours => "12 horas",
+        Key::LoginTitle => "Iniciar sesión",
+        Key::LoginWelcomeTitle => "Bienvenido a Replay Control",
+        Key::LoginWelcomeBody => {
+            "Inicia sesión aquí. Usa el código de Net Control para acceso normal, o la contraseña del dispositivo para ajustes de administrador."
+        }
+        Key::LoginUserTitle => "Acceso de usuario normal",
+        Key::LoginUserCodeLabel => "Código de Net Control",
+        Key::LoginUserCodeHint => {
+            "En la TV, activa NET CONTROL en SYSTEM > OPTIONS. Después lee el NET CONTROL CODE en SYSTEM > INFORMATION."
+        }
+        Key::LoginUserSubmit => "Entrar con código",
+        Key::LoginAdminTitle => "Acceso de administrador",
+        Key::LoginAdminPasswordLabel => "Contraseña del dispositivo",
+        Key::LoginAdminHint => {
+            "Usa la contraseña root de RePlayOS. El acceso de administrador es para Wi-Fi, NFS, nombre del host, actualizaciones y cambios del dispositivo."
+        }
+        Key::LoginAdminSubmit => "Entrar como administrador",
+        Key::LoginSuccessUser => "Sesión iniciada con acceso de usuario normal",
+        Key::LoginSuccessAdmin => "Sesión iniciada con acceso de administrador",
+        Key::LoginDowngrade => "Cambiar a usuario normal",
+        Key::LoginDowngradeSuccess => "Cambiado a acceso de usuario normal",
+        Key::LoginLogout => "Cerrar sesión",
+        Key::LoginLogoutAll => "Cerrar todas las sesiones",
+        Key::LoginLogoutAllConfirm => "¿Cerrar todas las sesiones de Replay Control?",
+        Key::LoginContinue => "Continuar",
+        Key::LoginCurrentRole => "Acceso actual",
+        Key::LoginAdminTimeRemaining => "Tiempo admin restante",
+        Key::LoginSessionTimeRemaining => "Tiempo de sesión restante",
+        Key::LoginStandaloneOpenTitle => "Modo independiente abierto",
+        Key::LoginStandaloneOpenHint => {
+            "Esta biblioteca fuera del dispositivo está abierta localmente. El inicio de sesión solo se usa en un dispositivo RePlayOS."
+        }
+        Key::FirstSetupTitle => "Primera configuración",
+        Key::FirstSetupBody => {
+            "Configura el acceso aquí. Confirma la contraseña del dispositivo una vez para continuar como administrador."
+        }
+        Key::FirstSetupPasswordTitle => "Confirmar acceso al dispositivo",
+        Key::FirstSetupPasswordHint => {
+            "Introduce la contraseña root actual de RePlayOS. En una imagen nueva, la contraseña predeterminada es replayos."
+        }
+        Key::FirstSetupSubmit => "Continuar como administrador",
+        Key::AuthRoleAnonymous => "Sin sesión iniciada",
+        Key::AuthRoleOpen => "Acceso abierto",
+        Key::AuthRoleUser => "Usuario normal",
+        Key::AuthRoleAdmin => "Administrador",
 
         // More page (legacy keys)
         Key::MoreSectionGamePreferences => "Preferencias de juego",
@@ -134,7 +219,7 @@ pub fn translate(key: Key) -> &'static str {
         // App language (UI locale selector)
         Key::LocaleTitle => "Idioma de la app",
         Key::LocaleSaved => "Idioma guardado",
-        Key::LocaleAuto => "Igual que el navegador",
+        Key::LocaleAuto => "Automático",
         Key::LocaleEn => "Inglés - English",
         Key::LocaleEs => "Español",
         Key::LocaleJa => "Japonés - 日本語",
@@ -222,6 +307,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsReboot => "Reiniciar sistema",
         Key::SettingsRebooting => "Reiniciando...",
         Key::SettingsDeviceOnlyDisabled => "Disponible solo en el dispositivo RePlayOS.",
+        Key::SettingsAdminOnlyDisabled => {
+            "Inicia sesión como administrador para cambiar estos ajustes."
+        }
         Key::SettingsPasswordEnter => "Introduce la contraseña",
 
         // Game detail page
@@ -258,6 +346,7 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
+        Key::GameDetailPlaytime => "Tiempo de juego",
 
         Key::GameDetailEmulation => "Compatibilidad",
         Key::GameDetailRawCategory => "Categoría MAME",
@@ -304,9 +393,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManualInvalidFileType => {
             "Los manuales subidos deben ser archivos PDF o de texto."
         }
-        Key::GameDetailManualUploadBrowserOnly => {
-            "La subida de manuales solo está disponible en el navegador."
-        }
+        Key::GameDetailManualUploadBrowserOnly => "La subida de manuales no está disponible aquí.",
         Key::GameDetailViewManual => "Ver",
         Key::GameDetailNoManualResults => "No se encontraron manuales",
         Key::GameDetailManualSaved => "Manual guardado",
@@ -452,6 +539,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummarySystems => "Sistemas",
         Key::MetadataSummaryStorage => "Almacenamiento",
         Key::MetadataSummaryDownloadedArt => "Imágenes descargadas",
+        Key::MetadataSummaryPlaytime => "Tiempo de juego",
+        Key::PlaytimeUnavailable => "No disponible",
 
         // System accordion rows
         Key::MetadataSystemCoverage => "cobertura",
@@ -466,6 +555,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataRowTitleScreens => "Pantallas de título",
         Key::MetadataRowManuals => "Manuales",
         Key::MetadataRowVideos => "Vídeos",
+        Key::MetadataRowPlaytime => "Tiempo de juego",
         Key::MetadataRowDownloadedMedia => "Medios descargados:",
         Key::MetadataRowRegions => "Regiones:",
         Key::MetadataRowGenreGroups => "Géneros:",
@@ -645,6 +735,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupReplayosTitle => "Activar integraci\u{00f3}n con RePlayOS",
         Key::SetupReplayosHint => {
             "Activa Net Control de RePlayOS, reinicia RePlayOS y lee el c\u{00f3}digo de Net Control para que no tengas que hacer nada."
+        }
+        Key::SetupPasswordTitle => "Cambiar la contraseña predeterminada del dispositivo",
+        Key::SetupPasswordHint => {
+            "Mantiene privado el acceso de administrador. Recomendado si la contraseña root de RePlayOS sigue siendo la predeterminada."
         }
         Key::SetupSkip => "Omitir",
         Key::SetupDismiss => "Cerrar",

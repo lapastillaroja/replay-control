@@ -23,7 +23,10 @@ pub mod util;
 pub mod api;
 
 use leptos::prelude::*;
-use leptos_router::components::{A, Route, Router, Routes};
+use leptos_router::components::{A, Redirect, Route, Router, Routes};
+use leptos_router::hooks::use_location;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_navigate;
 use leptos_router::path;
 
 #[cfg(feature = "ssr")]
@@ -37,20 +40,22 @@ use components::replay_api_status_banner::ReplayApiStatusBanner;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
 use hooks::Clock;
-use i18n::{Key, provide_i18n, t, use_i18n};
+use i18n::{I18nContext, Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
+use pages::access::AccessSecurityPage;
 use pages::board::BoardPage;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
+use pages::first_setup::FirstSetupPage;
 use pages::game_detail::GameDetailPage;
 use pages::games::SystemRomView;
 use pages::github::GithubPage;
 use pages::home::HomePage;
 use pages::hostname::HostnamePage;
+use pages::login::LoginPage;
 use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::nfs::NfsPage;
-use pages::password::PasswordPage;
 use pages::replay_net_control::ReplayNetControlPage;
 use pages::retroachievements::RetroAchievementsPage;
 use pages::search::SearchPage;
@@ -151,8 +156,42 @@ pub fn App() -> impl IntoView {
     view! {
         <InitialLoadingShell />
         <Router>
-            <SseEventsListener />
-            <SearchShortcut />
+            <RouteScopedAppSurface />
+        </Router>
+    }
+}
+
+#[component]
+fn RouteScopedAppSurface() -> impl IntoView {
+    let i18n = use_i18n();
+    let location = use_location();
+    let is_standalone_auth_page =
+        move || matches!(location.pathname.get().as_str(), "/login" | "/first-setup");
+
+    view! {
+        <Show when=is_standalone_auth_page fallback=move || view! { <AppChrome i18n /> }>
+            <main class="login-standalone">
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                    {move || {
+                        if location.pathname.get() == "/first-setup" {
+                            view! { <FirstSetupPage /> }.into_any()
+                        } else {
+                            view! { <LoginPage /> }.into_any()
+                        }
+                    }}
+                </ErrorBoundary>
+            </main>
+        </Show>
+    }
+}
+
+#[component]
+fn AppChrome(i18n: I18nContext) -> impl IntoView {
+    provide_context(i18n);
+
+    view! {
+        <SseEventsListener />
+        <SearchShortcut />
             <div class="app">
                 <header
                     class="top-bar"
@@ -170,15 +209,7 @@ pub fn App() -> impl IntoView {
                     </h1>
                 </header>
 
-                <div class="sticky-status-stack">
-                    <NowPlayingBar />
-                    <CorruptionBanner />
-                    <StorageStatusBanner />
-                    <RomWatcherBanner />
-                    <AssetHealthBanner />
-                    <ReplayApiStatusBanner />
-                    <MetadataBusyBanner />
-                </div>
+                <StatusStack />
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
@@ -194,7 +225,8 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
-                        <Route path=path!("/settings/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/access") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><AccessSecurityPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/password") view=|| view! { <Redirect path="/settings/access" /> } />
                         <Route path=path!("/settings/retroachievements") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><RetroAchievementsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/replayos") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/replay-net-control") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><ReplayNetControlPage /></ErrorBoundary> } />
@@ -209,7 +241,21 @@ pub fn App() -> impl IntoView {
 
                 <BottomNav />
             </div>
-        </Router>
+    }
+}
+
+#[component]
+fn StatusStack() -> impl IntoView {
+    view! {
+        <div class="sticky-status-stack">
+            <NowPlayingBar />
+            <CorruptionBanner />
+            <StorageStatusBanner />
+            <RomWatcherBanner />
+            <AssetHealthBanner />
+            <ReplayApiStatusBanner />
+            <MetadataBusyBanner />
+        </div>
     }
 }
 
@@ -601,7 +647,7 @@ fn SearchShortcut() -> impl IntoView {
         use wasm_bindgen::JsCast;
         use wasm_bindgen::prelude::*;
 
-        let navigate = leptos_router::hooks::use_navigate();
+        let navigate = use_navigate();
         Effect::new(move || {
             let navigate = navigate.clone();
             let window = match web_sys::window() {

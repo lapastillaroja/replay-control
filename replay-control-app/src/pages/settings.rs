@@ -1,44 +1,349 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+#[cfg(feature = "hydrate")]
+use leptos_router::hooks::use_location;
+use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
-use crate::i18n::{Key, Locale, t, use_i18n};
+use crate::i18n::{I18nContext, Key, Locale, t, use_i18n};
 use crate::server_fns;
+use crate::server_fns::SystemLiveStats;
 use crate::util::{format_elapsed_short, format_size};
+use replay_control_core::auth::{AuthRole, AuthStatus};
 use replay_control_core::update::UpdateState;
 
 /// Section definitions: (ID, i18n key) — single source of truth for sidebar + scroll-spy.
-const SECTIONS: [(&str, Key); 5] = [
+const SECTIONS: [(&str, Key); 7] = [
     ("settings-appearance", Key::SettingsSectionAppearance),
-    ("settings-game-preferences", Key::MoreSectionGamePreferences),
-    ("settings-network", Key::SettingsSectionNetwork),
+    ("settings-library-games", Key::SettingsSectionLibraryGames),
+    ("settings-device-network", Key::SettingsSectionDeviceNetwork),
+    ("settings-access", Key::SettingsSectionAccess),
+    ("settings-replayos", Key::ReplayOsSettingsTitle),
     ("settings-updates", Key::MoreSectionUpdates),
     ("settings-system", Key::SettingsSectionSystem),
 ];
 
 const SECTION_APPEARANCE: &str = SECTIONS[0].0;
-const SECTION_GAME_PREFS: &str = SECTIONS[1].0;
-const SECTION_NETWORK: &str = SECTIONS[2].0;
-const SECTION_UPDATES: &str = SECTIONS[3].0;
-const SECTION_SYSTEM: &str = SECTIONS[4].0;
+const SECTION_LIBRARY_GAMES: &str = SECTIONS[1].0;
+const SECTION_DEVICE_NETWORK: &str = SECTIONS[2].0;
+const SECTION_ACCESS: &str = SECTIONS[3].0;
+const SECTION_REPLAYOS: &str = SECTIONS[4].0;
+const SECTION_UPDATES: &str = SECTIONS[5].0;
+const SECTION_SYSTEM: &str = SECTIONS[6].0;
+
+#[derive(Clone, Serialize, Deserialize)]
+struct AppearanceValues {
+    font_size: String,
+    locale: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LibraryGamesValues {
+    admin_unlocked: bool,
+    on_device: bool,
+    region: String,
+    region_secondary: String,
+    language_primary: String,
+    language_secondary: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct GateValues {
+    admin_unlocked: bool,
+    on_device: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct SystemValues {
+    admin_unlocked: bool,
+    analytics_enabled: Option<bool>,
+}
+
+async fn load_appearance_values() -> Result<AppearanceValues, ServerFnError> {
+    Ok(AppearanceValues {
+        font_size: server_fns::get_font_size().await?,
+        locale: server_fns::get_locale().await.unwrap_or_default(),
+    })
+}
+
+async fn load_library_games_values() -> Result<LibraryGamesValues, ServerFnError> {
+    let mode = server_fns::get_mode().await?;
+    let auth_status = server_fns::get_auth_status().await?;
+    let admin_unlocked = admin_settings_unlocked(&auth_status);
+    let (language_primary, language_secondary) = server_fns::get_language_preference().await?;
+
+    Ok(LibraryGamesValues {
+        admin_unlocked,
+        on_device: mode.is_device(),
+        region: server_fns::get_region_preference().await?,
+        region_secondary: server_fns::get_region_preference_secondary().await?,
+        language_primary,
+        language_secondary,
+    })
+}
+
+async fn load_gate_values() -> Result<GateValues, ServerFnError> {
+    let mode = server_fns::get_mode().await?;
+    let auth_status = server_fns::get_auth_status().await?;
+
+    Ok(GateValues {
+        admin_unlocked: admin_settings_unlocked(&auth_status),
+        on_device: mode.is_device(),
+    })
+}
+
+async fn load_system_values() -> Result<SystemValues, ServerFnError> {
+    let auth_status = server_fns::get_auth_status().await?;
+    let admin_unlocked = admin_settings_unlocked(&auth_status);
+    let analytics_enabled = if admin_unlocked {
+        Some(server_fns::get_analytics_preference().await.unwrap_or(true))
+    } else {
+        None
+    };
+
+    Ok(SystemValues {
+        admin_unlocked,
+        analytics_enabled,
+    })
+}
 
 #[component]
 pub fn SettingsPage() -> impl IntoView {
     let i18n = use_i18n();
-    let live_stats = Resource::new(|| (), |_| server_fns::get_live_stats());
-    // Device-only settings (Wi-Fi, NFS, hostname, password, RetroAchievements,
-    // reboot) are disabled off-device. Blocking so the gating is resolved in the
-    // SSR HTML rather than flashing enabled then disabling after hydration.
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
-    let locale_res = Resource::new(|| (), |_| server_fns::get_locale());
-    let region = Resource::new(|| (), |_| server_fns::get_region_preference());
-    let region_secondary = Resource::new(|| (), |_| server_fns::get_region_preference_secondary());
-    let language = Resource::new(|| (), |_| server_fns::get_language_preference());
-    let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
-
     let active_section = RwSignal::new(SECTION_APPEARANCE.to_string());
 
-    // Refresh live stats every second while this page is mounted (hydrate only).
+    view! {
+        <div class="page settings-page">
+            <h2 class="page-title">{move || t(i18n.locale.get(), Key::SettingsTitle)}</h2>
+
+            <div class="settings-layout">
+                <SettingsSidebar active_section />
+                <div class="settings-content">
+                    <AppearanceSection />
+                    <LibraryGamesSection />
+                    <DeviceNetworkSection />
+                    <AccessSection />
+                    <ReplayOsSection />
+                    <UpdatesSection />
+                    <SystemSection />
+                </div>
+            </div>
+        </div>
+
+        <ScrollSpy active_section />
+    }
+}
+
+#[component]
+fn AppearanceSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let values = Resource::new_blocking(|| (), |_| load_appearance_values());
+
+    view! {
+        <section class="settings-section" id=SECTION_APPEARANCE>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionAppearance)}</h3>
+            <div class="settings-section-body">
+                <div class="menu-list">
+                    {menu_item("\u{1F3A8}", Key::MoreSkin, Some("/settings/skin"), i18n)}
+                </div>
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match values.await {
+                            Ok(values) => view! {
+                                <div class="settings-inline-setting">
+                                    <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
+                                    <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
+                                    <TextSizeToggle current=values.font_size />
+                                </div>
+                                <div class="settings-inline-setting">
+                                    <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
+                                    <LocaleSelector current=values.locale />
+                                </div>
+                            }
+                                .into_any(),
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn LibraryGamesSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let values = Resource::new_blocking(|| (), |_| load_library_games_values());
+
+    view! {
+        <section class="settings-section" id=SECTION_LIBRARY_GAMES>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionLibraryGames)}</h3>
+            <div class="settings-section-body">
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match values.await {
+                            Ok(values) => {
+                                let device_hint_key = if values.on_device {
+                                    Key::SettingsAdminOnlyDisabled
+                                } else {
+                                    Key::SettingsDeviceOnlyDisabled
+                                };
+                                view! {
+                                    <div class="menu-list">
+                                        {menu_item("\u{1F4DA}", Key::MoreMetadata, values.admin_unlocked.then_some("/settings/game-library"), i18n)}
+                                        {menu_item("\u{1F3C6}", Key::MoreRetroAchievements, (values.on_device && values.admin_unlocked).then_some("/settings/retroachievements"), i18n)}
+                                    </div>
+                                    <Show when=move || !values.on_device || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    </Show>
+
+                                    <div class="settings-inline-setting">
+                                        <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
+                                        <RegionSelector current=values.region current_secondary=values.region_secondary disabled=!values.admin_unlocked />
+                                        <Show when=move || !values.admin_unlocked>
+                                            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p>
+                                        </Show>
+                                    </div>
+
+                                    <div class="settings-inline-setting">
+                                        <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LanguageTitle)}</h4>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), Key::LanguageHint)}</p>
+                                        <LanguageSelector
+                                            current_primary=values.language_primary
+                                            current_secondary=values.language_secondary
+                                            disabled=!values.admin_unlocked
+                                        />
+                                        <Show when=move || !values.admin_unlocked>
+                                            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p>
+                                        </Show>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn DeviceNetworkSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let values = Resource::new_blocking(|| (), |_| load_gate_values());
+
+    view! {
+        <section class="settings-section" id=SECTION_DEVICE_NETWORK>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionDeviceNetwork)}</h3>
+            <div class="settings-section-body">
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match values.await {
+                            Ok(values) => {
+                                let device_href = move |href: &'static str| (values.on_device && values.admin_unlocked).then_some(href);
+                                let device_hint_key = if values.on_device {
+                                    Key::SettingsAdminOnlyDisabled
+                                } else {
+                                    Key::SettingsDeviceOnlyDisabled
+                                };
+                                view! {
+                                    <div class="menu-list">
+                                        {menu_item("\u{1F4F6}", Key::MoreWifi, device_href("/settings/wifi"), i18n)}
+                                        {menu_item("\u{1F4C1}", Key::MoreNfs, device_href("/settings/nfs"), i18n)}
+                                        {menu_item("\u{1F4BB}", Key::MoreHostname, device_href("/settings/hostname"), i18n)}
+                                    </div>
+                                    <Show when=move || !values.on_device || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    </Show>
+                                }
+                                    .into_any()
+                            }
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn AccessSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let auth_status = Resource::new_blocking(|| (), |_| server_fns::get_auth_status());
+
+    view! {
+        <section class="settings-section" id=SECTION_ACCESS>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionAccess)}</h3>
+            <div class="settings-section-body">
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match auth_status.await {
+                            Ok(auth_status) => view! {
+                                <div class="menu-list">
+                                    {if auth_status.auth_required && auth_status.role == AuthRole::Anonymous {
+                                        menu_item("\u{1F511}", Key::LoginTitle, Some("/login"), i18n).into_any()
+                                    } else {
+                                        menu_item("\u{1F512}", Key::AccessSecurityTitle, Some("/settings/access"), i18n).into_any()
+                                    }}
+                                </div>
+                            }
+                                .into_any(),
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn ReplayOsSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let values = Resource::new_blocking(|| (), |_| load_gate_values());
+
+    view! {
+        <section class="settings-section" id=SECTION_REPLAYOS>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::ReplayOsSettingsTitle)}</h3>
+            <div class="settings-section-body">
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match values.await {
+                            Ok(values) => {
+                                let device_hint_key = if values.on_device {
+                                    Key::SettingsAdminOnlyDisabled
+                                } else {
+                                    Key::SettingsDeviceOnlyDisabled
+                                };
+                                view! {
+                                    <div class="menu-list">
+                                        {menu_item("\u{1F4E1}", Key::ReplayOsSettingsTitle, (values.on_device && values.admin_unlocked).then_some("/settings/replayos"), i18n)}
+                                    </div>
+                                    <Show when=move || !values.on_device || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    </Show>
+                                }
+                                    .into_any()
+                            }
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn SystemSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let system_values = Resource::new_blocking(|| (), |_| load_system_values());
+    let live_stats = Resource::new(|| (), |_| server_fns::get_live_stats());
+
     #[cfg(feature = "hydrate")]
     {
         use wasm_bindgen::prelude::*;
@@ -63,165 +368,58 @@ pub fn SettingsPage() -> impl IntoView {
     }
 
     view! {
-        <div class="page settings-page">
-            <h2 class="page-title">{move || t(i18n.locale.get(), Key::SettingsTitle)}</h2>
-
-            <div class="settings-layout">
-                <SettingsSidebar active_section />
-
-                <div class="settings-content">
-                    // ── Appearance ───────────────────────────────────
-                    <section class="settings-section" id=SECTION_APPEARANCE>
-                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionAppearance)}</h3>
-
-                        <div class="settings-section-body">
-                            <div class="menu-list">
-                                <MenuItem icon="\u{1F3A8}" label_key=Key::MoreSkin href=Some("/settings/skin") />
-                            </div>
-
-                            <div class="settings-inline-setting">
-                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
-                                <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
-                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                    {move || Suspend::new(async move {
-                                        let current = font_size.await?;
-                                        Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
-                                    })}
-                                </Transition>
-                            </div>
-
-                            <div class="settings-inline-setting">
-                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
-                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                    {move || Suspend::new(async move {
-                                        let current = locale_res.await.unwrap_or_default();
-                                        Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
-                                    })}
-                                </Transition>
-                            </div>
-                        </div>
-                    </section>
-
-                    // ── Game Preferences ─────────────────────────────
-                    <section class="settings-section" id=SECTION_GAME_PREFS>
-                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
-
-                        <div class="settings-section-body">
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                {move || Suspend::new(async move {
-                                    // Metadata works off-device; RetroAchievements writes to
-                                    // replay.cfg and restarts RePlayOS, so it's device-only.
-                                    let locale = i18n.locale.get();
-                                    let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
-                                    Ok::<_, ServerFnError>(view! {
-                                        <div class="menu-list">
-                                            <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/game-library") />
-                                            <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=on_device.then_some("/settings/retroachievements") />
-                                        </div>
-                                        {(!on_device).then(|| view! {
-                                            <p class="form-hint">{t(locale, Key::SettingsDeviceOnlyDisabled)}</p>
-                                        })}
-                                    })
-                                })}
-                            </Transition>
-
-                            <div class="settings-inline-setting">
-                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
-                                <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
-                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                    {move || Suspend::new(async move {
-                                        let current = region.await?;
-                                        let current_secondary = region_secondary.await?;
-                                        Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
-                                    })}
-                                </Transition>
-                            </div>
-
-                            <div class="settings-inline-setting">
-                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LanguageTitle)}</h4>
-                                <p class="form-hint">{move || t(i18n.locale.get(), Key::LanguageHint)}</p>
-                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                    {move || Suspend::new(async move {
-                                        let (primary, secondary) = language.await?;
-                                        Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
-                                    })}
-                                </Transition>
-                            </div>
-                        </div>
-                    </section>
-
-                    // ── Network ──────────────────────────────────────
-                    <section class="settings-section" id=SECTION_NETWORK>
-                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionNetwork)}</h3>
-
-                        <div class="settings-section-body">
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                {move || Suspend::new(async move {
-                                    let locale = i18n.locale.get();
-                                    let on_device = mode.await.map(|p| p.is_device()).unwrap_or(false);
-                                    let href = |h: &'static str| on_device.then_some(h);
-                                    Ok::<_, ServerFnError>(view! {
-                                        <div class="menu-list">
-                                            <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=href("/settings/wifi") />
-                                            <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=href("/settings/nfs") />
-                                            <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=href("/settings/hostname") />
-                                            <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=href("/settings/password") />
-                                        </div>
-                                        {(!on_device).then(|| view! {
-                                            <p class="form-hint">{t(locale, Key::SettingsDeviceOnlyDisabled)}</p>
-                                        })}
-                                    })
-                                })}
-                            </Transition>
-                        </div>
-                    </section>
-
-                    // ── Updates ──────────────────────────────────────
-                    <UpdatesSection />
-
-                    // ── System ───────────────────────────────────────
-                    <section class="settings-section" id=SECTION_SYSTEM>
-                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionSystem)}</h3>
-
-                        <div class="settings-section-body">
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                                {move || Suspend::new(async move {
-                                    let locale = i18n.locale.get();
-                                    let stats = live_stats.await?;
-                                    Ok::<_, ServerFnError>(view! {
-                                        <div class="info-grid">
-                                            <InfoRow label=t(locale, Key::MoreStorage) value=stats.storage_kind.to_uppercase() />
-                                            <InfoRow label=t(locale, Key::MorePath) value=stats.storage_root.clone() />
-                                            <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(stats.disk_total_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(stats.disk_used_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(stats.disk_available_bytes) />
-                                            <InfoRow label=t(locale, Key::MoreEthernetIp) value=stats.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                            <InfoRow label=t(locale, Key::MoreWifiIp) value=stats.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                            <InfoRow label=t(locale, Key::MoreEthernetMac) value=stats.ethernet_mac.unwrap_or_else(|| "—".to_string()) />
-                                            <InfoRow label=t(locale, Key::MoreWifiMac) value=stats.wifi_mac.unwrap_or_else(|| "—".to_string()) />
-                                            {stats.model.map(|model| view! { <InfoRow label=t(locale, Key::MoreModel) value=model /> })}
-                                            {stats.cpu_temperature_c.map(|temp| view! { <InfoRow label=t(locale, Key::MoreCpuTemperature) value=format!("{temp:.0} °C") /> })}
-                                            {stats.available_ram_mb.map(|mb| view! { <InfoRow label=t(locale, Key::MoreAvailableRam) value=format!("{mb} MB") /> })}
-                                            <InfoRow label=t(locale, Key::MoreUptime) value=format_elapsed_short(stats.uptime_seconds) />
-                                        </div>
-                                    })
-                                })}
-                            </Transition>
-
-                            <div class="menu-list">
-                                <MenuItem icon="\u{1F4E1}" label_key=Key::ReplayOsSettingsTitle href=Some("/settings/replayos") />
-                                <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/settings/logs") />
-                                <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/settings/github") />
-                            </div>
-
-                            <AnalyticsInline />
-                        </div>
-                    </section>
-                </div>
+        <section class="settings-section" id=SECTION_SYSTEM>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionSystem)}</h3>
+            <div class="settings-section-body">
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                    {move || Suspend::new(async move {
+                        match live_stats.await {
+                            Ok(stats) => view! { <SystemStatsGrid stats i18n /> }.into_any(),
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Transition>
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match system_values.await {
+                            Ok(values) => view! {
+                                <div class="menu-list">
+                                    {menu_item("\u{1F4DC}", Key::MoreLogs, values.admin_unlocked.then_some("/settings/logs"), i18n)}
+                                    {menu_item("\u{1F511}", Key::MoreGithub, values.admin_unlocked.then_some("/settings/github"), i18n)}
+                                </div>
+                                <Show when=move || !values.admin_unlocked>
+                                    <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p>
+                                </Show>
+                                {values.analytics_enabled.map(|current| view! { <AnalyticsInline current i18n /> })}
+                            }
+                                .into_any(),
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
             </div>
-        </div>
+        </section>
+    }
+}
 
-        <ScrollSpy active_section />
+#[component]
+fn SystemStatsGrid(stats: SystemLiveStats, i18n: I18nContext) -> impl IntoView {
+    view! {
+        <div class="info-grid">
+            <InfoRow label_key=Key::MoreStorage value=stats.storage_kind.to_uppercase() />
+            <InfoRow label_key=Key::MorePath value=stats.storage_root />
+            <InfoRow label_key=Key::MoreDiskTotal value=format_size(stats.disk_total_bytes) />
+            <InfoRow label_key=Key::MoreDiskUsed value=format_size(stats.disk_used_bytes) />
+            <InfoRow label_key=Key::MoreDiskAvailable value=format_size(stats.disk_available_bytes) />
+            <InfoRow label_key=Key::MoreEthernetIp value=stats.ethernet_ip.unwrap_or_else(|| t(i18n.locale.get(), Key::MoreNotConnected).to_string()) />
+            <InfoRow label_key=Key::MoreWifiIp value=stats.wifi_ip.unwrap_or_else(|| t(i18n.locale.get(), Key::MoreNotConnected).to_string()) />
+            <InfoRow label_key=Key::MoreEthernetMac value=stats.ethernet_mac.unwrap_or_else(|| "—".to_string()) />
+            <InfoRow label_key=Key::MoreWifiMac value=stats.wifi_mac.unwrap_or_else(|| "—".to_string()) />
+            {stats.model.map(|model| view! { <InfoRow label_key=Key::MoreModel value=model /> })}
+            {stats.cpu_temperature_c.map(|temp| view! { <InfoRow label_key=Key::MoreCpuTemperature value=format!("{temp:.0} °C") /> })}
+            {stats.available_ram_mb.map(|mb| view! { <InfoRow label_key=Key::MoreAvailableRam value=format!("{mb} MB") /> })}
+            <InfoRow label_key=Key::MoreUptime value=format_elapsed_short(stats.uptime_seconds) />
+        </div>
     }
 }
 
@@ -348,7 +546,7 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
 
         // Re-check visible section on route changes (back-navigation from sub-pages).
         // IntersectionObserver doesn't fire for elements already in the viewport.
-        let pathname = leptos_router::hooks::use_location().pathname;
+        let pathname = use_location().pathname;
         Effect::new(move || {
             let path = pathname.get();
             if path != "/settings" {
@@ -413,6 +611,106 @@ fn UpdatesSection() -> impl IntoView {
     let i18n = use_i18n();
     let update_state =
         use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
+    let system_values = Resource::new_blocking(|| (), |_| load_system_values());
+
+    view! {
+        <section class="settings-section" id=SECTION_UPDATES>
+            <h3 class="section-title">{move || t(i18n.locale.get(), Key::MoreSectionUpdates)}</h3>
+
+            <div class="settings-section-body">
+                <Suspense fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        match system_values.await {
+                            Ok(values) => view! {
+                                <UpdatesSectionContent admin_unlocked=values.admin_unlocked update_state />
+                            }
+                                .into_any(),
+                            Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
+                        }
+                    })}
+                </Suspense>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn UpdatesSectionContent(
+    admin_unlocked: bool,
+    update_state: RwSignal<UpdateState>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+
+    let on_skip = move |_| {
+        if !admin_unlocked {
+            return;
+        }
+        let state = update_state.get_untracked();
+        if let UpdateState::Available(ref available) = state {
+            let tag = available.tag.clone();
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::skip_version(tag).await;
+                update_state.set(UpdateState::None);
+            });
+        }
+    };
+
+    let version_text = move || {
+        let locale = i18n.locale.get();
+        let tpl = t(locale, Key::UpdateCurrentVersion);
+        tpl.replace("{0}", crate::VERSION)
+            .replace("{1}", crate::GIT_HASH)
+    };
+
+    view! {
+        // Update banner
+        {move || {
+            let state = update_state.get();
+            if let UpdateState::Available(ref available) = state {
+                let locale = i18n.locale.get();
+                let banner_text = t(locale, Key::UpdateAvailable).replace("{0}", &available.version);
+                let release_url = available.release_notes_url.clone();
+                Some(view! {
+                    <div class="update-banner">
+                        <div class="update-banner-title">{banner_text}</div>
+                        <div class="update-actions">
+                            <Show when=move || admin_unlocked>
+                                <A href="/updating" attr:class="form-btn">
+                                    {move || t(i18n.locale.get(), Key::UpdateNow)}
+                                </A>
+                            </Show>
+                            <a href=release_url target="_blank" rel="noopener" class="form-btn form-btn-secondary">
+                                {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
+                            </a>
+                        </div>
+                        <Show when=move || admin_unlocked>
+                            <button class="update-skip-link" on:click=on_skip>
+                                {move || t(i18n.locale.get(), Key::UpdateSkip)}
+                            </button>
+                        </Show>
+                    </div>
+                })
+            } else {
+                None
+            }
+        }}
+
+        // Current version
+        <div class="update-version">{version_text}</div>
+
+        {move || {
+            if admin_unlocked {
+                view! { <AdminUpdateControls update_state /> }.into_any()
+            } else {
+                view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }.into_any()
+            }
+        }}
+    }
+}
+
+#[component]
+fn AdminUpdateControls(update_state: RwSignal<UpdateState>) -> impl IntoView {
+    let i18n = use_i18n();
     let channel_value = RwSignal::new("stable".to_string());
     let channel = Resource::new(|| (), |_| server_fns::get_update_channel());
     Effect::new(move || {
@@ -476,120 +774,59 @@ fn UpdatesSection() -> impl IntoView {
         });
     };
 
-    let on_skip = move |_| {
-        let state = update_state.get_untracked();
-        if let UpdateState::Available(ref available) = state {
-            let tag = available.tag.clone();
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::skip_version(tag).await;
-                update_state.set(UpdateState::None);
-            });
-        }
-    };
-
-    let version_text = move || {
-        let locale = i18n.locale.get();
-        let tpl = t(locale, Key::UpdateCurrentVersion);
-        tpl.replace("{0}", crate::VERSION)
-            .replace("{1}", crate::GIT_HASH)
-    };
-
     view! {
-        <section class="settings-section" id=SECTION_UPDATES>
-            <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionUpdates)}</h3>
-
-            <div class="settings-section-body">
-                // Update banner
+        <div class=move || {
+            if controls_hydrated.get() {
+                "update-controls-row is-hydrated"
+            } else {
+                "update-controls-row"
+            }
+        }>
+            <select
+                class="form-input"
+                on:change=on_channel_change
+                prop:value=move || channel_value.get()
+            >
+                <option value="stable">{move || t(i18n.locale.get(), Key::UpdateChannelStable)}</option>
+                <option value="beta">{move || t(i18n.locale.get(), Key::UpdateChannelBeta)}</option>
+            </select>
+            <button
+                class="form-btn form-btn-secondary"
+                on:click=on_check
+                disabled=move || checking.get()
+            >
                 {move || {
-                    let state = update_state.get();
-                    if let UpdateState::Available(ref available) = state {
-                        let locale = i18n.locale.get();
-                        let banner_text = t(locale, Key::UpdateAvailable).replace("{0}", &available.version);
-                        let release_url = available.release_notes_url.clone();
-                        Some(view! {
-                            <div class="update-banner">
-                                <div class="update-banner-title">{banner_text}</div>
-                                <div class="update-actions">
-                                    <A href="/updating" attr:class="form-btn">
-                                        {move || t(i18n.locale.get(), Key::UpdateNow)}
-                                    </A>
-                                    <a href=release_url target="_blank" rel="noopener" class="form-btn form-btn-secondary">
-                                        {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
-                                    </a>
-                                </div>
-                                <button class="update-skip-link" on:click=on_skip>
-                                    {move || t(i18n.locale.get(), Key::UpdateSkip)}
-                                </button>
-                            </div>
-                        })
+                    if checking.get() {
+                        t(i18n.locale.get(), Key::UpdateChecking).to_string()
                     } else {
-                        None
+                        t(i18n.locale.get(), Key::UpdateCheckButton).to_string()
                     }
                 }}
+            </button>
+        </div>
 
-                // Current version
-                <div class="update-version">{version_text}</div>
-
-                // Controls row: channel + check button
-                <div class=move || {
-                    if controls_hydrated.get() {
-                        "update-controls-row is-hydrated"
-                    } else {
-                        "update-controls-row"
-                    }
-                }>
-                    <select
-                        class="form-input"
-                        on:change=on_channel_change
-                        prop:value=move || channel_value.get()
-                    >
-                        <option value="stable">{move || t(i18n.locale.get(), Key::UpdateChannelStable)}</option>
-                        <option value="beta">{move || t(i18n.locale.get(), Key::UpdateChannelBeta)}</option>
-                    </select>
-                    <button
-                        class="form-btn form-btn-secondary"
-                        on:click=on_check
-                        disabled=move || checking.get()
-                    >
-                        {move || {
-                            if checking.get() {
-                                t(i18n.locale.get(), Key::UpdateChecking).to_string()
-                            } else {
-                                t(i18n.locale.get(), Key::UpdateCheckButton).to_string()
-                            }
-                        }}
-                    </button>
-                </div>
-
-                // Status messages
-                <Show when=move || up_to_date.get()>
-                    <div class="status-msg status-ok">{move || t(i18n.locale.get(), Key::UpdateUpToDate)}</div>
-                </Show>
-                {move || check_error.get().map(|msg| view! {
-                    <div class="status-msg status-err">{msg}</div>
-                })}
-            </div>
-        </section>
+        <Show when=move || up_to_date.get()>
+            <div class="status-msg status-ok">{move || t(i18n.locale.get(), Key::UpdateUpToDate)}</div>
+        </Show>
+        {move || check_error.get().map(|msg| view! {
+            <div class="status-msg status-err">{msg}</div>
+        })}
     }
+}
+
+fn admin_settings_unlocked(status: &AuthStatus) -> bool {
+    !status.auth_required || status.role == AuthRole::Admin
 }
 
 // ── Analytics (inline within System section) ────────────────────
 
 #[component]
-fn AnalyticsInline() -> impl IntoView {
-    let i18n = use_i18n();
-    let analytics = Resource::new(|| (), |_| server_fns::get_analytics_preference());
-
+fn AnalyticsInline(current: bool, i18n: I18nContext) -> impl IntoView {
     view! {
         <div class="analytics-section">
             <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
-            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                {move || Suspend::new(async move {
-                    let current = analytics.await.unwrap_or(true);
-                    Ok::<_, ServerFnError>(view! { <AnalyticsToggle current /> })
-                })}
-            </Transition>
+            <AnalyticsToggle current i18n />
 
             <details class="analytics-details">
                 <summary>{move || t(i18n.locale.get(), Key::AnalyticsWhatSent)}</summary>
@@ -606,8 +843,7 @@ fn AnalyticsInline() -> impl IntoView {
 }
 
 #[component]
-fn AnalyticsToggle(current: bool) -> impl IntoView {
-    let i18n = use_i18n();
+fn AnalyticsToggle(current: bool, i18n: I18nContext) -> impl IntoView {
     let active = RwSignal::new(current);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
@@ -623,7 +859,7 @@ fn AnalyticsToggle(current: bool) -> impl IntoView {
             match server_fns::save_analytics_preference(new_value).await {
                 Ok(()) => {
                     active.set(new_value);
-                    let locale = use_i18n().locale.get_untracked();
+                    let locale = i18n.locale.get_untracked();
                     status.set(Some((true, t(locale, Key::AnalyticsSaved).to_string())));
                 }
                 Err(e) => {
@@ -651,7 +887,7 @@ fn AnalyticsToggle(current: bool) -> impl IntoView {
 // ── Shared child components ─────────────────────────────────────
 
 #[component]
-fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
+fn RegionSelector(current: String, current_secondary: String, disabled: bool) -> impl IntoView {
     let i18n = use_i18n();
     let active = RwSignal::new(current);
     let active_secondary = RwSignal::new(current_secondary);
@@ -667,7 +903,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
 
     let on_change = move |ev: leptos::ev::Event| {
         let value = leptos::prelude::event_target_value(&ev);
-        if saving.get_untracked() || active.get_untracked() == value {
+        if disabled || saving.get_untracked() || active.get_untracked() == value {
             return;
         }
         saving.set(true);
@@ -694,7 +930,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
 
     let on_change_secondary = move |ev: leptos::ev::Event| {
         let value = leptos::prelude::event_target_value(&ev);
-        if saving.get_untracked() || active_secondary.get_untracked() == value {
+        if disabled || saving.get_untracked() || active_secondary.get_untracked() == value {
             return;
         }
         saving.set(true);
@@ -750,7 +986,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
             <select
                 class="form-input"
                 on:change=on_change
-                disabled=move || saving.get()
+                disabled=move || disabled || saving.get()
             >
                 {option_views}
             </select>
@@ -761,7 +997,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
             <select
                 class="form-input"
                 on:change=on_change_secondary
-                disabled=move || saving.get()
+                disabled=move || disabled || saving.get()
             >
                 <option value="" selected=move || active_secondary.read().is_empty()>
                     {move || t(i18n.locale.get(), Key::RegionNone)}
@@ -788,7 +1024,14 @@ fn TextSizeToggle(current: String) -> impl IntoView {
                 active.set(size.to_string());
                 #[cfg(feature = "hydrate")]
                 {
-                    let _ = web_sys::window().and_then(|w| w.location().reload().ok());
+                    if let Some(html) = web_sys::window()
+                        .and_then(|w| w.document())
+                        .and_then(|d| d.document_element())
+                    {
+                        let _ = html
+                            .class_list()
+                            .toggle_with_force("font-large", size == "large");
+                    }
                 }
             }
             saving.set(false);
@@ -833,34 +1076,49 @@ fn TextSizeToggle(current: String) -> impl IntoView {
     }
 }
 
-#[component]
-fn MenuItem(icon: &'static str, label_key: Key, href: Option<&'static str>) -> impl IntoView {
-    let i18n = use_i18n();
-    let content = view! {
-        <span class="menu-icon">{icon}</span>
-        <span class="menu-label">{move || t(i18n.locale.get(), label_key)}</span>
+fn menu_item(
+    icon: &'static str,
+    label_key: Key,
+    href: Option<&'static str>,
+    i18n: I18nContext,
+) -> impl IntoView {
+    let label = t(i18n.locale.get_untracked(), label_key);
+    let disabled = href.is_none();
+    let target = href.unwrap_or("#");
+    let class = if disabled {
+        "menu-item menu-item-disabled"
+    } else {
+        "menu-item"
+    };
+    let aria_disabled = if disabled { "true" } else { "false" };
+    let tabindex = if disabled { "-1" } else { "0" };
+    let on_click = move |ev: leptos::ev::MouseEvent| {
+        if disabled {
+            ev.prevent_default();
+        }
     };
 
-    if let Some(href) = href {
-        view! {
-            <A href=href attr:class="menu-item">
-                {content}
-                <span class="menu-chevron">{"\u{203A}"}</span>
-            </A>
-        }
-        .into_any()
-    } else {
-        view! {
-            <div class="menu-item menu-item-disabled">
-                {content}
-            </div>
-        }
-        .into_any()
+    view! {
+        <a
+            href=target
+            class=class
+            aria-disabled=aria_disabled
+            tabindex=tabindex
+            on:click=on_click
+        >
+            <span class="menu-icon">{icon}</span>
+            <span class="menu-label">{label}</span>
+            <span class="menu-chevron">{"\u{203A}"}</span>
+        </a>
     }
 }
 
 #[component]
-fn LanguageSelector(current_primary: String, current_secondary: String) -> impl IntoView {
+fn LanguageSelector(
+    current_primary: String,
+    current_secondary: String,
+    disabled: bool,
+) -> impl IntoView {
     let i18n = use_i18n();
     let active_primary = RwSignal::new(current_primary);
     let active_secondary = RwSignal::new(current_secondary);
@@ -891,7 +1149,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
 
     let on_change_primary = move |ev: leptos::ev::Event| {
         let value = leptos::prelude::event_target_value(&ev);
-        if saving.get_untracked() {
+        if disabled || saving.get_untracked() {
             return;
         }
         saving.set(true);
@@ -915,7 +1173,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
 
     let on_change_secondary = move |ev: leptos::ev::Event| {
         let value = leptos::prelude::event_target_value(&ev);
-        if saving.get_untracked() {
+        if disabled || saving.get_untracked() {
             return;
         }
         saving.set(true);
@@ -971,7 +1229,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
             <select
                 class="form-input"
                 on:change=on_change_primary
-                disabled=move || saving.get()
+                disabled=move || disabled || saving.get()
             >
                 {primary_option_views}
             </select>
@@ -982,7 +1240,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
             <select
                 class="form-input"
                 on:change=on_change_secondary
-                disabled=move || saving.get()
+                disabled=move || disabled || saving.get()
             >
                 {secondary_option_views}
             </select>
@@ -992,11 +1250,13 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
 }
 
 #[component]
-fn InfoRow(label: &'static str, value: String) -> impl IntoView {
+fn InfoRow(label_key: Key, #[prop(into)] value: Signal<String>) -> impl IntoView {
+    let i18n = use_i18n();
+
     view! {
         <div class="info-row">
-            <span class="info-label">{label}</span>
-            <span class="info-value">{value}</span>
+            <span class="info-label">{move || t(i18n.locale.get(), label_key)}</span>
+            <span class="info-value">{move || value.get()}</span>
         </div>
     }
 }
