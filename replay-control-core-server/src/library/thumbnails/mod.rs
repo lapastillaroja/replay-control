@@ -369,6 +369,13 @@ pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
 }
 
 fn collect_rom_filenames(dir: &Path, filenames: &mut Vec<String>, extensions: Option<&[&str]>) {
+    // Canonical-path visited set: follow symlinked subdirectories once without
+    // looping on a cycle (see library/roms.rs::collect_raw_roms).
+    let mut visited: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
+    if let Ok(canon) = std::fs::canonicalize(dir) {
+        visited.insert(canon);
+    }
     let mut pending = vec![dir.to_path_buf()];
 
     while let Some(current_dir) = pending.pop() {
@@ -378,15 +385,19 @@ fn collect_rom_filenames(dir: &Path, filenames: &mut Vec<String>, extensions: Op
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(file_type) = entry.file_type() else {
+            // Follow symlinks (entry.file_type() does not); skip broken links.
+            let Ok(metadata) = std::fs::metadata(&path) else {
                 continue;
             };
-            if file_type.is_dir() {
+            if metadata.is_dir() {
                 let name = entry.file_name();
-                if !name.to_string_lossy().starts_with('_') {
+                if !name.to_string_lossy().starts_with('_')
+                    && let Ok(canon) = std::fs::canonicalize(&path)
+                    && visited.insert(canon)
+                {
                     pending.push(path);
                 }
-            } else if file_type.is_file() {
+            } else if metadata.is_file() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if let Some(exts) = extensions {
                     let matches = name

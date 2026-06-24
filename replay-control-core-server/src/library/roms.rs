@@ -906,6 +906,12 @@ fn add_arcade_dc_companion_chds(_rom_path: &Path, parent_dir: &Path, group: &mut
 /// Compute the total size of all regular files under a directory.
 fn dir_total_size(dir: &Path) -> u64 {
     let mut total = 0u64;
+    // Canonical-path visited set: follow symlinked subdirectories once, never
+    // loop on a cycle. (See collect_raw_roms.)
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    if let Ok(canon) = std::fs::canonicalize(dir) {
+        visited.insert(canon);
+    }
     let mut pending = vec![dir.to_path_buf()];
 
     while let Some(current_dir) = pending.pop() {
@@ -914,13 +920,18 @@ fn dir_total_size(dir: &Path) -> u64 {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(file_type) = entry.file_type() else {
+            // Follow symlinks (entry.file_type() does not); skip broken links.
+            let Ok(metadata) = std::fs::metadata(&path) else {
                 continue;
             };
-            if file_type.is_dir() {
-                pending.push(path);
-            } else if file_type.is_file() {
-                total += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            if metadata.is_dir() {
+                if let Ok(canon) = std::fs::canonicalize(&path)
+                    && visited.insert(canon)
+                {
+                    pending.push(path);
+                }
+            } else if metadata.is_file() {
+                total += metadata.len();
             }
         }
     }
@@ -1071,6 +1082,14 @@ fn collect_raw_roms(
     system: &System,
     out: &mut Vec<RawRom>,
 ) -> Result<()> {
+    // Track canonicalized directory paths so symlinked directories are still
+    // followed (users commonly symlink a shared ROM folder into a system dir)
+    // without looping forever on a symlink cycle: each real directory is
+    // descended at most once.
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    if let Ok(canon) = std::fs::canonicalize(dir) {
+        visited.insert(canon);
+    }
     let mut pending = vec![dir.to_path_buf()];
 
     while let Some(current_dir) = pending.pop() {
@@ -1079,21 +1098,31 @@ fn collect_raw_roms(
         for entry in entries {
             let entry = entry.map_err(|e| Error::io(&current_dir, e))?;
             let path = entry.path();
-            let file_type = entry.file_type().map_err(|e| Error::io(&path, e))?;
-            if file_type.is_dir() {
+            // Resolve the type FOLLOWING symlinks (entry.file_type() does not),
+            // so symlinked ROM files/dirs aren't silently dropped. A broken or
+            // dangling symlink fails metadata() and is skipped.
+            let Ok(metadata) = std::fs::metadata(&path) else {
+                continue;
+            };
+            if metadata.is_dir() {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
                 if name_str.starts_with('_') {
                     continue;
                 }
-                pending.push(path);
-            } else if file_type.is_file() && is_rom_file(&path, system) {
+                // Descend only if this real directory hasn't been seen — breaks
+                // symlink cycles while still following non-cyclic symlinks.
+                if let Ok(canon) = std::fs::canonicalize(&path)
+                    && visited.insert(canon)
+                {
+                    pending.push(path);
+                }
+            } else if metadata.is_file() && is_rom_file(&path, system) {
                 let rom_filename = entry.file_name().to_string_lossy().to_string();
                 let relative = path
                     .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
                     .unwrap_or(&path);
                 let rom_path = format!("/{}", relative.display());
-                let metadata = entry.metadata().map_err(|e| Error::io(&path, e))?;
                 let size_bytes = metadata.len();
                 let mtime_nanos = metadata
                     .modified()
