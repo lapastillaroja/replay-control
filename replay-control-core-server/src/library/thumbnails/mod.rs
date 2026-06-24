@@ -364,41 +364,44 @@ pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
     let roms_dir = storage_root.join("roms").join(system);
     let extensions = replay_control_core::systems::find_system(system).map(|s| s.extensions);
     let mut filenames = Vec::new();
-    collect_rom_filenames_recursive(&roms_dir, &mut filenames, extensions);
+    collect_rom_filenames(&roms_dir, &mut filenames, extensions);
     filenames
 }
 
-fn collect_rom_filenames_recursive(
-    dir: &Path,
-    filenames: &mut Vec<String>,
-    extensions: Option<&[&str]>,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = entry.file_name();
-            if !name.to_string_lossy().starts_with('_') {
-                collect_rom_filenames_recursive(&path, filenames, extensions);
-            }
-        } else {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if let Some(exts) = extensions {
-                let matches = name
-                    .rsplit_once('.')
-                    .map(|(_, ext)| {
-                        let ext_lower = ext.to_lowercase();
-                        ext_lower == "m3u" || exts.iter().any(|e| *e == ext_lower)
-                    })
-                    .unwrap_or(false);
-                if !matches {
-                    continue;
+fn collect_rom_filenames(dir: &Path, filenames: &mut Vec<String>, extensions: Option<&[&str]>) {
+    let mut pending = vec![dir.to_path_buf()];
+
+    while let Some(current_dir) = pending.pop() {
+        let entries = match std::fs::read_dir(&current_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                let name = entry.file_name();
+                if !name.to_string_lossy().starts_with('_') {
+                    pending.push(path);
                 }
+            } else if file_type.is_file() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if let Some(exts) = extensions {
+                    let matches = name
+                        .rsplit_once('.')
+                        .map(|(_, ext)| {
+                            let ext_lower = ext.to_lowercase();
+                            ext_lower == "m3u" || exts.iter().any(|e| *e == ext_lower)
+                        })
+                        .unwrap_or(false);
+                    if !matches {
+                        continue;
+                    }
+                }
+                filenames.push(name);
             }
-            filenames.push(name);
         }
     }
 }
@@ -1068,5 +1071,21 @@ mod tests {
         filenames.sort();
 
         assert_eq!(filenames, vec!["game.rom", "readme.txt"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_rom_filenames_does_not_follow_directory_symlink_cycles() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let roms_dir = tmp.path().join("roms").join("amstrad_cpc");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        std::fs::write(roms_dir.join("Game.dsk"), b"rom").unwrap();
+        symlink(&roms_dir, roms_dir.join("loop")).unwrap();
+
+        let filenames = list_rom_filenames(tmp.path(), "amstrad_cpc");
+
+        assert_eq!(filenames, vec!["Game.dsk"]);
     }
 }

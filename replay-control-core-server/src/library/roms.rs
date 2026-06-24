@@ -249,7 +249,7 @@ async fn walk_raw_roms_blocking(
             Err(e) => return Err(Error::io(&system_dir_for_walk, e)),
         }
         let mut raw = Vec::new();
-        collect_raw_roms_recursive(&system_dir_for_walk, &roms_root, system, &mut raw)?;
+        collect_raw_roms(&system_dir_for_walk, &roms_root, system, &mut raw)?;
         Ok(raw)
     };
 
@@ -903,19 +903,28 @@ fn add_arcade_dc_companion_chds(_rom_path: &Path, parent_dir: &Path, group: &mut
     }
 }
 
-/// Recursively compute the total size of all files in a directory.
+/// Compute the total size of all regular files under a directory.
 fn dir_total_size(dir: &Path) -> u64 {
     let mut total = 0u64;
-    if let Ok(entries) = std::fs::read_dir(dir) {
+    let mut pending = vec![dir.to_path_buf()];
+
+    while let Some(current_dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&current_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
-                total += dir_total_size(&path);
-            } else {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                pending.push(path);
+            } else if file_type.is_file() {
                 total += entry.metadata().map(|m| m.len()).unwrap_or(0);
             }
         }
     }
+
     total
 }
 
@@ -1056,48 +1065,53 @@ struct RawRom {
     is_m3u: bool,
 }
 
-fn collect_raw_roms_recursive(
+fn collect_raw_roms(
     dir: &Path,
     roms_root: &Path,
     system: &System,
     out: &mut Vec<RawRom>,
 ) -> Result<()> {
-    let entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
+    let mut pending = vec![dir.to_path_buf()];
 
-    for entry in entries {
-        let entry = entry.map_err(|e| Error::io(dir, e))?;
-        let path = entry.path();
-        if path.is_dir() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with('_') {
-                continue;
+    while let Some(current_dir) = pending.pop() {
+        let entries = std::fs::read_dir(&current_dir).map_err(|e| Error::io(&current_dir, e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::io(&current_dir, e))?;
+            let path = entry.path();
+            let file_type = entry.file_type().map_err(|e| Error::io(&path, e))?;
+            if file_type.is_dir() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with('_') {
+                    continue;
+                }
+                pending.push(path);
+            } else if file_type.is_file() && is_rom_file(&path, system) {
+                let rom_filename = entry.file_name().to_string_lossy().to_string();
+                let relative = path
+                    .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
+                    .unwrap_or(&path);
+                let rom_path = format!("/{}", relative.display());
+                let metadata = entry.metadata().map_err(|e| Error::io(&path, e))?;
+                let size_bytes = metadata.len();
+                let mtime_nanos = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos() as i128);
+                let is_m3u = path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
+
+                out.push(RawRom {
+                    rom_filename,
+                    rom_path,
+                    size_bytes,
+                    mtime_nanos,
+                    is_m3u,
+                });
             }
-            collect_raw_roms_recursive(&path, roms_root, system, out)?;
-        } else if is_rom_file(&path, system) {
-            let rom_filename = entry.file_name().to_string_lossy().to_string();
-            let relative = path
-                .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
-                .unwrap_or(&path);
-            let rom_path = format!("/{}", relative.display());
-            let metadata = entry.metadata().map_err(|e| Error::io(&path, e))?;
-            let size_bytes = metadata.len();
-            let mtime_nanos = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_nanos() as i128);
-            let is_m3u = path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
-
-            out.push(RawRom {
-                rom_filename,
-                rom_path,
-                size_bytes,
-                mtime_nanos,
-                is_m3u,
-            });
         }
     }
 
@@ -1443,7 +1457,7 @@ mod tests {
     use super::*;
     use std::fs;
     #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     fn rom_with_mtime(index: usize, mtime_nanos: Option<i128>) -> RomEntry {
         let filename = format!("Game {index}.nes");
@@ -1542,6 +1556,36 @@ mod tests {
             result.is_err(),
             "strict rescan must preserve old rows when a nested directory read fails"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_does_not_follow_directory_symlink_cycles() {
+        let tmp = tempdir();
+        let system_dir = tmp.join("roms").join("nintendo_nes");
+        fs::create_dir_all(&system_dir).unwrap();
+        fs::write(system_dir.join("Game.nes"), b"data").unwrap();
+        symlink(&system_dir, system_dir.join("loop")).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        let roms = list_roms(&storage, "nintendo_nes", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 1);
+        assert_eq!(roms[0].game.rom_filename, "Game.nes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dir_total_size_does_not_follow_directory_symlink_cycles() {
+        let tmp = tempdir();
+        let game_dir = tmp.join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::write(game_dir.join("data.bin"), [0u8; 7]).unwrap();
+        symlink(&game_dir, game_dir.join("loop")).unwrap();
+
+        assert_eq!(dir_total_size(&game_dir), 7);
     }
 
     #[tokio::test(flavor = "current_thread")]
