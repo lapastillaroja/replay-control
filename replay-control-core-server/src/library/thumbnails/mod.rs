@@ -10,6 +10,7 @@ pub mod resolution;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use super::fs_walk;
 use replay_control_core::error::{Error, Result};
 
 /// Kind of thumbnail image.
@@ -369,52 +370,22 @@ pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
 }
 
 fn collect_rom_filenames(dir: &Path, filenames: &mut Vec<String>, extensions: Option<&[&str]>) {
-    // Canonical-path visited set: follow symlinked subdirectories once without
-    // looping on a cycle (see library/roms.rs::collect_raw_roms).
-    let mut visited: std::collections::HashSet<std::path::PathBuf> =
-        std::collections::HashSet::new();
-    if let Ok(canon) = std::fs::canonicalize(dir) {
-        visited.insert(canon);
-    }
-    let mut pending = vec![dir.to_path_buf()];
-
-    while let Some(current_dir) = pending.pop() {
-        let entries = match std::fs::read_dir(&current_dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            // Follow symlinks (entry.file_type() does not); skip broken links.
-            let Ok(metadata) = std::fs::metadata(&path) else {
-                continue;
-            };
-            if metadata.is_dir() {
-                let name = entry.file_name();
-                if !name.to_string_lossy().starts_with('_')
-                    && let Ok(canon) = std::fs::canonicalize(&path)
-                    && visited.insert(canon)
-                {
-                    pending.push(path);
-                }
-            } else if metadata.is_file() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if let Some(exts) = extensions {
-                    let matches = name
-                        .rsplit_once('.')
-                        .map(|(_, ext)| {
-                            let ext_lower = ext.to_lowercase();
-                            ext_lower == "m3u" || exts.iter().any(|e| *e == ext_lower)
-                        })
-                        .unwrap_or(false);
-                    if !matches {
-                        continue;
-                    }
-                }
-                filenames.push(name);
+    let _ = fs_walk::for_each_file(dir, true, |entry, _, _| {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(exts) = extensions {
+            let matches = name
+                .rsplit_once('.')
+                .map(|(_, ext)| {
+                    let ext_lower = ext.to_lowercase();
+                    ext_lower == "m3u" || exts.iter().any(|e| *e == ext_lower)
+                })
+                .unwrap_or(false);
+            if !matches {
+                return;
             }
         }
-    }
+        filenames.push(name);
+    });
 }
 
 /// Scan downloaded thumbnail media once and return materializable counters.

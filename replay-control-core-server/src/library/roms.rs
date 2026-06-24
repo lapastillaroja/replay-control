@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub use replay_control_core::roms::{RomEntry, SystemSummary};
 
+use super::fs_walk;
 use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
@@ -903,39 +904,11 @@ fn add_arcade_dc_companion_chds(_rom_path: &Path, parent_dir: &Path, group: &mut
     }
 }
 
-/// Compute the total size of all regular files under a directory.
+/// Compute the total size of all regular files under a directory. Best-effort:
+/// a partial walk on a filesystem error still returns what it summed.
 fn dir_total_size(dir: &Path) -> u64 {
     let mut total = 0u64;
-    // Canonical-path visited set: follow symlinked subdirectories once, never
-    // loop on a cycle. (See collect_raw_roms.)
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    if let Ok(canon) = std::fs::canonicalize(dir) {
-        visited.insert(canon);
-    }
-    let mut pending = vec![dir.to_path_buf()];
-
-    while let Some(current_dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&current_dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            // Follow symlinks (entry.file_type() does not); skip broken links.
-            let Ok(metadata) = std::fs::metadata(&path) else {
-                continue;
-            };
-            if metadata.is_dir() {
-                if let Ok(canon) = std::fs::canonicalize(&path)
-                    && visited.insert(canon)
-                {
-                    pending.push(path);
-                }
-            } else if metadata.is_file() {
-                total += metadata.len();
-            }
-        }
-    }
-
+    let _ = fs_walk::for_each_file(dir, false, |_, _, metadata| total += metadata.len());
     total
 }
 
@@ -1082,69 +1055,29 @@ fn collect_raw_roms(
     system: &System,
     out: &mut Vec<RawRom>,
 ) -> Result<()> {
-    // Track canonicalized directory paths so symlinked directories are still
-    // followed (users commonly symlink a shared ROM folder into a system dir)
-    // without looping forever on a symlink cycle: each real directory is
-    // descended at most once.
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    if let Ok(canon) = std::fs::canonicalize(dir) {
-        visited.insert(canon);
-    }
-    let mut pending = vec![dir.to_path_buf()];
-
-    while let Some(current_dir) = pending.pop() {
-        let entries = std::fs::read_dir(&current_dir).map_err(|e| Error::io(&current_dir, e))?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| Error::io(&current_dir, e))?;
-            let path = entry.path();
-            // Resolve the type FOLLOWING symlinks (entry.file_type() does not),
-            // so symlinked ROM files/dirs aren't silently dropped. A broken or
-            // dangling symlink fails metadata() and is skipped.
-            let Ok(metadata) = std::fs::metadata(&path) else {
-                continue;
-            };
-            if metadata.is_dir() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with('_') {
-                    continue;
-                }
-                // Descend only if this real directory hasn't been seen — breaks
-                // symlink cycles while still following non-cyclic symlinks.
-                if let Ok(canon) = std::fs::canonicalize(&path)
-                    && visited.insert(canon)
-                {
-                    pending.push(path);
-                }
-            } else if metadata.is_file() && is_rom_file(&path, system) {
-                let rom_filename = entry.file_name().to_string_lossy().to_string();
-                let relative = path
-                    .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
-                    .unwrap_or(&path);
-                let rom_path = format!("/{}", relative.display());
-                let size_bytes = metadata.len();
-                let mtime_nanos = metadata
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_nanos() as i128);
-                let is_m3u = path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
-
-                out.push(RawRom {
-                    rom_filename,
-                    rom_path,
-                    size_bytes,
-                    mtime_nanos,
-                    is_m3u,
-                });
-            }
+    fs_walk::for_each_file(dir, true, |entry, path, metadata| {
+        if !is_rom_file(path, system) {
+            return;
         }
-    }
-
-    Ok(())
+        let rom_filename = entry.file_name().to_string_lossy().to_string();
+        let relative = path
+            .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
+            .unwrap_or(path);
+        let mtime_nanos = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos() as i128);
+        out.push(RawRom {
+            rom_filename,
+            rom_path: format!("/{}", relative.display()),
+            size_bytes: metadata.len(),
+            mtime_nanos,
+            is_m3u: path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u")),
+        });
+    })
 }
 
 /// Resolve display names for a raw scan in one batch per system, then build
@@ -1603,6 +1536,30 @@ mod tests {
 
         assert_eq!(roms.len(), 1);
         assert_eq!(roms[0].game.rom_filename, "Game.nes");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_errors_rather_than_dropping_a_rom_on_transient_stat_failure() {
+        // A real ROM plus an entry whose fs::metadata() fails with a NON-NotFound
+        // error (here a self-referential symlink -> ELOOP, standing in for a
+        // transient NFS ESTALE/EIO on a single file). The scan must NOT silently
+        // omit the failing entry and return Ok: a partial set looks authoritative
+        // and the reconcile then deletes the missing games from library.db. It
+        // must return Err so cached rows are preserved (the list_roms contract).
+        let tmp = tempdir();
+        let system_dir = tmp.join("roms").join("nintendo_nes");
+        fs::create_dir_all(&system_dir).unwrap();
+        fs::write(system_dir.join("Real.nes"), b"data").unwrap();
+        // self-loop: metadata() follows the link and fails with ELOOP, not NotFound.
+        symlink(system_dir.join("Bad.nes"), system_dir.join("Bad.nes")).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        let result = list_roms(&storage, "nintendo_nes", RegionPreference::default(), None).await;
+        assert!(
+            result.is_err(),
+            "scan must Err (preserve cache) on a non-NotFound stat failure, got Ok: {result:?}"
+        );
     }
 
     #[cfg(unix)]

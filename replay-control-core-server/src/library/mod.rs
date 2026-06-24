@@ -1,4 +1,5 @@
 pub mod favorites;
+pub(crate) mod fs_walk;
 pub mod recents;
 pub mod rom_hash;
 pub mod roms;
