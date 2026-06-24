@@ -134,11 +134,6 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword
 ```
 
-**Install to SD card (before first boot — Linux/macOS only, needs ext4):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --sdcard /path/to/mounted/sdcard
-```
-
 **Dry run (preview without changes):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --dry-run
@@ -190,7 +185,7 @@ replay-control/
 ├── docs/                   — feature and architecture documentation
 ├── build.sh                — release build (WASM + server)
 ├── dev.sh                  — development (auto-reload, Pi deployment)
-└── install.sh              — Pi installation (SSH or SD card)
+└── install.sh              — Pi installation (SSH or on-device)
 ```
 
 ## Documentation

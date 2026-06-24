@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 
 If SSH asks whether you trust the host, type `yes` and press Enter. When it asks for a password, type `replayos`; the password will not appear while typing. The installer downloads the latest stable release, installs the service, and starts Replay Control.
 
-If `replay.local` doesn't resolve, find the Pi's IP in your router's connected-devices list and use `ssh root@<ip>` instead. For other install options (specific version, SD-card install before first boot, running the installer from another computer without SSHing first), see the [Installation guide](install.md).
+If `replay.local` doesn't resolve, find the Pi's IP in your router's connected-devices list and use `ssh root@<ip>` instead. For other install options (specific version, running the installer from another computer without SSHing first), see the [Installation guide](install.md).
 
 ## First Launch
 

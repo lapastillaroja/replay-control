@@ -19,6 +19,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Updated install, getting-started, docs-site, screenshot, and e2e guidance to use `https://replay.local:8443`.
 - Kept the libretro core's localhost HTTP API and media routes available on port `8080`, restricted to loopback access, so TV-side browsing continues to work while LAN browsers use HTTPS.
 - Container and test launch paths now explicitly opt into dangerous HTTP mode when they only expose port `8080`.
+- Removed the SD-card install method; install over SSH or directly on the device against a running RePlayOS instance instead.
 
 ### Fixed
 

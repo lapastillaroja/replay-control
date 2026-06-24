@@ -106,24 +106,6 @@ Combining options:
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword --version v0.3.0
 ```
 
-## SD card install
-
-Write to a mounted RePlayOS SD card before first boot — useful when the Pi isn't on the network yet. This mode needs the script on disk because the SD partitions need to be mountable from the same machine:
-
-```bash
-wget https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh
-bash install.sh --sdcard
-```
-
-The installer needs the **rootfs** (ext4) partition mounted, not the data partition. On Linux that partition often doesn't auto-mount — `lsblk -o NAME,LABEL,FSTYPE` shows the labels; mount it manually if needed:
-
-```bash
-sudo mount /dev/sdX2 /mnt/replayos-rootfs
-bash install.sh --sdcard /mnt/replayos-rootfs
-```
-
-The app will start automatically when the Pi boots. Uninstall isn't supported in SD-card mode — remove via SSH after first boot instead.
-
 ## What gets installed
 
 | Path | Contents |
@@ -151,8 +133,6 @@ The service starts automatically on boot. The app listens on HTTPS port `8443`; 
 **Pi not found.** Make sure the Pi is powered on and on the same network. Check your router for its IP and pass `--ip <addr>`.
 
 **SSH authentication failed.** The default password is `replayos`. If you've changed it, pass `--pi-pass yourpassword`.
-
-**SD card rootfs not mounted.** On Linux, the ext4 rootfs partition often doesn't auto-mount. Use `lsblk -o NAME,LABEL,FSTYPE` to find it and mount it manually.
 
 **Windows: `ssh` command not found.** OpenSSH client ships with Windows 10 build 1809 (Oct 2018) and later, and with all Windows 11 versions. If it's missing, enable it from **Settings → Apps → Optional Features → Add a feature → OpenSSH Client**.
 

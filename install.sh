@@ -7,7 +7,6 @@ set -euo pipefail
 #
 # Usage:
 #   curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
-#   bash install.sh --sdcard
 #   bash install.sh --ip 192.168.1.50
 #   bash install.sh --dry-run
 #   REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
@@ -72,7 +71,7 @@ confirm_destructive() {
 
 # ── Globals ─────────────────────────────────────────────────────────────────
 
-MODE="ssh"           # ssh, sdcard, or local
+MODE="ssh"           # ssh or local
 ACTION="install"     # install or uninstall
 DRY_RUN=false
 PURGE_DATA=false     # uninstall additionally wipes .replay-control/ and the env file
@@ -81,7 +80,6 @@ LOCAL=false
 LOCAL_DIR=""
 PI_ADDR="${REPLAY_PI_ADDR:-}"
 VERSION="${REPLAY_CONTROL_VERSION:-latest}"
-SDCARD_PATH=""
 TMPDIR_WORK=""
 
 # Candidate storage roots that may hold the .replay-control/ data dir.
@@ -121,7 +119,6 @@ ${BOLD}FLAGS${RESET}
                         media, storage-id), and the env file. ROMs, saves,
                         captures, and BIOS are NOT touched.
     --yes               Skip the confirmation prompt for --purge
-    --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
     --pi-pass PASSWORD  SSH password for the Pi (default: "replayos")
     --version VERSION   Version to install: tag (v0.2.0), "latest", or "beta"
@@ -143,9 +140,6 @@ ${BOLD}EXAMPLES${RESET}
 
     ${BOLD}Install via SSH to a known IP:${RESET}
         bash install.sh --ip 192.168.1.50
-
-    ${BOLD}Install to a mounted SD card:${RESET}
-        bash install.sh --sdcard /run/media/user/rootfs
 
     ${BOLD}Install a specific version:${RESET}
         REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
@@ -188,14 +182,6 @@ parse_args() {
             --yes|-y)
                 ASSUME_YES=true
                 shift
-                ;;
-            --sdcard)
-                MODE="sdcard"
-                shift
-                if [[ $# -gt 0 ]] && [[ "$1" != --* ]]; then
-                    SDCARD_PATH="$1"
-                    shift
-                fi
                 ;;
             --ip)
                 shift
@@ -989,317 +975,6 @@ REMOTE_UNINSTALL
     fi
 }
 
-# ── SD card detection ───────────────────────────────────────────────────────
-#
-# RePlayOS SD cards have a recognizable partition layout:
-#   - bootfs (vfat)  -- contains issue.txt with "RePlay OS"
-#   - rootfs (ext4)  -- root filesystem (where we install to)
-#   - replay (exfat) -- data partition with roms/, bios/, config/replay.cfg, saves/, captures/
-#
-# Detection strategy:
-#   1. Look for mounted partitions whose sibling partitions indicate RePlayOS
-#   2. Check for the "replay" data partition with characteristic directories
-#   3. Check for "bootfs" partition with issue.txt containing "RePlay OS"
-#   4. The rootfs partition is where we need to write system files
-#
-
-is_replayos_data_partition() {
-    local path="$1"
-    # Check for the characteristic RePlayOS data partition structure
-    [[ -d "$path/roms" ]] && \
-    [[ -d "$path/bios" ]] && \
-    [[ -d "$path/config" ]] && \
-    [[ -d "$path/saves" ]] && \
-    [[ -d "$path/captures" ]] && \
-    [[ -f "$path/config/replay.cfg" ]]
-}
-
-is_replayos_boot_partition() {
-    local path="$1"
-    [[ -f "$path/issue.txt" ]] && grep -qi "replay.os" "$path/issue.txt" 2>/dev/null
-}
-
-is_replayos_root_partition() {
-    local path="$1"
-    # A rootfs will have standard Linux directories
-    [[ -d "$path/etc" ]] && \
-    [[ -d "$path/usr" ]] && \
-    [[ -d "$path/bin" ]]
-}
-
-# Globals set by find_sdcard_candidates
-SDCARD_CANDIDATES=()
-REPLAYOS_DETECTED=false
-REPLAYOS_DATA_PATH=""
-REPLAYOS_BOOT_PATH=""
-
-find_sdcard_candidates() {
-    SDCARD_CANDIDATES=()
-    REPLAYOS_DETECTED=false
-    REPLAYOS_DATA_PATH=""
-    REPLAYOS_BOOT_PATH=""
-
-    local -a search_dirs=()
-
-    # Build search paths
-    if [[ -n "${USER:-}" ]]; then
-        [[ -d "/run/media/$USER" ]] && search_dirs+=("/run/media/$USER"/*)
-        [[ -d "/media/$USER" ]] && search_dirs+=("/media/$USER"/*)
-    fi
-    search_dirs+=(/mnt/*)
-
-    for mount_path in "${search_dirs[@]}"; do
-        [[ -d "$mount_path" ]] || continue
-
-        # Remember if we see RePlayOS markers
-        if is_replayos_data_partition "$mount_path"; then
-            REPLAYOS_DETECTED=true
-            REPLAYOS_DATA_PATH="$mount_path"
-        fi
-        if is_replayos_boot_partition "$mount_path"; then
-            REPLAYOS_DETECTED=true
-            REPLAYOS_BOOT_PATH="$mount_path"
-        fi
-
-        # Strategy 1: This is a rootfs partition itself and a sibling data partition confirms RePlayOS
-        if is_replayos_root_partition "$mount_path"; then
-            local parent
-            parent="$(dirname "$mount_path")"
-            for sibling in "$parent"/*; do
-                [[ "$sibling" == "$mount_path" ]] && continue
-                if is_replayos_data_partition "$sibling" || is_replayos_boot_partition "$sibling"; then
-                    SDCARD_CANDIDATES+=("$mount_path")
-                    break
-                fi
-            done
-        fi
-
-        # Strategy 2: This is the data partition -- look for a rootfs sibling
-        if is_replayos_data_partition "$mount_path"; then
-            local parent
-            parent="$(dirname "$mount_path")"
-            for sibling in "$parent"/*; do
-                [[ "$sibling" == "$mount_path" ]] && continue
-                if is_replayos_root_partition "$sibling"; then
-                    local already_found=false
-                    for c in "${SDCARD_CANDIDATES[@]+"${SDCARD_CANDIDATES[@]}"}"; do
-                        [[ "$c" == "$sibling" ]] && already_found=true
-                    done
-                    $already_found || SDCARD_CANDIDATES+=("$sibling")
-                    break
-                fi
-            done
-        fi
-
-        # Strategy 3: This is the boot partition -- look for a rootfs sibling
-        if is_replayos_boot_partition "$mount_path"; then
-            local parent
-            parent="$(dirname "$mount_path")"
-            for sibling in "$parent"/*; do
-                [[ "$sibling" == "$mount_path" ]] && continue
-                if is_replayos_root_partition "$sibling"; then
-                    local already_found=false
-                    for c in "${SDCARD_CANDIDATES[@]+"${SDCARD_CANDIDATES[@]}"}"; do
-                        [[ "$c" == "$sibling" ]] && already_found=true
-                    done
-                    $already_found || SDCARD_CANDIDATES+=("$sibling")
-                    break
-                fi
-            done
-        fi
-    done
-
-    # Deduplicate in place
-    local -a unique=()
-    for c in "${SDCARD_CANDIDATES[@]+"${SDCARD_CANDIDATES[@]}"}"; do
-        local dup=false
-        for u in "${unique[@]+"${unique[@]}"}"; do
-            [[ "$c" == "$u" ]] && dup=true
-        done
-        $dup || unique+=("$c")
-    done
-    SDCARD_CANDIDATES=("${unique[@]+"${unique[@]}"}")
-}
-
-detect_sdcard() {
-    # Explicit path provided
-    if [[ -n "$SDCARD_PATH" ]]; then
-        if [[ ! -d "$SDCARD_PATH" ]]; then
-            fatal "SD card path does not exist: $SDCARD_PATH"
-        fi
-        # Accept it if it looks like a rootfs, or if it's a data partition (warn)
-        if is_replayos_root_partition "$SDCARD_PATH"; then
-            info "Using SD card root filesystem: $SDCARD_PATH"
-            return
-        fi
-        if is_replayos_data_partition "$SDCARD_PATH"; then
-            fatal "That path looks like the RePlayOS data partition, not the root filesystem. The rootfs partition (labeled 'rootfs') is needed for installation."
-        fi
-        warn "Path does not look like a standard rootfs, but proceeding as requested: $SDCARD_PATH"
-        return
-    fi
-
-    info "Searching for RePlayOS SD card..."
-
-    find_sdcard_candidates
-
-    if [[ ${#SDCARD_CANDIDATES[@]} -eq 0 ]]; then
-        echo ""
-        if $REPLAYOS_DETECTED; then
-            # We found the SD card but rootfs isn't mounted
-            local hint=""
-            [[ -n "$REPLAYOS_DATA_PATH" ]] && hint="  Found RePlayOS data partition at: $REPLAYOS_DATA_PATH"
-            [[ -n "$REPLAYOS_BOOT_PATH" ]] && hint="${hint:+$hint
-}  Found RePlayOS boot partition at: $REPLAYOS_BOOT_PATH"
-            fatal "RePlayOS SD card detected, but the rootfs partition is not mounted.
-
-$hint
-
-  The rootfs partition (ext4, usually labeled 'rootfs') must be mounted for
-  direct SD card installation. Mount it and try again:
-
-    sudo mount /dev/sdX2 /mnt/replayos-rootfs
-    bash install.sh --sdcard /mnt/replayos-rootfs
-
-  Tip: run 'lsblk -o NAME,LABEL,FSTYPE' to find the right partition."
-        else
-            fatal "No RePlayOS SD card found.
-
-  Mount the SD card and try again, or specify the path explicitly:
-    install.sh --sdcard /path/to/rootfs
-
-  The installer needs the rootfs partition (ext4, usually labeled 'rootfs').
-  On Linux, you may need to mount it manually:
-    sudo mount /dev/sdX2 /mnt/replayos-rootfs"
-        fi
-    fi
-
-    if [[ ${#SDCARD_CANDIDATES[@]} -eq 1 ]]; then
-        SDCARD_PATH="${SDCARD_CANDIDATES[0]}"
-        success "Found RePlayOS SD card: $SDCARD_PATH"
-        return
-    fi
-
-    # Multiple candidates
-    echo ""
-    info "Multiple RePlayOS SD cards found:"
-    local i=1
-    for c in "${SDCARD_CANDIDATES[@]}"; do
-        echo "  $i) $c"
-        ((i++))
-    done
-    echo ""
-
-    if $DRY_RUN; then
-        SDCARD_PATH="${SDCARD_CANDIDATES[0]}"
-        dry "Would prompt user to pick. Using first candidate: $SDCARD_PATH"
-        return
-    fi
-
-    read -rp "  Pick a number [1-${#SDCARD_CANDIDATES[@]}]: " pick
-    if [[ "$pick" =~ ^[0-9]+$ ]] && (( pick >= 1 && pick <= ${#SDCARD_CANDIDATES[@]} )); then
-        SDCARD_PATH="${SDCARD_CANDIDATES[$((pick-1))]}"
-    else
-        fatal "Invalid selection."
-    fi
-}
-
-# ── SD card install ─────────────────────────────────────────────────────────
-
-install_sdcard() {
-    detect_sdcard
-    fetch_artifacts
-
-    local sd="$SDCARD_PATH"
-
-    if $DRY_RUN; then
-        echo ""
-        dry "Would extract and install binary:"
-        dry "  install -m755 replay-control-app -> ${sd}${INSTALL_DIR}/replay-control-app"
-        echo ""
-        dry "Would extract and install catalog:"
-        dry "  install -m644 catalog.sqlite -> ${sd}${INSTALL_DIR}/catalog.sqlite"
-        echo ""
-        dry "Would extract and install site assets:"
-        dry "  mkdir -p ${sd}${SITE_DIR}"
-        dry "  site/ -> ${sd}${SITE_DIR}/site/"
-        echo ""
-        dry "Would write systemd service:"
-        dry "  -> ${sd}${SERVICE_FILE}"
-        echo ""
-        dry "Would write environment file (only if not present):"
-        dry "  -> ${sd}${ENV_FILE}"
-        echo ""
-        dry "Would enable service for first boot:"
-        dry "  ln -sf ${SERVICE_FILE} -> ${sd}/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
-        echo ""
-        dry "Would write Avahi service (if /etc/avahi/services exists):"
-        dry "  -> ${sd}${AVAHI_FILE}"
-        echo ""
-        dry "App would start automatically on next boot at http://replaypi.local:${DEFAULT_PORT}"
-        return
-    fi
-
-    info "Installing to SD card at $sd..."
-
-    # Create settings directory (Pi-level settings live here after migration)
-    mkdir -p "${sd}/etc/replay-control"
-    # Create central data directory for per-storage library DBs.
-    mkdir -p "${sd}/var/lib/replay-control/storages"
-
-    # Extract binary
-    tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$TMPDIR_WORK/"
-    mkdir -p "${sd}${INSTALL_DIR}"
-    install -m755 "$TMPDIR_WORK/replay-control-app" "${sd}${INSTALL_DIR}/replay-control-app"
-    success "Installed binary"
-
-    # Extract catalog next to the binary
-    if [[ -s "$TMPDIR_WORK/replay-catalog.tar.gz" ]]; then
-        tar -xzf "$TMPDIR_WORK/replay-catalog.tar.gz" -C "$TMPDIR_WORK/"
-        install -m644 "$TMPDIR_WORK/catalog.sqlite" "${sd}${INSTALL_DIR}/catalog.sqlite"
-        success "Installed catalog"
-    else
-        warn "No catalog tarball — service will fail to start on first boot without ${INSTALL_DIR}/catalog.sqlite"
-    fi
-
-    # Extract site assets
-    rm -rf "${sd}${SITE_DIR}/site"
-    mkdir -p "${sd}${SITE_DIR}"
-    tar -xzf "$TMPDIR_WORK/replay-site.tar.gz" -C "${sd}${SITE_DIR}/"
-    success "Installed site assets"
-
-    # Write systemd service
-    mkdir -p "${sd}/etc/systemd/system"
-    systemd_service_content > "${sd}${SERVICE_FILE}"
-    success "Wrote systemd service"
-
-    # Write environment file (preserve existing)
-    mkdir -p "${sd}/etc/default"
-    if [[ ! -f "${sd}${ENV_FILE}" ]]; then
-        env_file_content > "${sd}${ENV_FILE}"
-        success "Wrote environment file"
-    else
-        info "Environment file already exists, preserving"
-    fi
-
-    # Enable service for first boot
-    mkdir -p "${sd}/etc/systemd/system/multi-user.target.wants"
-    ln -sf "${SERVICE_FILE}" "${sd}/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
-    success "Enabled service for first boot"
-
-    # Write Avahi service
-    if [[ -d "${sd}/etc/avahi/services" ]]; then
-        avahi_service_content > "${sd}${AVAHI_FILE}"
-        success "Wrote Avahi service"
-    fi
-
-    echo ""
-    success "${BOLD}Replay Control installed to SD card!${RESET}"
-    echo "  Insert the SD card into your Pi and boot it."
-    echo "  The app will start automatically at ${GREEN}http://replaypi.local:${DEFAULT_PORT}${RESET}"
-    echo ""
-}
-
 # ── Main ────────────────────────────────────────────────────────────────────
 
 main() {
@@ -1325,19 +1000,11 @@ main() {
         install-ssh)
             install_ssh
             ;;
-        install-sdcard)
-            install_sdcard
-            ;;
         uninstall-local)
             uninstall_local
             ;;
         uninstall-ssh)
             uninstall_ssh
-            ;;
-        uninstall-sdcard)
-            local flag
-            flag=$($PURGE_DATA && echo "--purge" || echo "--uninstall")
-            fatal "${flag} is only supported via SSH or locally, not SD card mode."
             ;;
     esac
 }
