@@ -194,12 +194,19 @@ build_wasm() {
     mkdir -p "$PKG_DIR"
     # Drop previously hashed assets so old hashes don't accumulate locally.
     rm -f "$PKG_DIR/${CRATE_SNAKE}".*.wasm "$PKG_DIR/${CRATE_SNAKE}".*.wasm.gz "$PKG_DIR/${CRATE_SNAKE}".*.js
+    # --remove-name-section strips the WASM "name" custom section (mangled
+    # monomorphized symbol names). At opt-level 0 that section is ~72% of the dev
+    # bundle (~64MB of ~89MB), so dropping it shrinks the served bundle ~3x with
+    # no recompile and no optimization passes -- big hydration win over wifi. The
+    # only cost is numeric (un-named) frames in WASM stack traces; panic messages
+    # still work (they live in the data section).
     wasm-bindgen \
         "$TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm" \
         --out-dir "$PKG_DIR" \
         --out-name "${CRATE_SNAKE}" \
         --target web \
-        --no-typescript
+        --no-typescript \
+        --remove-name-section
 
     info "Hashing assets..."
     local wasm_file="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
@@ -548,7 +555,7 @@ set -e
 BUILD_START=\$(date +%s)
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile $DEV_WASM_PROFILE --features hydrate --no-default-features
 rm -f $PKG_DIR/${CRATE_SNAKE}.*.wasm $PKG_DIR/${CRATE_SNAKE}.*.wasm.gz $PKG_DIR/${CRATE_SNAKE}.*.js
-wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript
+wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript --remove-name-section
 WASM_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}_bg.wasm | cut -c1-16)
 mv $PKG_DIR/${CRATE_SNAKE}_bg.wasm $PKG_DIR/${CRATE_SNAKE}.\${WASM_HASH}.wasm
 sed -i "s|${CRATE_SNAKE}_bg\\.wasm|${CRATE_SNAKE}.\${WASM_HASH}.wasm|g" $PKG_DIR/${CRATE_SNAKE}.js
