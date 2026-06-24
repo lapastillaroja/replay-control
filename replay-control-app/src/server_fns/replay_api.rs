@@ -193,16 +193,22 @@ pub async fn get_game_playtime(
         .await
     {
         Ok(response) if response.tracking_enabled => {
-            let seconds = response
+            // Only report a time when THIS game has its own entry. The previous
+            // fallback to `response.all_seconds` showed the system/library-wide
+            // total as if it were this one game's playtime — and the match key is
+            // a best-effort assumption (see fn docs), so a miss must read as
+            // "unavailable", not as a misleading aggregate.
+            match response
                 .games
                 .iter()
                 .find(|g| g.game == game_file && (g.system.is_empty() || g.system == system))
-                .map(|g| g.seconds)
-                .unwrap_or(response.all_seconds);
-            Ok(GamePlaytime {
-                availability: PlaytimeAvailability::Tracked,
-                seconds,
-            })
+            {
+                Some(g) => Ok(GamePlaytime {
+                    availability: PlaytimeAvailability::Tracked,
+                    seconds: g.seconds,
+                }),
+                None => Ok(GamePlaytime::default()),
+            }
         }
         Ok(_) => Ok(GamePlaytime {
             availability: PlaytimeAvailability::Disabled,
