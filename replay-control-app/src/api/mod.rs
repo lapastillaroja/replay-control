@@ -1661,6 +1661,15 @@ pub fn with_auth_guard(app: axum::Router, app_state: AppState) -> axum::Router {
                     return next.run(request).await;
                 }
                 let path = request.uri().path().to_string();
+                // Static assets and health/version need no session. Short-circuit
+                // them BEFORE resolving the session, because resolving an admin
+                // cookie reads /etc/shadow (admin credential fingerprint) + the
+                // signing key from disk — doing that per static asset on every
+                // page load is needless blocking I/O on the hot path. These are
+                // all GET, so the CSRF check below doesn't apply to them.
+                if path.starts_with("/static/") || path == "/api/version" || path == "/waiting" {
+                    return next.run(request).await;
+                }
                 let role = request_auth_role(&state, &request);
                 if is_unsafe_method(request.method())
                     && role != AuthRole::Anonymous
