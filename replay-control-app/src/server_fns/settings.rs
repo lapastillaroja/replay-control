@@ -587,7 +587,22 @@ pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, Ser
     let state = expect_context::<crate::api::AppState>();
     regenerate_self_signed_certificate(&state.data_dir)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(tls_status_to_info(tls_certificate_status(&state.data_dir)))
+    let info = tls_status_to_info(tls_certificate_status(&state.data_dir));
+
+    // The HTTPS server loaded the previous certificate at startup and won't
+    // serve the freshly generated one without a restart. On the device, queue a
+    // restart of our own service through systemd: `--no-block` returns
+    // immediately (so it can't deadlock waiting on our own process and so this
+    // response flushes to the browser first), and systemd owns the restart job,
+    // so it completes even as this process exits. The client shows a JS confirm
+    // first and warns the user the page will reconnect on the new certificate.
+    if state.mode.is_device() {
+        let _ = std::process::Command::new("systemctl")
+            .args(["--no-block", "restart", "replay-control"])
+            .spawn();
+    }
+
+    Ok(info)
 }
 
 #[cfg(feature = "ssr")]

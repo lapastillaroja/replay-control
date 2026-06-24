@@ -128,9 +128,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::AccessCertificateCovered => "現在のアクセス名はすべて証明書に含まれています",
         Key::AccessCertificateRegenerate => "証明書を再生成",
         Key::AccessCertificateRegenerateConfirm => {
-            "HTTPS証明書を再生成しますか？ローカルのセキュリティ例外をもう一度承認する必要がある場合があります。"
+            "HTTPS証明書を再生成しますか？Replay Control が再起動し、このページは一時的に切断されます。少し待ってから再接続し、ローカルのセキュリティ例外をもう一度承認してください。"
         }
-        Key::AccessCertificateRegenerated => "証明書を再生成しました",
+        Key::AccessCertificateRegenerated => {
+            "証明書を再生成しました。Replay Control を再起動しています。少し待ってから再接続し、新しい証明書を承認してください。"
+        }
         Key::AccessCertificateTrustHint => {
             "証明書を再生成すると、ローカルのセキュリティ例外を再度承認する必要がある場合があります。"
         }

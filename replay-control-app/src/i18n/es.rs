@@ -128,9 +128,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::AccessCertificateCovered => "Todos los nombres de acceso actuales están cubiertos",
         Key::AccessCertificateRegenerate => "Regenerar certificado",
         Key::AccessCertificateRegenerateConfirm => {
-            "¿Regenerar el certificado HTTPS? Es posible que tengas que aceptar de nuevo la excepción de seguridad local."
+            "¿Regenerar el certificado HTTPS? Replay Control se reiniciará y esta página se desconectará brevemente; vuelve a conectarte en un momento y acepta de nuevo la excepción de seguridad local."
         }
-        Key::AccessCertificateRegenerated => "Certificado regenerado",
+        Key::AccessCertificateRegenerated => {
+            "Certificado regenerado. Replay Control se está reiniciando; vuelve a conectarte en un momento y acepta el nuevo certificado."
+        }
         Key::AccessCertificateTrustHint => {
             "Al regenerar el certificado, puede que tengas que aceptar de nuevo la excepción de seguridad local."
         }
