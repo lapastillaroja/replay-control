@@ -1082,7 +1082,9 @@ fn menu_item(
     href: Option<&'static str>,
     i18n: I18nContext,
 ) -> impl IntoView {
-    let label = t(i18n.locale.get_untracked(), label_key);
+    // Reactive so the label re-translates on locale change, like the rest of
+    // the page (was get_untracked, which froze it at first render).
+    let label = move || t(i18n.locale.get(), label_key);
     let disabled = href.is_none();
     let target = href.unwrap_or("#");
     let class = if disabled {
