@@ -280,6 +280,15 @@ fn GameDetailContent(
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
     let library_resources = StoredValue::new(detail.library_resources.clone());
+    // Resources-section data bundled into the detail payload (see RomDetail).
+    // Passed in so the section renders from this one request instead of issuing
+    // six separate per-section fetches on a client-side navigation.
+    let documents_sv = StoredValue::new(detail.documents.clone());
+    let local_manuals_sv = StoredValue::new(detail.local_manuals.clone());
+    let saved_videos_sv = StoredValue::new(detail.saved_videos.clone());
+    let saved_resource_links_sv = StoredValue::new(detail.saved_resource_links.clone());
+    let manual_suggestions_sv = StoredValue::new(detail.manual_suggestions.clone());
+    let video_suggestions_sv = StoredValue::new(detail.video_suggestions.clone());
 
     // Images — box_art_url is an RwSignal so the picker can update it reactively.
     let box_art_url = RwSignal::new(game.box_art_url.clone());
@@ -841,6 +850,12 @@ fn GameDetailContent(
             base_title=base_title_sv
             display_name=game_name_sv
             library_resources
+            initial_documents=documents_sv
+            initial_local_manuals=local_manuals_sv
+            initial_saved_videos=saved_videos_sv
+            initial_saved_resource_links=saved_resource_links_sv
+            initial_manual_suggestions=manual_suggestions_sv
+            initial_video_suggestions=video_suggestions_sv
             section_id="manuals"
             focus_on_mount=focus_manuals
         />

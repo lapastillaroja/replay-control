@@ -1,6 +1,7 @@
 use leptos::{html, prelude::*};
 use replay_control_core::library_db::LibraryResourceLink;
 use replay_control_core::video_url;
+use server_fn::ServerFnError;
 use std::collections::HashSet;
 
 use crate::i18n::{Key, Locale, t, use_i18n};
@@ -113,6 +114,16 @@ pub fn GameResourcesSection(
     base_title: StoredValue<String>,
     display_name: StoredValue<String>,
     library_resources: StoredValue<Vec<LibraryResourceLink>>,
+    // Resources-section data bundled in the `get_rom_detail` payload (see
+    // RomDetail). The resources below resolve from these instead of issuing
+    // their own per-section fetches, so a client-side navigation makes one
+    // request (the page) rather than six fragile ones.
+    initial_documents: StoredValue<Vec<GameDocument>>,
+    initial_local_manuals: StoredValue<Vec<LocalManual>>,
+    initial_saved_videos: StoredValue<Vec<VideoEntry>>,
+    initial_saved_resource_links: StoredValue<Vec<ResourceEntry>>,
+    initial_manual_suggestions: StoredValue<Vec<ManualRecommendation>>,
+    initial_video_suggestions: StoredValue<Vec<VideoRecommendation>>,
     #[prop(optional)] section_id: Option<&'static str>,
     focus_on_mount: Signal<bool>,
 ) -> impl IntoView {
@@ -120,53 +131,55 @@ pub fn GameResourcesSection(
     let section_ref = NodeRef::<html::Section>::new();
     crate::hooks::use_focus_scroll(section_ref, move || focus_on_mount.get());
 
+    // The six resource lists are loaded once with the page in `get_rom_detail`
+    // and handed in as props (see RomDetail / GameResourcesSection docs). Each
+    // resource below simply resolves from its prop instead of issuing its own
+    // server-fn fetch. This keeps the section server-rendered on a full load and
+    // -- crucially -- makes a client-side navigation carry the resources in the
+    // single `get_rom_detail` request, instead of six separate per-section
+    // fetches that could each silently drop over an imperfect network. Wrapping
+    // the prop in a resolved Resource keeps every downstream reader (caches,
+    // Effects, derived closures, Suspense) unchanged.
     let docs_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let fname = rom_filename.get_value();
-            server_fns::get_game_documents(sys, fname)
+            let v = initial_documents.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
     let local_manuals_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let bt = base_title.get_value();
-            server_fns::get_local_manuals(sys, bt)
+            let v = initial_local_manuals.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
     let saved_videos_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let bt = base_title.get_value();
-            server_fns::get_game_videos(sys, bt)
+            let v = initial_saved_videos.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
     let saved_resource_links_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let bt = base_title.get_value();
-            server_fns::get_game_resource_links(sys, bt)
+            let v = initial_saved_resource_links.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
     let manual_suggestions_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let fname = rom_filename.get_value();
-            let bt = base_title.get_value();
-            server_fns::get_game_manual_suggestions(sys, fname, bt)
+            let v = initial_manual_suggestions.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
     let video_suggestions_resource = Resource::new_blocking(
         || (),
         move |_| {
-            let sys = system.get_value();
-            let fname = rom_filename.get_value();
-            server_fns::get_provider_game_videos(sys, fname)
+            let v = initial_video_suggestions.get_value();
+            async move { Ok::<_, ServerFnError>(v) }
         },
     );
 

@@ -88,6 +88,24 @@ pub struct RomDetail {
     /// always shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub library_resources: Vec<LibraryResourceLink>,
+    /// Resources-section data, loaded with the page in `get_rom_detail` (the six
+    /// reads run concurrently) so a client-side navigation makes ONE request
+    /// instead of six separate per-section fetches. Over imperfect networks a
+    /// dropped per-section fetch used to silently empty that section on
+    /// transition (SSR was unaffected, since it runs in-process); bundling them
+    /// into the page request ties their availability to the page itself.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub documents: Vec<GameDocument>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_manuals: Vec<LocalManual>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saved_videos: Vec<VideoEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saved_resource_links: Vec<ResourceEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub manual_suggestions: Vec<ManualRecommendation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub video_suggestions: Vec<VideoRecommendation>,
 }
 
 impl RomDetail {
@@ -325,6 +343,26 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .map(|group| group.iter().map(|file| file.size_bytes).sum())
         .unwrap_or(entry.size_bytes);
 
+    // Load the resources-section data concurrently so it ships with this single
+    // request (see RomDetail::documents). Each call reuses the existing server
+    // fn and is best-effort: a failed read degrades that section to empty rather
+    // than failing the whole detail page.
+    let (
+        documents,
+        local_manuals,
+        saved_videos,
+        saved_resource_links,
+        manual_suggestions,
+        video_suggestions,
+    ) = tokio::join!(
+        get_game_documents(system.clone(), filename.clone()),
+        get_local_manuals(system.clone(), base_title.clone()),
+        get_game_videos(system.clone(), base_title.clone()),
+        get_game_resource_links(system.clone(), base_title.clone()),
+        get_game_manual_suggestions(system.clone(), filename.clone(), base_title.clone()),
+        get_provider_game_videos(system.clone(), filename.clone()),
+    );
+
     Ok(RomDetail {
         game,
         size_bytes,
@@ -340,6 +378,12 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         disc_info,
         disc_image_ext,
         library_resources,
+        documents: documents.unwrap_or_default(),
+        local_manuals: local_manuals.unwrap_or_default(),
+        saved_videos: saved_videos.unwrap_or_default(),
+        saved_resource_links: saved_resource_links.unwrap_or_default(),
+        manual_suggestions: manual_suggestions.unwrap_or_default(),
+        video_suggestions: video_suggestions.unwrap_or_default(),
     })
 }
 
