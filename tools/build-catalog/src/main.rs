@@ -1695,9 +1695,19 @@ fn is_tosec_metadata_group(g: &str) -> bool {
 /// (e.g. `SuperFrog_v1.1_0485`); `<name>` is the clean human-readable title.
 fn parse_whdload_db(path: &Path) -> HashMap<String, String> {
     let mut map = HashMap::new();
+    // Skip gracefully when the file is absent, mirroring the Amiga DAT loop in
+    // `insert_amiga_games`. The real build can't actually reach this with a
+    // missing file -- `whdload_db.xml` is in `REQUIRED_SOURCES`, so the strict
+    // preflight hard-fails first. Only `--stub` builds (which skip preflight and
+    // read the fixture tree, where the Amiga sources aren't bundled) land here;
+    // they just get WHDLoad entries without the cleaned display names.
+    if !path.exists() {
+        eprintln!("whdload_db: {} not found, skipping", path.display());
+        return map;
+    }
     let mut reader = Reader::from_file(path).unwrap_or_else(|e| {
         panic!(
-            "whdload_db.xml not found at {}; run ./scripts/download-metadata.sh\n  {e}",
+            "whdload_db.xml at {} could not be read: {e}",
             path.display()
         )
     });
@@ -4051,6 +4061,16 @@ mod tests {
             ddsom.display_name,
             "Dungeons & Dragons: Shadow over Mystara (Euro 960619)"
         );
+    }
+
+    #[test]
+    fn parse_whdload_db_missing_file_returns_empty() {
+        // A `--stub` build reads the fixture tree, which doesn't bundle the
+        // Amiga sources. The parser must skip gracefully (like the Amiga DAT
+        // loop) rather than panic. The real build is protected by the strict
+        // preflight, which requires whdload_db.xml up front.
+        let path = Path::new("/nonexistent/whdload_db.xml");
+        assert!(parse_whdload_db(path).is_empty());
     }
 
     #[test]

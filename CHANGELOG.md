@@ -14,6 +14,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Added an HTTP guidance page on port `8080` that points browsers to the HTTPS URL, includes the Replay Control logo, supports English, Spanish, and Japanese based on the browser language, and validates request hostnames before rendering links.
 - Added a `--dangerous-disable-https` debug flag for development and test environments that need the old plain-HTTP behavior.
 - Added the Ethernet and Wi-Fi MAC addresses to the System section of the Settings page.
+- Added arcade board pages and board-aware search for three more arcade hardware boards: Gaelco 3D, Namco System 10, and Midway Vegas.
 
 ### Changed
 
@@ -28,6 +29,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed a console warning logged when clearing metadata or the search index from the Game Library page.
 - Fixed the game catalog build to fail fast when any upstream or curated data source is missing or empty, so a partial catalog (for example one missing developer and publisher metadata or Shmups Wiki links) can no longer be shipped.
 - Fixed missing arcade box art for games whose cover art exists online under a different name than the one shown (common for some MAME arcade games), by also matching against the alternate names from the other arcade databases.
+- Fixed arcade games emulated by current MAME (such as Sega Model 1, Sega Model 2, Sega ST-V, and Rave Racer) showing no hardware board on their detail pages and being absent from board pages and board search.
 
 ---
 

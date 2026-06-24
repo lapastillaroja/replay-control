@@ -109,6 +109,14 @@ fn board_tokens(board: ArcadeBoard) -> Vec<String> {
         ArcadeBoard::CaveCv1000 => &["cv1000", "cv-1000", "cave cv1000"],
         ArcadeBoard::IremM72 => &["irem m72", "m72"],
         ArcadeBoard::IremM92 => &["irem m92", "m92"],
+        ArcadeBoard::SegaModel1 => &["model 1", "sega model 1"],
+        ArcadeBoard::SegaModel2 => &["model 2", "sega model 2"],
+        ArcadeBoard::SegaModel3 => &["model 3", "sega model 3"],
+        ArcadeBoard::MidwaySeattle => &["midway seattle"],
+        ArcadeBoard::MidwayVegas => &["midway vegas", "vegas"],
+        ArcadeBoard::NamcoSystem10 => &["system 10", "namco system 10", "namcos10"],
+        ArcadeBoard::NamcoSystem22 => &["system 22", "namco system 22", "namcos22"],
+        ArcadeBoard::Gaelco3d => &["gaelco 3d", "gaelco3d", "gaelco"],
         _ => &[],
     };
     for syn in extras {
@@ -346,6 +354,20 @@ mod tests {
         let out = r("Taito F3");
         assert_eq!(out.filters.board, Some(ArcadeBoard::TaitoF3));
         assert_eq!(out.remaining_text, "");
+    }
+
+    #[test]
+    fn issue_71_boards_recognized() {
+        assert_eq!(r("Model 2").filters.board, Some(ArcadeBoard::SegaModel2));
+        assert_eq!(
+            r("Namco System 10").filters.board,
+            Some(ArcadeBoard::NamcoSystem10)
+        );
+        assert_eq!(
+            r("Midway Vegas").filters.board,
+            Some(ArcadeBoard::MidwayVegas)
+        );
+        assert_eq!(r("gaelco 3d").filters.board, Some(ArcadeBoard::Gaelco3d));
     }
 
     #[test]

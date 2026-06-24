@@ -51,9 +51,11 @@ pub enum ArcadeBoard {
     MidwayVUnit,
     MidwayYUnit,
     MidwaySeattle,
+    MidwayVegas,
     // Namco
     NamcoSystem1,
     NamcoSystem2,
+    NamcoSystem10,
     NamcoSystem11,
     NamcoSystem12,
     NamcoSystem22,
@@ -71,6 +73,8 @@ pub enum ArcadeBoard {
     IremM92,
     // Jaleco
     JalecoMegaSystem1,
+    // Gaelco
+    Gaelco3d,
 }
 
 impl ArcadeBoard {
@@ -106,8 +110,10 @@ impl ArcadeBoard {
         ArcadeBoard::MidwayVUnit,
         ArcadeBoard::MidwayYUnit,
         ArcadeBoard::MidwaySeattle,
+        ArcadeBoard::MidwayVegas,
         ArcadeBoard::NamcoSystem1,
         ArcadeBoard::NamcoSystem2,
+        ArcadeBoard::NamcoSystem10,
         ArcadeBoard::NamcoSystem11,
         ArcadeBoard::NamcoSystem12,
         ArcadeBoard::NamcoSystem22,
@@ -121,6 +127,7 @@ impl ArcadeBoard {
         ArcadeBoard::IremM72,
         ArcadeBoard::IremM92,
         ArcadeBoard::JalecoMegaSystem1,
+        ArcadeBoard::Gaelco3d,
     ];
 
     /// Stable ASCII slug stored in `arcade_game.board` and
@@ -157,8 +164,10 @@ impl ArcadeBoard {
             ArcadeBoard::MidwayVUnit => "midway_v_unit",
             ArcadeBoard::MidwayYUnit => "midway_y_unit",
             ArcadeBoard::MidwaySeattle => "midway_seattle",
+            ArcadeBoard::MidwayVegas => "midway_vegas",
             ArcadeBoard::NamcoSystem1 => "namco_system_1",
             ArcadeBoard::NamcoSystem2 => "namco_system_2",
+            ArcadeBoard::NamcoSystem10 => "namco_system_10",
             ArcadeBoard::NamcoSystem11 => "namco_system_11",
             ArcadeBoard::NamcoSystem12 => "namco_system_12",
             ArcadeBoard::NamcoSystem22 => "namco_system_22",
@@ -172,6 +181,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM72 => "irem_m72",
             ArcadeBoard::IremM92 => "irem_m92",
             ArcadeBoard::JalecoMegaSystem1 => "jaleco_mega_system_1",
+            ArcadeBoard::Gaelco3d => "gaelco_3d",
         }
     }
 
@@ -207,8 +217,10 @@ impl ArcadeBoard {
             ArcadeBoard::MidwayVUnit => "V-Unit",
             ArcadeBoard::MidwayYUnit => "Y-Unit",
             ArcadeBoard::MidwaySeattle => "Seattle",
+            ArcadeBoard::MidwayVegas => "Vegas",
             ArcadeBoard::NamcoSystem1 => "System 1",
             ArcadeBoard::NamcoSystem2 => "System 2",
+            ArcadeBoard::NamcoSystem10 => "System 10",
             ArcadeBoard::NamcoSystem11 => "System 11",
             ArcadeBoard::NamcoSystem12 => "System 12",
             ArcadeBoard::NamcoSystem22 => "System 22",
@@ -222,6 +234,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM72 => "M72",
             ArcadeBoard::IremM92 => "M92",
             ArcadeBoard::JalecoMegaSystem1 => "Mega System 1",
+            ArcadeBoard::Gaelco3d => "3D",
         }
     }
 
@@ -251,9 +264,11 @@ impl ArcadeBoard {
             | ArcadeBoard::MidwayTUnit
             | ArcadeBoard::MidwayVUnit
             | ArcadeBoard::MidwayYUnit
-            | ArcadeBoard::MidwaySeattle => "Midway",
+            | ArcadeBoard::MidwaySeattle
+            | ArcadeBoard::MidwayVegas => "Midway",
             ArcadeBoard::NamcoSystem1
             | ArcadeBoard::NamcoSystem2
+            | ArcadeBoard::NamcoSystem10
             | ArcadeBoard::NamcoSystem11
             | ArcadeBoard::NamcoSystem12
             | ArcadeBoard::NamcoSystem22
@@ -265,6 +280,7 @@ impl ArcadeBoard {
             ArcadeBoard::DataEastDeco32 | ArcadeBoard::DataEastDecoCassette => "Data East",
             ArcadeBoard::IremM72 | ArcadeBoard::IremM92 => "Irem",
             ArcadeBoard::JalecoMegaSystem1 => "Jaleco",
+            ArcadeBoard::Gaelco3d => "Gaelco",
         }
     }
 
@@ -335,8 +351,10 @@ impl ArcadeBoard {
             ArcadeBoard::MidwayVUnit => &["midway/midvunit.cpp"],
             ArcadeBoard::MidwayYUnit => &["midway/midyunit.cpp"],
             ArcadeBoard::MidwaySeattle => &["midway/seattle.cpp"],
+            ArcadeBoard::MidwayVegas => &["midway/vegas.cpp"],
             ArcadeBoard::NamcoSystem1 => &["namco/namcos1.cpp", "pre90s/namcos1.cpp", "namcos1.c"],
             ArcadeBoard::NamcoSystem2 => &["namco/namcos2.cpp", "pst90s/namcos2.cpp", "namcos2.c"],
+            ArcadeBoard::NamcoSystem10 => &["namco/namcos10.cpp", "namcos10.c"],
             ArcadeBoard::NamcoSystem11 => &["namco/namcos11.cpp", "namcos11.c"],
             ArcadeBoard::NamcoSystem12 => &["namco/namcos12.cpp", "namcos12.c"],
             ArcadeBoard::NamcoSystem22 => &["namco/namcos22.cpp", "namcos22.c"],
@@ -350,6 +368,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM72 => &["irem/m72.cpp", "m72.c"],
             ArcadeBoard::IremM92 => &["irem/m92.cpp", "m92.c"],
             ArcadeBoard::JalecoMegaSystem1 => &["jaleco/megasys1.cpp", "pre90s/megasys1.cpp"],
+            ArcadeBoard::Gaelco3d => &["gaelco/gaelco3d.cpp"],
         }
     }
 
@@ -414,6 +433,9 @@ mod tests {
             ("sega/naomi2.cpp", ArcadeBoard::SegaNaomi2),
             ("sega/atomiswave.cpp", ArcadeBoard::SammyAtomiswave),
             ("midway/midwunit.cpp", ArcadeBoard::MidwayWolfUnit),
+            ("midway/vegas.cpp", ArcadeBoard::MidwayVegas),
+            ("namco/namcos10.cpp", ArcadeBoard::NamcoSystem10),
+            ("gaelco/gaelco3d.cpp", ArcadeBoard::Gaelco3d),
             ("dataeast/dec0.cpp", ArcadeBoard::DataEastDecoCassette),
             ("jaleco/megasys1.cpp", ArcadeBoard::JalecoMegaSystem1),
         ];
@@ -517,6 +539,37 @@ mod tests {
         assert_eq!(
             ArcadeBoard::from_sourcefile("pgm.c"),
             Some(ArcadeBoard::IgsPgm)
+        );
+    }
+
+    #[test]
+    fn issue_71_requested_boards_resolve() {
+        // Boards requested in issue #71. Model 1/2 and Seattle already existed;
+        // gaelco3d, Namco System 10, and Midway Vegas were added. Each must
+        // resolve from its current-MAME driver sourcefile.
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("sega/model1.cpp"),
+            Some(ArcadeBoard::SegaModel1)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("sega/model2.cpp"),
+            Some(ArcadeBoard::SegaModel2)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("midway/seattle.cpp"),
+            Some(ArcadeBoard::MidwaySeattle)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("midway/vegas.cpp"),
+            Some(ArcadeBoard::MidwayVegas)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("namco/namcos10.cpp"),
+            Some(ArcadeBoard::NamcoSystem10)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("gaelco/gaelco3d.cpp"),
+            Some(ArcadeBoard::Gaelco3d)
         );
     }
 }
