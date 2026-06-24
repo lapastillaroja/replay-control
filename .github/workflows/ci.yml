@@ -66,7 +66,13 @@ jobs:
         run: sudo apt-get install -y binaryen
 
       - name: Build (x86_64)
+        # CI has no TGDB_API_KEY (and some upstream manual indexes 404), so the
+        # strict catalog preflight would hard-fail. Build a partial catalog for
+        # the CI check/E2E artifact — the documented keyless-build escape. The
+        # release build (with the key) stays strict.
         run: ./build.sh
+        env:
+          BUILD_CATALOG_ALLOW_PARTIAL: "1"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
