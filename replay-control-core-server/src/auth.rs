@@ -1012,6 +1012,66 @@ mod tests {
     }
 
     #[test]
+    fn changing_net_control_code_invalidates_existing_user_sessions() {
+        // FINDING #7: user sessions are fingerprinted from the Net Control code.
+        // Re-onboarding / regenerating the code makes every live user session
+        // stop resolving -> the whole household is logged out mid-session. The
+        // invalidation itself is correct; the bug is that the re-onboarding flow
+        // gives no warning and does not re-issue. Confirm the mechanism here.
+        let temp = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::new(temp.path().join("settings"));
+        write_replay_api_token(&settings, "123456").unwrap();
+        let store = AuthStore::open_at(temp.path().join("auth-cookie.key")).unwrap();
+
+        let session = store.create_user_session(&settings).unwrap();
+        assert_eq!(
+            store.resolve_session(&session.token, &settings).unwrap(),
+            Some(AuthRole::User)
+        );
+
+        // Admin regenerates / re-enters the Net Control code.
+        write_replay_api_token(&settings, "654321").unwrap();
+
+        // The previously-valid user cookie now resolves to None: logged out.
+        assert_eq!(
+            store.resolve_session(&session.token, &settings).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn changing_root_password_invalidates_current_admin_session() {
+        // FINDING #8: admin sessions are fingerprinted from /etc/shadow. Changing
+        // the root password (new shadow hash) makes the current admin cookie stop
+        // resolving, so the admin who just changed their own password is silently
+        // logged out on the next request (the password page reports success but
+        // never re-issues a session). Confirm the invalidation mechanism here.
+        let temp = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::new(temp.path().join("settings"));
+        let key_path = temp.path().join("auth-cookie.key");
+        let shadow_path = temp.path().join("shadow");
+        std::fs::write(&shadow_path, "root:$y$j9T$oldhash:19793:0:99999:7:::\n").unwrap();
+        let store = AuthStore::open_at_with_shadow(&key_path, &shadow_path).unwrap();
+
+        let session = store.create_admin_session(None, &settings).unwrap();
+        assert!(
+            store
+                .resolve_session(&session.token, &settings)
+                .unwrap()
+                .is_some()
+        );
+
+        // Root password changes -> new hash in shadow.
+        std::fs::write(&shadow_path, "root:$y$j9T$newhash:19999:0:99999:7:::\n").unwrap();
+
+        // The admin's current cookie no longer resolves: silently logged out.
+        assert_eq!(
+            store.resolve_session(&session.token, &settings).unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn opening_auth_store_does_not_create_signing_key() {
         let temp = tempfile::tempdir().unwrap();
         let key_path = temp.path().join("auth-cookie.key");

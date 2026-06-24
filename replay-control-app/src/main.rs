@@ -935,20 +935,12 @@ mod ssr {
         let device_mode = app_state.mode.is_device();
         let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, device_mode);
 
-        if device_mode && cli.dangerous_disable_https && cli.dangerous_allow_insecure_auth_over_http
-        {
-            tracing::warn!(
-                "dangerous_allow_insecure_auth_over_http is set; session cookies will be sent over plain HTTP"
-            );
+        // Browsers drop a Secure cookie on a non-HTTPS origin, so when we are not
+        // serving HTTPS the session cookie must drop Secure or login never
+        // persists (infinite redirect to /login). Secure iff serving HTTPS.
+        if !serve_https {
+            tracing::warn!("serving without HTTPS; session cookies will be sent over plain HTTP");
             app_state.auth.cookie_policy.allow_insecure_transport();
-        } else if device_mode && cli.dangerous_disable_https {
-            tracing::warn!(
-                "dangerous_disable_https is set without dangerous_allow_insecure_auth_over_http; session cookies keep the Secure attribute and browser login may not persist over HTTP"
-            );
-        } else if cli.dangerous_allow_insecure_auth_over_http {
-            tracing::warn!(
-                "dangerous_allow_insecure_auth_over_http was set without dangerous_disable_https; keeping Secure session cookies"
-            );
         }
         if cli.dangerous_disable_https && cli.enable_https {
             tracing::warn!("dangerous_disable_https overrides enable_https; serving without HTTPS");

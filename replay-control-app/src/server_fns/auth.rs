@@ -141,7 +141,7 @@ fn verify_admin_password_with_rate_limit(
 ) -> Result<(), ServerFnError> {
     state
         .auth
-        .login_rate_limiter
+        .admin_login_rate_limiter
         .check()
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let valid = verify_os_password(PasswordSubject::Root, password)
@@ -149,14 +149,14 @@ fn verify_admin_password_with_rate_limit(
     if !valid {
         state
             .auth
-            .login_rate_limiter
+            .admin_login_rate_limiter
             .record_failure()
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         return Err(ServerFnError::new("Device password is incorrect"));
     }
     state
         .auth
-        .login_rate_limiter
+        .admin_login_rate_limiter
         .record_success()
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(())
@@ -179,6 +179,41 @@ fn create_admin_session_response(
         &session,
         base_role == Some(AuthRole::User),
     ))
+}
+
+/// If the request carries an admin session, return its base role (so the caller
+/// can re-issue after an action that invalidates the admin fingerprint, e.g. a
+/// root-password change). Returns `None` when the caller is not an admin —
+/// capture this BEFORE the credential changes, while the session still resolves.
+#[cfg(feature = "ssr")]
+pub(crate) async fn admin_session_base_role(
+    state: &crate::api::AppState,
+) -> Result<Option<Option<AuthRole>>, ServerFnError> {
+    let Some(token) = session_token_from_request().await? else {
+        return Ok(None);
+    };
+    let session = state
+        .auth
+        .store
+        .resolve_session_details(token.as_str(), &state.settings)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    if session.as_ref().is_some_and(|s| s.role == AuthRole::Admin) {
+        Ok(Some(admin_base_role(session)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Re-issue the admin session cookie with a freshly computed fingerprint, using
+/// a base role captured by [`admin_session_base_role`] before the credential
+/// change.
+#[cfg(feature = "ssr")]
+pub(crate) fn reissue_admin_session(
+    state: &crate::api::AppState,
+    base_role: Option<AuthRole>,
+) -> Result<(), ServerFnError> {
+    create_admin_session_response(state, base_role)?;
+    Ok(())
 }
 
 #[server(prefix = "/sfn")]

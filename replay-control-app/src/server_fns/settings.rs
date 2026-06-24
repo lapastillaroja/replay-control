@@ -567,9 +567,12 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
         .output();
 
     match regenerate_self_signed_certificate(&state.data_dir) {
-        Ok(_) => Ok(format!(
-            "Hostname set to {hostname}. HTTPS certificate regenerated; open https://{hostname}.local:8443/ and accept the new certificate if prompted."
-        )),
+        Ok(_) => {
+            restart_for_new_certificate(&state);
+            Ok(format!(
+                "Hostname set to {hostname}. HTTPS certificate regenerated and Replay Control is restarting; reconnect at https://{hostname}.local:8443/ and accept the new certificate."
+            ))
+        }
         Err(error) => Ok(format!(
             "Hostname set to {hostname}, but HTTPS certificate regeneration failed: {error}"
         )),
@@ -588,21 +591,37 @@ pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, Ser
     regenerate_self_signed_certificate(&state.data_dir)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let info = tls_status_to_info(tls_certificate_status(&state.data_dir));
-
-    // The HTTPS server loaded the previous certificate at startup and won't
-    // serve the freshly generated one without a restart. On the device, queue a
-    // restart of our own service through systemd: `--no-block` returns
-    // immediately (so it can't deadlock waiting on our own process and so this
-    // response flushes to the browser first), and systemd owns the restart job,
-    // so it completes even as this process exits. The client shows a JS confirm
-    // first and warns the user the page will reconnect on the new certificate.
-    if state.mode.is_device() {
-        let _ = std::process::Command::new("systemctl")
-            .args(["--no-block", "restart", "replay-control"])
-            .spawn();
-    }
-
+    restart_for_new_certificate(&state);
     Ok(info)
+}
+
+/// Restart replay-control so the running HTTPS server serves a freshly
+/// regenerated certificate (it loads the cert once at startup). The restart is
+/// deferred briefly so this response — and the client's scheduled page reload —
+/// reach the browser before the server goes down; systemd owns the restart once
+/// issued. Failures are logged rather than returned, since the client cannot
+/// wait on a restart that kills this process. No-op off-device.
+#[cfg(feature = "ssr")]
+fn restart_for_new_certificate(state: &crate::api::AppState) {
+    if !state.mode.is_device() {
+        return;
+    }
+    tokio::task::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        match std::process::Command::new("systemctl")
+            .args(["--no-block", "restart", "replay-control"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => tracing::error!(
+                "certificate service restart was rejected: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => {
+                tracing::error!("certificate service restart failed to start: {error}")
+            }
+        }
+    });
 }
 
 #[cfg(feature = "ssr")]
@@ -918,12 +937,16 @@ pub async fn change_root_password(
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    if !expect_context::<crate::api::AppState>().mode.is_device() {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.mode.is_device() {
         return Ok("Password change skipped (standalone mode)".to_string());
     }
 
     if new_password.is_empty() {
         return Err(ServerFnError::new("Password cannot be empty"));
+    }
+    if !is_safe_chpasswd_password(&new_password) {
+        return Err(ServerFnError::new("Password contains invalid characters"));
     }
 
     if !verify_os_password(PasswordSubject::Root, &current_password)
@@ -931,6 +954,11 @@ pub async fn change_root_password(
     {
         return Err(ServerFnError::new("Current password is incorrect"));
     }
+
+    // The admin fingerprint derives from /etc/shadow, so changing the password
+    // invalidates the caller's own admin session. Capture its base role now,
+    // while the session still resolves, to re-issue it after the change.
+    let admin_reissue = super::auth::admin_session_base_role(&state).await?;
 
     // Apply the new password via chpasswd.
     let mut child = Command::new("chpasswd")
@@ -951,11 +979,22 @@ pub async fn change_root_password(
         .map_err(|e| ServerFnError::new(format!("chpasswd failed: {e}")))?;
 
     if output.status.success() {
+        if let Some(base_role) = admin_reissue {
+            super::auth::reissue_admin_session(&state, base_role)?;
+        }
         Ok("Password changed successfully".to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(ServerFnError::new(format!("chpasswd failed: {stderr}")))
     }
+}
+
+/// chpasswd reads one `user:password` record per line, so a newline (or NUL) in
+/// the password would inject another record. Reject control characters before
+/// piping to it.
+#[cfg(feature = "ssr")]
+fn is_safe_chpasswd_password(password: &str) -> bool {
+    !password.contains(['\n', '\r', '\0'])
 }
 
 /// Get the UI locale from cached preferences.
@@ -1072,6 +1111,17 @@ pub async fn skip_version(version: String) -> Result<(), ServerFnError> {
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn change_root_password_rejects_chpasswd_injection() {
+        // A newline (or NUL) would inject a second `user:password` record into
+        // chpasswd stdin (`root:evilpass\ndaemon:hacked`); the guard must reject
+        // it before the password is piped.
+        assert!(!is_safe_chpasswd_password("evilpass\ndaemon:hacked"));
+        assert!(!is_safe_chpasswd_password("x\0y"));
+        assert!(!is_safe_chpasswd_password("trailing\r"));
+        assert!(is_safe_chpasswd_password("goodpass123"));
+    }
 
     #[test]
     fn wifi_validation_trims_and_normalizes_country() {

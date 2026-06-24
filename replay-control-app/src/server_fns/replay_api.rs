@@ -201,7 +201,7 @@ pub async fn get_game_playtime(
             match response
                 .games
                 .iter()
-                .find(|g| g.game == game_file && (g.system.is_empty() || g.system == system))
+                .find(|g| g.game == game_file && g.system == system)
             {
                 Some(g) => Ok(GamePlaytime {
                     availability: PlaytimeAvailability::Tracked,

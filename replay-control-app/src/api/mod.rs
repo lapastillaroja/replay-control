@@ -244,7 +244,11 @@ pub struct AppState {
 #[derive(Debug, Clone)]
 pub struct AuthRuntime {
     pub store: AuthStore,
+    /// User (Net Control code) login attempts.
     pub login_rate_limiter: LoginRateLimiter,
+    /// Admin (device password) login attempts — separate counter so a flood of
+    /// bad user codes can't lock out the admin recovery path, and vice versa.
+    pub admin_login_rate_limiter: LoginRateLimiter,
     pub cookie_policy: SessionCookiePolicy,
 }
 
@@ -253,6 +257,7 @@ impl AuthRuntime {
         Ok(Self {
             store: AuthStore::open(data_dir)?,
             login_rate_limiter: LoginRateLimiter::default(),
+            admin_login_rate_limiter: LoginRateLimiter::default(),
             cookie_policy: SessionCookiePolicy::secure(),
         })
     }
@@ -2068,6 +2073,7 @@ fn is_admin_server_function(function: &str) -> bool {
             | "save_language_preference"
             | "refresh_storage"
             | "regenerate_tls_certificate_info"
+            | "get_tls_certificate_info"
             | "get_analytics_preference"
             | "delete_rom"
             | "rename_rom"
@@ -2138,7 +2144,6 @@ fn is_user_server_function(function: &str) -> bool {
                 | "get_region_preference"
                 | "get_region_preference_secondary"
                 | "get_language_preference"
-                | "get_tls_certificate_info"
                 | "get_locale"
                 | "save_locale"
                 | "get_preferred_languages"
@@ -2790,7 +2795,7 @@ mod tests {
         );
         assert_eq!(
             server_function_required_role("/sfn/get_tls_certificate_info"),
-            Some(AuthRole::User)
+            Some(AuthRole::Admin)
         );
         assert_eq!(
             server_function_required_role("/sfn/regenerate_tls_certificate_info"),
