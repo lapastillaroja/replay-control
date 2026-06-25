@@ -40,12 +40,6 @@ def test_first_setup_rejects_wrong_password(device_mode_first_setup, page):
     assert "/first-setup" in page.url
 
 
-@pytest.mark.skip(
-    reason="Completing first-setup navigates to home, which currently panics with "
-    "a missing I18nContext: several home Suspense children read use_i18n() and "
-    "lose the context on a client-side navigation (CLAUDE.md Suspend-child rule). "
-    "The completion itself works; un-skip once the home i18n context is threaded."
-)
 def test_first_setup_completion_grants_admin(device_mode_first_setup, page):
     goto_hydrated(page, "/first-setup")
     pw = page.locator("#first-setup-password")

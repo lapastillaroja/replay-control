@@ -11,6 +11,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Fixed
 
 - Fixed organizing favorites by **Board** together with **System** (in either order) nesting console favorites under their system name twice (`<System>/<System>/`); the two levels now collapse to one.
+- Fixed a crash when navigating in-app to pages that show recommendation rows (such as Home), caused by the localization context being lost across a client-side navigation.
 
 ---
 

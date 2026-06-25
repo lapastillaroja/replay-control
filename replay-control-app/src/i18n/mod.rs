@@ -45,11 +45,34 @@ pub fn provide_i18n() {
             }
         });
     let (locale, set_locale) = signal(initial);
-    provide_context(I18nContext { locale, set_locale });
+    let ctx = I18nContext { locale, set_locale };
+    provide_context(ctx);
+    // The client has exactly one i18n instance for the whole session. Cache it so
+    // `use_i18n()` still works in components created after an async boundary (a
+    // `Suspense`/`Suspend` on a client-side navigation), where the reactive owner
+    // chain no longer reaches the context. Not used on the server, where each
+    // request has its own locale and the context is always in scope.
+    #[cfg(target_arch = "wasm32")]
+    CLIENT_I18N.with(|cell| cell.set(Some(ctx)));
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static CLIENT_I18N: std::cell::Cell<Option<I18nContext>> = const { std::cell::Cell::new(None) };
 }
 
 /// Retrieves the current i18n context.
 pub fn use_i18n() -> I18nContext {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(ctx) = use_context::<I18nContext>() {
+            return ctx;
+        }
+        return CLIENT_I18N
+            .with(|cell| cell.get())
+            .expect("i18n not initialized: provide_i18n() must run at the App root");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     expect_context::<I18nContext>()
 }
 
