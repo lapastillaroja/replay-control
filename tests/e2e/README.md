@@ -239,6 +239,23 @@ Searches the scanned library: a seeded ROM is findable by a filename fragment
 (`/search?q=Seed` → result group), and a non-matching query renders the
 `p.empty-state` no-results state.
 
+### `test_rom_management.py` — Container only, mutates storage
+
+Drives the destructive ROM actions on game-detail (admin-gated on device, open in
+the standalone container):
+
+- Rename via the inline `.game-rename-inline` editor renames the file under
+  `roms/<system>/` and navigates to the new game URL
+- Delete via the two-step `.game-action-delete` → `.game-action-delete-confirm`
+  removes the file and returns to the system list
+
+### `test_media_serving.py` — Container only, mutates storage
+
+Seeds files and asserts the root serving routes stream them with the right
+Content-Type (extension-based): `/captures/*` (image/png), `/owned-manuals/*`
+(application/pdf), `/media/*` (image/png), and a 404 for a missing file. This
+complements the capture/manual *deletion* tests by covering the *serving* side.
+
 ### `test_resource_management.py` — Container only, mutates storage
 
 Drives the data-management actions on `/settings/game-library` (behind the

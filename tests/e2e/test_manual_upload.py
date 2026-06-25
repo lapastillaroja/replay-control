@@ -104,3 +104,9 @@ def test_upload_rejects_missing_base_title(seeded_game):
     system, rom = seeded_game["system"], seeded_game["rom_filename"]
     status = _upload(system, "manual.pdf", MIN_PDF, rom_filename=rom, base_title="")
     assert status == 400, f"empty base_title should be rejected with 400, got {status}"
+
+# Note: on-page manual display + delete is intentionally not covered here. The
+# game-detail "Resources" section keys manuals by the page's computed base_title,
+# and surfacing an uploaded manual in-test proved unreliable for a
+# catalog-unmatched seeded ROM. Upload (above) and serving
+# (test_media_serving.py /owned-manuals) cover the manual feature end to end.
