@@ -4,6 +4,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.10.0-beta.4]
+
+> Fixes redundant folder nesting when organizing favorites by board and system.
+
+### Fixed
+
+- Fixed organizing favorites by **Board** together with **System** (in either order) nesting console favorites under their system name twice (`<System>/<System>/`); the two levels now collapse to one.
+
+---
+
 ## [0.10.0-beta.3]
 
 > Favorites can now be organized by arcade hardware board.

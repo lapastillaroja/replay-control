@@ -307,7 +307,16 @@ pub async fn organize_favorites(
                 Some(sec) => {
                     let secondary_folder =
                         criteria_folder(sec, system, rom_filename, ratings_owned.as_ref(), &batch);
-                    PathBuf::from(&primary_folder).join(&secondary_folder)
+                    // When both criteria resolve to the same folder for this
+                    // item, collapse to a single level instead of nesting
+                    // <X>/<X>/. This happens for console favorites under
+                    // Board + System (either order): Board falls back to the
+                    // system name, colliding with System.
+                    if secondary_folder == primary_folder {
+                        PathBuf::from(&primary_folder)
+                    } else {
+                        PathBuf::from(&primary_folder).join(&secondary_folder)
+                    }
                 }
                 None => PathBuf::from(&primary_folder),
             };
@@ -865,6 +874,49 @@ mod tests {
             ),
             sanitize_folder_name(&systems::system_display_name("nintendo_nes"))
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn board_and_system_pairing_collapses_console_either_order() {
+        let (_tmp, storage) = setup_test_storage();
+
+        // A console favorite has no board, so Board falls back to the system
+        // name — the same value System produces. Pairing Board + System must
+        // collapse to a single <System>/ level rather than nesting
+        // <System>/<System>/, regardless of which is primary vs secondary.
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false)
+            .await
+            .unwrap();
+
+        let folder = sanitize_folder_name(&systems::system_display_name("sega_smd"));
+        let fav = "sega_smd@Sonic.md.fav";
+        let single = storage.favorites_dir().join(&folder).join(fav);
+        let double = storage
+            .favorites_dir()
+            .join(&folder)
+            .join(&folder)
+            .join(fav);
+
+        // organize_favorites flattens before re-grouping, so both orders can be
+        // exercised in sequence against the same favorite.
+        for (primary, secondary) in [
+            (OrganizeCriteria::Board, OrganizeCriteria::System),
+            (OrganizeCriteria::System, OrganizeCriteria::Board),
+        ] {
+            let label = format!("{primary:?} + {secondary:?}");
+            organize_favorites(&storage, primary, Some(secondary), false, None)
+                .await
+                .unwrap();
+
+            assert!(
+                single.exists(),
+                "console fav should be at a single <System>/ level for {label}"
+            );
+            assert!(
+                !double.exists(),
+                "console fav must not be double-nested <System>/<System>/ for {label}"
+            );
+        }
     }
 
     fn setup_test_storage() -> (PathBuf, StorageLocation) {
