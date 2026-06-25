@@ -76,6 +76,12 @@ where
             .collect()
     };
 
+    // Derived once at the component scope (not as an inline `Signal::derive`
+    // inside the view). When removing the last favorite flips the outer <Show>
+    // to its empty state, an inline derive would be disposed while the list's
+    // <For> still reads it during the same update — a disposed-value panic.
+    let filtered_signal = Signal::derive(filtered_favorites);
+
     // Track which favorite is pending removal confirmation.
     let confirm_remove = RwSignal::new(Option::<String>::None);
 
@@ -308,17 +314,11 @@ where
                     </span>
                 </div>
 
-                {
-                    let filtered_signal = Signal::derive(filtered_favorites);
-                    let filtered_signal2 = Signal::derive(filtered_favorites);
-                    view! {
-                        <Show when=move || grouped_view.get() fallback=move || view! {
-                            <FlatFavorites favorites=filtered_signal confirm_remove remove_fav />
-                        }>
-                            <GroupedFavorites favorites=filtered_signal2 confirm_remove remove_fav />
-                        </Show>
-                    }
-                }
+                <Show when=move || grouped_view.get() fallback=move || view! {
+                    <FlatFavorites favorites=filtered_signal confirm_remove remove_fav />
+                }>
+                    <GroupedFavorites favorites=filtered_signal confirm_remove remove_fav />
+                </Show>
             </section>
         </Show>
     }
@@ -416,7 +416,7 @@ where
 
     let has_box_art = box_art_url.is_some();
     let box_art = StoredValue::new(box_art_url);
-    let fav_filename = StoredValue::new(fav.marker_filename.clone());
+    let marker = StoredValue::new(fav.marker_filename.clone());
     let subfolder = StoredValue::new(fav.subfolder.clone());
     let system_folder = StoredValue::new(fav.game.system.clone());
     let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
@@ -429,18 +429,27 @@ where
     let has_genre = genre.as_ref().is_some_and(|g| !g.is_empty());
     let genre = StoredValue::new(genre.unwrap_or_default());
 
-    let is_confirming =
-        move || confirm_remove.read().as_deref() == Some(&*fav_filename.get_value());
+    // `is_confirming` is reactive and can re-run as this item is being disposed
+    // during a remove. `try_get_value()` returns None (instead of panicking with
+    // "accessed a disposed value") once the item's scope is gone.
+    let is_confirming = move || {
+        marker
+            .try_get_value()
+            .is_some_and(|m| confirm_remove.read().as_deref() == Some(m.as_str()))
+    };
 
     let on_star_click = move |_| {
-        confirm_remove.set(Some(fav_filename.get_value()));
+        if let Some(m) = marker.try_get_value() {
+            confirm_remove.set(Some(m));
+        }
     };
 
     let remove_fav = StoredValue::new(remove_fav);
 
     let on_confirm = move |_| {
-        let rf = remove_fav.get_value();
-        rf(fav_filename.get_value(), subfolder.get_value());
+        if let Some(m) = marker.try_get_value() {
+            remove_fav.get_value()(m, subfolder.get_value());
+        }
     };
 
     let on_cancel = move |_| {

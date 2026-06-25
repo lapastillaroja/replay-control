@@ -12,6 +12,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - Added **By Board** as a way to organize favorites. Arcade favorites are grouped into folders named after their hardware board (CPS-1, CPS-2, Neo Geo MVS, Taito F3, PGM, …), while console favorites fall back to their system name. It works as either the primary or secondary grouping, alongside System, Genre, Players, Rating, and Developer.
 
+### Fixed
+
+- Fixed a crash on the Favorites page when removing a favorite; the list now updates cleanly without reloading.
+
 ---
 
 ## [0.10.0-beta.2]
