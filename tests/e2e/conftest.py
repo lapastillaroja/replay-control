@@ -240,14 +240,22 @@ def browser():
 # fault. Extend only with justification.
 CONSOLE_IGNORE_SUBSTRINGS = (
     "Failed to load resource",  # network 404/500 for an <img>/asset, not JS
+    # SSE transport noise: in the device-test container, storage never becomes
+    # "ready", so an SSE request mid-transition can get the HTML catch-all
+    # instead of text/event-stream. Browser-emitted, not a script fault.
+    "EventSource's response has a MIME type",
+    # A test that restarts the service aborts the open page's in-flight WASM
+    # fetch; a load abort is not a script fault.
+    "WebAssembly compilation aborted",
 )
 
 
+def _is_ignored(text: str) -> bool:
+    return any(ignore in (text or "") for ignore in CONSOLE_IGNORE_SUBSTRINGS)
+
+
 def _is_console_offender(msg) -> bool:
-    if msg.type not in ("error", "warning"):
-        return False
-    text = msg.text or ""
-    return not any(ignore in text for ignore in CONSOLE_IGNORE_SUBSTRINGS)
+    return msg.type in ("error", "warning") and not _is_ignored(msg.text)
 
 
 @pytest.fixture()
@@ -266,8 +274,14 @@ def page(browser):
         if _is_console_offender(msg):
             offenders.append(f"console.{msg.type}: {msg.text}")
 
+    def record_pageerror(exc):
+        # Filter the same transport/load-abort noise (e.g. a WASM fetch aborted
+        # by a deliberate service restart); real exceptions aren't in the list.
+        if not _is_ignored(str(exc)):
+            offenders.append(f"pageerror: {exc}")
+
     p.on("console", record_console)
-    p.on("pageerror", lambda exc: offenders.append(f"pageerror: {exc}"))
+    p.on("pageerror", record_pageerror)
     yield p
     context.close()
     assert not offenders, "JS console errors/warnings during test:\n  " + "\n  ".join(offenders)
