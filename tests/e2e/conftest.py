@@ -532,6 +532,15 @@ def seed_recent(system: str, rom_filename: str):
     )
 
 
+def seed_favorite(system: str, rom_filename: str):
+    """Create an ungrouped .fav marker (at the favorites root) for a ROM."""
+    rom_path = f"/roms/{system}/{rom_filename}"
+    exec_cmd(
+        f'mkdir -p "{FAVORITES_DIR}"; '
+        f"printf '%s' '{rom_path}' > \"{FAVORITES_DIR}/{system}@{rom_filename}.fav\""
+    )
+
+
 def list_files(directory: str) -> list[str]:
     return exec_cmd(f'ls -1 "{directory}" 2>/dev/null || true').splitlines()
 
@@ -602,6 +611,22 @@ def seeded_game():
         pass
 
 
+@pytest.fixture()
+def clean_settings():
+    """Snapshot settings.cfg and restore it (+ restart so in-memory prefs reload)
+    on teardown, so a test that changes a preference doesn't leak into others."""
+    _require_container()
+    settings = f"{RC_DIR}/settings.cfg"
+    backup = f"{settings}.e2ebak"
+    exec_cmd(f'cp "{settings}" "{backup}" 2>/dev/null || true')
+    yield
+    exec_cmd(
+        f'if [ -f "{backup}" ]; then mv -f "{backup}" "{settings}"; else rm -f "{settings}"; fi; '
+        "systemctl restart replay-control >/dev/null 2>&1 || true"
+    )
+    wait_for_app(60)
+
+
 # ── Device-mode fixture (auth tests) ─────────────────────────────────
 #
 # The container normally boots standalone (`--storage-path`, guard bypassed).
@@ -630,29 +655,28 @@ _DEVICE_LAUNCH = (
 )
 
 
-@pytest.fixture(scope="module")
-def device_mode_app():
-    """Relaunch the app in device mode with first-setup done + a known root
-    password, for the duration of a test module. Restores standalone on teardown."""
+def _start_device_mode(first_setup_done: bool):
+    """Stop standalone and relaunch the app in device mode with a known root
+    password. `first_setup_done` controls whether the guard enforces role gating
+    (True) or shows the first-setup flow (False)."""
     _require_container()
-    # Stop the standalone service so port 8080 is free.
     exec_cmd("systemctl stop replay-control >/dev/null 2>&1 || true")
     time.sleep(1)
-    # Point device-mode storage at /media/usb, mark first-setup complete (so the
-    # guard enforces role gating instead of redirecting to /first-setup), and set
-    # the device password.
+    done = "true" if first_setup_done else "false"
     exec_cmd(
         'sed -i "/^system_storage/d" /media/sd/config/replay.cfg 2>/dev/null || true; '
         'printf "system_storage = \\"usb\\"\\n" >> /media/sd/config/replay.cfg; '
         f"mkdir -p {DEVICE_SETTINGS_DIR}; "
         f'sed -i "/^first_setup_done/d" {DEVICE_SETTINGS_DIR}/settings.cfg 2>/dev/null || true; '
-        f'printf "first_setup_done = \\"true\\"\\n" >> {DEVICE_SETTINGS_DIR}/settings.cfg; '
+        f'printf "first_setup_done = \\"{done}\\"\\n" >> {DEVICE_SETTINGS_DIR}/settings.cfg; '
         f"echo 'root:{ADMIN_PW}' | chpasswd"
     )
     exec_cmd(_DEVICE_LAUNCH)
     wait_for_app(timeout=60)
-    yield
-    # Always restore standalone, even if the device instance failed to boot.
+
+
+def _stop_device_mode():
+    """Stop the device instance and restore the standalone service."""
     exec_cmd(
         f"[ -f {_DEVICE_PIDFILE} ] && kill $(cat {_DEVICE_PIDFILE}) 2>/dev/null || true; "
         f"rm -f {_DEVICE_PIDFILE}"
@@ -660,3 +684,19 @@ def device_mode_app():
     time.sleep(1)
     exec_cmd("systemctl start replay-control >/dev/null 2>&1 || true")
     wait_for_app(timeout=60)
+
+
+@pytest.fixture(scope="module")
+def device_mode_app():
+    """Device mode with first-setup already done (guard enforces role gating)."""
+    _start_device_mode(first_setup_done=True)
+    yield
+    _stop_device_mode()
+
+
+@pytest.fixture(scope="module")
+def device_mode_first_setup():
+    """Device mode with first-setup PENDING (the /first-setup flow is active)."""
+    _start_device_mode(first_setup_done=False)
+    yield
+    _stop_device_mode()

@@ -233,6 +233,12 @@ on game-detail (`button.game-action-fav` → `add_favorite`), confirm the
 `/favorites`, then remove it via the favorites-page star + inline confirm
 (`remove_favorite`) and confirm the marker is gone.
 
+Also covers the **organize panel**: with a seeded favorite, expand
+`.organize-toggle`, pick System + Board, and `organize_favorites`; a console
+favorite must collapse to a single `<System>/` subfolder (depth 1), never
+double-nest `<System>/<System>/` (depth 2). The core collapse logic is unit
+tested in `favorites.rs`; this exercises the UI/server-fn wiring.
+
 ### `test_search.py` — Container only, mutates storage
 
 Searches the scanned library: a seeded ROM is findable by a filename fragment
@@ -288,3 +294,27 @@ This requires `python3` + `libcrypt1` + `passwd` in `Containerfile.replayos`
 
 The classification completeness of every server fn is also guarded by the Rust
 meta-test `auth_guard_classifies_every_server_function_intentionally`.
+
+### `test_first_setup_completion.py` — Container only, relaunches in device mode
+
+Covers completing first-setup (vs `test_first_setup.py`, which covers the gate).
+Uses the `device_mode_first_setup` fixture (device mode, first-setup pending, a
+known root password):
+
+- Wrong device password is rejected (`.login-field-error`, stays on /first-setup)
+- Completing setup with the device password (`#first-setup-password` → "Continue
+  as admin") persists `first_setup_done=true` and opens a session — **currently
+  skipped**: completion navigates to home, which panics with a missing
+  `I18nContext` because several home `Suspense` children call `use_i18n()` and
+  lose the context on client-side navigation (CLAUDE.md Suspend-child rule). The
+  completion itself works; un-skip once the home i18n context is threaded.
+
+### `test_settings_prefs.py` — Container only, mutates settings
+
+Set/persist/reload round-trips for two preferences (the `clean_settings` fixture
+snapshots + restores settings.cfg so changes don't leak):
+
+- **Skin**: turn "Sync with ReplayOS" off (cards are disabled while syncing),
+  pick a `.skin-card`, and confirm it stays active across a reload.
+- **Locale**: pick Spanish in the `#settings-appearance` locale `<select>`, reload,
+  and confirm the value persisted (and `locale = "es"` in settings.cfg).
