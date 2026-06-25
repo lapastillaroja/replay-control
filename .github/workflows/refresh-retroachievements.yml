@@ -30,7 +30,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Restore catalog source data cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: data/upstream/
           key: data-upstream-latest

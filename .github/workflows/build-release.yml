@@ -35,7 +35,7 @@ jobs:
       - name: Restore downloaded data cache
         # Restore-only from the shared data/upstream cache (produced weekly by
         # refresh-upstream-data.yml); build.sh downloads on a cold cache.
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/upstream/

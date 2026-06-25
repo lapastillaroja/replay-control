@@ -56,7 +56,7 @@ jobs:
 
       - name: Save upstream data cache
         # Per-run key → a fresh cache each run; consumers restore the latest.
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: |
             data/upstream/
