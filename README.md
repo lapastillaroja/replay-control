@@ -93,9 +93,9 @@ This is a personal project born from my love for retro gaming on real hardware. 
 
 Planned, not yet available (in no particular order):
 
-- Improved game detail page UI and resource management
-- Deeper RePlayOS integration via the newly released official API
-- New Now Playing UI and controls
+- RetroAchievements achievement and progress display
+- Game upload from the UI
+- Favorites export and import for sharing
 - DMDos integration
 
 ## Quick Install
