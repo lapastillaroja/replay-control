@@ -41,7 +41,7 @@ from urllib.request import urlopen, Request
 
 import pytest
 
-from conftest import PI_URL
+from conftest import PI_URL, goto_hydrated
 
 
 # Real routes from `replay-control-app/src/lib.rs`. /system/<x> is NOT a
@@ -268,3 +268,51 @@ class TestServerFnsRegistered:
         assert status != 404, (
             f"{fn_name} returned 404 — server fn not registered."
         )
+
+
+# ── Every route renders + hydrates without JS console errors ──────────────
+
+
+class TestBrowserRouteSweep:
+    """Visit every route in one browser session and assert each renders real
+    content (not the router fallback). The `page` fixture additionally fails the
+    test if ANY route logs a JS console error/warning or throws — a single cheap
+    test that guards rendering + hydration + script health across the whole app.
+
+    Grouped into one navigation loop (one page, one fixture) to stay fast.
+    """
+
+    # Browsing + discovery + every settings sub-page. In the standalone
+    # container all render directly; on a device some redirect to /login (still
+    # not the fallback, still JS-clean) — both are valid for this smoke.
+    ROUTES = [
+        "/",
+        "/games/nintendo_snes",
+        "/favorites",
+        "/favorites/nintendo_snes",
+        "/search?q=mario",
+        "/developer/Nintendo",
+        "/board/cps1",
+        "/settings",
+        "/settings/wifi",
+        "/settings/nfs",
+        "/settings/hostname",
+        "/settings/access",
+        "/settings/game-library",
+        "/settings/skin",
+        "/settings/logs",
+        "/settings/github",
+        # /settings/replayos and /settings/retroachievements are omitted: they
+        # fetch RePlayOS/RetroAchievements backends that aren't present in the
+        # test container, so a failed fetch is environmental, not a JS bug.
+    ]
+
+    def test_all_routes_render_without_js_errors(self, page):
+        for path in self.ROUTES:
+            goto_hydrated(page, path)
+            body = page.content()
+            assert "Page not found" not in body, (
+                f"{path} fell through to the router fallback — likely a route "
+                f"rename or a broken <Route> definition."
+            )
+        # JS-error assertion happens in the `page` fixture teardown.
