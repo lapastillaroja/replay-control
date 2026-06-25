@@ -26,7 +26,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     procps \
     coreutils \
+    passwd \
+    libcrypt1 \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# python3 + libcrypt1 let the app verify an OS password (verify_os_password
+# shells python3 + libcrypt.so.1 to crypt against /etc/shadow); `passwd`
+# provides chpasswd so the auth e2e can set a known device password.
 
 # --- RePlayOS folder structure ---
 
