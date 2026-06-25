@@ -411,8 +411,8 @@ fn SystemStatsGrid(stats: SystemLiveStats, i18n: I18nContext) -> impl IntoView {
             <InfoRow label_key=Key::MoreDiskTotal value=format_size(stats.disk_total_bytes) />
             <InfoRow label_key=Key::MoreDiskUsed value=format_size(stats.disk_used_bytes) />
             <InfoRow label_key=Key::MoreDiskAvailable value=format_size(stats.disk_available_bytes) />
-            <InfoRow label_key=Key::MoreEthernetIp value=stats.ethernet_ip.unwrap_or_else(|| t(i18n.locale.get(), Key::MoreNotConnected).to_string()) />
-            <InfoRow label_key=Key::MoreWifiIp value=stats.wifi_ip.unwrap_or_else(|| t(i18n.locale.get(), Key::MoreNotConnected).to_string()) />
+            <InfoRow label_key=Key::MoreEthernetIp value=stats.ethernet_ip.unwrap_or_else(|| t(i18n.locale.get_untracked(), Key::MoreNotConnected).to_string()) />
+            <InfoRow label_key=Key::MoreWifiIp value=stats.wifi_ip.unwrap_or_else(|| t(i18n.locale.get_untracked(), Key::MoreNotConnected).to_string()) />
             <InfoRow label_key=Key::MoreEthernetMac value=stats.ethernet_mac.unwrap_or_else(|| "—".to_string()) />
             <InfoRow label_key=Key::MoreWifiMac value=stats.wifi_mac.unwrap_or_else(|| "—".to_string()) />
             {stats.model.map(|model| view! { <InfoRow label_key=Key::MoreModel value=model /> })}
