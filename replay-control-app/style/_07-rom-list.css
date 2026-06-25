@@ -20,27 +20,40 @@
     --stack-gap: var(--stack-gap-none);
 }
 
-/* ROM thumbnail in list — fixed height, aspect ratio adapts to image */
+/* ROM thumbnail in list — fixed slot, image aspect ratio adapts inside it */
 .rom-thumb-link {
     flex-shrink: 0;
     margin-right: var(--control-inline-offset);
     line-height: 0;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
 }
 
-.rom-thumb {
-    height: var(--extent-small-default);
-    width: auto;
-    max-width: var(--extent-medium-default);
+.rom-thumb-frame {
+    width: 2.75rem;
+    aspect-ratio: 1;
 }
 
 .rom-thumb-placeholder {
-    height: var(--extent-small-default);
-    aspect-ratio: 0.7;
-    border-radius: var(--thumbnail-radius);
+    width: 70%;
+    height: 100%;
 }
 
 .rom-name {
     display: block;
+}
+
+.game-list-row-link {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+}
+
+.game-list-row-link:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 
 .rom-name-row {
@@ -70,6 +83,8 @@
 /* ROM favorite button */
 .rom-fav-btn {
     color: var(--text-secondary);
+    position: relative;
+    z-index: 2;
     /* Drop the icon button's left padding so the star's glyph aligns to the
        row's content edge instead of sitting an extra 8px in (the row padding
        already provides the inset from the surface edge). */
@@ -104,6 +119,7 @@
 /* ── Shared GameListItem component ──────────────────────────────── */
 
 .game-list-item {
+    position: relative;
     content-visibility: auto;
     contain-intrinsic-size: auto 61px;
 }
@@ -115,6 +131,9 @@
 .game-list-info {
     flex: 1;
     min-width: 0;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
 }
 
 .game-list-badges {

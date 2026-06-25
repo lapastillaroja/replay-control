@@ -87,16 +87,22 @@
     min-width: 0;
 }
 
-.now-playing-bar-art {
-    width: var(--now-playing-art-size-default);
-    aspect-ratio: 1;
+:where(.now-playing-bar-art, .rom-thumb-frame) {
     overflow: hidden;
     border: var(--control-border);
     border-radius: var(--thumbnail-radius);
     background: var(--surface-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.now-playing-bar-thumb {
+.now-playing-bar-art {
+    width: var(--now-playing-art-size-default);
+    aspect-ratio: 1;
+}
+
+:where(.now-playing-bar-thumb, .rom-thumb) {
     display: block;
     width: 100%;
     height: 100%;

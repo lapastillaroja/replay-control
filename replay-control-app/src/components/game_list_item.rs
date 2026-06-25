@@ -34,6 +34,7 @@ pub fn GameListItem(
     let box_art_url = StoredValue::new(box_art_url);
     let placeholder_name = StoredValue::new(display_name.clone());
     let placeholder_system = StoredValue::new(system.get_value());
+    let row_label = StoredValue::new(display_name.clone());
 
     let game_href = StoredValue::new(format!(
         "/games/{}/{}",
@@ -64,47 +65,61 @@ pub fn GameListItem(
         if fav {
             let fav_filename = format!("{sys}@{fname}.fav");
             leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
+                is_fav.set(
+                    server_fns::remove_favorite(fav_filename, None)
+                        .await
+                        .is_err(),
+                );
             });
         } else {
             leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
+                is_fav.set(server_fns::add_favorite(sys, rp, false).await.is_ok());
             });
         }
     };
-    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
-
     view! {
         <div class="game-list-item">
+            <A
+                href=game_href.get_value()
+                attr:class="game-list-row-link"
+                attr:aria-label=row_label.get_value()
+            >
+                {""}
+            </A>
+
             {show_favorite.then(|| view! {
-                <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
+                <button class="rom-fav-btn" on:click=on_toggle_fav>
+                    {move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" }}
+                </button>
             })}
 
-            <A href=game_href.get_value() attr:class="rom-thumb-link">
-                {if has_box_art {
-                    Either::Left(view! {
-                        <img
-                            class="rom-thumb"
-                            src=box_art_url.get_value()
-                            loading="lazy"
-                            width="56"
-                            height="40"
-                        />
-                    })
-                } else {
-                    Either::Right(view! {
-                        <div class="rom-thumb-placeholder">
-                            <BoxArtPlaceholder system=placeholder_system.get_value() name=placeholder_name.get_value() size="list".to_string() />
-                        </div>
-                    })
-                }}
-            </A>
+            <div class="rom-thumb-link">
+                <div class="rom-thumb-frame">
+                    {if has_box_art {
+                        Either::Left(view! {
+                            <img
+                                class="rom-thumb"
+                                src=box_art_url.get_value()
+                                loading="lazy"
+                                width="56"
+                                height="40"
+                            />
+                        })
+                    } else {
+                        Either::Right(view! {
+                            <div class="rom-thumb-placeholder">
+                                <BoxArtPlaceholder system=placeholder_system.get_value() name=placeholder_name.get_value() size="list".to_string() />
+                            </div>
+                        })
+                    }}
+                </div>
+            </div>
 
             <div class="game-list-info">
                 <div class="rom-name-row">
-                    <A href=game_href.get_value() attr:class="rom-name rom-name-link">
+                    <span class="rom-name">
                         {display_name}
-                    </A>
+                    </span>
                     {driver_status.as_ref().and_then(|status| {
                         // Only show the dot for non-Working statuses — "Working" is the
                         // default/expected state and showing a green dot for every working

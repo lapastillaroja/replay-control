@@ -36,11 +36,15 @@
 
 .fav-item {
     --row-justify: space-between;
+    position: relative;
 }
 
 .fav-info {
     flex: 1;
     min-width: 0;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
 }
 
 .fav-name {
@@ -55,6 +59,8 @@
     --icon-action-transition: color var(--motion-fast), transform var(--motion-fast);
     color: var(--star);
     margin-left: var(--control-inline-offset);
+    position: relative;
+    z-index: 2;
 }
 
 .fav-star-btn:hover {
@@ -79,6 +85,8 @@
 .fav-confirm-actions {
     margin-left: var(--control-inline-offset);
     flex-shrink: 0;
+    position: relative;
+    z-index: 2;
 }
 
 /* Organize favorites */

@@ -270,7 +270,7 @@
     background: var(--row-hover-bg, var(--surface-hover));
 }
 
-:where(.settings-sidebar-item, .game-list-item, .manual-link-row) {
+:where(.settings-sidebar-item, .game-list-item, .fav-item, .manual-link-row) {
     --row-gap: var(--row-gap-none);
 }
 
@@ -1547,7 +1547,7 @@
     border-bottom: none;
 }
 
-:where(.menu-item, .system-accordion-row, .game-list-item, .developer-match-item) {
+:where(.menu-item, .system-accordion-row, .game-list-item, .fav-item, .developer-match-item) {
     transition: background var(--motion-fast);
 }
 

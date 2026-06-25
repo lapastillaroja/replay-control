@@ -73,6 +73,10 @@
     --list-surface-radius: var(--radius);
 }
 
+.search-group-results {
+    --stack-gap: var(--stack-gap-none);
+}
+
 /* Header text inset a touch past the result rows so the section label sits
    above the game content, matching the original 16px header padding. */
 .search-group-header {

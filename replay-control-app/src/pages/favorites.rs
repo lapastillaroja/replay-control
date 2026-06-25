@@ -421,6 +421,7 @@ where
     let system_folder = StoredValue::new(fav.game.system.clone());
     let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
     let placeholder_name = StoredValue::new(rom_name.clone());
+    let row_label = StoredValue::new(rom_name.clone());
     let system_display = if show_system {
         Some(fav.game.system_display)
     } else {
@@ -458,17 +459,26 @@ where
 
     view! {
         <div class="fav-item">
-            <A href=game_href.get_value() attr:class="rom-thumb-link">
-                <Show when=move || has_box_art fallback=move || view! {
-                    <div class="rom-thumb-placeholder">
-                        <BoxArtPlaceholder system=system_folder.get_value() name=placeholder_name.get_value() size="list".to_string() />
-                    </div>
-                }>
-                    <img class="rom-thumb" src=box_art.get_value() loading="lazy" />
-                </Show>
+            <A
+                href=game_href.get_value()
+                attr:class="game-list-row-link"
+                attr:aria-label=row_label.get_value()
+            >
+                {""}
             </A>
+            <div class="rom-thumb-link">
+                <div class="rom-thumb-frame">
+                    <Show when=move || has_box_art fallback=move || view! {
+                        <div class="rom-thumb-placeholder">
+                            <BoxArtPlaceholder system=system_folder.get_value() name=placeholder_name.get_value() size="list".to_string() />
+                        </div>
+                    }>
+                        <img class="rom-thumb" src=box_art.get_value() loading="lazy" />
+                    </Show>
+                </div>
+            </div>
             <div class="fav-info">
-                <A href=game_href.get_value() attr:class="fav-name rom-name-link">{rom_name}</A>
+                <span class="fav-name">{rom_name}</span>
                 <div class="fav-badges">
                     {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}
                     <Show when=move || has_genre>
