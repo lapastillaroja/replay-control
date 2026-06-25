@@ -262,7 +262,10 @@ Prefer `<Show>` over `if/else` closures inside `view!`:
 
 For SSR pages, avoid changing the root element shape across server render and hydration. If a control can be enabled or disabled based on async/auth/device state, prefer one stable element with disabled styling/attributes over switching between different tags such as `<A>` and `<div>`.
 
-When rendering children from `Suspend`, `Transition`, or other delayed async closures, capture shared contexts such as i18n in the parent page and pass them into child components as props. Do not call `use_context`/`expect_context` inside components that are only created after an async boundary unless that component is also used in a normal rooted render path. This avoids context panics and SSR/client marker mismatches.
+A component created inside `Suspend`/`Transition`/other async closures that reads a context (`use_context`/`expect_context`) can panic ("expected context … to be present") on a **client-side navigation**: the async-resolved reactive owner no longer chains to where the context was provided. It works on the initial SSR+hydrate load, so the bug only surfaces on SPA nav. Two cases:
+
+- **App-global singleton contexts (e.g. i18n):** make the accessor resilient instead of threading props through every component. The client has exactly one instance per session, so cache it at provide time and fall back to it when `use_context` returns `None`. See `i18n::{provide_i18n, use_i18n}` (`replay-control-app/src/i18n/mod.rs`): the fallback is `#[cfg(target_arch = "wasm32")]`-only, so SSR (per-request locales on shared threads) keeps using `expect_context`, which is always in scope server-side. Components can then call `use_i18n()` anywhere, including inside Suspense.
+- **Non-global contexts (per-page/per-component):** there is no single instance to cache, so capture the value in the parent and pass it into the async-rendered children as props.
 
 ### Use `#[prop(into)]` for flexible component APIs
 
