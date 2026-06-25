@@ -5,7 +5,7 @@ use leptos_router::hooks::use_location;
 use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
-use crate::i18n::{I18nContext, Key, Locale, t, use_i18n};
+use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::server_fns::SystemLiveStats;
 use crate::util::{format_elapsed_short, format_size};
@@ -144,7 +144,7 @@ fn AppearanceSection() -> impl IntoView {
             <h3 class="section-title">{move || t(i18n.locale.get(), Key::SettingsSectionAppearance)}</h3>
             <div class="settings-section-body">
                 <div class="menu-list">
-                    {menu_item("\u{1F3A8}", Key::MoreSkin, Some("/settings/skin"), i18n)}
+                    {menu_item("\u{1F3A8}", Key::MoreSkin, Some("/settings/skin"))}
                 </div>
                 <Suspense fallback=|| ()>
                     {move || Suspend::new(async move {
@@ -190,8 +190,8 @@ fn LibraryGamesSection() -> impl IntoView {
                                 };
                                 view! {
                                     <div class="menu-list">
-                                        {menu_item("\u{1F4DA}", Key::MoreMetadata, values.admin_unlocked.then_some("/settings/game-library"), i18n)}
-                                        {menu_item("\u{1F3C6}", Key::MoreRetroAchievements, (values.on_device && values.admin_unlocked).then_some("/settings/retroachievements"), i18n)}
+                                        {menu_item("\u{1F4DA}", Key::MoreMetadata, values.admin_unlocked.then_some("/settings/game-library"))}
+                                        {menu_item("\u{1F3C6}", Key::MoreRetroAchievements, (values.on_device && values.admin_unlocked).then_some("/settings/retroachievements"))}
                                     </div>
                                     <Show when=move || !values.on_device || !values.admin_unlocked>
                                         <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
@@ -251,9 +251,9 @@ fn DeviceNetworkSection() -> impl IntoView {
                                 };
                                 view! {
                                     <div class="menu-list">
-                                        {menu_item("\u{1F4F6}", Key::MoreWifi, device_href("/settings/wifi"), i18n)}
-                                        {menu_item("\u{1F4C1}", Key::MoreNfs, device_href("/settings/nfs"), i18n)}
-                                        {menu_item("\u{1F4BB}", Key::MoreHostname, device_href("/settings/hostname"), i18n)}
+                                        {menu_item("\u{1F4F6}", Key::MoreWifi, device_href("/settings/wifi"))}
+                                        {menu_item("\u{1F4C1}", Key::MoreNfs, device_href("/settings/nfs"))}
+                                        {menu_item("\u{1F4BB}", Key::MoreHostname, device_href("/settings/hostname"))}
                                     </div>
                                     <Show when=move || !values.on_device || !values.admin_unlocked>
                                         <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
@@ -285,9 +285,9 @@ fn AccessSection() -> impl IntoView {
                             Ok(auth_status) => view! {
                                 <div class="menu-list">
                                     {if auth_status.auth_required && auth_status.role == AuthRole::Anonymous {
-                                        menu_item("\u{1F511}", Key::LoginTitle, Some("/login"), i18n).into_any()
+                                        menu_item("\u{1F511}", Key::LoginTitle, Some("/login")).into_any()
                                     } else {
-                                        menu_item("\u{1F512}", Key::AccessSecurityTitle, Some("/settings/access"), i18n).into_any()
+                                        menu_item("\u{1F512}", Key::AccessSecurityTitle, Some("/settings/access")).into_any()
                                     }}
                                 </div>
                             }
@@ -321,7 +321,7 @@ fn ReplayOsSection() -> impl IntoView {
                                 };
                                 view! {
                                     <div class="menu-list">
-                                        {menu_item("\u{1F4E1}", Key::ReplayOsSettingsTitle, (values.on_device && values.admin_unlocked).then_some("/settings/replayos"), i18n)}
+                                        {menu_item("\u{1F4E1}", Key::ReplayOsSettingsTitle, (values.on_device && values.admin_unlocked).then_some("/settings/replayos"))}
                                     </div>
                                     <Show when=move || !values.on_device || !values.admin_unlocked>
                                         <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
@@ -374,7 +374,7 @@ fn SystemSection() -> impl IntoView {
                 <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                     {move || Suspend::new(async move {
                         match live_stats.await {
-                            Ok(stats) => view! { <SystemStatsGrid stats i18n /> }.into_any(),
+                            Ok(stats) => view! { <SystemStatsGrid stats /> }.into_any(),
                             Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
                         }
                     })}
@@ -384,13 +384,13 @@ fn SystemSection() -> impl IntoView {
                         match system_values.await {
                             Ok(values) => view! {
                                 <div class="menu-list">
-                                    {menu_item("\u{1F4DC}", Key::MoreLogs, values.admin_unlocked.then_some("/settings/logs"), i18n)}
-                                    {menu_item("\u{1F511}", Key::MoreGithub, values.admin_unlocked.then_some("/settings/github"), i18n)}
+                                    {menu_item("\u{1F4DC}", Key::MoreLogs, values.admin_unlocked.then_some("/settings/logs"))}
+                                    {menu_item("\u{1F511}", Key::MoreGithub, values.admin_unlocked.then_some("/settings/github"))}
                                 </div>
                                 <Show when=move || !values.admin_unlocked>
                                     <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p>
                                 </Show>
-                                {values.analytics_enabled.map(|current| view! { <AnalyticsInline current i18n /> })}
+                                {values.analytics_enabled.map(|current| view! { <AnalyticsInline current /> })}
                             }
                                 .into_any(),
                             Err(err) => view! { <p class="error">{err.to_string()}</p> }.into_any(),
@@ -403,7 +403,8 @@ fn SystemSection() -> impl IntoView {
 }
 
 #[component]
-fn SystemStatsGrid(stats: SystemLiveStats, i18n: I18nContext) -> impl IntoView {
+fn SystemStatsGrid(stats: SystemLiveStats) -> impl IntoView {
+    let i18n = use_i18n();
     view! {
         <div class="info-grid">
             <InfoRow label_key=Key::MoreStorage value=stats.storage_kind.to_uppercase() />
@@ -821,12 +822,13 @@ fn admin_settings_unlocked(status: &AuthStatus) -> bool {
 // ── Analytics (inline within System section) ────────────────────
 
 #[component]
-fn AnalyticsInline(current: bool, i18n: I18nContext) -> impl IntoView {
+fn AnalyticsInline(current: bool) -> impl IntoView {
+    let i18n = use_i18n();
     view! {
         <div class="analytics-section">
             <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
-            <AnalyticsToggle current i18n />
+            <AnalyticsToggle current />
 
             <details class="analytics-details">
                 <summary>{move || t(i18n.locale.get(), Key::AnalyticsWhatSent)}</summary>
@@ -843,7 +845,8 @@ fn AnalyticsInline(current: bool, i18n: I18nContext) -> impl IntoView {
 }
 
 #[component]
-fn AnalyticsToggle(current: bool, i18n: I18nContext) -> impl IntoView {
+fn AnalyticsToggle(current: bool) -> impl IntoView {
+    let i18n = use_i18n();
     let active = RwSignal::new(current);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
@@ -1076,12 +1079,8 @@ fn TextSizeToggle(current: String) -> impl IntoView {
     }
 }
 
-fn menu_item(
-    icon: &'static str,
-    label_key: Key,
-    href: Option<&'static str>,
-    i18n: I18nContext,
-) -> impl IntoView {
+fn menu_item(icon: &'static str, label_key: Key, href: Option<&'static str>) -> impl IntoView {
+    let i18n = use_i18n();
     // Reactive so the label re-translates on locale change, like the rest of
     // the page (was get_untracked, which froze it at first render).
     let label = move || t(i18n.locale.get(), label_key);

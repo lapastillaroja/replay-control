@@ -40,7 +40,7 @@ use components::replay_api_status_banner::ReplayApiStatusBanner;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
 use hooks::Clock;
-use i18n::{I18nContext, Key, provide_i18n, t, use_i18n};
+use i18n::{Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
 use pages::access::AccessSecurityPage;
 use pages::board::BoardPage;
@@ -163,13 +163,12 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn RouteScopedAppSurface() -> impl IntoView {
-    let i18n = use_i18n();
     let location = use_location();
     let is_standalone_auth_page =
         move || matches!(location.pathname.get().as_str(), "/login" | "/first-setup");
 
     view! {
-        <Show when=is_standalone_auth_page fallback=move || view! { <AppChrome i18n /> }>
+        <Show when=is_standalone_auth_page fallback=move || view! { <AppChrome /> }>
             <main class="login-standalone">
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                     {move || {
@@ -186,7 +185,8 @@ fn RouteScopedAppSurface() -> impl IntoView {
 }
 
 #[component]
-fn AppChrome(i18n: I18nContext) -> impl IntoView {
+fn AppChrome() -> impl IntoView {
+    let i18n = use_i18n();
     provide_context(i18n);
 
     view! {

@@ -1,11 +1,11 @@
 use leptos::prelude::*;
 
-use crate::i18n::{I18nContext, Key, t, use_i18n};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]
-pub fn PasswordForm(#[prop(optional)] i18n: Option<I18nContext>) -> impl IntoView {
-    let i18n = i18n.unwrap_or_else(use_i18n);
+pub fn PasswordForm() -> impl IntoView {
+    let i18n = use_i18n();
     let locale_signal = i18n.locale;
 
     let current_password = RwSignal::new(String::new());

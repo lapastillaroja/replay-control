@@ -9,7 +9,7 @@ use leptos_router::hooks::use_query_map;
 use server_fn::ServerFnError;
 
 use crate::components::device_only_notice::DeviceOnlyNotice;
-use crate::i18n::{I18nContext, Key, t, use_i18n};
+use crate::i18n::{Key, t, use_i18n};
 use crate::pages::password::PasswordForm;
 use crate::server_fns;
 use crate::server_fns::TlsCertificateInfo;
@@ -56,7 +56,6 @@ pub fn AccessSecurityPage() -> impl IntoView {
                                 initial_status=status
                                 initial_admin_timeout=admin_timeout
                                 initial_certificate=certificate
-                                i18n
                                 on_device
                             />
                         }
@@ -76,9 +75,9 @@ fn AccessSecurityContent(
     initial_status: AuthStatus,
     initial_admin_timeout: Option<String>,
     initial_certificate: Option<TlsCertificateInfo>,
-    i18n: I18nContext,
     on_device: bool,
 ) -> impl IntoView {
+    let i18n = use_i18n();
     let status = RwSignal::new(initial_status);
     let admin_unlocked = move || admin_settings_unlocked(&status.read());
     let auth_active = move || status.read().auth_required;
@@ -139,7 +138,7 @@ fn AccessSecurityContent(
                     </div>
                 </Show>
             </div>
-            <SessionActions status i18n />
+            <SessionActions status />
         </section>
 
         {move || {
@@ -163,7 +162,7 @@ fn AccessSecurityContent(
             } else {
                 view! {
                     <section class="apply-section">
-                        <AdminLoginInline status i18n />
+                        <AdminLoginInline status />
                     </section>
                 }.into_any()
             }
@@ -179,7 +178,6 @@ fn AccessSecurityContent(
                         .filter(|value| is_admin_timeout_value(value))
                         .unwrap_or_else(|| "1h".to_string())
                     status
-                    i18n
                 />
             </section>
         </Show>
@@ -189,9 +187,9 @@ fn AccessSecurityContent(
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessDevicePasswordHint)}</p>
             {move || {
                 if !on_device {
-                    view! { <DeviceOnlyNotice i18n /> }.into_any()
+                    view! { <DeviceOnlyNotice /> }.into_any()
                 } else if admin_unlocked() {
-                    view! { <PasswordForm i18n /> }.into_any()
+                    view! { <PasswordForm /> }.into_any()
                 } else {
                     view! { <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsAdminOnlyDisabled)}</p> }.into_any()
                 }
@@ -201,17 +199,14 @@ fn AccessSecurityContent(
         <section class="apply-section">
             <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessHttpsTitle)}</h3>
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessCertificateTrustHint)}</p>
-            <CertificateSection certificate can_regenerate=Signal::derive(admin_unlocked) i18n />
+            <CertificateSection certificate can_regenerate=Signal::derive(admin_unlocked) />
         </section>
     }
 }
 
 #[component]
-fn AdminSessionTimeoutForm(
-    initial: String,
-    status: RwSignal<AuthStatus>,
-    i18n: I18nContext,
-) -> impl IntoView {
+fn AdminSessionTimeoutForm(initial: String, status: RwSignal<AuthStatus>) -> impl IntoView {
+    let i18n = use_i18n();
     let selected = RwSignal::new(if is_admin_timeout_value(&initial) {
         initial
     } else {
@@ -294,7 +289,8 @@ fn compact_duration(seconds: u64) -> String {
 }
 
 #[component]
-fn SessionActions(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoView {
+fn SessionActions(status: RwSignal<AuthStatus>) -> impl IntoView {
+    let i18n = use_i18n();
     let locale = i18n.locale;
     let saving = RwSignal::new(false);
     let error = RwSignal::new(Option::<String>::None);
@@ -432,7 +428,8 @@ fn SessionActions(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoV
 }
 
 #[component]
-fn AdminLoginInline(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl IntoView {
+fn AdminLoginInline(status: RwSignal<AuthStatus>) -> impl IntoView {
+    let i18n = use_i18n();
     let locale = i18n.locale;
     let admin_password = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
@@ -519,8 +516,8 @@ fn AdminLoginInline(status: RwSignal<AuthStatus>, i18n: I18nContext) -> impl Int
 fn CertificateSection(
     certificate: RwSignal<Option<TlsCertificateInfo>>,
     #[prop(into)] can_regenerate: Signal<bool>,
-    i18n: I18nContext,
 ) -> impl IntoView {
+    let i18n = use_i18n();
     let locale = i18n.locale;
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
@@ -559,7 +556,7 @@ fn CertificateSection(
     view! {
         // Certificate details are admin-only — render them only when we have the
         // info (a non-admin fetch returns nothing), never leaking paths/SANs.
-        {move || certificate.get().map(|info| view! { <CertificateDetails info i18n /> })}
+        {move || certificate.get().map(|info| view! { <CertificateDetails info /> })}
 
         {move || status.get().map(|(ok, msg)| {
             let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
@@ -588,7 +585,8 @@ fn CertificateSection(
 }
 
 #[component]
-fn CertificateDetails(info: TlsCertificateInfo, i18n: I18nContext) -> impl IntoView {
+fn CertificateDetails(info: TlsCertificateInfo) -> impl IntoView {
+    let i18n = use_i18n();
     let info = RwSignal::new(info);
     let missing_coverage = Signal::derive(move || {
         info.with(|info| {
@@ -606,23 +604,20 @@ fn CertificateDetails(info: TlsCertificateInfo, i18n: I18nContext) -> impl IntoV
 
     view! {
         <div class="info-grid">
-            <AccessValueRow label_key=Key::AccessCertificateMode value=Signal::derive(move || t(i18n.locale.get(), Key::AccessCertificateLocal).to_string()) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateGenerated value=Signal::derive(move || info.with(|i| i.generated_at.clone().unwrap_or_else(|| "-".to_string()))) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateExpires value=Signal::derive(move || info.with(|i| i.expires_at.clone().unwrap_or_else(|| "-".to_string()))) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateFingerprint value=Signal::derive(move || info.with(|i| i.fingerprint_sha256.clone().unwrap_or_else(|| "-".to_string()))) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateCoveredNames value=Signal::derive(move || info.with(|i| joined_names(&i.covered_dns_names, &i.covered_ip_addresses))) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateCurrentNames value=Signal::derive(move || info.with(|i| joined_names(&i.current_dns_names, &i.current_ip_addresses))) i18n />
-            <AccessValueRow label_key=Key::AccessCertificateMissingCoverage value=missing_coverage i18n />
+            <AccessValueRow label_key=Key::AccessCertificateMode value=Signal::derive(move || t(i18n.locale.get(), Key::AccessCertificateLocal).to_string()) />
+            <AccessValueRow label_key=Key::AccessCertificateGenerated value=Signal::derive(move || info.with(|i| i.generated_at.clone().unwrap_or_else(|| "-".to_string()))) />
+            <AccessValueRow label_key=Key::AccessCertificateExpires value=Signal::derive(move || info.with(|i| i.expires_at.clone().unwrap_or_else(|| "-".to_string()))) />
+            <AccessValueRow label_key=Key::AccessCertificateFingerprint value=Signal::derive(move || info.with(|i| i.fingerprint_sha256.clone().unwrap_or_else(|| "-".to_string()))) />
+            <AccessValueRow label_key=Key::AccessCertificateCoveredNames value=Signal::derive(move || info.with(|i| joined_names(&i.covered_dns_names, &i.covered_ip_addresses))) />
+            <AccessValueRow label_key=Key::AccessCertificateCurrentNames value=Signal::derive(move || info.with(|i| joined_names(&i.current_dns_names, &i.current_ip_addresses))) />
+            <AccessValueRow label_key=Key::AccessCertificateMissingCoverage value=missing_coverage />
         </div>
     }
 }
 
 #[component]
-fn AccessValueRow(
-    label_key: Key,
-    #[prop(into)] value: Signal<String>,
-    i18n: I18nContext,
-) -> impl IntoView {
+fn AccessValueRow(label_key: Key, #[prop(into)] value: Signal<String>) -> impl IntoView {
+    let i18n = use_i18n();
     view! {
         <div class="info-row">
             <span class="info-label">{move || t(i18n.locale.get(), label_key)}</span>

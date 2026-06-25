@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 use server_fn::ServerFnError;
 
-use crate::i18n::{I18nContext, Key, t, use_i18n};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 use crate::util::numeric_code;
 #[cfg(feature = "hydrate")]
@@ -35,7 +35,7 @@ pub fn LoginPage() -> impl IntoView {
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let status = status_resource.await?;
-                    Ok::<_, ServerFnError>(view! { <LoginForm initial=status i18n /> })
+                    Ok::<_, ServerFnError>(view! { <LoginForm initial=status /> })
                 })}
             </Suspense>
         </div>
@@ -43,7 +43,8 @@ pub fn LoginPage() -> impl IntoView {
 }
 
 #[component]
-fn LoginForm(initial: AuthStatus, i18n: I18nContext) -> impl IntoView {
+fn LoginForm(initial: AuthStatus) -> impl IntoView {
+    let i18n = use_i18n();
     #[cfg(feature = "hydrate")]
     let next_after_login = {
         let query = use_query_map();
