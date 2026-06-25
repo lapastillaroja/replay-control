@@ -560,6 +560,9 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                 "players" => vec!["1 Player", "2 Players", "Unknown"],
                 "rating" => vec!["★★★★★", "★★★★", "Not Rated"],
                 "developer" => vec!["Capcom", "Konami", "Sega"],
+                // Arcade favorites bucket by board; console favorites by system
+                // name. Mix both so the preview reflects that fallback.
+                "board" => vec!["CPS-2", "Neo Geo MVS", "Sega Mega Drive - Genesis"],
                 _ => vec![],
             }
         };
@@ -705,6 +708,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                             <option value="players">{move || t(i18n.locale.get(), Key::OrganizePlayers)}</option>
                             <option value="rating">{move || t(i18n.locale.get(), Key::OrganizeRating)}</option>
                             <option value="developer">{move || t(i18n.locale.get(), Key::OrganizeDeveloper)}</option>
+                            <option value="board">{move || t(i18n.locale.get(), Key::OrganizeBoard)}</option>
                             <option value="alphabetical">{move || t(i18n.locale.get(), Key::OrganizeAlphabetical)}</option>
                         </select>
                     </div>
@@ -719,6 +723,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                                 ("players", Key::OrganizePlayers),
                                 ("rating", Key::OrganizeRating),
                                 ("developer", Key::OrganizeDeveloper),
+                                ("board", Key::OrganizeBoard),
                                 ("alphabetical", Key::OrganizeAlphabetical),
                             ]
                             .into_iter()
@@ -868,6 +873,7 @@ fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
         "rating" => Some(OrganizeCriteria::Rating),
         "alphabetical" => Some(OrganizeCriteria::Alphabetical),
         "developer" => Some(OrganizeCriteria::Developer),
+        "board" => Some(OrganizeCriteria::Board),
         _ => None,
     }
 }

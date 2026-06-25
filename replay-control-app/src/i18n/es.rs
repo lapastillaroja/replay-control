@@ -56,6 +56,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::OrganizeRating => "Por valoración",
         Key::OrganizeAlphabetical => "Alfabético",
         Key::OrganizeDeveloper => "Por desarrollador",
+        Key::OrganizeBoard => "Por placa",
         Key::OrganizeKeepOriginals => "Mantener copia en raíz",
         Key::OrganizeKeepHint => {
             "Mantiene los archivos originales en la raíz para que la interfaz de RePlayOS siga mostrando todos los favoritos"

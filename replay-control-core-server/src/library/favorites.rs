@@ -506,6 +506,15 @@ fn criteria_folder_raw(
                 developer
             }
         }
+        OrganizeCriteria::Board => {
+            // Arcade games group by their curated board; console games (and
+            // arcade games with no resolved board) fall back to system name,
+            // since a board is the arcade equivalent of a hardware platform.
+            arcade_info
+                .and_then(|i| i.board)
+                .map(|b| b.display_name().to_string())
+                .unwrap_or_else(|| systems::system_display_name(system))
+        }
         OrganizeCriteria::Alphabetical => {
             let display = if is_arcade {
                 arcade_info.map(|i| i.display_name.clone())
@@ -784,6 +793,79 @@ mod tests {
 
     use std::sync::atomic::{AtomicU32, Ordering};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// Minimal `ArcadeGameInfo` fixture; only `board` matters for board bucketing.
+    fn arcade_info(
+        board: Option<replay_control_core::arcade_board::ArcadeBoard>,
+    ) -> ArcadeGameInfo {
+        use crate::arcade_db::{DriverStatus, Rotation};
+        ArcadeGameInfo {
+            rom_name: String::new(),
+            display_name: String::new(),
+            year: String::new(),
+            manufacturer: String::new(),
+            players: 0,
+            rotation: Rotation::Unknown,
+            status: DriverStatus::Unknown,
+            is_clone: false,
+            is_bios: false,
+            parent: String::new(),
+            category: String::new(),
+            normalized_genre: String::new(),
+            board,
+            ra_id: String::new(),
+            alt_display_names: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn board_buckets_arcade_by_board_else_by_system() {
+        use replay_control_core::arcade_board::ArcadeBoard;
+
+        let mut batch = CatalogLookup::default();
+        batch.arcade.insert(
+            ("arcade_fbneo".to_string(), "sfa3".to_string()),
+            arcade_info(Some(ArcadeBoard::Cps2)),
+        );
+        batch.arcade.insert(
+            ("arcade_fbneo".to_string(), "noboard".to_string()),
+            arcade_info(None),
+        );
+
+        // Arcade game with a resolved board -> the board's display name.
+        assert_eq!(
+            criteria_folder(
+                OrganizeCriteria::Board,
+                "arcade_fbneo",
+                "sfa3.zip",
+                None,
+                &batch
+            ),
+            "CPS-2"
+        );
+        // Arcade game with no resolved board -> system display name fallback.
+        assert_eq!(
+            criteria_folder(
+                OrganizeCriteria::Board,
+                "arcade_fbneo",
+                "noboard.zip",
+                None,
+                &batch
+            ),
+            sanitize_folder_name(&systems::system_display_name("arcade_fbneo"))
+        );
+        // Console game (never in the arcade map) -> system display name fallback.
+        assert_eq!(
+            criteria_folder(
+                OrganizeCriteria::Board,
+                "nintendo_nes",
+                "Mario.nes",
+                None,
+                &batch
+            ),
+            sanitize_folder_name(&systems::system_display_name("nintendo_nes"))
+        );
+    }
 
     fn setup_test_storage() -> (PathBuf, StorageLocation) {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);

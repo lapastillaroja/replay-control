@@ -56,6 +56,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::OrganizeRating => "評価別",
         Key::OrganizeAlphabetical => "アルファベット順",
         Key::OrganizeDeveloper => "開発元別",
+        Key::OrganizeBoard => "基板別",
         Key::OrganizeKeepOriginals => "ルートにコピーを残す",
         Key::OrganizeKeepHint => {
             "RePlayOS UIがすべてのお気に入りを表示し続けられるよう、元のファイルをルートに残します"

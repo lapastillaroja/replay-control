@@ -28,6 +28,7 @@ pub enum OrganizeCriteria {
     Rating,
     Alphabetical,
     Developer,
+    Board,
 }
 
 /// Result of an organize or flatten operation.

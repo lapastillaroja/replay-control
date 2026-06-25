@@ -58,6 +58,7 @@ pub enum Key {
     OrganizeRating,
     OrganizeAlphabetical,
     OrganizeDeveloper,
+    OrganizeBoard,
     OrganizeKeepOriginals,
     OrganizeKeepHint,
     OrganizeApply,
