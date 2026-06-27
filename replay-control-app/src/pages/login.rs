@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 use server_fn::ServerFnError;
 
-use crate::i18n::{Key, t, use_i18n};
+use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::util::numeric_code;
 #[cfg(feature = "hydrate")]
@@ -38,7 +38,56 @@ pub fn LoginPage() -> impl IntoView {
                     Ok::<_, ServerFnError>(view! { <LoginForm initial=status /> })
                 })}
             </Suspense>
+            <LoginLanguageSelector />
         </div>
+    }
+}
+
+#[component]
+fn LoginLanguageSelector() -> impl IntoView {
+    let i18n = use_i18n();
+    let on_change = move |ev: leptos::ev::Event| {
+        let locale = Locale::from_code(&event_target_value(&ev));
+        i18n.set_locale.set(locale);
+        set_document_language(locale);
+    };
+
+    view! {
+        <label class="https-guidance-language">
+            <span>{move || t(i18n.locale.get(), Key::LoginLanguage)}</span>
+            <select
+                class="https-guidance-language-select"
+                aria-label=move || t(i18n.locale.get(), Key::LoginLanguage)
+                on:change=on_change
+            >
+                <option value="en" selected=move || i18n.locale.get() == Locale::En>
+                    "English"
+                </option>
+                <option value="es" selected=move || i18n.locale.get() == Locale::Es>
+                    "Español"
+                </option>
+                <option value="ja" selected=move || i18n.locale.get() == Locale::Ja>
+                    "日本語"
+                </option>
+            </select>
+        </label>
+    }
+}
+
+fn set_document_language(locale: Locale) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(html) = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.document_element())
+        {
+            let _ = html.set_attribute("lang", locale.code());
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = locale;
     }
 }
 

@@ -183,6 +183,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::LoginLogoutAll => "すべてのセッションをサインアウト",
         Key::LoginLogoutAllConfirm => "すべてのReplay Controlセッションをサインアウトしますか？",
         Key::LoginContinue => "続行",
+        Key::LoginLanguage => "言語",
         Key::LoginCurrentRole => "現在のアクセス",
         Key::LoginAdminTimeRemaining => "管理者時間の残り",
         Key::LoginSessionTimeRemaining => "セッション時間の残り",

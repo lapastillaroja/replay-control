@@ -183,6 +183,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::LoginLogoutAll => "Cerrar todas las sesiones",
         Key::LoginLogoutAllConfirm => "¿Cerrar todas las sesiones de Replay Control?",
         Key::LoginContinue => "Continuar",
+        Key::LoginLanguage => "Idioma",
         Key::LoginCurrentRole => "Acceso actual",
         Key::LoginAdminTimeRemaining => "Tiempo admin restante",
         Key::LoginSessionTimeRemaining => "Tiempo de sesión restante",

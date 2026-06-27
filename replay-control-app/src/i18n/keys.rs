@@ -157,6 +157,7 @@ pub enum Key {
     LoginLogoutAll,
     LoginLogoutAllConfirm,
     LoginContinue,
+    LoginLanguage,
     LoginCurrentRole,
     LoginAdminTimeRemaining,
     LoginSessionTimeRemaining,

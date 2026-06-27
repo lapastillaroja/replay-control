@@ -247,11 +247,16 @@ mod ssr {
       font-size: 0.9rem;
     }}
     select {{
-      min-height: 2.25rem;
+      min-height: 2rem;
       border: 1px solid color-mix(in srgb, var(--accent), transparent 45%);
       border-radius: 0.375rem;
-      padding: 0 0.625rem;
-      background: #f9fafb;
+      padding: 0 2rem 0 0.625rem;
+      appearance: none;
+      background-color: #f9fafb;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-position: right 0.625rem center;
+      background-repeat: no-repeat;
+      background-size: 12px 12px;
       color: #111827;
       accent-color: var(--accent);
     }}
