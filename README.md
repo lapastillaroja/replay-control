@@ -94,6 +94,7 @@ This is a personal project born from my love for retro gaming on real hardware. 
 Planned, not yet available (in no particular order):
 
 - RetroAchievements achievement and progress display
+- ROM rename suggestions for better metadata and box-art matches
 - Game upload from the UI
 - Favorites export and import for sharing
 - DMDos integration
