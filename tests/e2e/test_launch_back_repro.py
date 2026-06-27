@@ -8,7 +8,7 @@ the launch button (and the rest of the row) without handlers.
 import pytest
 from playwright.sync_api import expect
 
-from conftest import CONTAINER, goto_hydrated
+from conftest import CONTAINER, goto_hydrated, seed_favorite
 
 pytestmark = pytest.mark.skipif(not CONTAINER, reason="container only")
 
@@ -66,3 +66,40 @@ def test_launch_after_browser_back(page, seeded_game):
     # The launch handler fires the server call after Back.
     with page.expect_request(lambda r: "/sfn/launch_game" in r.url, timeout=5000):
         back_launch.click()
+
+
+def test_browser_back_keeps_search_in_same_document(page, seeded_game):
+    # Regression for iOS/WebKit: Back from another route must restore the SPA
+    # document instead of forcing a full page load. A reload drops this marker.
+    goto_hydrated(page, "/search?q=Seed")
+    page.evaluate("window.__replayBackMarker = crypto.randomUUID()")
+    marker = page.evaluate("window.__replayBackMarker")
+
+    page.locator('.bottom-nav a[href="/favorites"]').click()
+    page.wait_for_url("**/favorites", timeout=10000)
+    page.go_back()
+    page.wait_for_url("**/search**", timeout=10000)
+    page.locator(".initial-loading-shell").wait_for(state="hidden", timeout=30000)
+
+    assert page.evaluate("window.__replayBackMarker") == marker
+
+
+def test_favorites_launch_after_browser_back(page, seeded_game):
+    # Favorites uses its own row implementation. Keep the overlay-link/hydration
+    # and launch-after-Back coverage aligned with the shared game list row.
+    seed_favorite(seeded_game["system"], seeded_game["rom_filename"])
+    goto_hydrated(page, "/favorites")
+    page.evaluate("window.__replayBackMarker = crypto.randomUUID()")
+    marker = page.evaluate("window.__replayBackMarker")
+
+    page.locator('.bottom-nav a[href="/search"]').click()
+    page.wait_for_url("**/search", timeout=10000)
+    page.go_back()
+    page.wait_for_url("**/favorites", timeout=10000)
+    page.locator(".initial-loading-shell").wait_for(state="hidden", timeout=30000)
+    assert page.evaluate("window.__replayBackMarker") == marker
+
+    launch = page.locator(".fav-item .game-list-launch-btn").first
+    expect(launch).to_be_visible(timeout=15000)
+    with page.expect_request(lambda r: "/sfn/launch_game" in r.url, timeout=5000):
+        launch.click()

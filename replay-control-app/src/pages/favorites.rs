@@ -471,7 +471,7 @@ where
                 attr:class="game-list-row-link"
                 attr:aria-label=row_label.get_value()
             >
-                {""}
+                <span class="visually-hidden">{row_label.get_value()}</span>
             </A>
             <button
                 class="fav-star-btn"
