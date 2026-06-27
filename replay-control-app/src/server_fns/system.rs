@@ -28,8 +28,18 @@ pub struct LogLevelConfig {
     pub level: String,
 }
 
+/// Outcome of saving the Replay Control log level.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct LogLevelSaveResult {
+    /// True when the level actually changed and a service restart was scheduled
+    /// (device only). The client schedules a page reload when this is set.
+    pub restarting: bool,
+}
+
 #[cfg(feature = "ssr")]
 const REPLAY_CONTROL_ENV_FILE: &str = "/etc/default/replay-control";
+#[cfg(feature = "ssr")]
+const RUST_LOG_ERROR: &str = "error";
 #[cfg(feature = "ssr")]
 const RUST_LOG_INFO: &str = "info";
 #[cfg(feature = "ssr")]
@@ -392,10 +402,11 @@ pub async fn get_log_level_config() -> Result<LogLevelConfig, ServerFnError> {
 }
 
 #[server(prefix = "/sfn")]
-pub async fn save_log_level_config(level: String) -> Result<(), ServerFnError> {
+pub async fn save_log_level_config(level: String) -> Result<LogLevelSaveResult, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let rust_log = match level.as_str() {
+            "error" => RUST_LOG_ERROR,
             "debug" => RUST_LOG_DEBUG,
             "info" => RUST_LOG_INFO,
             _ => return Err(ServerFnError::new("Invalid log level")),
@@ -404,18 +415,56 @@ pub async fn save_log_level_config(level: String) -> Result<(), ServerFnError> {
         let content = tokio::fs::read_to_string(REPLAY_CONTROL_ENV_FILE)
             .await
             .unwrap_or_default();
-        let updated = set_rust_log_in_env_file(&content, rust_log);
-        tokio::fs::write(REPLAY_CONTROL_ENV_FILE, updated)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(())
+        // Only rewrite + restart when the value actually changes, so a no-op
+        // save never disrupts the session.
+        let changed = rust_log_value_from_env_file(&content).as_deref() != Some(rust_log);
+        if changed {
+            let updated = set_rust_log_in_env_file(&content, rust_log);
+            tokio::fs::write(REPLAY_CONTROL_ENV_FILE, updated)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+        }
+
+        // RUST_LOG is read once at process start (systemd reads EnvironmentFile
+        // on start; the tracing filter is built once in main). A change only
+        // applies after a restart — do it for the user, device only.
+        let state = expect_context::<crate::api::AppState>();
+        let restarting = changed && state.mode.is_device();
+        if restarting {
+            schedule_service_restart();
+        }
+        Ok(LogLevelSaveResult { restarting })
     }
 
     #[cfg(not(feature = "ssr"))]
     {
         let _ = level;
-        Ok(())
+        Ok(LogLevelSaveResult { restarting: false })
     }
+}
+
+/// Restart the `replay-control` service shortly after the current response is
+/// sent, so a `RUST_LOG` change takes effect. Deferred 300ms so this response —
+/// and the client's scheduled reload — reach the browser before the process
+/// goes down; systemd owns the restart once issued. Failures are logged rather
+/// than returned, since the client cannot wait on a restart that kills this
+/// process. Mirrors the certificate-rotation restart in `settings.rs`.
+#[cfg(feature = "ssr")]
+fn schedule_service_restart() {
+    tokio::task::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        match std::process::Command::new("systemctl")
+            .args(["--no-block", "restart", "replay-control"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => tracing::error!(
+                "log-level service restart was rejected: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => tracing::error!("log-level service restart failed to start: {error}"),
+        }
+    });
 }
 
 #[cfg(feature = "ssr")]
@@ -423,13 +472,19 @@ fn rust_log_level_from_env_file(content: &str) -> &'static str {
     let Some(value) = rust_log_value_from_env_file(content) else {
         return "info";
     };
-    if value.split(',').any(|part| {
-        let part = part.trim();
-        part == "debug" || part.ends_with("=debug")
-    }) {
-        "debug"
-    } else {
-        "info"
+    let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+    if parts
+        .iter()
+        .any(|part| *part == "debug" || part.ends_with("=debug"))
+    {
+        return "debug";
+    }
+    // The global directive is the bare level with no `target=` prefix; only a
+    // global `error` maps to the Error option (a `=error` target override
+    // doesn't quiet our own crates, so it still reads as Info).
+    match parts.iter().find(|part| !part.contains('=')).copied() {
+        Some("error") => "error",
+        _ => "info",
     }
 }
 
@@ -573,5 +628,41 @@ mod tests {
             ("eth0", "aa:bb:cc:dd:ee:ff"),
         ]));
         assert_eq!(eth.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+    }
+
+    #[test]
+    fn rust_log_level_reader_maps_error_debug_info() {
+        // Missing RUST_LOG defaults to info.
+        assert_eq!(rust_log_level_from_env_file(""), "info");
+        assert_eq!(rust_log_level_from_env_file("RUST_LOG=info"), "info");
+        // Global error → error.
+        assert_eq!(rust_log_level_from_env_file("RUST_LOG=error"), "error");
+        // Any debug target → debug (matches the DEBUG preset).
+        assert_eq!(
+            rust_log_level_from_env_file(&format!("RUST_LOG={RUST_LOG_DEBUG}")),
+            "debug"
+        );
+        assert_eq!(
+            rust_log_level_from_env_file("RUST_LOG=\"info,replay_control_app=debug\""),
+            "debug"
+        );
+        // A `=error` target override doesn't quiet our crates → still info.
+        assert_eq!(
+            rust_log_level_from_env_file("RUST_LOG=info,some_dep=error"),
+            "info"
+        );
+        // Commented line is ignored.
+        assert_eq!(rust_log_level_from_env_file("# RUST_LOG=error"), "info");
+    }
+
+    #[test]
+    fn set_rust_log_round_trips_each_preset() {
+        for preset in [RUST_LOG_ERROR, RUST_LOG_INFO, RUST_LOG_DEBUG] {
+            let written = set_rust_log_in_env_file("OTHER=1\n", preset);
+            assert_eq!(
+                rust_log_value_from_env_file(&written).as_deref(),
+                Some(preset)
+            );
+        }
     }
 }

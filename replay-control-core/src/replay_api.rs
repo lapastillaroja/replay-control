@@ -315,6 +315,48 @@ impl ReplayConfigSnapshot {
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.config.get(key).and_then(|value| value.as_str())
     }
+
+    /// The RePlayOS UI log verbosity (`system_log_level`), if present. Coerces
+    /// both the string (`"1"`) and numeric (`1`) JSON encodings RePlayOS may
+    /// use for the value.
+    pub fn replay_log_level(&self) -> Option<ReplayLogLevel> {
+        let raw = match self.config.get("system_log_level")? {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            _ => return None,
+        };
+        Some(ReplayLogLevel::from_system_value(&raw))
+    }
+}
+
+/// RePlayOS UI log verbosity, from the `system_log_level` key in the `replay`
+/// config. Numeric on the wire and **inverted** — a lower number is more
+/// verbose. `Debug` (`"0"`) is not user-selectable in the RePlayOS menu, and
+/// the API rejects writes to this key, so it can only be changed on the TV
+/// (SYSTEM > LOG LEVEL) and read back here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplayLogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Disabled,
+    /// Present, but not one of the documented `0`–`4` values.
+    Unknown,
+}
+
+impl ReplayLogLevel {
+    /// Map the raw `system_log_level` value (`"0"`–`"4"`) to a level.
+    pub fn from_system_value(value: &str) -> Self {
+        match value.trim() {
+            "0" => Self::Debug,
+            "1" => Self::Info,
+            "2" => Self::Warn,
+            "3" => Self::Error,
+            "4" => Self::Disabled,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 /// Config domain selected by the `type=` query parameter of
@@ -548,6 +590,33 @@ mod tests {
         assert!(status.is_degenerate());
         assert!(!status.game_loaded());
         assert_eq!(status.view_kind(), None);
+    }
+
+    #[test]
+    fn replay_log_level_reads_string_and_number_encodings() {
+        // Device returns it as a JSON string ("1"); tolerate a numeric form too.
+        let from_str: ReplayConfigSnapshot =
+            serde_json::from_str(r#"{"config":{"system_log_level":"3"}}"#).unwrap();
+        assert_eq!(from_str.replay_log_level(), Some(ReplayLogLevel::Error));
+
+        let from_num: ReplayConfigSnapshot =
+            serde_json::from_str(r#"{"config":{"system_log_level":1}}"#).unwrap();
+        assert_eq!(from_num.replay_log_level(), Some(ReplayLogLevel::Info));
+
+        // Key absent → None (can't show a level).
+        let absent: ReplayConfigSnapshot = serde_json::from_str(r#"{"config":{}}"#).unwrap();
+        assert_eq!(absent.replay_log_level(), None);
+    }
+
+    #[test]
+    fn replay_log_level_maps_all_documented_values() {
+        use ReplayLogLevel::*;
+        assert_eq!(ReplayLogLevel::from_system_value("0"), Debug);
+        assert_eq!(ReplayLogLevel::from_system_value("1"), Info);
+        assert_eq!(ReplayLogLevel::from_system_value("2"), Warn);
+        assert_eq!(ReplayLogLevel::from_system_value("3"), Error);
+        assert_eq!(ReplayLogLevel::from_system_value("4"), Disabled);
+        assert_eq!(ReplayLogLevel::from_system_value("9"), Unknown);
     }
 
     #[test]

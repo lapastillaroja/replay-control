@@ -607,7 +607,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsLevelTitle => "Replay Controlのログレベル",
         Key::LogsLevelInfo => "Info",
         Key::LogsLevelDebug => "Debug",
-        Key::LogsLevelRebootHint => "保存した変更はシステムの再起動後に適用されます。",
+        Key::LogsLevelError => "Error",
+        Key::LogsLevelWarn => "警告",
+        Key::LogsLevelDisabled => "無効",
+        Key::LogsLevelUnknown => "不明",
+        Key::LogsLevelRestartHint => {
+            "保存するとReplay Controlが再起動して変更が適用され、ページは再接続します。TVで実行中のゲームには影響しません。"
+        }
+        Key::LogsLevelSaveRestart => "保存して再起動",
+        Key::LogsLevelRestarting => "保存しました — 再起動して再接続中…",
+        Key::LogsReplayLevelTitle => "RePlayOS UIのログレベル",
+        Key::LogsReplayLevelPrefix => "レベル",
+        Key::LogsReplayLevelHint => {
+            "TVの SYSTEM \u{2192} LOG LEVEL で変更してください。反映には再起動が必要な場合があります。"
+        }
+        Key::LogsReplayLevelUnavailable => "利用不可",
 
         // Search
         Key::SearchPlaceholder => "すべてのゲームを検索...",

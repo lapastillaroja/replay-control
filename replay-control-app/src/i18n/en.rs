@@ -605,7 +605,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsLevelTitle => "Replay Control log level",
         Key::LogsLevelInfo => "Info",
         Key::LogsLevelDebug => "Debug",
-        Key::LogsLevelRebootHint => "Saved changes are applied after the system is rebooted.",
+        Key::LogsLevelError => "Error",
+        Key::LogsLevelWarn => "Warning",
+        Key::LogsLevelDisabled => "Disabled",
+        Key::LogsLevelUnknown => "Unknown",
+        Key::LogsLevelRestartHint => {
+            "Saving restarts Replay Control to apply the change, and the page will reconnect. A game running on the TV is not affected."
+        }
+        Key::LogsLevelSaveRestart => "Save & Restart",
+        Key::LogsLevelRestarting => "Saved — restarting, reconnecting…",
+        Key::LogsReplayLevelTitle => "RePlayOS UI log level",
+        Key::LogsReplayLevelPrefix => "Level",
+        Key::LogsReplayLevelHint => {
+            "Change this on the TV: SYSTEM \u{2192} LOG LEVEL. A reboot may be needed for it to take effect."
+        }
+        Key::LogsReplayLevelUnavailable => "Unavailable",
 
         // Search
         Key::SearchPlaceholder => "Search all games...",

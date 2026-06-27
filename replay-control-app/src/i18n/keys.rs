@@ -542,7 +542,17 @@ pub enum Key {
     LogsLevelTitle,
     LogsLevelInfo,
     LogsLevelDebug,
-    LogsLevelRebootHint,
+    LogsLevelError,
+    LogsLevelWarn,
+    LogsLevelDisabled,
+    LogsLevelUnknown,
+    LogsLevelRestartHint,
+    LogsLevelSaveRestart,
+    LogsLevelRestarting,
+    LogsReplayLevelTitle,
+    LogsReplayLevelPrefix,
+    LogsReplayLevelHint,
+    LogsReplayLevelUnavailable,
 
     // Search
     SearchPlaceholder,

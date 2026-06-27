@@ -24,11 +24,11 @@ use replay_control_core_server::settings::write_replay_api_token;
 #[cfg(feature = "ssr")]
 use std::sync::Arc;
 
-use replay_control_core::replay_api::ReplayApiStatus;
 #[cfg(feature = "ssr")]
 use replay_control_core::replay_api::{
     ConfigKind, SetCommand, is_supported_replayos_version, min_supported_version_str,
 };
+use replay_control_core::replay_api::{ReplayApiStatus, ReplayLogLevel};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ReplayPlayerCommand {
@@ -113,6 +113,30 @@ pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> 
         .is_some_and(|config| config.system_kiosk_mode_enabled());
 
     Ok(ReplayOsSettings { kiosk_mode })
+}
+
+/// The RePlayOS UI log level (`system_log_level`), read live via the API.
+/// Returns `None` whenever it can't be read — standalone build, Net Control not
+/// connected, the key is absent, or the call errored — so the page shows
+/// "Unavailable" rather than a wrong value. Read-only: the API rejects writes
+/// to this key (it's not in `allowed_config_variables`), so it can only be
+/// changed on the TV via SYSTEM > LOG LEVEL.
+#[server(prefix = "/sfn")]
+pub async fn get_replayos_log_level() -> Result<Option<ReplayLogLevel>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let Some(api) = state.replay_api.clone() else {
+        return Ok(None);
+    };
+    if !api.status().is_active() {
+        return Ok(None);
+    }
+    match api.client().get_config(ConfigKind::Replay).await {
+        Ok(snapshot) => Ok(snapshot.replay_log_level()),
+        Err(error) => {
+            api.report_error(&error);
+            Ok(None)
+        }
+    }
 }
 
 /// Current integration status. Standalone mode has no integration and reports

@@ -613,9 +613,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::LogsLevelTitle => "Nivel de registro de Replay Control",
         Key::LogsLevelInfo => "Info",
         Key::LogsLevelDebug => "Debug",
-        Key::LogsLevelRebootHint => {
-            "Los cambios guardados se aplican después de reiniciar el sistema."
+        Key::LogsLevelError => "Error",
+        Key::LogsLevelWarn => "Advertencia",
+        Key::LogsLevelDisabled => "Desactivado",
+        Key::LogsLevelUnknown => "Desconocido",
+        Key::LogsLevelRestartHint => {
+            "Al guardar se reinicia Replay Control para aplicar el cambio y la página se reconectará. No afecta a un juego en ejecución en la TV."
         }
+        Key::LogsLevelSaveRestart => "Guardar y reiniciar",
+        Key::LogsLevelRestarting => "Guardado: reiniciando, reconectando…",
+        Key::LogsReplayLevelTitle => "Nivel de registro de RePlayOS UI",
+        Key::LogsReplayLevelPrefix => "Nivel",
+        Key::LogsReplayLevelHint => {
+            "Cámbialo en la TV: SYSTEM \u{2192} LOG LEVEL. Puede que necesites reiniciar para que surta efecto."
+        }
+        Key::LogsReplayLevelUnavailable => "No disponible",
 
         // Search
         Key::SearchPlaceholder => "Buscar todos los juegos...",

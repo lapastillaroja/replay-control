@@ -3,6 +3,8 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
+use replay_control_core::replay_api::ReplayLogLevel;
+
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
@@ -113,12 +115,69 @@ pub fn LogsPage() -> impl IntoView {
                 })}
             </Suspense>
 
+            <ReplayOsLogLevelRow />
+
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let config = log_level.await?;
                     Ok::<_, ServerFnError>(view! { <LogLevelForm config /> })
                 })}
             </Suspense>
+        </div>
+    }
+}
+
+/// Map a RePlayOS UI log level (read live from the device) to its display key.
+/// `None` (couldn't read it) renders as "Unavailable".
+fn replay_level_key(level: Option<ReplayLogLevel>) -> Key {
+    match level {
+        Some(ReplayLogLevel::Debug) => Key::LogsLevelDebug,
+        Some(ReplayLogLevel::Info) => Key::LogsLevelInfo,
+        Some(ReplayLogLevel::Warn) => Key::LogsLevelWarn,
+        Some(ReplayLogLevel::Error) => Key::LogsLevelError,
+        Some(ReplayLogLevel::Disabled) => Key::LogsLevelDisabled,
+        Some(ReplayLogLevel::Unknown) => Key::LogsLevelUnknown,
+        None => Key::LogsReplayLevelUnavailable,
+    }
+}
+
+/// Read-only display of the RePlayOS UI log level. Fetched client-side so a
+/// slow or unreachable device API never blocks the page; degrades to
+/// "Unavailable". The level can't be set from here — the RePlayOS API rejects
+/// writes to it — so this just shows the current value and points the user at
+/// the TV menu (kept in English, since RePlayOS' UI is English-only).
+#[component]
+fn ReplayOsLogLevelRow() -> impl IntoView {
+    let i18n = use_i18n();
+    let level = Resource::new(|| (), |_| server_fns::get_replayos_log_level());
+
+    view! {
+        <div class="settings-form logs-level-form logs-replay-level">
+            <div class="form-field">
+                <label class="form-label">
+                    {move || t(i18n.locale.get(), Key::LogsReplayLevelTitle)}
+                </label>
+                <Transition fallback=move || view! {
+                    <span class="form-static">{move || t(i18n.locale.get(), Key::CommonLoading)}</span>
+                }>
+                    {move || Suspend::new(async move {
+                        let key = replay_level_key(level.await.unwrap_or(None));
+                        view! {
+                            <span class="form-static logs-replay-level-value">
+                                {move || {
+                                    let locale = i18n.locale.get();
+                                    format!(
+                                        "{}: {}",
+                                        t(locale, Key::LogsReplayLevelPrefix),
+                                        t(locale, key),
+                                    )
+                                }}
+                            </span>
+                        }
+                    })}
+                </Transition>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::LogsReplayLevelHint)}</p>
+            </div>
         </div>
     }
 }
@@ -195,16 +254,28 @@ fn LogLevelForm(config: server_fns::LogLevelConfig) -> impl IntoView {
         let value = level.get();
 
         leptos::task::spawn_local(async move {
+            let locale = use_i18n().locale.get_untracked();
             match server_fns::save_log_level_config(value).await {
-                Ok(()) => {
-                    let locale = use_i18n().locale.get_untracked();
+                Ok(result) if result.restarting => {
+                    // Service is bouncing to apply the new RUST_LOG. Keep the
+                    // form disabled and reload once it's back so the session
+                    // reconnects cleanly (mirrors the certificate-rotation flow).
+                    status.set(Some((
+                        true,
+                        t(locale, Key::LogsLevelRestarting).to_string(),
+                    )));
+                    crate::util::reload_after_ms(6000);
+                }
+                Ok(_) => {
+                    // No change (or off-device): nothing restarted.
                     status.set(Some((true, t(locale, Key::SettingsSaved).to_string())));
+                    saving.set(false);
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
+                    saving.set(false);
                 }
             }
-            saving.set(false);
         });
     };
 
@@ -213,10 +284,11 @@ fn LogLevelForm(config: server_fns::LogLevelConfig) -> impl IntoView {
             <div class="form-field">
                 <label class="form-label">{move || t(i18n.locale.get(), Key::LogsLevelTitle)}</label>
                 <select class="form-input logs-level-select" bind:value=level>
+                    <option value="error">{move || t(i18n.locale.get(), Key::LogsLevelError)}</option>
                     <option value="info">{move || t(i18n.locale.get(), Key::LogsLevelInfo)}</option>
                     <option value="debug">{move || t(i18n.locale.get(), Key::LogsLevelDebug)}</option>
                 </select>
-                <p class="form-hint">{move || t(i18n.locale.get(), Key::LogsLevelRebootHint)}</p>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::LogsLevelRestartHint)}</p>
             </div>
 
             {move || status.get().map(|(ok, msg)| {
@@ -231,7 +303,7 @@ fn LogLevelForm(config: server_fns::LogLevelConfig) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::LogsLevelSaveRestart) }
                 }}
             </button>
         </div>

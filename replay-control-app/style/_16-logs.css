@@ -11,6 +11,15 @@
 .logs-level-select {
     max-width: var(--wide-column-width-default);
 }
+/* Read-only RePlayOS UI log level: a static value, not an input. */
+.form-static {
+    display: inline-block;
+}
+.logs-replay-level-value {
+    font-size: var(--font-size-compact-default);
+    font-weight: 600;
+    color: var(--text);
+}
 .logs-source-select {
     flex: 1;
     color: var(--text);
