@@ -79,6 +79,7 @@ fn ActiveNowPlayingBar(
     let command = ServerAction::<server_fns::SendReplayPlayerCommand>::new();
     let pending = command.pending();
     let more_open = RwSignal::new(false);
+    let control_feedback = RwSignal::new(None);
     let dispatch = Callback::new(move |player_command: ReplayPlayerCommand| {
         command.dispatch(server_fns::SendReplayPlayerCommand {
             command: player_command,
@@ -122,11 +123,12 @@ fn ActiveNowPlayingBar(
                     </div>
                 </div>
             </A>
-            <PlayerControls pending dispatch more_open />
+            <PlayerControls pending dispatch more_open control_feedback />
             <Show when=move || more_open.get() fallback=|| ()>
                 <NowPlayingMorePanel
                     pending
                     dispatch
+                    control_feedback
                     system=save_state_system.clone()
                     filename=save_state_filename.clone()
                 />
@@ -149,6 +151,7 @@ fn PlayerControls(
     #[prop(into)] pending: Signal<bool>,
     dispatch: Callback<ReplayPlayerCommand>,
     more_open: RwSignal<bool>,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let confirm_dialog = use_confirm_dialog();
@@ -159,36 +162,48 @@ fn PlayerControls(
                 <PlayerControlButton
                     label_key=Key::PlayerControlScreenshot
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::Screenshot
                     icon=PlayerControlIcon::Screenshot
                     on_press=Callback::new(move |()| dispatch.run(ReplayPlayerCommand::Screenshot))
                 />
                 <PlayerControlButton
                     label_key=Key::PlayerControlVolumeDown
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::VolumeDown
                     icon=PlayerControlIcon::VolumeDown
                     on_press=Callback::new(move |()| dispatch.run(ReplayPlayerCommand::VolumeDown))
                 />
                 <PlayerControlButton
                     label_key=Key::PlayerControlMute
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::Mute
                     icon=PlayerControlIcon::Mute
                     on_press=Callback::new(move |()| dispatch.run(ReplayPlayerCommand::Mute))
                 />
                 <PlayerControlButton
                     label_key=Key::PlayerControlVolumeUp
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::VolumeUp
                     icon=PlayerControlIcon::VolumeUp
                     on_press=Callback::new(move |()| dispatch.run(ReplayPlayerCommand::VolumeUp))
                 />
                 <PlayerControlButton
                     label_key=Key::PlayerControlHalt
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::Halt
                     icon=PlayerControlIcon::Halt
                     on_press=Callback::new(move |()| dispatch.run(ReplayPlayerCommand::Halt))
                 />
                 <PlayerControlButton
                     label_key=Key::PlayerControlReset
                     pending
+                    control_feedback
+                    feedback_id=PlayerControlFeedback::Reset
                     extra_class="now-playing-control-reset"
                     icon=PlayerControlIcon::Reset
                     on_press=Callback::new(move |()| {
@@ -209,7 +224,9 @@ fn PlayerControls(
                     title=move || t(i18n.locale.get(), Key::PlayerControlMore)
                     aria-label=move || t(i18n.locale.get(), Key::PlayerControlMore)
                     aria-expanded=move || more_open.get().to_string()
+                    class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::More)
                     on:click=move |_| {
+                        show_control_feedback(control_feedback, PlayerControlFeedback::More);
                         more_open.update(|open| *open = !*open);
                         release_active_element();
                     }
@@ -225,12 +242,13 @@ fn PlayerControls(
 fn NowPlayingMorePanel(
     #[prop(into)] pending: Signal<bool>,
     dispatch: Callback<ReplayPlayerCommand>,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
     system: String,
     filename: String,
 ) -> impl IntoView {
     view! {
         <div class="now-playing-more-panel">
-            <SaveStatesPanel pending dispatch system filename />
+            <SaveStatesPanel pending dispatch control_feedback system filename />
         </div>
     }
 }
@@ -239,6 +257,7 @@ fn NowPlayingMorePanel(
 fn SaveStatesPanel(
     #[prop(into)] pending: Signal<bool>,
     dispatch: Callback<ReplayPlayerCommand>,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
     system: String,
     filename: String,
 ) -> impl IntoView {
@@ -261,7 +280,7 @@ fn SaveStatesPanel(
 
     view! {
         <div class="now-playing-save-states">
-            <SaveStatesSlotStepper selected_slot=slot decrement increment />
+            <SaveStatesSlotStepper selected_slot=slot decrement increment control_feedback />
             <Suspense fallback=move || view! {
                 <SaveStatesSlotSummary selected_slot=slot state=Signal::derive(loading_state) />
                 <SaveStatesActionsLoading />
@@ -277,6 +296,7 @@ fn SaveStatesPanel(
                             dispatch
                             selected_slot=slot
                             refresh
+                            control_feedback
                             snapshot
                         />
                     }
@@ -292,6 +312,7 @@ fn SaveStatesLoadedControls(
     dispatch: Callback<ReplayPlayerCommand>,
     selected_slot: RwSignal<u8>,
     refresh: RwSignal<u64>,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
     snapshot: SaveSlotsSnapshot,
 ) -> impl IntoView {
     let i18n = use_i18n();
@@ -321,6 +342,7 @@ fn SaveStatesLoadedControls(
         )
     };
     let on_save = move |_| {
+        show_control_feedback(control_feedback, PlayerControlFeedback::Save);
         let slot_number = selected_slot.get_untracked();
         let selected = selected_lookup.get_untracked();
         if let SaveSlotLookup::Occupied(modified_unix_secs) = selected {
@@ -349,6 +371,7 @@ fn SaveStatesLoadedControls(
         release_active_element();
     };
     let on_load = move |_| {
+        show_control_feedback(control_feedback, PlayerControlFeedback::Load);
         let slot_number = selected_slot.get_untracked();
         if let SaveSlotLookup::Occupied(_) = selected_lookup.get_untracked() {
             let locale = i18n.locale.get_untracked();
@@ -374,6 +397,7 @@ fn SaveStatesLoadedControls(
             <button
                 type="button"
                 class="now-playing-control save-states-action"
+                class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::Save)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesSave)
                 prop:disabled=move || pending.get()
                 on:click=on_save
@@ -384,6 +408,7 @@ fn SaveStatesLoadedControls(
             <button
                 type="button"
                 class="now-playing-control save-states-action"
+                class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::Load)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesLoad)
                 prop:disabled=move || pending.get() || slot_is_empty()
                 on:click=on_load
@@ -400,6 +425,7 @@ fn SaveStatesSlotStepper(
     selected_slot: RwSignal<u8>,
     decrement: impl Fn(leptos::ev::MouseEvent) + 'static,
     increment: impl Fn(leptos::ev::MouseEvent) + 'static,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
 
@@ -408,8 +434,12 @@ fn SaveStatesSlotStepper(
             <button
                 type="button"
                 class="now-playing-control now-playing-control-icon-only save-states-step"
+                class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::PreviousSlot)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesPreviousSlot)
-                on:click=decrement
+                on:click=move |ev| {
+                    show_control_feedback(control_feedback, PlayerControlFeedback::PreviousSlot);
+                    decrement(ev);
+                }
                 disabled=move || selected_slot.get() == 1
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Minus />
@@ -417,8 +447,12 @@ fn SaveStatesSlotStepper(
             <button
                 type="button"
                 class="now-playing-control now-playing-control-icon-only save-states-step"
+                class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::NextSlot)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesNextSlot)
-                on:click=increment
+                on:click=move |ev| {
+                    show_control_feedback(control_feedback, PlayerControlFeedback::NextSlot);
+                    increment(ev);
+                }
                 disabled=move || selected_slot.get() == 18
             >
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Plus />
@@ -581,6 +615,8 @@ fn save_state_target_label(locale: Locale, slot: u8, state: &str) -> String {
 fn PlayerControlButton(
     label_key: Key,
     #[prop(into)] pending: Signal<bool>,
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
+    feedback_id: PlayerControlFeedback,
     #[prop(optional)] icon: Option<PlayerControlIcon>,
     #[prop(optional)] extra_class: &'static str,
     on_press: Callback<()>,
@@ -591,10 +627,12 @@ fn PlayerControlButton(
             type="button"
             class=move || format!("now-playing-control {extra_class}")
             class:now-playing-control-icon-only=move || icon.is_some()
+            class:is-feedback=move || control_feedback.get() == Some(feedback_id)
             title=move || t(i18n.locale.get(), label_key)
             aria-label=move || t(i18n.locale.get(), label_key)
             prop:disabled=move || pending.get()
             on:click=move |_| {
+                show_control_feedback(control_feedback, feedback_id);
                 on_press.run(());
                 release_active_element();
             }
@@ -610,6 +648,21 @@ fn PlayerControlButton(
             }}
         </button>
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlayerControlFeedback {
+    Screenshot,
+    Halt,
+    Reset,
+    Save,
+    Load,
+    PreviousSlot,
+    NextSlot,
+    VolumeDown,
+    VolumeUp,
+    Mute,
+    More,
 }
 
 #[derive(Clone, Copy)]
@@ -697,6 +750,23 @@ fn PlayerControlSvgIcon(icon: PlayerControlIcon) -> impl IntoView {
                 <path d="m16 9 6 6"></path>
             </svg>
         }.into_any(),
+    }
+}
+
+fn show_control_feedback(
+    control_feedback: RwSignal<Option<PlayerControlFeedback>>,
+    feedback_id: PlayerControlFeedback,
+) {
+    control_feedback.set(Some(feedback_id));
+
+    #[cfg(feature = "hydrate")]
+    {
+        gloo_timers::callback::Timeout::new(220, move || {
+            if control_feedback.get_untracked() == Some(feedback_id) {
+                control_feedback.set(None);
+            }
+        })
+        .forget();
     }
 }
 

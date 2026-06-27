@@ -17,6 +17,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Changed
 
 - Replaced browser confirmation prompts with Replay Control's in-app confirmation dialog across launch, favorite removal, recent removal, saved resource removal, capture deletion, access, and power controls.
+- Improved now-playing control feedback so taps highlight only the pressed button, and made clickable game-info metadata use link-colored styling.
 
 ### Fixed
 

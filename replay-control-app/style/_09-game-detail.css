@@ -247,6 +247,18 @@
     justify-content: flex-start;
 }
 
+.game-detail .game-info-table .game-info-row .game-meta-link {
+    color: var(--accent);
+    font-weight: 650;
+    text-decoration: none;
+    text-underline-offset: 0.16em;
+}
+
+.game-detail .game-info-table .game-info-row .game-meta-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
 .game-info-row-filename .info-value {
     font-size: var(--font-size-small);
     line-height: 1.45;

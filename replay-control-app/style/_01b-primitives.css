@@ -80,7 +80,7 @@
 }
 
 :where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent) {
-    transition: border-color var(--motion-base), background var(--motion-base), color var(--motion-base), opacity var(--motion-base);
+    transition: border-color var(--motion-base), background var(--motion-base), color var(--motion-base), opacity var(--motion-base), box-shadow var(--motion-fast), transform var(--motion-fast);
 }
 
 :where(

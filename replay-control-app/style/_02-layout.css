@@ -211,6 +211,13 @@
     }
 }
 
+.now-playing-control:active:not(:disabled) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, var(--surface-hover));
+    box-shadow: var(--shadow-inset-bottom);
+    transform: scale(0.94);
+}
+
 .now-playing-control-icon-only {
     width: var(--control-height);
     min-width: var(--control-height);
@@ -233,8 +240,18 @@
 
 .now-playing-control:disabled {
     cursor: wait;
-    opacity: 0.58;
+    opacity: 0.86;
     transform: none;
+}
+
+.now-playing-control.is-feedback,
+.now-playing-control.is-feedback:disabled {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 22%, var(--surface-hover));
+    box-shadow:
+        var(--shadow-inset-bottom),
+        0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
+    color: var(--accent);
 }
 
 .now-playing-control-reset {
@@ -246,6 +263,21 @@
 .now-playing-control-reset:hover {
     border-color: var(--star);
     background: color-mix(in srgb, var(--star) 10%, var(--surface-hover));
+}
+
+.now-playing-control-reset:active:not(:disabled) {
+    border-color: var(--star);
+    background: color-mix(in srgb, var(--star) 18%, var(--surface-hover));
+}
+
+.now-playing-control-reset.is-feedback,
+.now-playing-control-reset.is-feedback:disabled {
+    border-color: var(--star);
+    background: color-mix(in srgb, var(--star) 22%, var(--surface-hover));
+    box-shadow:
+        var(--shadow-inset-bottom),
+        0 0 0 2px color-mix(in srgb, var(--star) 28%, transparent);
+    color: color-mix(in srgb, var(--star) 86%, var(--text));
 }
 
 .now-playing-control-more.is-open {
@@ -284,6 +316,10 @@
 
 .save-states-step:disabled {
     cursor: default;
+    opacity: 0.58;
+}
+
+.save-states-action:disabled:not(.is-feedback) {
     opacity: 0.58;
 }
 
