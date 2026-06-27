@@ -14,6 +14,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Fixed
 
+- Fixed games named with Arabic numerals (e.g. `Doom 2`, `Duke Nukem 2`) not picking up descriptions, genres, and release dates when the metadata source spells the title with Roman numerals (`Doom II`). Title matching now treats the two numeral styles as equivalent for metadata, matching the box-art behaviour.
 - Fixed organizing favorites by **Board** together with **System** (in either order) nesting console favorites under their system name twice (`<System>/<System>/`); the two levels now collapse to one.
 - Fixed a crash that could occur when navigating between pages in the app, caused by the localization context being lost across a client-side navigation.
 

@@ -20,7 +20,7 @@
 /// to be bumped intentionally: changing `normalize_title_for_metadata`
 /// without updating the test forces a recompile failure that signals the
 /// deferred bump.
-pub const TITLE_NORM_VERSION: u32 = 1;
+pub const TITLE_NORM_VERSION: u32 = 2;
 
 /// Detect a TOSEC-format filename stem and derive a human-readable display name
 /// that preserves edition/variant tags while discarding metadata noise.
@@ -207,6 +207,7 @@ pub fn base_title(name: &str) -> String {
 /// - Strip parenthesized / bracketed tags (`(USA)`, `[!]`, …)
 /// - Reorder trailing article (`"Foo, The"` → `"The Foo"`, also "A" / "An")
 /// - Strip TOSEC-style trailing version (`v1.000`, `v2.0`)
+/// - Fold multi-character Roman numerals to Arabic (`"Doom II"` → `"doom 2"`)
 /// - Keep alphanumerics only, lowercase
 pub fn normalize_title_for_metadata(name: &str) -> String {
     let mut stripped = String::with_capacity(name.len());
@@ -244,7 +245,21 @@ pub fn normalize_title_for_metadata(name: &str) -> String {
     };
 
     let version_stripped = strip_version(&reordered);
-    version_stripped
+    // Fold multi-character Roman numerals to Arabic on whitespace tokens so
+    // "Doom II" and "Doom 2" converge to the same key. Mirrors the same fold in
+    // `normalize_aggressive`, keeping the thumbnail and metadata matchers
+    // symmetric — without it a ROM named with Arabic numerals gets box art but
+    // no LaunchBox/catalog metadata. Single letters (I/V/X) are intentionally
+    // left alone (see `roman_token_to_arabic`).
+    let folded = version_stripped
+        .split_whitespace()
+        .map(|tok| match roman_token_to_arabic(tok) {
+            Some(value) => value.to_string(),
+            None => tok.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    folded
         .chars()
         .filter(|c| c.is_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
@@ -887,13 +902,17 @@ mod tests {
                 "The House of the Dead 2 v1.000 (1999)(Sega)(PAL)(M6)[!]",
                 "thehouseofthedead2",
             ),
-            ("Final Fantasy VII", "finalfantasyvii"),
+            ("Final Fantasy VII", "finalfantasy7"),
             ("Pac-Man", "pacman"),
             (
                 "Street Fighter II': Champion Edition",
-                "streetfighteriichampionedition",
+                "streetfighter2championedition",
             ),
             ("Game v1.2.3", "game"),
+            // Roman-numeral fold (TITLE_NORM_VERSION 2): Arabic-numbered ROM
+            // filenames now converge with Roman-numbered metadata titles.
+            ("Doom II", "doom2"),
+            ("Duke Nukem II", "dukenukem2"),
         ];
         for (input, expected) in cases {
             assert_eq!(
@@ -902,7 +921,7 @@ mod tests {
                 "TITLE_NORM_VERSION bump required: input {input:?}"
             );
         }
-        const _: () = assert!(TITLE_NORM_VERSION >= 1);
+        const _: () = assert!(TITLE_NORM_VERSION >= 2);
     }
 
     // --- tosec_display_name ---
