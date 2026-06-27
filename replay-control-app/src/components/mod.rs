@@ -2,6 +2,7 @@ pub mod asset_health_banner;
 pub mod boxart_picker;
 pub mod boxart_placeholder;
 pub mod captures;
+pub mod confirm_dialog;
 pub mod corruption_banner;
 pub mod device_only_notice;
 pub mod filter_chips;

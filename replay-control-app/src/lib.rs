@@ -32,6 +32,7 @@ use leptos_router::path;
 #[cfg(feature = "ssr")]
 use api::AppState;
 use components::asset_health_banner::AssetHealthBanner;
+use components::confirm_dialog::{ConfirmDialogHost, provide_confirm_dialog};
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
@@ -102,12 +103,6 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
         .unwrap_or("en");
     let initial_now_playing_script =
         initial_now_playing_bootstrap_script(&state.now_playing()).unwrap_or_default();
-    // Tag iOS clients (incl. iPadOS, which reports a desktop UA but has touch)
-    // so CSS can hide the quick-launch button there — iOS Safari's bfcache
-    // restore breaks its launch/confirm flow. Bound to a variable so the macro
-    // emits it as a raw, executing <script> body, not an escaped attribute.
-    let ios_detect_script = "(function(){var u=navigator.userAgent||'';if(/ipad|iphone|ipod/i.test(u)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)){document.documentElement.classList.add('is-ios');}})();";
-
     view! {
         <!DOCTYPE html>
         <html lang=initial_lang class=html_class>
@@ -126,7 +121,6 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/static/style.css" />
                 <style id="skin-theme">{skin_css}</style>
                 <script inner_html=initial_now_playing_script></script>
-                <script inner_html=ios_detect_script></script>
                 <HydrationScripts options=options.clone() />
                 <script defer src="/static/ptr-init.js"></script>
             </head>
@@ -140,6 +134,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_i18n();
+    provide_confirm_dialog();
 
     let update_state = RwSignal::new(UpdateState::None);
     provide_context(update_state);
@@ -161,6 +156,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <InitialLoadingShell />
+        <ConfirmDialogHost />
         <Router>
             <RouteScopedAppSurface />
         </Router>

@@ -8,12 +8,12 @@ use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_query_map;
 use server_fn::ServerFnError;
 
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, use_i18n};
 use crate::pages::password::PasswordForm;
 use crate::server_fns;
 use crate::server_fns::TlsCertificateInfo;
-use crate::util::confirm_action;
 #[cfg(feature = "hydrate")]
 use crate::util::sanitize_next_path;
 use replay_control_core::auth::{AuthRole, AuthStatus};
@@ -337,10 +337,8 @@ fn SessionActions(status: RwSignal<AuthStatus>) -> impl IntoView {
             }
         });
     };
-    let on_logout_all = move |_| {
-        if !confirm_action(t(locale.get_untracked(), Key::LoginLogoutAllConfirm)) {
-            return;
-        }
+    let confirm_dialog = use_confirm_dialog();
+    let logout_all = Callback::new(move |()| {
         saving.set(true);
         error.set(None);
         leptos::task::spawn_local(async move {
@@ -363,6 +361,16 @@ fn SessionActions(status: RwSignal<AuthStatus>) -> impl IntoView {
                 }
             }
         });
+    });
+    let on_logout_all = move |_| {
+        let current_locale = locale.get_untracked();
+        confirm_dialog.confirm(
+            t(current_locale, Key::LoginLogoutAll),
+            t(current_locale, Key::LoginLogoutAllConfirm),
+            t(current_locale, Key::LoginLogoutAll),
+            true,
+            logout_all,
+        );
     };
 
     view! {
@@ -519,16 +527,11 @@ fn CertificateSection(
 ) -> impl IntoView {
     let i18n = use_i18n();
     let locale = i18n.locale;
+    let confirm_dialog = use_confirm_dialog();
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
-    let on_regenerate = move |_| {
-        if !confirm_action(t(
-            locale.get_untracked(),
-            Key::AccessCertificateRegenerateConfirm,
-        )) {
-            return;
-        }
+    let regenerate = Callback::new(move |()| {
         saving.set(true);
         status.set(None);
         leptos::task::spawn_local(async move {
@@ -551,6 +554,16 @@ fn CertificateSection(
             }
             saving.set(false);
         });
+    });
+    let on_regenerate = move |_| {
+        let current_locale = locale.get_untracked();
+        confirm_dialog.confirm(
+            t(current_locale, Key::AccessCertificateTitle),
+            t(current_locale, Key::AccessCertificateRegenerateConfirm),
+            t(current_locale, Key::AccessCertificateRegenerate),
+            false,
+            regenerate,
+        );
     };
 
     view! {

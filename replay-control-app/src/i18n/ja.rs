@@ -43,6 +43,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FavoritesRecentlyAdded => "最近追加されたもの",
         Key::FavoritesBySystem => "システム別",
         Key::FavoritesAll => "すべてのお気に入り",
+        Key::FavoritesRemoveConfirm => "{0}をお気に入りから削除しますか？",
 
         // Organize favorites
         Key::OrganizeTitle => "お気に入りを整理",
@@ -403,6 +404,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManualSaved => "マニュアルを保存しました",
         Key::GameDetailResourceSaved => "リソースを保存しました",
         Key::GameDetailResourceAlreadySaved => "このリソースはすでに保存されています。",
+        Key::GameDetailRemoveResource => "リソースを削除",
+        Key::GameDetailRemoveResourceConfirm => "この保存済みリソースを削除しますか？",
         Key::ManualConfirmDelete => "削除しますか？",
         Key::GameDetailLaunch => "TVで起動",
         Key::GameDetailAlreadyPlaying => "プレイ中",

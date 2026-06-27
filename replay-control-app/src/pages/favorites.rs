@@ -5,6 +5,7 @@ use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::hooks::{LaunchControl, use_launch_control};
@@ -83,22 +84,20 @@ where
     // <For> still reads it during the same update — a disposed-value panic.
     let filtered_signal = Signal::derive(filtered_favorites);
 
-    // Track which favorite is pending removal confirmation.
-    let confirm_remove = RwSignal::new(Option::<String>::None);
-
     let remove_fav = move |fav_filename: String, subfolder: String| {
-        // Optimistically remove from local state.
-        favorites.update(|list| {
-            list.retain(|f| f.fav.marker_filename != fav_filename);
-        });
-        confirm_remove.set(None);
-        // Call server to persist.
         let sub = if subfolder.is_empty() {
             None
         } else {
             Some(subfolder)
         };
+        // Defer the optimistic removal: the `retain` unmounts this favorite's
+        // row, which would drop the confirm Callback mid-run (wasm "closure
+        // invoked recursively or after being dropped"). Run it after this returns.
         leptos::task::spawn_local(async move {
+            let marker = fav_filename.clone();
+            favorites.update(|list| {
+                list.retain(|f| f.fav.marker_filename != marker);
+            });
             let _ = server_fns::remove_favorite(fav_filename, sub).await;
         });
     };
@@ -316,9 +315,9 @@ where
                 </div>
 
                 <Show when=move || grouped_view.get() fallback=move || view! {
-                    <FlatFavorites favorites=filtered_signal confirm_remove remove_fav />
+                    <FlatFavorites favorites=filtered_signal remove_fav />
                 }>
-                    <GroupedFavorites favorites=filtered_signal confirm_remove remove_fav />
+                    <GroupedFavorites favorites=filtered_signal remove_fav />
                 </Show>
             </section>
         </Show>
@@ -328,7 +327,6 @@ where
 #[component]
 fn FlatFavorites<F>(
     #[prop(into)] favorites: Signal<Vec<FavoriteWithArt>>,
-    confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
 where
@@ -341,7 +339,7 @@ where
                 key=|f| f.fav.marker_filename.clone()
                 let:f
             >
-                <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=true confirm_remove remove_fav=remove_fav.clone() />
+                <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=true remove_fav=remove_fav.clone() />
             </For>
         </div>
     }
@@ -350,7 +348,6 @@ where
 #[component]
 fn GroupedFavorites<F>(
     #[prop(into)] favorites: Signal<Vec<FavoriteWithArt>>,
-    confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
 where
@@ -386,7 +383,7 @@ where
                             </h3>
                             {favs.into_iter().map(|f| {
                                 let remove_fav = remove_fav.clone();
-                                view! { <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false confirm_remove remove_fav /> }
+                                view! { <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false remove_fav /> }
                             }).collect::<Vec<_>>()}
                         </div>
                     }
@@ -402,7 +399,6 @@ fn FavItem<F>(
     box_art_url: Option<String>,
     #[prop(default = None)] genre: Option<String>,
     show_system: bool,
-    confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
 where
@@ -436,34 +432,28 @@ where
     let has_genre = genre.as_ref().is_some_and(|g| !g.is_empty());
     let genre = StoredValue::new(genre.unwrap_or_default());
 
-    // `is_confirming` is reactive and can re-run as this item is being disposed
-    // during a remove. `try_get_value()` returns None (instead of panicking with
-    // "accessed a disposed value") once the item's scope is gone.
-    let is_confirming = move || {
-        marker
-            .try_get_value()
-            .is_some_and(|m| confirm_remove.read().as_deref() == Some(m.as_str()))
-    };
+    let remove_fav = StoredValue::new(remove_fav);
+    let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
 
     let on_star_click = move |_| {
-        if let Some(m) = marker.try_get_value() {
-            confirm_remove.set(Some(m));
+        if let Some(marker_filename) = marker.try_get_value() {
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailUnfavorite),
+                tf(
+                    locale,
+                    Key::FavoritesRemoveConfirm,
+                    &[&row_label.get_value()],
+                ),
+                t(locale, Key::GameDetailUnfavorite),
+                true,
+                Callback::new(move |()| {
+                    remove_fav.get_value()(marker_filename.clone(), subfolder.get_value());
+                }),
+            );
         }
     };
-
-    let remove_fav = StoredValue::new(remove_fav);
-
-    let on_confirm = move |_| {
-        if let Some(m) = marker.try_get_value() {
-            remove_fav.get_value()(m, subfolder.get_value());
-        }
-    };
-
-    let on_cancel = move |_| {
-        confirm_remove.set(None);
-    };
-
-    let i18n = use_i18n();
 
     // Launch state + handler from the shared hook. The <button> markup stays
     // inline below (a shared child component lost taps on iOS Safari after a
@@ -483,20 +473,13 @@ where
             >
                 {""}
             </A>
-            <Show when=is_confirming fallback=move || view! {
-                <button class="fav-star-btn" title="Remove from favorites" on:click=on_star_click>
-                    {"\u{2605}"}
-                </button>
-            }>
-                <div class="fav-confirm-actions">
-                    <button class="rom-action-btn rom-action-confirm-delete" on:click=on_confirm>
-                        {"Remove?"}
-                    </button>
-                    <button class="rom-action-btn" on:click=on_cancel>
-                        {"\u{2715}"}
-                    </button>
-                </div>
-            </Show>
+            <button
+                class="fav-star-btn"
+                title=move || t(i18n.locale.get(), Key::GameDetailUnfavorite)
+                on:click=on_star_click
+            >
+                {"\u{2605}"}
+            </button>
             <div class="rom-thumb-link">
                 <div class="rom-thumb-frame">
                     <Show when=move || has_box_art fallback=move || view! {
@@ -1014,7 +997,6 @@ pub fn SystemFavoritesPage() -> impl IntoView {
 fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     let i18n = use_i18n();
     let favorites = RwSignal::new(favs);
-    let confirm_remove = RwSignal::new(Option::<String>::None);
 
     // Derive system info from the first favorite (one-time read).
     let first = favorites.read_untracked();
@@ -1033,16 +1015,19 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     let is_empty = move || favorites.read().is_empty();
 
     let remove_fav = move |fav_filename: String, subfolder: String| {
-        favorites.update(|list| {
-            list.retain(|f| f.fav.marker_filename != fav_filename);
-        });
-        confirm_remove.set(None);
         let sub = if subfolder.is_empty() {
             None
         } else {
             Some(subfolder)
         };
+        // Defer the optimistic removal: the `retain` unmounts this favorite's
+        // row, which would drop the confirm Callback mid-run (wasm "closure
+        // invoked recursively or after being dropped"). Run it after this returns.
         leptos::task::spawn_local(async move {
+            let marker = fav_filename.clone();
+            favorites.update(|list| {
+                list.retain(|f| f.fav.marker_filename != marker);
+            });
             let _ = server_fns::remove_favorite(fav_filename, sub).await;
         });
     };
@@ -1077,7 +1062,7 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
                     key=|f| f.fav.marker_filename.clone()
                     let:f
                 >
-                    <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false confirm_remove remove_fav />
+                    <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false remove_fav />
                 </For>
             </div>
         </Show>

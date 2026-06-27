@@ -2,11 +2,12 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::hooks::{Clock, use_live_elapsed_secs, use_now_playing};
 use crate::i18n::{Key, disc_label, play_state_label_key, t, tf, use_i18n};
 use crate::server_fns::{self, ReplayPlayerCommand};
 use crate::types::NowPlayingState;
-use crate::util::{confirm_action, format_elapsed_short};
+use crate::util::format_elapsed_short;
 use replay_control_core::locale::Locale;
 use replay_control_core::replay_api::{DiscInfo, PlayState};
 use replay_control_core::systems::system_abbreviation;
@@ -150,6 +151,7 @@ fn PlayerControls(
     more_open: RwSignal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
 
     view! {
         <div class="now-playing-controls" aria-label=move || t(i18n.locale.get(), Key::CommonActions)>
@@ -190,9 +192,14 @@ fn PlayerControls(
                     extra_class="now-playing-control-reset"
                     icon=PlayerControlIcon::Reset
                     on_press=Callback::new(move |()| {
-                        if confirm_action(t(i18n.locale.get(), Key::PlayerControlResetConfirm)) {
-                            dispatch.run(ReplayPlayerCommand::GameReset);
-                        }
+                        let locale = i18n.locale.get_untracked();
+                        confirm_dialog.confirm(
+                            t(locale, Key::PlayerControlReset),
+                            t(locale, Key::PlayerControlResetConfirm),
+                            t(locale, Key::PlayerControlReset),
+                            false,
+                            Callback::new(move |()| dispatch.run(ReplayPlayerCommand::GameReset)),
+                        );
                     })
                 />
                 <button
@@ -288,6 +295,7 @@ fn SaveStatesLoadedControls(
     snapshot: SaveSlotsSnapshot,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
     let clock = use_context::<Clock>();
     let slots = StoredValue::new(snapshot);
     let selected_lookup =
@@ -323,16 +331,17 @@ fn SaveStatesLoadedControls(
                 .or_else(now_unix_secs);
             let state = format_save_state_timestamp(locale, modified_unix_secs, now);
             let target = save_state_target_label(locale, slot_number, &state);
-            let message = save_state_confirm_message(
-                locale,
-                Key::SaveStatesOverwriteTitle,
-                Key::SaveStatesOverwriteBody,
-                &target,
+            let message = tf(locale, Key::SaveStatesOverwriteBody, &[&target]);
+            confirm_dialog.confirm(
+                t(locale, Key::SaveStatesOverwriteTitle),
+                message,
+                t(locale, Key::SaveStatesSave),
+                false,
+                Callback::new(move |()| {
+                    dispatch.run(ReplayPlayerCommand::SaveState { slot: slot_number });
+                    schedule_save_state_refresh(refresh);
+                }),
             );
-            if confirm_action(&message) {
-                dispatch.run(ReplayPlayerCommand::SaveState { slot: slot_number });
-                schedule_save_state_refresh(refresh);
-            }
         } else {
             dispatch.run(ReplayPlayerCommand::SaveState { slot: slot_number });
             schedule_save_state_refresh(refresh);
@@ -345,15 +354,16 @@ fn SaveStatesLoadedControls(
             let locale = i18n.locale.get_untracked();
             let state = slot_state();
             let target = save_state_target_label(locale, slot_number, &state);
-            let message = save_state_confirm_message(
-                locale,
-                Key::SaveStatesLoadTitle,
-                Key::SaveStatesLoadBody,
-                &target,
+            let message = tf(locale, Key::SaveStatesLoadBody, &[&target]);
+            confirm_dialog.confirm(
+                t(locale, Key::SaveStatesLoadTitle),
+                message,
+                t(locale, Key::SaveStatesLoad),
+                false,
+                Callback::new(move |()| {
+                    dispatch.run(ReplayPlayerCommand::LoadState { slot: slot_number });
+                }),
             );
-            if confirm_action(&message) {
-                dispatch.run(ReplayPlayerCommand::LoadState { slot: slot_number });
-            }
         }
         release_active_element();
     };
@@ -565,19 +575,6 @@ fn schedule_save_state_refresh(refresh: RwSignal<u64>) {
 
 fn save_state_target_label(locale: Locale, slot: u8, state: &str) -> String {
     format!("{} {}/18 - {}", t(locale, Key::SaveStatesSlot), slot, state,)
-}
-
-fn save_state_confirm_message(
-    locale: Locale,
-    title_key: Key,
-    body_key: Key,
-    target: &str,
-) -> String {
-    format!(
-        "{}\n\n{}",
-        t(locale, title_key),
-        tf(locale, body_key, &[target])
-    )
 }
 
 #[component]

@@ -3,25 +3,6 @@ use replay_control_core::systems::find_system_uses_megabit;
 
 use crate::i18n::Locale;
 
-/// Show a native browser confirmation dialog.
-///
-/// Server-side rendering cannot ask the user, so the SSR fallback returns true;
-/// callers only invoke this from browser click handlers.
-pub fn confirm_action(message: &str) -> bool {
-    #[cfg(target_arch = "wasm32")]
-    {
-        web_sys::window()
-            .and_then(|window| window.confirm_with_message(message).ok())
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = message;
-        true
-    }
-}
-
 /// Reload the page after `delay_ms`. Used after regenerating the TLS certificate:
 /// the service restarts with a new cert whose fingerprint the browser hasn't
 /// accepted, so every subsequent fetch fails. A full reload routes the user

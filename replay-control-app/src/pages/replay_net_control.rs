@@ -11,10 +11,11 @@ use leptos_router::components::A;
 use replay_control_core::replay_api::ReplayApiStatus;
 use server_fn::ServerFnError;
 
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::device_only_notice::DeviceOnlyNotice;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, ReplayOsSettings};
-use crate::util::{confirm_action, numeric_code};
+use crate::util::numeric_code;
 
 #[component]
 pub fn ReplayNetControlPage() -> impl IntoView {
@@ -51,6 +52,7 @@ pub fn ReplayNetControlPage() -> impl IntoView {
 #[component]
 fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
 
     // Live status: the SSE-driven app context, seeded with the SSR-fetched
     // value so the card is correct before the SSE init event lands.
@@ -122,29 +124,40 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
         message_text.set(String::new());
         message_result.set(None);
     };
-    let on_restart_game = move |_| {
-        if !confirm_action(t(
-            i18n.locale.get_untracked(),
-            Key::ReplayOsRestartGameConfirm,
-        )) {
-            return;
-        }
+    let restart_game = Callback::new(move |()| {
         run_string_action(
             action_busy,
             restart_result,
             server_fns::restart_replayos_game(),
             || (),
         );
+    });
+    let on_restart_game = move |_| {
+        let locale = i18n.locale.get_untracked();
+        confirm_dialog.confirm(
+            t(locale, Key::PlayerControlReset),
+            t(locale, Key::ReplayOsRestartGameConfirm),
+            t(locale, Key::PlayerControlReset),
+            false,
+            restart_game,
+        );
     };
-    let on_power_off = move |_| {
-        if !confirm_action(t(i18n.locale.get_untracked(), Key::ReplayOsPowerOffConfirm)) {
-            return;
-        }
+    let power_off = Callback::new(move |()| {
         run_string_action(
             action_busy,
             device_result,
             server_fns::power_off_replayos_device(),
             || (),
+        );
+    });
+    let on_power_off = move |_| {
+        let locale = i18n.locale.get_untracked();
+        confirm_dialog.confirm(
+            t(locale, Key::ReplayOsPowerOff),
+            t(locale, Key::ReplayOsPowerOffConfirm),
+            t(locale, Key::ReplayOsPowerOff),
+            true,
+            power_off,
         );
     };
     let on_reboot = move |_| {

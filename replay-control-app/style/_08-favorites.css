@@ -83,13 +83,6 @@
     --secondary-meta-weight: 400;
 }
 
-/* Favorite confirm actions (inline remove confirmation) */
-.fav-confirm-actions {
-    flex-shrink: 0;
-    position: relative;
-    z-index: 2;
-}
-
 /* Organize favorites */
 .organize-toggle {
     --row-text-align: left;

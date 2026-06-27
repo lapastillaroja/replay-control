@@ -45,6 +45,7 @@ pub enum Key {
     FavoritesRecentlyAdded,
     FavoritesBySystem,
     FavoritesAll,
+    FavoritesRemoveConfirm,
 
     // Organize favorites
     OrganizeTitle,
@@ -352,6 +353,8 @@ pub enum Key {
     GameDetailManualSaved,
     GameDetailResourceSaved,
     GameDetailResourceAlreadySaved,
+    GameDetailRemoveResource,
+    GameDetailRemoveResourceConfirm,
     ManualConfirmDelete,
     GameDetailLaunch,
     GameDetailAlreadyPlaying,

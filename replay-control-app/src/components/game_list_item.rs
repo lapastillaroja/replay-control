@@ -3,8 +3,9 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::hooks::{LaunchControl, use_launch_control};
-use crate::i18n::{Key, t, use_i18n};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 
 /// Unified game list row component used across search results, developer pages,
@@ -57,29 +58,43 @@ pub fn GameListItem(
     let genre = StoredValue::new(genre.unwrap_or_default());
 
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
 
     // Favorite toggle.
     let is_fav = RwSignal::new(is_favorite);
     let on_toggle_fav = move |_| {
-        let fav = is_fav.get();
-        is_fav.set(!fav);
-        let fname = rom_filename.get_value();
+        if is_fav.get() {
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailUnfavorite),
+                tf(
+                    locale,
+                    Key::FavoritesRemoveConfirm,
+                    &[&row_label.get_value()],
+                ),
+                t(locale, Key::GameDetailUnfavorite),
+                true,
+                Callback::new(move |()| {
+                    is_fav.set(false);
+                    let fav_filename =
+                        format!("{}@{}.fav", system.get_value(), rom_filename.get_value());
+                    leptos::task::spawn_local(async move {
+                        is_fav.set(
+                            server_fns::remove_favorite(fav_filename, None)
+                                .await
+                                .is_err(),
+                        );
+                    });
+                }),
+            );
+            return;
+        }
+        is_fav.set(true);
         let sys = system.get_value();
         let rp = rom_path.get_value();
-        if fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                is_fav.set(
-                    server_fns::remove_favorite(fav_filename, None)
-                        .await
-                        .is_err(),
-                );
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                is_fav.set(server_fns::add_favorite(sys, rp, false).await.is_ok());
-            });
-        }
+        leptos::task::spawn_local(async move {
+            is_fav.set(server_fns::add_favorite(sys, rp, false).await.is_ok());
+        });
     };
 
     // Launch state + handler from the shared hook. The <button> markup stays

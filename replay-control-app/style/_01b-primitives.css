@@ -159,7 +159,7 @@
     --row-gap: var(--cluster-gap-md);
 }
 
-:where(.now-playing-controls-row, .manual-result-actions, .fav-confirm-actions) {
+:where(.now-playing-controls-row, .manual-result-actions, .app-confirm-actions) {
     --row-gap: var(--control-gap-compact);
 }
 
@@ -350,7 +350,7 @@
     to { transform: rotate(360deg); }
 }
 
-:where(.lightbox-overlay, .boxart-picker-overlay) {
+:where(.lightbox-overlay, .boxart-picker-overlay, .app-confirm-overlay) {
     position: fixed;
     inset: 0;
     z-index: var(--overlay-z, 1000);
@@ -825,7 +825,7 @@
     .manual-result-actions,
     .manual-link-row,
     .organize-actions,
-    .fav-confirm-actions,
+    .app-confirm-actions,
     .system-overview-header,
     .setup-task,
     .game-delete-confirm,
@@ -840,6 +840,59 @@
     justify-content: var(--row-justify, flex-start);
     gap: var(--row-gap, var(--panel-gap));
     flex-wrap: var(--row-wrap, nowrap);
+}
+
+.app-confirm-overlay {
+    --overlay-backdrop-bg: color-mix(in srgb, var(--bg) 72%, transparent);
+    /* Above the lightbox / box-art picker (--overlay-z default 1000): a confirm
+       (e.g. delete from the capture lightbox) can open on top of them. */
+    --overlay-z: 1100;
+    padding: max(var(--page-edge-padding), env(safe-area-inset-top)) max(var(--page-edge-padding), env(safe-area-inset-right)) max(var(--page-edge-padding), env(safe-area-inset-bottom)) max(var(--page-edge-padding), env(safe-area-inset-left));
+}
+
+.app-confirm-dialog {
+    width: min(100%, 22rem);
+    padding: var(--panel-padding-card-md);
+    border: var(--control-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow-floating);
+}
+
+.app-confirm-title {
+    margin: 0;
+    color: var(--text);
+    font-size: var(--font-size-large-default);
+    line-height: 1.25;
+}
+
+.app-confirm-message {
+    margin: var(--control-gap) 0 var(--panel-gap);
+    color: var(--text-secondary);
+    font-size: var(--font-size-compact-default);
+    line-height: 1.45;
+}
+
+.app-confirm-actions {
+    --row-justify: flex-end;
+    --row-wrap: wrap;
+}
+
+.app-confirm-actions .form-btn {
+    min-width: 6.5rem;
+}
+
+.app-confirm-actions .app-confirm-danger {
+    background: var(--error);
+    border-color: var(--danger-confirm-border-color, var(--error));
+    color: var(--text-on-danger);
+    font-weight: var(--danger-confirm-font-weight, 600);
+}
+
+.app-confirm-actions .app-confirm-danger:hover:not(:disabled) {
+    background: var(--danger-confirm-hover-bg, var(--error));
+    border-color: var(--danger-confirm-hover-bg, var(--error));
+    color: var(--danger-confirm-hover-color, var(--text-on-danger));
 }
 
 :where(.advanced-toggle-btn, .system-overview-toggle-all, .update-skip-link) {
@@ -970,13 +1023,13 @@
     font-weight: var(--button-font-weight, inherit);
 }
 
-:where(.manual-confirm-btn, .game-action-delete-confirm, .rom-action-confirm-delete) {
+:where(.manual-confirm-btn, .game-action-delete-confirm) {
     border-color: var(--danger-confirm-border-color, var(--error));
     color: var(--danger-confirm-color, var(--error));
     font-weight: var(--danger-confirm-font-weight, 600);
 }
 
-:where(.manual-confirm-btn, .game-action-delete-confirm, .rom-action-confirm-delete):hover {
+:where(.manual-confirm-btn, .game-action-delete-confirm):hover {
     background: var(--danger-confirm-hover-bg, var(--error));
     color: var(--danger-confirm-hover-color, var(--text-on-danger));
 }
@@ -1504,7 +1557,6 @@
     .manual-upload-form,
     .manual-result-actions,
     .organize-actions,
-    .fav-confirm-actions,
     .setup-actions,
     .now-playing-controls-row
 ) {

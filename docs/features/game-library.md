@@ -68,7 +68,7 @@ Before applying, a **preview** shows exactly how your favorites will be grouped 
 ### Managing Favorites
 
 - **Add/remove** from any game card or the game detail page
-- **Remove confirmation** -- tapping the star shows "Remove?" before acting, so you don't accidentally lose a favorite
+- **Remove confirmation** -- tapping the star asks before acting, so you don't accidentally lose a favorite
 - **Recursive unfavorite** -- removing a favorite from within an organized subfolder unfavorites the game and removes it from the view immediately
 
 ### Favorites-Based Recommendations

@@ -72,15 +72,6 @@
     flex-shrink: 0;
 }
 
-/* Hide the quick-launch button on iOS. iOS Safari's back-forward cache restores
-   the page with native dialogs (window.confirm) suppressed and event handlers
-   in a degraded state, making the list launch flow unreliable there; iOS users
-   launch from the game detail page instead. `.is-ios` is set by the inline
-   detection script in the shell <head>. */
-.is-ios .game-list-launch-btn {
-    display: none;
-}
-
 .game-list-item .game-list-launch-btn::before,
 .fav-item .game-list-launch-btn::before {
     content: "";

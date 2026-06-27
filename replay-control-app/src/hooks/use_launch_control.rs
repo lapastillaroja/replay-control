@@ -1,11 +1,12 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use replay_control_core::locale::Locale;
 
+use crate::components::confirm_dialog::{ConfirmDialog, use_confirm_dialog};
 use crate::hooks::use_now_playing;
-use crate::i18n::{Key, Locale, tf, use_i18n};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::types::NowPlayingState;
-use crate::util::confirm_action;
 
 /// Shared launch-button state + click handler for a single game row.
 ///
@@ -27,8 +28,20 @@ pub fn use_launch_control(
 ) -> LaunchControl {
     let now_playing = use_now_playing();
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
     let launching = RwSignal::new(false);
     let launch_failed = RwSignal::new(false);
+
+    let launch_game = Callback::new(move |()| {
+        launching.set(true);
+        launch_failed.set(false);
+        let path = rom_path.get_value();
+        spawn_local(async move {
+            let failed = server_fns::launch_game(path, String::new()).await.is_err();
+            launching.set(false);
+            launch_failed.set(failed);
+        });
+    });
 
     let on_launch = Callback::new(move |_: ()| {
         if launching.get_untracked() {
@@ -44,18 +57,18 @@ pub fn use_launch_control(
             ..
         } = now_playing.get_untracked()
             && (cur_system != system.get_value() || cur_filename != rom_filename.get_value())
-            && !confirm_replace_running_game(i18n.locale.get(), &cur_name, &row_label.get_value())
         {
+            let locale = i18n.locale.get_untracked();
+            confirm_replace_running_game(
+                confirm_dialog,
+                locale,
+                &row_label.get_value(),
+                &cur_name,
+                launch_game,
+            );
             return;
         }
-        launching.set(true);
-        launch_failed.set(false);
-        let path = rom_path.get_value();
-        spawn_local(async move {
-            let failed = server_fns::launch_game(path, String::new()).await.is_err();
-            launching.set(false);
-            launch_failed.set(failed);
-        });
+        launch_game.run(());
     });
 
     LaunchControl {
@@ -65,13 +78,22 @@ pub fn use_launch_control(
     }
 }
 
-/// If a different game is already running, confirm before replacing it.
-/// Returns true to proceed with the launch, false to cancel.
-fn confirm_replace_running_game(locale: Locale, current_name: &str, next_name: &str) -> bool {
-    let message = tf(
-        locale,
-        Key::LaunchReplaceConfirm,
-        &[next_name, current_name],
+pub fn confirm_replace_running_game(
+    confirm_dialog: ConfirmDialog,
+    locale: Locale,
+    next_name: &str,
+    current_name: &str,
+    on_confirm: Callback<()>,
+) {
+    confirm_dialog.confirm(
+        t(locale, Key::GameDetailLaunch),
+        tf(
+            locale,
+            Key::LaunchReplaceConfirm,
+            &[next_name, current_name],
+        ),
+        t(locale, Key::GameDetailLaunch),
+        false,
+        on_confirm,
     );
-    confirm_action(&message)
 }

@@ -4,6 +4,7 @@ use replay_control_core::video_url;
 use server_fn::ServerFnError;
 use std::collections::HashSet;
 
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns::{
     self, GameDocument, LocalManual, ManualRecommendation, ResourceEntry, VideoEntry,
@@ -128,6 +129,7 @@ pub fn GameResourcesSection(
     focus_on_mount: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
     let section_ref = NodeRef::<html::Section>::new();
     crate::hooks::use_focus_scroll(section_ref, move || focus_on_mount.get());
 
@@ -618,90 +620,116 @@ pub fn GameResourcesSection(
             href,
             source_url,
         } => {
-            if !confirm_resource_delete() {
-                return;
-            }
-            let pending_key = format!("remove-manual:{delete_id}");
-            if pending_link_actions.read().contains(&pending_key) {
-                return;
-            }
-            pending_link_actions.update(|keys| {
-                keys.insert(pending_key.clone());
-            });
-            let sys = system.get_value();
-            leptos::task::spawn_local(async move {
-                match server_fns::delete_manual(sys, delete_id.clone()).await {
-                    Ok(()) => {
-                        hidden_manual_ids.update(|ids| {
-                            ids.insert(delete_id.clone());
-                        });
-                        saved_manual_source_urls.update(|urls| {
-                            urls.remove(&href);
-                            urls.remove(&normalized_url_key(&href));
-                            if let Some(source_url) = &source_url {
-                                urls.remove(source_url);
-                                urls.remove(&normalized_url_key(source_url));
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailRemoveResource),
+                t(locale, Key::GameDetailRemoveResourceConfirm),
+                t(locale, Key::GameDetailRemoveVideo),
+                true,
+                Callback::new(move |()| {
+                    let pending_key = format!("remove-manual:{delete_id}");
+                    if pending_link_actions.read().contains(&pending_key) {
+                        return;
+                    }
+                    pending_link_actions.update(|keys| {
+                        keys.insert(pending_key.clone());
+                    });
+                    let sys = system.get_value();
+                    let delete_id = delete_id.clone();
+                    let href = href.clone();
+                    let source_url = source_url.clone();
+                    leptos::task::spawn_local(async move {
+                        match server_fns::delete_manual(sys, delete_id.clone()).await {
+                            Ok(()) => {
+                                hidden_manual_ids.update(|ids| {
+                                    ids.insert(delete_id.clone());
+                                });
+                                saved_manual_source_urls.update(|urls| {
+                                    urls.remove(&href);
+                                    urls.remove(&normalized_url_key(&href));
+                                    if let Some(source_url) = &source_url {
+                                        urls.remove(source_url);
+                                        urls.remove(&normalized_url_key(source_url));
+                                    }
+                                });
+                                added_manual_link_items.update(|items| {
+                                    items.retain(|item| match &item.action {
+                                        ResourceAction::RemoveManual {
+                                            delete_id: item_id, ..
+                                        } => item_id != &delete_id,
+                                        _ => true,
+                                    });
+                                });
                             }
+                            Err(e) => set_server_error_status(
+                                resource_status,
+                                i18n.locale.get_untracked(),
+                                e,
+                            ),
+                        }
+                        pending_link_actions.update(|keys| {
+                            keys.remove(&pending_key);
                         });
-                        added_manual_link_items.update(|items| {
-                            items.retain(|item| match &item.action {
-                                ResourceAction::RemoveManual {
-                                    delete_id: item_id, ..
-                                } => item_id != &delete_id,
-                                _ => true,
-                            });
-                        });
-                    }
-                    Err(e) => {
-                        set_server_error_status(resource_status, i18n.locale.get_untracked(), e)
-                    }
-                }
-                pending_link_actions.update(|keys| {
-                    keys.remove(&pending_key);
-                });
-            });
+                    });
+                }),
+            );
         }
         ResourceAction::RemoveLink {
             id,
             rom_filename,
             href,
         } => {
-            if !confirm_resource_delete() {
-                return;
-            }
-            let pending_key = format!("remove-link:{rom_filename}:{id}");
-            if pending_link_actions.read().contains(&pending_key) {
-                return;
-            }
-            pending_link_actions.update(|keys| {
-                keys.insert(pending_key.clone());
-            });
-            let sys = system.get_value();
-            leptos::task::spawn_local(async move {
-                match server_fns::remove_game_resource_link(sys, rom_filename, id.clone()).await {
-                    Ok(()) => {
-                        hidden_resource_link_ids.update(|ids| {
-                            ids.insert(id.clone());
-                        });
-                        saved_resource_link_urls.update(|urls| {
-                            urls.remove(&href);
-                            urls.remove(&normalized_url_key(&href));
-                        });
-                        added_resource_link_items.update(|items| {
-                            items.retain(|item| match &item.action {
-                                ResourceAction::RemoveLink { id: item_id, .. } => item_id != &id,
-                                _ => true,
-                            });
-                        });
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailRemoveResource),
+                t(locale, Key::GameDetailRemoveResourceConfirm),
+                t(locale, Key::GameDetailRemoveVideo),
+                true,
+                Callback::new(move |()| {
+                    let pending_key = format!("remove-link:{rom_filename}:{id}");
+                    if pending_link_actions.read().contains(&pending_key) {
+                        return;
                     }
-                    Err(e) => {
-                        set_server_error_status(resource_status, i18n.locale.get_untracked(), e)
-                    }
-                }
-                pending_link_actions.update(|keys| {
-                    keys.remove(&pending_key);
-                });
-            });
+                    pending_link_actions.update(|keys| {
+                        keys.insert(pending_key.clone());
+                    });
+                    let sys = system.get_value();
+                    let id = id.clone();
+                    let rom_filename = rom_filename.clone();
+                    let href = href.clone();
+                    leptos::task::spawn_local(async move {
+                        match server_fns::remove_game_resource_link(sys, rom_filename, id.clone())
+                            .await
+                        {
+                            Ok(()) => {
+                                hidden_resource_link_ids.update(|ids| {
+                                    ids.insert(id.clone());
+                                });
+                                saved_resource_link_urls.update(|urls| {
+                                    urls.remove(&href);
+                                    urls.remove(&normalized_url_key(&href));
+                                });
+                                added_resource_link_items.update(|items| {
+                                    items.retain(|item| match &item.action {
+                                        ResourceAction::RemoveLink { id: item_id, .. } => {
+                                            item_id != &id
+                                        }
+                                        _ => true,
+                                    });
+                                });
+                            }
+                            Err(e) => set_server_error_status(
+                                resource_status,
+                                i18n.locale.get_untracked(),
+                                e,
+                            ),
+                        }
+                        pending_link_actions.update(|keys| {
+                            keys.remove(&pending_key);
+                        });
+                    });
+                }),
+            );
         }
         ResourceAction::None => {}
     });
@@ -770,41 +798,54 @@ pub fn GameResourcesSection(
             rom_filename,
             href,
         } => {
-            if !confirm_resource_delete() {
-                return;
-            }
-            let pending_key = format!("remove-video:{rom_filename}:{id}");
-            if pending_video_actions.read().contains(&pending_key) {
-                return;
-            }
-            pending_video_actions.update(|keys| {
-                keys.insert(pending_key.clone());
-            });
-            let sys = system.get_value();
-            leptos::task::spawn_local(async move {
-                match server_fns::remove_game_video(sys, rom_filename, id.clone()).await {
-                    Ok(()) => {
-                        removed_video_ids.update(|ids| {
-                            ids.insert(id.clone());
-                        });
-                        pinned_video_ids.update(|ids| {
-                            remove_saved_video_markers(ids, &id, &href);
-                        });
-                        added_video_items.update(|items| {
-                            items.retain(|item| match &item.action {
-                                VideoResourceAction::Remove { id: item_id, .. } => item_id != &id,
-                                VideoResourceAction::Pin { .. } => true,
-                            });
-                        });
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailRemoveResource),
+                t(locale, Key::GameDetailRemoveResourceConfirm),
+                t(locale, Key::GameDetailRemoveVideo),
+                true,
+                Callback::new(move |()| {
+                    let pending_key = format!("remove-video:{rom_filename}:{id}");
+                    if pending_video_actions.read().contains(&pending_key) {
+                        return;
                     }
-                    Err(e) => {
-                        set_server_error_status(resource_status, i18n.locale.get_untracked(), e)
-                    }
-                }
-                pending_video_actions.update(|keys| {
-                    keys.remove(&pending_key);
-                });
-            });
+                    pending_video_actions.update(|keys| {
+                        keys.insert(pending_key.clone());
+                    });
+                    let sys = system.get_value();
+                    let id = id.clone();
+                    let rom_filename = rom_filename.clone();
+                    let href = href.clone();
+                    leptos::task::spawn_local(async move {
+                        match server_fns::remove_game_video(sys, rom_filename, id.clone()).await {
+                            Ok(()) => {
+                                removed_video_ids.update(|ids| {
+                                    ids.insert(id.clone());
+                                });
+                                pinned_video_ids.update(|ids| {
+                                    remove_saved_video_markers(ids, &id, &href);
+                                });
+                                added_video_items.update(|items| {
+                                    items.retain(|item| match &item.action {
+                                        VideoResourceAction::Remove { id: item_id, .. } => {
+                                            item_id != &id
+                                        }
+                                        VideoResourceAction::Pin { .. } => true,
+                                    });
+                                });
+                            }
+                            Err(e) => set_server_error_status(
+                                resource_status,
+                                i18n.locale.get_untracked(),
+                                e,
+                            ),
+                        }
+                        pending_video_actions.update(|keys| {
+                            keys.remove(&pending_key);
+                        });
+                    });
+                }),
+            );
         }
     });
     // Online video search: one results panel at a time. Picking a new kind
@@ -1908,23 +1949,6 @@ fn resource_url_points_to_manual(url: &str) -> bool {
         .trim()
         .to_ascii_lowercase();
     path.ends_with(".pdf") || path.ends_with(".txt")
-}
-
-fn confirm_resource_delete() -> bool {
-    #[cfg(feature = "hydrate")]
-    {
-        web_sys::window()
-            .and_then(|window| {
-                window
-                    .confirm_with_message("Remove this saved resource?")
-                    .ok()
-            })
-            .unwrap_or(false)
-    }
-    #[cfg(not(feature = "hydrate"))]
-    {
-        true
-    }
 }
 
 fn video_identity(url: &str) -> String {

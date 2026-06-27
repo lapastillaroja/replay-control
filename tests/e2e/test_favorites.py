@@ -4,7 +4,8 @@ End-to-end coverage for the favorites lifecycle.
 Favorites are `.fav` marker files under `roms/_favorites/`. This drives the full
 loop in one browser session to keep it fast: toggle a favorite on the game-detail
 page (`add_favorite`), confirm it persists on disk and shows on `/favorites`,
-then remove it from the favorites page (`remove_favorite`) and confirm it's gone.
+then remove it through the app confirmation dialog (`remove_favorite`) and
+confirm it's gone.
 
 Container only — mutates `/media/usb`. The `page` fixture also asserts no JS
 console errors occurred.
@@ -46,11 +47,20 @@ def test_favorite_add_then_remove_lifecycle(page, seeded_game):
     goto_hydrated(page, "/favorites")
     expect(page.locator(".fav-item")).to_have_count(1, timeout=15000)
 
-    # Remove via the favorites-page star + inline confirm.
+    # Remove via the favorites-page star + app confirm dialog.
     page.locator(".fav-star-btn").first.click()
-    confirm = page.locator(".rom-action-confirm-delete")
-    expect(confirm).to_be_visible(timeout=5000)
-    confirm.click()
+    dialog = page.locator(".app-confirm-dialog")
+    expect(dialog).to_be_visible(timeout=5000)
+    expect(dialog).to_contain_text("E2E Seed Game")
+
+    # Cancel first so the dialog test proves the action is actually gated.
+    dialog.get_by_role("button", name="Cancel").click()
+    expect(dialog).to_be_hidden(timeout=5000)
+    assert path_exists(marker), "favorite marker should remain after cancelling removal"
+
+    page.locator(".fav-star-btn").first.click()
+    expect(dialog).to_be_visible(timeout=5000)
+    dialog.get_by_role("button", name="Unfavorite").click()
 
     expect(page.locator(".fav-item")).to_have_count(0, timeout=10000)
     wait_until(lambda: not path_exists(marker))

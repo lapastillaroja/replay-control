@@ -209,7 +209,7 @@ both the HTTP contract and the on-disk result under `.replay-control/manuals/`:
 
 Seeds 1×1 PNG captures under `captures/<system>/` (read live by game-detail) and
 drives both delete affordances (per-thumbnail `×` and the lightbox delete), each
-behind a JS `confirm()` → `delete_user_capture`:
+behind the app confirmation dialog → `delete_user_capture`:
 
 - A seeded capture renders on the game-detail page
 - Deleting via the thumbnail button removes the card and the file on disk
@@ -230,8 +230,8 @@ the per-card delete button (`.recent-delete-btn`) → `delete_recent`:
 Drives the full favorites loop in one browser session (fast): toggle a favorite
 on game-detail (`button.game-action-fav` → `add_favorite`), confirm the
 `roms/_favorites/<system>@<rom>.fav` marker appears and the game shows on
-`/favorites`, then remove it via the favorites-page star + inline confirm
-(`remove_favorite`) and confirm the marker is gone.
+`/favorites`, then remove it via the favorites-page star + app confirmation
+dialog (`remove_favorite`) and confirm the marker is gone.
 
 Also covers the **organize panel**: with a seeded favorite, expand
 `.organize-toggle`, pick System + Board, and `organize_favorites`; a console

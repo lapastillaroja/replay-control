@@ -43,6 +43,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FavoritesRecentlyAdded => "Recently Added",
         Key::FavoritesBySystem => "By System",
         Key::FavoritesAll => "All Favorites",
+        Key::FavoritesRemoveConfirm => "Remove {0} from favorites?",
 
         // Organize favorites
         Key::OrganizeTitle => "Organize Favorites",
@@ -399,6 +400,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManualSaved => "Manual saved",
         Key::GameDetailResourceSaved => "Resource saved",
         Key::GameDetailResourceAlreadySaved => "This resource is already saved.",
+        Key::GameDetailRemoveResource => "Remove resource",
+        Key::GameDetailRemoveResourceConfirm => "Remove this saved resource?",
         Key::ManualConfirmDelete => "Delete?",
         Key::GameDetailLaunch => "Launch on TV",
         Key::GameDetailAlreadyPlaying => "Playing now",

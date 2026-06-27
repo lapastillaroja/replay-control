@@ -14,6 +14,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Added a **RePlayOS UI log level** indicator on the System Logs page — read live from the TV, with guidance to change it there (SYSTEM > LOG LEVEL) — and gave the **Replay Control log level** control an Error option and a Save & Restart button that applies the change without a manual reboot.
 - Added compact launch buttons to game-list rows in search, system/developer/board lists, and Favorites. They launch directly from the list, are disabled for the game already playing, and ask before replacing a running game. On iPhone and iPad these list buttons are hidden — launch from a game's detail page there instead.
 
+### Changed
+
+- Replaced browser confirmation prompts with Replay Control's in-app confirmation dialog across launch, favorite removal, recent removal, saved resource removal, capture deletion, access, and power controls.
+
 ### Fixed
 
 - Fixed games named with Arabic numerals (e.g. `Doom 2`, `Duke Nukem 2`) not picking up descriptions, genres, and release dates when the metadata source spells the title with Roman numerals (`Doom II`). Title matching now treats the two numeral styles as equivalent for metadata, matching the box-art behaviour.

@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::setup_checklist::SetupChecklist;
@@ -13,23 +14,10 @@ use crate::server_fns;
 use crate::server_fns::RecentWithArt;
 use crate::util::format_size_short;
 
-fn confirm_delete(message: &str) -> bool {
-    #[cfg(feature = "hydrate")]
-    {
-        web_sys::window()
-            .and_then(|window| window.confirm_with_message(message).ok())
-            .unwrap_or(false)
-    }
-    #[cfg(not(feature = "hydrate"))]
-    {
-        let _ = message;
-        true
-    }
-}
-
 #[component]
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
     let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let recents_signal: RwSignal<Vec<RecentWithArt>> = RwSignal::new(Vec::new());
@@ -37,31 +25,42 @@ pub fn HomePage() -> impl IntoView {
     let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
 
     let delete_recent = move |marker_filename: String| {
-        if !confirm_delete(t(i18n.locale.get_untracked(), Key::HomeDeleteRecentConfirm)) {
-            return;
-        }
-        let idx = recents_signal
-            .read()
-            .iter()
-            .position(|e| e.entry.marker_filename == marker_filename);
-        let Some(idx) = idx else { return };
-        let removed = recents_signal.read().get(idx).cloned();
-        let Some(removed) = removed else { return };
-        recents_signal.update(|v| {
-            v.remove(idx);
-        });
-        leptos::task::spawn_local(async move {
-            if server_fns::delete_recent(marker_filename.clone())
-                .await
-                .is_err()
-            {
-                recents_signal.update(|v| {
-                    if !v.iter().any(|e| e.entry.marker_filename == marker_filename) {
-                        v.insert(idx.min(v.len()), removed);
+        let locale = i18n.locale.get_untracked();
+        confirm_dialog.confirm(
+            t(locale, Key::HomeDeleteRecent),
+            t(locale, Key::HomeDeleteRecentConfirm),
+            t(locale, Key::HomeDeleteRecent),
+            true,
+            Callback::new(move |()| {
+                let marker_filename = marker_filename.clone();
+                // Defer the optimistic removal into the async task: removing the
+                // recent unmounts its card, which would drop this very Callback
+                // mid-run (wasm "closure invoked recursively or after being
+                // dropped"). Running it after this returns avoids that.
+                leptos::task::spawn_local(async move {
+                    let idx = recents_signal
+                        .read_untracked()
+                        .iter()
+                        .position(|e| e.entry.marker_filename == marker_filename);
+                    let Some(idx) = idx else { return };
+                    let removed = recents_signal.read_untracked().get(idx).cloned();
+                    let Some(removed) = removed else { return };
+                    recents_signal.update(|v| {
+                        v.remove(idx);
+                    });
+                    if server_fns::delete_recent(marker_filename.clone())
+                        .await
+                        .is_err()
+                    {
+                        recents_signal.update(|v| {
+                            if !v.iter().any(|e| e.entry.marker_filename == marker_filename) {
+                                v.insert(idx.min(v.len()), removed);
+                            }
+                        });
                     }
                 });
-            }
-        });
+            }),
+        );
     };
 
     view! {

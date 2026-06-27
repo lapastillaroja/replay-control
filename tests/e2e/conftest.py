@@ -374,9 +374,15 @@ def goto_hydrated(page, path: str, timeout: int = 30000):
     wait_hydrated(page, timeout)
 
 
-def accept_dialogs(page):
-    """Auto-accept JS confirm() dialogs (delete confirmations)."""
-    page.on("dialog", lambda dialog: dialog.accept())
+def confirm_in_app_dialog(page, button_name: str | None = None):
+    """Confirm the shared in-app confirmation dialog."""
+    dialog = page.locator(".app-confirm-dialog")
+    dialog.wait_for(state="visible", timeout=5000)
+    if button_name:
+        dialog.get_by_role("button", name=button_name).click()
+    else:
+        dialog.locator("button").last.click()
+    dialog.wait_for(state="hidden", timeout=5000)
 
 
 def wait_for_app(timeout: int = 90):

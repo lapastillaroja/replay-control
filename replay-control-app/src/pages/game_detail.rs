@@ -6,12 +6,15 @@ use server_fn::ServerFnError;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
+use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
+use crate::hooks::confirm_replace_running_game;
 use crate::i18n::{Key, t, tf, use_i18n};
 #[cfg(feature = "hydrate")]
 use crate::server_fns::PlaytimeAvailability;
 use crate::server_fns::{self, RecommendedGame, RomDetail};
+use crate::types::NowPlayingState;
 #[cfg(feature = "hydrate")]
 use crate::util::format_elapsed_short;
 use crate::util::format_size_for_system;
@@ -42,20 +45,6 @@ fn split_filename(filename: &str) -> (String, String) {
         .unwrap_or("")
         .to_string();
     (stem, ext)
-}
-
-fn confirm_delete(message: &str) -> bool {
-    #[cfg(feature = "hydrate")]
-    {
-        web_sys::window()
-            .and_then(|window| window.confirm_with_message(message).ok())
-            .unwrap_or(false)
-    }
-    #[cfg(not(feature = "hydrate"))]
-    {
-        let _ = message;
-        true
-    }
 }
 
 #[component]
@@ -137,6 +126,7 @@ fn GameDetailContent(
     focus_manuals: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
     let now_playing = crate::hooks::use_now_playing();
 
     let game = &detail.game;
@@ -428,46 +418,53 @@ fn GameDetailContent(
         let Some(capture) = capture else {
             return;
         };
-        if !confirm_delete(t(
-            i18n.locale.get_untracked(),
-            Key::GameDetailDeleteCaptureConfirm,
-        )) {
-            return;
-        }
+        let locale = i18n.locale.get_untracked();
+        confirm_dialog.confirm(
+            t(locale, Key::GameDetailDeleteCapture),
+            t(locale, Key::GameDetailDeleteCaptureConfirm),
+            t(locale, Key::CommonDelete),
+            true,
+            Callback::new(move |()| {
+                let capture = capture.clone();
+                // Defer the optimistic removal: removing the capture and closing
+                // the lightbox unmount the element this Callback is owned by,
+                // which would drop it mid-run (wasm "closure invoked recursively
+                // or after being dropped"). Run it after this returns.
+                leptos::task::spawn_local(async move {
+                    user_screenshots.update(|captures| {
+                        if captures
+                            .get(capture_index)
+                            .is_some_and(|item| item.filename == capture.filename)
+                        {
+                            captures.remove(capture_index);
+                        } else if let Some(pos) = captures
+                            .iter()
+                            .position(|item| item.filename == capture.filename)
+                        {
+                            captures.remove(pos);
+                        }
+                    });
+                    lightbox_index.set(None);
 
-        user_screenshots.update(|captures| {
-            if captures
-                .get(capture_index)
-                .is_some_and(|item| item.filename == capture.filename)
-            {
-                captures.remove(capture_index);
-            } else if let Some(pos) = captures
-                .iter()
-                .position(|item| item.filename == capture.filename)
-            {
-                captures.remove(pos);
-            }
-        });
-        lightbox_index.set(None);
-
-        let sys = system_sv.get_value();
-        let rom = filename_sv.get_value();
-        leptos::task::spawn_local(async move {
-            if server_fns::delete_user_capture(sys, rom, capture.filename.clone())
-                .await
-                .is_err()
-            {
-                user_screenshots.update(|captures| {
-                    if !captures
-                        .iter()
-                        .any(|item| item.filename == capture.filename)
+                    let sys = system_sv.get_value();
+                    let rom = filename_sv.get_value();
+                    if server_fns::delete_user_capture(sys, rom, capture.filename.clone())
+                        .await
+                        .is_err()
                     {
-                        let insert_at = capture_index.min(captures.len());
-                        captures.insert(insert_at, capture);
+                        user_screenshots.update(|captures| {
+                            if !captures
+                                .iter()
+                                .any(|item| item.filename == capture.filename)
+                            {
+                                let insert_at = capture_index.min(captures.len());
+                                captures.insert(insert_at, capture);
+                            }
+                        });
                     }
                 });
-            }
-        });
+            }),
+        );
     };
 
     // Delete confirmation state
@@ -483,24 +480,38 @@ fn GameDetailContent(
     let rename_reason = StoredValue::new(detail.rename_reason.clone());
 
     // Toggle favorite
-    let on_toggle_fav = move |_| {
-        let fav = is_favorite.get();
-        is_favorite.set(!fav);
-
+    let remove_favorite = Callback::new(move |()| {
+        is_favorite.set(false);
         let sys = system_sv.get_value();
         let fname = filename_sv.get_value();
-        let rp = relative_path_sv.get_value();
-
-        if fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            });
+        let fav_filename = format!("{sys}@{fname}.fav");
+        leptos::task::spawn_local(async move {
+            let _ = server_fns::remove_favorite(fav_filename, None).await;
+        });
+    });
+    let on_toggle_fav = move |_| {
+        if is_favorite.get() {
+            let locale = i18n.locale.get_untracked();
+            confirm_dialog.confirm(
+                t(locale, Key::GameDetailUnfavorite),
+                tf(
+                    locale,
+                    Key::FavoritesRemoveConfirm,
+                    &[&game_name_sv.get_value()],
+                ),
+                t(locale, Key::GameDetailUnfavorite),
+                true,
+                remove_favorite,
+            );
+            return;
         }
+
+        is_favorite.set(true);
+        let sys = system_sv.get_value();
+        let rp = relative_path_sv.get_value();
+        leptos::task::spawn_local(async move {
+            let _ = server_fns::add_favorite(sys, rp, false).await;
+        });
     };
 
     let fav_label = Signal::derive(move || {
@@ -585,6 +596,9 @@ fn GameDetailContent(
         <section class="game-launch-cta">
             <div class="game-launch-row">
                 <GameLaunchAction
+                    system=system_sv
+                    filename=filename_sv
+                    display_name=game_name_sv
                     relative_path=relative_path_sv
                     return_to=return_to_sv
                     already_playing=is_now_playing
@@ -928,11 +942,16 @@ fn GameDetailContent(
 /// Launch action: "Launch on TV" button with launching/launched/error states.
 #[component]
 fn GameLaunchAction(
+    system: StoredValue<String>,
+    filename: StoredValue<String>,
+    display_name: StoredValue<String>,
     relative_path: StoredValue<String>,
     return_to: StoredValue<String>,
     #[prop(into)] already_playing: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
+    let now_playing = crate::hooks::use_now_playing();
     let _ = return_to;
     let launch = ServerAction::<server_fns::LaunchGame>::new();
     let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
@@ -1000,15 +1019,37 @@ fn GameLaunchAction(
             t(locale, Key::GameDetailLaunch)
         }
     };
-    let on_launch = move |_| {
-        if is_disabled() || launch_requires_setup.get() {
-            return;
-        }
+    let dispatch_launch = Callback::new(move |()| {
         launch_clicked.set(true);
         launch.dispatch(server_fns::LaunchGame {
             rom_path: relative_path.get_value(),
             return_to: String::new(),
         });
+    });
+    let on_launch = move |_| {
+        if is_disabled() || launch_requires_setup.get() {
+            return;
+        }
+        if let NowPlayingState::Playing {
+            system: cur_system,
+            filename: cur_filename,
+            display_name: cur_name,
+            ..
+        } = now_playing.get_untracked()
+            && (cur_system != system.get_value() || cur_filename != filename.get_value())
+        {
+            let locale = i18n.locale.get_untracked();
+            let next_name = display_name.get_value();
+            confirm_replace_running_game(
+                confirm_dialog,
+                locale,
+                &next_name,
+                &cur_name,
+                dispatch_launch,
+            );
+            return;
+        }
+        dispatch_launch.run(());
     };
 
     view! {
