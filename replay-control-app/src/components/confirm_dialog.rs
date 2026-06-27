@@ -38,9 +38,9 @@ pub fn use_confirm_dialog() -> ConfirmDialog {
         if let Some(ctx) = use_context::<ConfirmDialog>() {
             return ctx;
         }
-        return CLIENT_CONFIRM_DIALOG.with(|cell| cell.get()).expect(
+        CLIENT_CONFIRM_DIALOG.with(|cell| cell.get()).expect(
             "confirm dialog not initialized: provide_confirm_dialog() must run at the App root",
-        );
+        )
     }
     #[cfg(not(target_arch = "wasm32"))]
     expect_context::<ConfirmDialog>()

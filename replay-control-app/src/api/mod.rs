@@ -2066,6 +2066,7 @@ fn is_admin_server_function(function: &str) -> bool {
             | "get_system_logs"
             | "get_log_level_config"
             | "save_log_level_config"
+            | "get_replayos_log_level"
             | "get_github_api_key"
             | "save_github_api_key"
             | "save_region_preference"

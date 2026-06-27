@@ -68,9 +68,9 @@ pub fn use_i18n() -> I18nContext {
         if let Some(ctx) = use_context::<I18nContext>() {
             return ctx;
         }
-        return CLIENT_I18N
+        CLIENT_I18N
             .with(|cell| cell.get())
-            .expect("i18n not initialized: provide_i18n() must run at the App root");
+            .expect("i18n not initialized: provide_i18n() must run at the App root")
     }
     #[cfg(not(target_arch = "wasm32"))]
     expect_context::<I18nContext>()
