@@ -60,8 +60,9 @@
 .fav-item .game-list-launch-btn {
     --button-padding: 0;
     --button-font-size: var(--font-size-regular-default);
-    width: var(--control-height);
-    min-width: var(--control-height);
+    --game-list-launch-visible-size: calc(var(--control-height) - 10px);
+    width: var(--game-list-launch-visible-size);
+    min-width: var(--game-list-launch-visible-size);
     min-height: var(--control-height);
     border-radius: var(--radius-sm);
     background: transparent;
@@ -76,7 +77,11 @@
 .fav-item .game-list-launch-btn::before {
     content: "";
     position: absolute;
-    inset: 5px;
+    top: 50%;
+    right: 0;
+    width: var(--game-list-launch-visible-size);
+    height: var(--game-list-launch-visible-size);
+    transform: translateY(-50%);
     border-radius: var(--radius-sm);
     background: var(--surface);
     border: var(--control-border-accent);
@@ -128,6 +133,9 @@
 .fav-item .game-list-launch-btn .game-action-icon {
     font-size: 0.78rem;
     line-height: 1;
+    width: var(--game-list-launch-visible-size);
+    display: inline-flex;
+    justify-content: center;
     position: relative;
     z-index: 1;
 }
@@ -219,6 +227,7 @@
 .game-list-info {
     flex: 1;
     min-width: 0;
+    padding-right: var(--space-2);
     position: relative;
     z-index: 1;
     pointer-events: none;

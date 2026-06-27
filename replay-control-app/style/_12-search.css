@@ -77,6 +77,10 @@
     --stack-gap: var(--stack-gap-none);
 }
 
+.search-group-results .game-list-item {
+    --row-padding-x: var(--space-2);
+}
+
 /* Header text inset a touch past the result rows so the section label sits
    above the game content, matching the original 16px header padding. */
 .search-group-header {
