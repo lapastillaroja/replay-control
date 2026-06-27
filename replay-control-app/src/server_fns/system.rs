@@ -340,6 +340,12 @@ pub async fn delete_recent(marker_filename: String) -> Result<(), ServerFnError>
     let storage = state.storage();
     recents::delete_recent(&storage, &marker_filename)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // Bust the in-memory recents cache (and recommendations, which key off
+    // recents) so the deletion surfaces on the next `get_recents` instead of
+    // reappearing on reload. Mirrors the launch path; the ROM watcher also
+    // invalidates on `_recent/` changes but is unreliable on NFS.
+    state.cache.invalidate_recents().await;
+    state.cache.invalidate_recommendations().await;
     Ok(())
 }
 

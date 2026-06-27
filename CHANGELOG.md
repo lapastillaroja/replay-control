@@ -6,10 +6,11 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.10.0-beta.5]
 
-> Fixes iOS/WebKit browser Back from game detail pages and keeps list launch buttons working after returning to search results.
+> Fixes removing games from Recently Played, iOS/WebKit browser Back from game detail pages, and keeps list launch buttons working after returning to search results.
 
 ### Fixed
 
+- Fixed removing a game from **Recently Played** not sticking — the deletion now refreshes the cached recents (and recommendations) so the game stays gone instead of reappearing after a reload.
 - Fixed iOS/WebKit browser Back from a game detail page forcing a full page reload instead of restoring the search results page in place.
 - Fixed compact game-list launch buttons continuing to work after browser Back from a game detail page, including WebKit-family browsers.
 - Fixed Favorites rows using an empty overlay-link child that could risk hydration mismatches; they now use the same hidden label structure as search and other game-list rows.
