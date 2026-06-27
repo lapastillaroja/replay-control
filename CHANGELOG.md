@@ -6,7 +6,11 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.10.0-beta.4]
 
-> Fixes redundant folder nesting when organizing favorites by board and system.
+> Adds the Sony ZN and Taito G-Net arcade boards, and fixes redundant folder nesting when organizing favorites by board and system.
+
+### Added
+
+- Added two arcade hardware boards — **Sony ZN** (ZN-1/ZN-2) and **Taito G-Net** — so games running on them (Street Fighter EX, Bloody Roar 2, Brave Blade, G-Darius, Psyvariar, Ray Crisis, …) are now labelled, grouped, and searchable by board like other arcade hardware.
 
 ### Fixed
 

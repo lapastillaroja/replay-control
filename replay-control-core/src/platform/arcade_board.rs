@@ -39,6 +39,9 @@ pub enum ArcadeBoard {
     TaitoF2,
     TaitoF3,
     TaitoZ,
+    TaitoGNet,
+    // Sony
+    SonyZn,
     // IGS
     IgsPgm,
     IgsPgm2,
@@ -101,6 +104,8 @@ impl ArcadeBoard {
         ArcadeBoard::TaitoF2,
         ArcadeBoard::TaitoF3,
         ArcadeBoard::TaitoZ,
+        ArcadeBoard::TaitoGNet,
+        ArcadeBoard::SonyZn,
         ArcadeBoard::IgsPgm,
         ArcadeBoard::IgsPgm2,
         ArcadeBoard::CaveFirstGen,
@@ -155,6 +160,8 @@ impl ArcadeBoard {
             ArcadeBoard::TaitoF2 => "taito_f2",
             ArcadeBoard::TaitoF3 => "taito_f3",
             ArcadeBoard::TaitoZ => "taito_z",
+            ArcadeBoard::TaitoGNet => "taito_gnet",
+            ArcadeBoard::SonyZn => "sony_zn",
             ArcadeBoard::IgsPgm => "igs_pgm",
             ArcadeBoard::IgsPgm2 => "igs_pgm2",
             ArcadeBoard::CaveFirstGen => "cave_first_gen",
@@ -208,6 +215,8 @@ impl ArcadeBoard {
             ArcadeBoard::TaitoF2 => "F2 System",
             ArcadeBoard::TaitoF3 => "F3 System",
             ArcadeBoard::TaitoZ => "Z System",
+            ArcadeBoard::TaitoGNet => "G-Net",
+            ArcadeBoard::SonyZn => "ZN",
             ArcadeBoard::IgsPgm => "PGM",
             ArcadeBoard::IgsPgm2 => "PGM2",
             ArcadeBoard::CaveFirstGen => "Cave 1st Generation",
@@ -257,7 +266,11 @@ impl ArcadeBoard {
             | ArcadeBoard::SegaNaomi
             | ArcadeBoard::SegaNaomi2 => "Sega",
             ArcadeBoard::SammyAtomiswave => "Sammy",
-            ArcadeBoard::TaitoF2 | ArcadeBoard::TaitoF3 | ArcadeBoard::TaitoZ => "Taito",
+            ArcadeBoard::TaitoF2
+            | ArcadeBoard::TaitoF3
+            | ArcadeBoard::TaitoZ
+            | ArcadeBoard::TaitoGNet => "Taito",
+            ArcadeBoard::SonyZn => "Sony",
             ArcadeBoard::IgsPgm | ArcadeBoard::IgsPgm2 => "IGS",
             ArcadeBoard::CaveFirstGen | ArcadeBoard::CaveCv1000 => "Cave",
             ArcadeBoard::MidwayWolfUnit
@@ -342,6 +355,8 @@ impl ArcadeBoard {
             ArcadeBoard::TaitoF2 => &["taito/taitof2.cpp", "taitof2.c"],
             ArcadeBoard::TaitoF3 => &["taito/taitof3.cpp", "taitof3.c"],
             ArcadeBoard::TaitoZ => &["taito/taito_z.cpp", "taito/taitoz.cpp"],
+            ArcadeBoard::TaitoGNet => &["sony/taitogn.cpp"],
+            ArcadeBoard::SonyZn => &["sony/zn.cpp", "zn.c"],
             ArcadeBoard::IgsPgm => &["igs/pgm.cpp", "pgm/pgm.cpp", "pgm.c"],
             ArcadeBoard::IgsPgm2 => &["igs/pgm2.cpp", "pgm2/pgm2.cpp"],
             ArcadeBoard::CaveFirstGen => &["cave/cave.cpp"],
@@ -430,6 +445,9 @@ mod tests {
             ("capcom/cps2.cpp", ArcadeBoard::Cps2),
             ("neogeo/neogeo.cpp", ArcadeBoard::NeoGeoMvs),
             ("taito/taitof3.cpp", ArcadeBoard::TaitoF3),
+            ("sony/zn.cpp", ArcadeBoard::SonyZn),
+            ("zn.c", ArcadeBoard::SonyZn),
+            ("sony/taitogn.cpp", ArcadeBoard::TaitoGNet),
             ("sega/naomi2.cpp", ArcadeBoard::SegaNaomi2),
             ("sega/atomiswave.cpp", ArcadeBoard::SammyAtomiswave),
             ("midway/midwunit.cpp", ArcadeBoard::MidwayWolfUnit),
@@ -570,6 +588,25 @@ mod tests {
         assert_eq!(
             ArcadeBoard::from_sourcefile("gaelco/gaelco3d.cpp"),
             Some(ArcadeBoard::Gaelco3d)
+        );
+    }
+
+    #[test]
+    fn issue_80_requested_boards_resolve() {
+        // Boards requested in issue #80: Sony ZN and Taito GNet. Both resolve
+        // from their current-MAME `sony/` driver sourcefile; ZN also has a
+        // MAME 2003-Plus legacy `zn.c` spelling in our upstreams.
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("sony/zn.cpp"),
+            Some(ArcadeBoard::SonyZn)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("zn.c"),
+            Some(ArcadeBoard::SonyZn)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("sony/taitogn.cpp"),
+            Some(ArcadeBoard::TaitoGNet)
         );
     }
 }
