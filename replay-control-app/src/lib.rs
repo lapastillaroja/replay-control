@@ -102,6 +102,11 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
         .unwrap_or("en");
     let initial_now_playing_script =
         initial_now_playing_bootstrap_script(&state.now_playing()).unwrap_or_default();
+    // Tag iOS clients (incl. iPadOS, which reports a desktop UA but has touch)
+    // so CSS can hide the quick-launch button there — iOS Safari's bfcache
+    // restore breaks its launch/confirm flow. Bound to a variable so the macro
+    // emits it as a raw, executing <script> body, not an escaped attribute.
+    let ios_detect_script = "(function(){var u=navigator.userAgent||'';if(/ipad|iphone|ipod/i.test(u)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)){document.documentElement.classList.add('is-ios');}})();";
 
     view! {
         <!DOCTYPE html>
@@ -121,6 +126,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/static/style.css" />
                 <style id="skin-theme">{skin_css}</style>
                 <script inner_html=initial_now_playing_script></script>
+                <script inner_html=ios_detect_script></script>
                 <HydrationScripts options=options.clone() />
                 <script defer src="/static/ptr-init.js"></script>
             </head>
@@ -146,7 +152,7 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(RomWatcherStatus::default()));
     provide_context(RwSignal::new(Vec::<AssetHealthIssue>::new()));
     provide_context(RwSignal::new(ReplayApiStatus::default()));
-    provide_context(RwSignal::new(initial_now_playing_state()));
+    hooks::provide_now_playing(initial_now_playing_state());
     provide_context(Clock::install());
 
     // Fed by SseEventsListener; the skin page subscribes so its "current"
@@ -612,17 +618,12 @@ fn SseEventsListener() -> impl IntoView {
             es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
             on_message.forget();
 
-            let es_for_beforeunload = es.clone();
-            let on_beforeunload = Closure::<dyn Fn(web_sys::Event)>::new(move |_| {
-                es_for_beforeunload.close();
-            });
-            if let Some(window) = web_sys::window() {
-                let _ = window.add_event_listener_with_callback(
-                    "beforeunload",
-                    on_beforeunload.as_ref().unchecked_ref(),
-                );
-            }
-            on_beforeunload.forget();
+            // Note: deliberately NO `beforeunload`/`unload` listener. Those make
+            // the page ineligible for / break the back-forward cache (bfcache) on
+            // iOS Safari, which left buttons' event listeners detached after a
+            // swipe-back. The EventSource is leaked with built-in retry, so the
+            // browser closing it on real unload (and suspending/resuming it
+            // across bfcache) is fine without manual cleanup.
 
             // No onerror handler: rely on EventSource's built-in retry so the
             // listener reconnects after a server restart (e.g. auto-update).

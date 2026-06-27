@@ -359,6 +359,7 @@ pub enum Key {
     GameDetailLaunched,
     GameDetailLaunchError,
     GameDetailLaunchNotReplayos,
+    LaunchReplaceConfirm,
     GameDetailFavorite,
     GameDetailUnfavorite,
     GameDetailMoreActions,

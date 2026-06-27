@@ -56,6 +56,91 @@
     outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 
+.game-list-item .game-list-launch-btn,
+.fav-item .game-list-launch-btn {
+    --button-padding: 0;
+    --button-font-size: var(--font-size-regular-default);
+    width: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+}
+
+/* Hide the quick-launch button on iOS. iOS Safari's back-forward cache restores
+   the page with native dialogs (window.confirm) suppressed and event handlers
+   in a degraded state, making the list launch flow unreliable there; iOS users
+   launch from the game detail page instead. `.is-ios` is set by the inline
+   detection script in the shell <head>. */
+.is-ios .game-list-launch-btn {
+    display: none;
+}
+
+.game-list-item .game-list-launch-btn::before,
+.fav-item .game-list-launch-btn::before {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: var(--control-border-accent);
+    transition: border-color var(--motion-base), background var(--motion-base), opacity var(--motion-base);
+}
+
+.game-list-item .game-list-launch-btn:hover:not(:disabled),
+.fav-item .game-list-launch-btn:hover:not(:disabled) {
+    opacity: 1;
+}
+
+.game-list-item .game-list-launch-btn:hover:not(:disabled)::before,
+.fav-item .game-list-launch-btn:hover:not(:disabled)::before {
+    background: var(--surface-hover);
+}
+
+.game-list-item .game-list-launch-playing,
+.fav-item .game-list-launch-playing {
+    color: var(--text-secondary);
+}
+
+.game-list-item .game-list-launch-playing::before,
+.fav-item .game-list-launch-playing::before {
+    border-color: var(--border);
+}
+
+.game-list-item .game-list-launch-pending,
+.fav-item .game-list-launch-pending {
+    color: var(--accent);
+    opacity: 0.75;
+}
+
+.game-list-item .game-list-launch-pending::before,
+.fav-item .game-list-launch-pending::before {
+    border-color: var(--accent);
+}
+
+.game-list-item .game-list-launch-error,
+.fav-item .game-list-launch-error {
+    color: var(--error);
+}
+
+.game-list-item .game-list-launch-error::before,
+.fav-item .game-list-launch-error::before {
+    border-color: color-mix(in srgb, var(--error) 50%, var(--border));
+}
+
+.game-list-item .game-list-launch-btn .game-action-icon,
+.fav-item .game-list-launch-btn .game-action-icon {
+    font-size: 0.78rem;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+}
+
 .rom-name-row {
     min-width: 0;
 }
@@ -80,18 +165,22 @@
     background: var(--status-dot-neutral);
 }
 
-/* ROM favorite button */
+/* ROM favorite button — drop the left padding so the star sits flush with the
+   row's (now zero) left edge, mirroring the launch button flush on the right. */
 .rom-fav-btn {
     color: var(--text-secondary);
+    font-size: var(--font-size-large-default);
+    line-height: 1;
     position: relative;
     z-index: 2;
-    /* Drop the icon button's left padding so the star's glyph aligns to the
-       row's content edge instead of sitting an extra 8px in (the row padding
-       already provides the inset from the surface edge). */
     padding-left: 0;
 }
 
 .rom-fav-btn:hover {
+    color: var(--star);
+}
+
+.rom-fav-active {
     color: var(--star);
 }
 
@@ -122,6 +211,14 @@
     position: relative;
     content-visibility: auto;
     contain-intrinsic-size: auto 61px;
+}
+
+/* No horizontal row padding — the shared row default (14px) wasted useful
+   width. The fav/launch buttons and thumbnail keep their own spacing, so the
+   row edges go flush. */
+.game-list-item,
+.fav-item {
+    --row-padding-x: 0;
 }
 
 .game-list-item:hover {

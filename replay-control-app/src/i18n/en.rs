@@ -406,6 +406,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "Launched!",
         Key::GameDetailLaunchError => "Failed to launch",
         Key::GameDetailLaunchNotReplayos => "Not running on RePlayOS",
+        Key::LaunchReplaceConfirm => "Launch {0} and replace {1}?",
         Key::GameDetailFavorite => "Favorite",
         Key::GameDetailUnfavorite => "Unfavorite",
         Key::GameDetailMoreActions => "More actions",

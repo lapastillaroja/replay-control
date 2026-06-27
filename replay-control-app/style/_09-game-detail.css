@@ -350,6 +350,12 @@
 
 .game-action-icon {
     flex-shrink: 0;
+    /* The decorative icon must never be the tap target. iOS Safari does not
+       dispatch a delegated click when the event target is a non-interactive
+       element (a bare <span>), so taps that landed on the icon were dropped
+       after a client-side re-render (e.g. swipe-back) while the button worked on
+       a fresh load. Let taps fall through to the enclosing <button>. */
+    pointer-events: none;
 }
 
 .game-action-fav:hover {

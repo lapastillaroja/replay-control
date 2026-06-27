@@ -228,9 +228,15 @@ def click_update_now(page):
 
 @pytest.fixture(scope="session")
 def browser():
-    """Session-scoped browser — launched once, shared across all tests."""
+    """Session-scoped browser — launched once, shared across all tests.
+
+    Engine selectable via PLAYWRIGHT_BROWSER (chromium|webkit|firefox); defaults
+    to chromium. webkit is the closest local proxy for iOS Safari (bfcache,
+    swipe-back/page-cache behavior).
+    """
+    engine = os.environ.get("PLAYWRIGHT_BROWSER", "chromium")
     with sync_playwright() as p:
-        b = p.chromium.launch(headless=True)
+        b = getattr(p, engine).launch(headless=True)
         yield b
         b.close()
 

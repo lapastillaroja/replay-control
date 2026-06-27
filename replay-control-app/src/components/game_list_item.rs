@@ -3,11 +3,13 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
+use crate::hooks::{LaunchControl, use_launch_control};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 /// Unified game list row component used across search results, developer pages,
 /// system ROM lists, and other game lists. Shows box art, game name, optional
-/// system badge, genre/rating badges, and a favorite toggle.
+/// system badge, genre/rating badges, a favorite toggle, and a launch button.
 #[component]
 pub fn GameListItem(
     system: String,
@@ -54,6 +56,8 @@ pub fn GameListItem(
     let has_genre = genre.as_ref().is_some_and(|g| !g.is_empty());
     let genre = StoredValue::new(genre.unwrap_or_default());
 
+    let i18n = use_i18n();
+
     // Favorite toggle.
     let is_fav = RwSignal::new(is_favorite);
     let on_toggle_fav = move |_| {
@@ -77,18 +81,28 @@ pub fn GameListItem(
             });
         }
     };
+
+    // Launch state + handler from the shared hook. The <button> markup stays
+    // inline below (a shared child component lost taps on iOS Safari after a
+    // swipe-back); only the handler logic is shared.
+    let LaunchControl {
+        launching,
+        launch_failed,
+        on_launch,
+    } = use_launch_control(system, rom_filename, rom_path, row_label);
+
     view! {
         <div class="game-list-item">
-            <A
-                href=game_href.get_value()
-                attr:class="game-list-row-link"
-                attr:aria-label=row_label.get_value()
-            >
-                {""}
+            <A href=game_href.get_value() attr:class="game-list-row-link">
+                <span class="visually-hidden">{row_label.get_value()}</span>
             </A>
 
             {show_favorite.then(|| view! {
-                <button class="rom-fav-btn" on:click=on_toggle_fav>
+                <button
+                    class="rom-fav-btn"
+                    class:rom-fav-active=move || is_fav.get()
+                    on:click=on_toggle_fav
+                >
                     {move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" }}
                 </button>
             })}
@@ -155,6 +169,17 @@ pub fn GameListItem(
                     })}
                 </div>
             </div>
+
+            <button
+                type="button"
+                class="game-action-launch game-list-launch-btn"
+                class:game-list-launch-pending=move || launching.get()
+                class:game-list-launch-error=move || launch_failed.get()
+                aria-label=move || t(i18n.locale.get(), Key::GameDetailLaunch)
+                on:click=move |_| on_launch.run(())
+            >
+                <span class="game-action-icon">{"\u{25B6}"}</span>
+            </button>
         </div>
     }
 }

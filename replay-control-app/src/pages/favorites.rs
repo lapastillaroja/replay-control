@@ -7,6 +7,7 @@ use server_fn::ServerFnError;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
+use crate::hooks::{LaunchControl, use_launch_control};
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
@@ -419,7 +420,12 @@ where
     let marker = StoredValue::new(fav.marker_filename.clone());
     let subfolder = StoredValue::new(fav.subfolder.clone());
     let system_folder = StoredValue::new(fav.game.system.clone());
-    let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
+    let rom_path = StoredValue::new(fav.game.rom_path.clone());
+    let rom_filename = StoredValue::new(fav.game.rom_filename.clone());
+    let rom_name = fav
+        .game
+        .display_name
+        .unwrap_or_else(|| fav.game.rom_filename.clone());
     let placeholder_name = StoredValue::new(rom_name.clone());
     let row_label = StoredValue::new(rom_name.clone());
     let system_display = if show_system {
@@ -457,6 +463,17 @@ where
         confirm_remove.set(None);
     };
 
+    let i18n = use_i18n();
+
+    // Launch state + handler from the shared hook. The <button> markup stays
+    // inline below (a shared child component lost taps on iOS Safari after a
+    // swipe-back); only the handler logic is shared.
+    let LaunchControl {
+        launching,
+        launch_failed,
+        on_launch,
+    } = use_launch_control(system_folder, rom_filename, rom_path, row_label);
+
     view! {
         <div class="fav-item">
             <A
@@ -466,6 +483,20 @@ where
             >
                 {""}
             </A>
+            <Show when=is_confirming fallback=move || view! {
+                <button class="fav-star-btn" title="Remove from favorites" on:click=on_star_click>
+                    {"\u{2605}"}
+                </button>
+            }>
+                <div class="fav-confirm-actions">
+                    <button class="rom-action-btn rom-action-confirm-delete" on:click=on_confirm>
+                        {"Remove?"}
+                    </button>
+                    <button class="rom-action-btn" on:click=on_cancel>
+                        {"\u{2715}"}
+                    </button>
+                </div>
+            </Show>
             <div class="rom-thumb-link">
                 <div class="rom-thumb-frame">
                     <Show when=move || has_box_art fallback=move || view! {
@@ -486,20 +517,16 @@ where
                     </Show>
                 </div>
             </div>
-            <Show when=is_confirming fallback=move || view! {
-                <button class="fav-star-btn" title="Remove from favorites" on:click=on_star_click>
-                    {"\u{2605}"}
-                </button>
-            }>
-                <div class="fav-confirm-actions">
-                    <button class="rom-action-btn rom-action-confirm-delete" on:click=on_confirm>
-                        {"Remove?"}
-                    </button>
-                    <button class="rom-action-btn" on:click=on_cancel>
-                        {"\u{2715}"}
-                    </button>
-                </div>
-            </Show>
+            <button
+                type="button"
+                class="game-action-launch game-list-launch-btn"
+                class:game-list-launch-pending=move || launching.get()
+                class:game-list-launch-error=move || launch_failed.get()
+                aria-label=move || t(i18n.locale.get(), Key::GameDetailLaunch)
+                on:click=move |_| on_launch.run(())
+            >
+                <span class="game-action-icon">{"\u{25B6}"}</span>
+            </button>
         </div>
     }
 }

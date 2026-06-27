@@ -412,6 +412,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "¡Lanzado!",
         Key::GameDetailLaunchError => "Error al lanzar",
         Key::GameDetailLaunchNotReplayos => "No se está ejecutando en RePlayOS",
+        Key::LaunchReplaceConfirm => "¿Iniciar {0} y reemplazar {1}?",
         Key::GameDetailFavorite => "Favorito",
         Key::GameDetailUnfavorite => "Quitar de favoritos",
         Key::GameDetailMoreActions => "Más acciones",
