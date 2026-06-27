@@ -51,8 +51,8 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
         StoredValue::new(sanitize_next_path(query.get_untracked().get("next")))
     };
     let auth_status = RwSignal::new(initial);
-    let user_code = RwSignal::new(String::new());
-    let admin_password = RwSignal::new(String::new());
+    let user_code_ref = NodeRef::<leptos::html::Input>::new();
+    let admin_password_ref = NodeRef::<leptos::html::Input>::new();
     let saving_user = RwSignal::new(false);
     let saving_admin = RwSignal::new(false);
     let user_error = RwSignal::new(Option::<String>::None);
@@ -70,14 +70,19 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
         if saving_user.get_untracked() {
             return;
         }
-        let code = user_code.get();
+        let code = user_code_ref
+            .get()
+            .map(|input| numeric_code(&input.value(), 6))
+            .unwrap_or_default();
         saving_user.set(true);
         user_error.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::login_with_replay_code(code).await {
                 Ok(status) => {
                     auth_status.set(status);
-                    user_code.set(String::new());
+                    if let Some(input) = user_code_ref.get_untracked() {
+                        input.set_value("");
+                    }
                     saving_user.set(false);
                     continue_after_login();
                 }
@@ -93,21 +98,29 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
         login_user();
     };
     let on_user_code_input = move |ev| {
-        user_code.set(numeric_code(&event_target_value(&ev), 6));
+        let value = numeric_code(&event_target_value(&ev), 6);
+        if let Some(input) = user_code_ref.get_untracked() {
+            input.set_value(&value);
+        }
     };
 
     let login_admin = move || {
         if saving_admin.get_untracked() {
             return;
         }
-        let password = admin_password.get();
+        let password = admin_password_ref
+            .get()
+            .map(|input| input.value())
+            .unwrap_or_default();
         saving_admin.set(true);
         admin_error.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::login_admin(password).await {
                 Ok(status) => {
                     auth_status.set(status);
-                    admin_password.set(String::new());
+                    if let Some(input) = admin_password_ref.get_untracked() {
+                        input.set_value("");
+                    }
                     saving_admin.set(false);
                     continue_after_login();
                 }
@@ -152,6 +165,7 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
                             {move || t(i18n.locale.get(), Key::LoginUserCodeLabel)}
                         </label>
                         <input
+                            node_ref=user_code_ref
                             id="login-net-control-code"
                             class="form-input login-code-input"
                             type="text"
@@ -162,7 +176,6 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
                             autocomplete="one-time-code"
                             enterkeyhint="go"
                             disabled=move || saving_user.get()
-                            prop:value=move || user_code.get()
                             on:input=on_user_code_input
                         />
                     </div>
@@ -199,13 +212,13 @@ fn LoginForm(initial: AuthStatus) -> impl IntoView {
                             {move || t(i18n.locale.get(), Key::LoginAdminPasswordLabel)}
                         </label>
                         <input
+                            node_ref=admin_password_ref
                             id="login-admin-password"
                             class="form-input"
                             type="password"
                             autocomplete="current-password"
                             enterkeyhint="go"
                             disabled=move || saving_admin.get()
-                            bind:value=admin_password
                         />
                     </div>
                     {move || admin_error.get().map(|message| {
