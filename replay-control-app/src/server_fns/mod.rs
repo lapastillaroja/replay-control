@@ -267,6 +267,11 @@ pub struct GameInfo {
     #[serde(default)]
     pub ra_id: String,
 
+    /// Number of achievements in the RetroAchievements set for this game (0
+    /// when there's no set). Shown next to the RetroAchievements pill.
+    #[serde(default)]
+    pub ra_count: u32,
+
     // --- External metadata (from local cache, None if not yet fetched) ---
     pub description: Option<String>,
     pub rating: Option<f32>,
@@ -373,10 +378,14 @@ pub(crate) async fn build_game_detail(
     entry: &replay_control_core_server::library_db::GameEntry,
 ) -> GameInfo {
     use replay_control_core::systems;
-    use replay_control_core_server::arcade_db;
+    use replay_control_core_server::{arcade_db, game_db};
 
     let system_display = systems::system_display_name(&entry.system);
     let is_arcade = systems::is_arcade_system(&entry.system);
+
+    // RetroAchievements count for the resolved ra_id (read-time catalog lookup,
+    // keyed by the ra_id already stored on the library row). 0 when no set.
+    let ra_count = game_db::lookup_ra_count_by_ra_id(&entry.ra_id).await;
 
     // Arcade-only fields from static arcade_db lookup.
     let (rotation, parent_rom, arcade_category, arcade_display, arcade_board, arcade_board_tag) =
@@ -456,6 +465,7 @@ pub(crate) async fn build_game_detail(
             Some(entry.region.clone())
         },
         ra_id: entry.ra_id.clone(),
+        ra_count,
         description: None,
         rating: entry.rating,
         publisher: None,

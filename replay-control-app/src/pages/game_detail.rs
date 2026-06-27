@@ -252,6 +252,8 @@ fn GameDetailContent(
 
     // RetroAchievements support flag (non-empty id means a known RA set exists).
     let has_achievements = !game.ra_id.is_empty();
+    // Number of achievements in the set, shown next to the trophy when known.
+    let ra_count = game.ra_count;
     // We always show the trophy when an `ra_id` exists (trusting the match), but the
     // game may not actually earn achievements on RePlay today. Two independent causes,
     // both add a clarifying note:
@@ -703,6 +705,9 @@ fn GameDetailContent(
                         <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRetroAchievements)}</span>
                         <span class="info-value">
                             "\u{1F3C6}"
+                            <Show when=move || { ra_count > 0 }>
+                                <span class="ra-count">{format!("\u{00A0}{ra_count}")}</span>
+                            </Show>
                             <Show when=move || ra_blocked_by_core>
                                 <span class="game-meta-note">
                                     {move || t(i18n.locale.get(), Key::GameDetailRetroAchievementsNoCore)}

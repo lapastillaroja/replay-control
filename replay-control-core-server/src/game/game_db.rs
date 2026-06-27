@@ -107,6 +107,26 @@ pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry>
     }
 }
 
+/// Achievement count for a RetroAchievements game id, from the catalog's
+/// `ra_game` table. Returns 0 when the id is empty, the game isn't listed, or
+/// the catalog predates the `ra_game` table (the read tolerates its absence).
+/// Keyed by `ra_id`, which is already resolved onto each library row.
+pub async fn lookup_ra_count_by_ra_id(ra_id: &str) -> u32 {
+    if ra_id.is_empty() {
+        return 0;
+    }
+    let ra_id = ra_id.to_string();
+    crate::catalog_pool::with_catalog(move |conn| {
+        let mut stmt =
+            conn.prepare_cached("SELECT num_achievements FROM ra_game WHERE ra_id = ?1")?;
+        stmt.query_row([ra_id.as_str()], |row| row.get::<_, i64>(0))
+            .optional()
+    })
+    .await
+    .flatten()
+    .unwrap_or(0) as u32
+}
+
 /// Run a `WHERE col IN (SELECT value FROM json_each(?2))` batch query against the
 /// catalog and collect the rows into a `HashMap` (first row per key wins).
 ///

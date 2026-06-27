@@ -13,6 +13,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Added two arcade hardware boards — **Sony ZN** (ZN-1/ZN-2) and **Taito G-Net** — so games running on them (Street Fighter EX, Bloody Roar 2, Brave Blade, G-Darius, Psyvariar, Ray Crisis, …) are now labelled, grouped, and searchable by board like other arcade hardware.
 - Added a **RePlayOS UI log level** indicator on the System Logs page — read live from the TV, with guidance to change it there (SYSTEM > LOG LEVEL) — and gave the **Replay Control log level** control an Error option and a Save & Restart button that applies the change without a manual reboot.
 - Added compact launch buttons to game-list rows in search, system/developer/board lists, and Favorites. They launch directly from the list, are disabled for the game already playing, and ask before replacing a running game. On iPhone and iPad these list buttons are hidden — launch from a game's detail page there instead.
+- Added the RetroAchievements achievement count to the game detail page, shown next to the trophy for games that have a RetroAchievements set.
 
 ### Changed
 

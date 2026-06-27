@@ -142,6 +142,14 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             ra_id TEXT NOT NULL,
             PRIMARY KEY (system, hash)
         );
+        -- RetroAchievements per-game metadata keyed by ra_id (independent of
+        -- system/hash), so the game detail page can show the achievement count
+        -- for the ra_id already resolved onto each library row. Populated from
+        -- the same RA extract as ra_hash; covers arcade and console alike.
+        CREATE TABLE ra_game (
+            ra_id TEXT NOT NULL PRIMARY KEY,
+            num_achievements INTEGER NOT NULL DEFAULT 0
+        );
         -- Drives the canonical_game → rom_entry join in game_db::descriptions
         -- (and any future cg-side query that enumerates rom entries without a
         -- full scan).
@@ -2143,6 +2151,10 @@ struct RaEntry {
     ra_id: String,
     #[serde(default)]
     hashes: Vec<String>,
+    /// Number of achievements in the RA set for this game. Stamped into
+    /// `ra_game` keyed by `ra_id` so the game detail page can show the count.
+    #[serde(default)]
+    num_achievements: u32,
 }
 
 /// Hex MD5 of a string — RA's Arcade hash is `md5(lowercase romset_name)`.
@@ -2393,7 +2405,10 @@ fn populate_retroachievements(conn: &Connection, sources_dir: &Path) -> rusqlite
 
     let mut stmt_rh =
         conn.prepare("INSERT OR IGNORE INTO ra_hash (system, hash, ra_id) VALUES (?1, ?2, ?3)")?;
+    let mut stmt_rg =
+        conn.prepare("INSERT OR REPLACE INTO ra_game (ra_id, num_achievements) VALUES (?1, ?2)")?;
     let mut total_hashes = 0usize;
+    let mut total_games = 0usize;
 
     for dir_entry in read_dir.flatten() {
         let path = dir_entry.path();
@@ -2403,34 +2418,39 @@ fn populate_retroachievements(conn: &Connection, sources_dir: &Path) -> rusqlite
         let Some(system) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        // Arcade has its own md5(romset)-based path; it never resolves via ra_hash.
-        if system == "arcade" {
-            continue;
-        }
         let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!("RetroAchievements: failed to read {}: {e}", path.display())
         });
         let entries: Vec<RaEntry> = serde_json::from_str(&raw).unwrap_or_else(|e| {
             panic!("RetroAchievements: failed to parse {}: {e}", path.display())
         });
+        // Arcade resolves ra_id via md5(romset) at build time, never via ra_hash
+        // — but it still contributes its achievement counts to `ra_game`.
+        let is_arcade = system == "arcade";
         let mut system_hashes = 0usize;
         for entry in entries {
             if entry.ra_id.is_empty() {
                 continue;
             }
-            for hash in entry.hashes {
-                let inserted =
-                    stmt_rh.execute(params![system, hash.to_lowercase(), entry.ra_id])?;
-                system_hashes += inserted;
+            total_games += stmt_rg.execute(params![entry.ra_id, entry.num_achievements])?;
+            // Console/cart only: arcade resolves ra_id via md5(romset), not ra_hash.
+            if !is_arcade {
+                for hash in entry.hashes {
+                    let inserted =
+                        stmt_rh.execute(params![system, hash.to_lowercase(), entry.ra_id])?;
+                    system_hashes += inserted;
+                }
             }
         }
-        total_hashes += system_hashes;
-        eprintln!("RetroAchievements: {system_hashes} hashes loaded for {system}");
+        if !is_arcade {
+            total_hashes += system_hashes;
+            eprintln!("RetroAchievements: {system_hashes} hashes loaded for {system}");
+        }
     }
 
     let stamped = stamp_whole_file_rom_entry_ra_ids(conn)?;
     eprintln!(
-        "RetroAchievements: {total_hashes} hashes in ra_hash; {stamped} whole-file rom_entry.ra_id stamped"
+        "RetroAchievements: {total_hashes} hashes in ra_hash; {total_games} games in ra_game; {stamped} whole-file rom_entry.ra_id stamped"
     );
     Ok(())
 }
