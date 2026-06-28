@@ -699,6 +699,7 @@ pub enum Key {
     ReplayOsDeviceHint,
     ReplayOsPowerOff,
     ReplayOsPowerOffConfirm,
+    ReplayOsRebootConfirm,
     ReplayOsModeTitle,
     ReplayOsKioskMode,
     ReplayOsKioskHint,

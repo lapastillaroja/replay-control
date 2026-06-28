@@ -160,12 +160,22 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
             power_off,
         );
     };
-    let on_reboot = move |_| {
+    let reboot = Callback::new(move |()| {
         run_string_action(
             action_busy,
             device_result,
             server_fns::reboot_system(),
             || (),
+        );
+    });
+    let on_reboot = move |_| {
+        let locale = i18n.locale.get_untracked();
+        confirm_dialog.confirm(
+            t(locale, Key::SettingsReboot),
+            t(locale, Key::ReplayOsRebootConfirm),
+            t(locale, Key::SettingsReboot),
+            true,
+            reboot,
         );
     };
     let on_save_kiosk = move |_| {
@@ -367,9 +377,9 @@ fn ActionResultMessage(result: RwSignal<Option<(bool, String)>>) -> impl IntoVie
         <Show when=move || result.read().is_some() fallback=|| ()>
             {move || result.get().map(|(ok, msg)| {
                 let class = if ok {
-                    "status-msg status-ok replayos-action-status"
+                    "status-msg status-ok"
                 } else {
-                    "status-msg status-err replayos-action-status"
+                    "status-msg status-err"
                 };
                 view! { <div class=class>{msg}</div> }
             })}

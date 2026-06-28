@@ -255,10 +255,6 @@ select.form-input option {
     min-width: var(--inline-control-min-width-default);
 }
 
-.replayos-action-status {
-    margin-top: 0;
-}
-
 @media (max-width: 560px) {
     .replayos-inline-controls {
         --grid-columns: 1fr;

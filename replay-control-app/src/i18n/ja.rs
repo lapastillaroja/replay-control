@@ -780,6 +780,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsDeviceHint => "これらの操作は RePlayOS デバイス全体に影響します。",
         Key::ReplayOsPowerOff => "電源を切る",
         Key::ReplayOsPowerOffConfirm => "RePlayOS デバイスの電源を切りますか？",
+        Key::ReplayOsRebootConfirm => "RePlayOS デバイスを再起動しますか？",
         Key::ReplayOsModeTitle => "モード",
         Key::ReplayOsKioskMode => "キオスクモード",
         Key::ReplayOsKioskHint => "ゲストが TV 側でシステム設定を変更できないようにします。",

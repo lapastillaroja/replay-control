@@ -484,18 +484,8 @@ fn GameDetailContent(
     });
     let on_toggle_fav = move |_| {
         if is_favorite.get() {
-            let locale = i18n.locale.get_untracked();
-            confirm_dialog.confirm(
-                t(locale, Key::GameDetailUnfavorite),
-                tf(
-                    locale,
-                    Key::FavoritesRemoveConfirm,
-                    &[&game_name_sv.get_value()],
-                ),
-                t(locale, Key::GameDetailUnfavorite),
-                true,
-                remove_favorite,
-            );
+            // Removing a favorite is cheap and reversible in this page — no confirmation.
+            remove_favorite.run(());
             return;
         }
 

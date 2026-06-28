@@ -4,6 +4,19 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).
+- Rebooting the device from **Settings → RePlayOS** now asks for confirmation first, matching Power off.
+
+### Fixed
+
+- Fixed the action result message under the RePlayOS device controls sitting flush against the buttons; it now uses the standard spacing.
+
+---
+
 ## [1.0.1]
 
 > Fixes an error when opening Alpha Player movies and music from Recently Played or Favorites.

@@ -784,6 +784,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsDeviceHint => "These actions affect the whole RePlayOS device.",
         Key::ReplayOsPowerOff => "Power off",
         Key::ReplayOsPowerOffConfirm => "Power off the RePlayOS device?",
+        Key::ReplayOsRebootConfirm => "Reboot the RePlayOS device?",
         Key::ReplayOsModeTitle => "Mode",
         Key::ReplayOsKioskMode => "Kiosk mode",
         Key::ReplayOsKioskHint => {
