@@ -1300,20 +1300,6 @@ fn resolve_m3u_containers(raw: &mut Vec<RawRom>, roms_root: &Path, system: &Syst
 /// files where the first line is a filename followed by binary disc data.
 /// Uses `BufReader` and reads at most `MAX_M3U_BYTES` to avoid loading large
 /// binary files into memory.
-/// Lowercase extension (no dot) of the first disc image referenced by an M3U
-/// playlist — e.g. `"chd"` for a multi-disc CHD set. An M3U row's visible
-/// filename is `.m3u`, but RetroAchievements hashing (and the RePlayOS `.chd`
-/// hash-generation limitation) apply to the referenced disc image, so callers
-/// that reason about the effective disc format must look through the playlist.
-/// Returns `None` if the playlist is empty or unreadable.
-pub fn m3u_first_disc_extension(m3u_path: &Path) -> Option<String> {
-    parse_m3u_references(m3u_path)
-        .first()
-        .and_then(|reference| Path::new(reference).extension())
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-}
-
 fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
     /// Maximum bytes to read from an M3U file. Covers any reasonable text
     /// playlist while protecting against X68000 binary M3U files (~1.2 MB).
@@ -1619,30 +1605,6 @@ mod tests {
         fs::write(&m3u, "Game (1991)(Publisher).dim\r\n").unwrap();
         let refs = parse_m3u_references(&m3u);
         assert_eq!(refs, vec!["Game (1991)(Publisher).dim"]);
-    }
-
-    #[test]
-    fn m3u_first_disc_extension_chd() {
-        // A multi-disc CHD set: the visible row is `.m3u`, but the effective
-        // disc format is `.chd` (so the game-detail RA format check must block it).
-        let tmp = tempdir();
-        let m3u = tmp.join("Panzer Dragoon Saga (USA).m3u");
-        fs::write(
-            &m3u,
-            "Panzer Dragoon Saga (USA) (Disc 1).chd\nPanzer Dragoon Saga (USA) (Disc 2).chd\n",
-        )
-        .unwrap();
-        assert_eq!(m3u_first_disc_extension(&m3u).as_deref(), Some("chd"));
-    }
-
-    #[test]
-    fn m3u_first_disc_extension_cue_and_empty() {
-        let tmp = tempdir();
-        let cue_m3u = tmp.join("game.m3u");
-        fs::write(&cue_m3u, "Game (Disc 1).cue\n").unwrap();
-        assert_eq!(m3u_first_disc_extension(&cue_m3u).as_deref(), Some("cue"));
-        // Unreadable / missing playlist → None.
-        assert_eq!(m3u_first_disc_extension(&tmp.join("missing.m3u")), None);
     }
 
     #[test]

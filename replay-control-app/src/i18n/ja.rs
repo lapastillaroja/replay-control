@@ -349,9 +349,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailRetroAchievementsNoCore => {
             "このシステムのRePlayエミュレーターは実績に対応していません"
         }
-        Key::GameDetailRetroAchievementsDiscFormat => {
-            "RePlayはこのディスク形式からは実績をまだ記録できません"
-        }
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
         Key::GameDetailPlaytime => "プレイ時間",

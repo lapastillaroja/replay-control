@@ -69,12 +69,6 @@ pub struct RomDetail {
     /// Multi-disc set info (if part of a disc set without M3U wrapper).
     #[serde(default)]
     pub disc_info: Option<DiscInfoDto>,
-    /// For an M3U row, the lowercase extension of the disc image it references
-    /// (e.g. `"chd"` for a multi-disc CHD set). The visible filename is `.m3u`,
-    /// so this exposes the *effective* disc-image format the game detail view
-    /// needs to decide RetroAchievements availability. `None` for non-M3U rows.
-    #[serde(default)]
-    pub disc_image_ext: Option<String>,
     /// Every `library_game_resource` row for this ROM, loaded once at SSR
     /// in `get_rom_detail` and partitioned client-side by `resource_type` /
     /// `source`. Today this carries the Shmups Wiki strategy-guide link
@@ -325,15 +319,6 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let library_resources = load_library_resources(&state, &system, &filename).await;
 
-    // For an M3U playlist, resolve the disc image it points at so the client can
-    // reason about the effective disc format (the visible filename is `.m3u`).
-    let disc_image_ext = if entry.is_m3u {
-        let m3u_path = storage.rom_abs_path(&entry.rom_path);
-        replay_control_core_server::roms::m3u_first_disc_extension(&m3u_path)
-    } else {
-        None
-    };
-
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),
@@ -376,7 +361,6 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         rename_allowed,
         rename_reason,
         disc_info,
-        disc_image_ext,
         library_resources,
         documents: documents.unwrap_or_default(),
         local_manuals: local_manuals.unwrap_or_default(),

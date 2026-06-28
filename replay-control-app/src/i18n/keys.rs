@@ -305,7 +305,6 @@ pub enum Key {
     GameDetailBoard,
     GameDetailRetroAchievements,
     GameDetailRetroAchievementsNoCore,
-    GameDetailRetroAchievementsDiscFormat,
     GameDetailGenre,
     GameDetailDeveloper,
     GameDetailPlaytime,

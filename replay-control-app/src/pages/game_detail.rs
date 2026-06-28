@@ -255,19 +255,10 @@ fn GameDetailContent(
     // Number of achievements in the set, shown next to the trophy when known.
     let ra_count = game.ra_count;
     // We always show the trophy when an `ra_id` exists (trusting the match), but the
-    // game may not actually earn achievements on RePlay today. Two independent causes,
-    // both add a clarifying note:
-    //   1. the system's core can't do RA at all (PSX, PCE-CD, MAME, ST-V), or
-    //   2. RePlayOS can't generate RA hashes from `.chd` disc images — they fail
-    //      `hash generation failed (Invalid state)` on every disc core even though the
-    //      game runs, while `.cue`/`.gdi`/`.iso`/`.ccd` work. A frontend-side bug.
-    //      For an M3U playlist the visible extension is `.m3u`, so we check the
-    //      disc image it references (`disc_image_ext`) instead.
-    let effective_disc_ext = detail.disc_image_ext.as_deref().unwrap_or(&ext_lower);
+    // game can't actually earn achievements on RePlay when the system's core doesn't
+    // support RA at all (PSX, PCE-CD, MAME, ST-V) — in which case we add a note.
     let ra_blocked_by_core =
         has_achievements && !systems::system_core_supports_retroachievements(&system);
-    let ra_blocked_by_format =
-        has_achievements && !ra_blocked_by_core && effective_disc_ext == "chd";
 
     // External metadata
     let description = StoredValue::new(game.description.clone());
@@ -711,11 +702,6 @@ fn GameDetailContent(
                             <Show when=move || ra_blocked_by_core>
                                 <span class="game-meta-note">
                                     {move || t(i18n.locale.get(), Key::GameDetailRetroAchievementsNoCore)}
-                                </span>
-                            </Show>
-                            <Show when=move || ra_blocked_by_format>
-                                <span class="game-meta-note">
-                                    {move || t(i18n.locale.get(), Key::GameDetailRetroAchievementsDiscFormat)}
                                 </span>
                             </Show>
                         </span>
