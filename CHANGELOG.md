@@ -4,6 +4,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.0.1]
+
+> Fixes an error when opening Alpha Player movies and music from Recently Played or Favorites.
+
+### Fixed
+
+- Video and audio played through **Alpha Player** is recorded in Recently Played and Favorites just like games, but opening one of those entries used to show a "not found" error. They now open a simple detail page — with the title and a button to play it again on the TV — and keep appearing in your lists.
+
+---
+
 ## [1.0.0]
 
 > First stable release. Manage your RePlayOS game library, metadata, and device settings from any phone, tablet, or desktop on your network — nothing to install.
