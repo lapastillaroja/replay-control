@@ -152,7 +152,7 @@ fn write_certificate_files(
 
     let CertifiedKey {
         cert: cert_pem,
-        key_pair,
+        signing_key,
     } = generate_certificate(desired_names)?;
     let cert_tmp = temp_path_for(cert);
     let key_tmp = temp_path_for(key);
@@ -163,7 +163,7 @@ fn write_certificate_files(
     remove_if_exists(&san_tmp);
 
     write_synced_file(&cert_tmp, cert_pem.pem().as_bytes())?;
-    write_private_key_file(&key_tmp, key_pair.serialize_pem().as_bytes())?;
+    write_private_key_file(&key_tmp, signing_key.serialize_pem().as_bytes())?;
     write_synced_file(&san_tmp, manifest_to_string(desired_names).as_bytes())?;
 
     if !certificate_files_are_parseable(&cert_tmp, &key_tmp) {
@@ -259,7 +259,7 @@ fn private_key_create_new_file(path: &Path) -> Result<std::fs::File> {
         .map_err(|e| Error::io(path, e))
 }
 
-fn generate_certificate(names: &CertificateNames) -> Result<CertifiedKey> {
+fn certificate_params(names: &CertificateNames) -> Result<CertificateParams> {
     let subject_alt_names = names
         .dns
         .iter()
@@ -276,9 +276,14 @@ fn generate_certificate(names: &CertificateNames) -> Result<CertifiedKey> {
         .push(DnType::CommonName, "Replay Control");
     params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
-    let key_pair = KeyPair::generate().map_err(to_error)?;
-    let cert = params.self_signed(&key_pair).map_err(to_error)?;
-    Ok(CertifiedKey { cert, key_pair })
+    Ok(params)
+}
+
+fn generate_certificate(names: &CertificateNames) -> Result<CertifiedKey<KeyPair>> {
+    let params = certificate_params(names)?;
+    let signing_key = KeyPair::generate().map_err(to_error)?;
+    let cert = params.self_signed(&signing_key).map_err(to_error)?;
+    Ok(CertifiedKey { cert, signing_key })
 }
 
 fn current_certificate_names() -> CertificateNames {
@@ -835,7 +840,7 @@ mod tests {
         let initial_names = names_from_manifest(&std::fs::read_to_string(&manifest).unwrap());
         let different = generate_certificate(&initial_names).unwrap();
 
-        std::fs::write(&paths.key, different.key_pair.serialize_pem()).unwrap();
+        std::fs::write(&paths.key, different.signing_key.serialize_pem()).unwrap();
 
         let reused = ensure_self_signed_certificate(&data_dir).unwrap();
 
@@ -870,8 +875,7 @@ mod tests {
             ips: [IpAddr::V4(Ipv4Addr::LOCALHOST)].into_iter().collect(),
         };
 
-        let generated = generate_certificate(&names).unwrap();
-        let params = generated.cert.params();
+        let params = super::certificate_params(&names).unwrap();
 
         assert_eq!(
             params.key_usages,
