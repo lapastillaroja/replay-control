@@ -188,3 +188,105 @@ async fn api_systems_includes_multiple_systems() {
     assert!(with_games.contains(&"nintendo_nes"));
     assert!(with_games.contains(&"sega_smd"));
 }
+
+/// The library CSV export returns a per-ROM, attachment-headed CSV with one
+/// data row per ROM in the requested system, prefixed by the column header.
+#[tokio::test(flavor = "multi_thread")]
+async fn api_export_library_csv_returns_per_rom_rows() {
+    use replay_control_core_server::coverage_export::{CSV_COLUMNS, csv_header_line};
+
+    let env = TestEnv::new().await;
+    let app = axum::Router::new()
+        .nest("/api", replay_control_app::api::export::routes())
+        .with_state(env.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/export/library.csv?system=nintendo_nes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("content-type").unwrap(),
+        "text/csv; charset=utf-8"
+    );
+    let disposition = resp
+        .headers()
+        .get("content-disposition")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    // Filename carries an ISO-basic UTC timestamp, e.g.
+    // library-metadata-nintendo_nes-20260628T143005Z.csv
+    assert!(
+        disposition.starts_with("attachment; filename=\"library-metadata-nintendo_nes-"),
+        "unexpected disposition: {disposition}"
+    );
+    assert!(disposition.ends_with(".csv\""));
+
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let csv = String::from_utf8(bytes.to_vec()).unwrap();
+
+    // Header first, then one CRLF-terminated row per seeded ROM.
+    assert!(csv.starts_with(&csv_header_line()));
+    assert!(csv.contains("TestGame.nes"));
+    assert!(csv.contains("AnotherGame (USA).nes"));
+
+    let lines: Vec<&str> = csv.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 3, "header + 2 ROM rows");
+    // Every row carries the full column set.
+    for line in &lines[1..] {
+        assert_eq!(line.split(',').count(), CSV_COLUMNS.len());
+    }
+}
+
+/// "All systems" export (no `system` param, or an empty one) covers every
+/// active system — a regression guard for the empty-string `?system=` that the
+/// "All systems" <option> submits being mistaken for a system named "".
+#[tokio::test(flavor = "multi_thread")]
+async fn api_export_library_csv_all_systems_covers_every_rom() {
+    let env = TestEnv::new().await;
+
+    let data_line_count = |csv: &str| csv.lines().filter(|l| !l.is_empty()).count();
+
+    for uri in ["/api/export/library.csv", "/api/export/library.csv?system="] {
+        let app = axum::Router::new()
+            .nest("/api", replay_control_app::api::export::routes())
+            .with_state(env.state.clone());
+
+        let resp = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 200, "uri={uri}");
+        let disposition = resp
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            disposition.starts_with("attachment; filename=\"library-metadata-all-"),
+            "uri={uri} disposition={disposition}"
+        );
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let csv = String::from_utf8(bytes.to_vec()).unwrap();
+
+        // Header + one row per ROM across all seeded systems (total_games == 3).
+        assert_eq!(data_line_count(&csv), 4, "uri={uri}: header + 3 ROM rows");
+        assert!(csv.contains("nintendo_nes"), "uri={uri}");
+        assert!(csv.contains("sega_smd"), "uri={uri}");
+    }
+}

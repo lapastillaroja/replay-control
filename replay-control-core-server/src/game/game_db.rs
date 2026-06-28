@@ -127,6 +127,41 @@ pub async fn lookup_ra_count_by_ra_id(ra_id: &str) -> u32 {
     .unwrap_or(0) as u32
 }
 
+/// Batch variant of [`lookup_ra_count_by_ra_id`]: resolve the achievement count
+/// for many RA ids in a single catalog query. Returns a map keyed by `ra_id`;
+/// ids with no `ra_game` row are simply absent (treat as 0).
+///
+/// Doesn't route through the shared `batch_lookup` helper because that binds a
+/// per-system `?1` this query has no use for; the ids ride as one bound
+/// `json_each` array, so no `CATALOG_BATCH_VALUES` chunking is needed either.
+pub async fn lookup_ra_counts_batch(ra_ids: &[&str]) -> HashMap<String, u32> {
+    let ids: Vec<String> = ra_ids
+        .iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    let ids_json = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into());
+    crate::catalog_pool::with_catalog(move |conn| {
+        let mut stmt = conn.prepare_cached(
+            "SELECT ra_id, num_achievements FROM ra_game \
+             WHERE ra_id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let rows = stmt.query_map([ids_json], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
+        })?;
+        let mut map = HashMap::new();
+        for entry in rows.flatten() {
+            map.insert(entry.0, entry.1);
+        }
+        Ok(map)
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Run a `WHERE col IN (SELECT value FROM json_each(?2))` batch query against the
 /// catalog and collect the rows into a `HashMap` (first row per key wins).
 ///

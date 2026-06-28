@@ -448,6 +448,10 @@ pub enum Key {
 
     // Advanced data management
     MetadataAdvancedActions,
+    MetadataExportCsv,
+    MetadataExportCsvAllSystems,
+    MetadataExportCsvDownload,
+    MetadataExportCsvHint,
 
     // Data management
     MetadataClearImages,

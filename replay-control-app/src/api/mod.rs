@@ -3,6 +3,7 @@ pub mod analytics;
 pub mod background;
 pub(crate) mod core_api;
 pub mod db_pools;
+pub mod export;
 pub mod favorites;
 pub(crate) mod library;
 pub(crate) mod library_systems;
@@ -1566,6 +1567,7 @@ pub fn build_router(
         .merge(system_info::routes())
         .merge(roms::routes())
         .merge(favorites::routes())
+        .merge(export::routes())
         .merge(upload::routes())
         .merge(recents::routes())
         .nest("/core", core_api::routes());
@@ -1859,6 +1861,11 @@ fn route_required_role(method: &axum::http::Method, path: &str) -> AuthRole {
     if (method == Method::DELETE && path == "/api/roms")
         || (method == Method::PUT && path == "/api/roms/rename")
     {
+        return AuthRole::Admin;
+    }
+    // The library CSV export is surfaced only in the admin Metadata page's
+    // Advanced section, so the download route is admin-gated to match.
+    if method == Method::GET && path == "/api/export/library.csv" {
         return AuthRole::Admin;
     }
     if method == Method::GET && is_admin_page_route(path) {

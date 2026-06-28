@@ -292,7 +292,7 @@ pub fn MetadataPage() -> impl IntoView {
                     </Transition>
                     <div class="data-source-actions">
                         <button
-                            class="metadata-download-btn"
+                            class="form-btn"
                             on:click=on_download
                             disabled=move || is_busy.get()
                         >
@@ -382,7 +382,7 @@ pub fn MetadataPage() -> impl IntoView {
                     </Transition>
                     <div class="data-source-actions">
                         <button
-                            class="metadata-download-btn"
+                            class="form-btn"
                             on:click=on_thumb_update
                             disabled=move || is_busy.get()
                         >
@@ -911,9 +911,68 @@ fn DataManagementSection(
                         on_confirm=on_clear_index
                         disabled=is_busy
                     />
+                    <ExportCoverageCard />
                 </div>
             </Show>
         </section>
+    }
+}
+
+/// Export the per-ROM metadata coverage as a CSV — the entire library by
+/// default, or a single system. A native GET form so the download works without
+/// JS/hydration; the `system` select serializes to `?system=<folder>` (empty =
+/// all systems). The system list is fetched lazily; "All systems" always works
+/// even before it resolves.
+#[component]
+fn ExportCoverageCard() -> impl IntoView {
+    let i18n = use_i18n();
+    let systems = Resource::new(
+        || (),
+        |_| async move { server_fns::get_systems().await.unwrap_or_default() },
+    );
+
+    let all_systems_option = move || {
+        view! {
+            <option value="" selected=true>
+                {move || t(i18n.locale.get(), Key::MetadataExportCsvAllSystems)}
+            </option>
+        }
+    };
+
+    view! {
+        <div class="manage-action-card export-coverage-card">
+            <span class="export-coverage-label">
+                {move || t(i18n.locale.get(), Key::MetadataExportCsv)}
+            </span>
+            <form class="export-coverage-form" action="/api/export/library.csv" method="get">
+                <Suspense fallback=move || {
+                    view! {
+                        <select name="system" class="form-input export-coverage-select">
+                            {all_systems_option()}
+                        </select>
+                    }
+                }>
+                    {move || Suspend::new(async move {
+                        let mut list = systems.await;
+                        list.retain(|s| s.game_count > 0);
+                        list.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+                        view! {
+                            <select name="system" class="form-input export-coverage-select">
+                                {all_systems_option()}
+                                {list
+                                    .into_iter()
+                                    .map(|s| view! { <option value=s.folder_name>{s.display_name}</option> })
+                                    .collect_view()}
+                            </select>
+                        }
+                    })}
+                </Suspense>
+                <button type="submit" class="form-btn">
+                    {move || t(i18n.locale.get(), Key::MetadataExportCsvDownload)}
+                </button>
+            </form>
+            <p class="manage-action-hint">{move || t(i18n.locale.get(), Key::MetadataExportCsvHint)}</p>
+        </div>
     }
 }
 

@@ -32,25 +32,6 @@
     margin-top: var(--section-gap-sm);
 }
 
-/* ── Update Button ─────────────────────────────────────────────── */
-
-.metadata-download-btn {
-    --button-padding: var(--action-padding-wide);
-    background: var(--accent);
-    color: var(--bg);
-    border: none;
-}
-
-.metadata-download-btn:hover {
-    background: var(--accent-hover);
-}
-
-.metadata-download-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    animation: pulse-opacity 1.5s ease-in-out infinite;
-}
-
 /* ── System Overview Accordion ─────────────────────────────────── */
 
 .system-overview-header {
@@ -157,6 +138,32 @@
     .manage-actions-grid {
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+/* Export coverage CSV card (Advanced section) */
+.export-coverage-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--control-stack-gap-sm);
+}
+
+.export-coverage-label {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.export-coverage-form {
+    display: flex;
+    gap: var(--cluster-gap-md);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Reuses the shared `.form-input` select styling; only the flex sizing for the
+   inline form row is local. */
+.export-coverage-select {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .manage-action-progress {

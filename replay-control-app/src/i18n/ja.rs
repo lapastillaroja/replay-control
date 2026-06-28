@@ -503,6 +503,12 @@ pub fn translate(key: Key) -> &'static str {
 
         // Advanced data management
         Key::MetadataAdvancedActions => "詳細設定",
+        Key::MetadataExportCsv => "メタデータをエクスポート（CSV）",
+        Key::MetadataExportCsvAllSystems => "すべてのシステム",
+        Key::MetadataExportCsvDownload => "ダウンロード",
+        Key::MetadataExportCsvHint => {
+            "ゲームごとに1行でメタデータと不足項目を表示 — ROMパックや上流ソースの整備用。"
+        }
 
         // Data management
         Key::MetadataClearImages => "ダウンロード済み画像を削除",

@@ -43,6 +43,7 @@ Read task-specific docs as needed:
 
 ## Testing
 
+- **During an interactive dev session, deploy first, then validate.** Once the code compiles, push to the Pi (`./dev.sh --pi`) right away so the human can try it, and run tests/clippy/checks in the background afterward — don't gate the deploy on a full test pass. (For unattended/CI work, keep the normal validate-before-ship order.)
 - Add unit, integration, and/or e2e tests for new features and bug fixes to prevent regressions
 - Unit tests: in-module `#[cfg(test)]` blocks for pure logic (settings, config, utilities)
 - Integration tests: `replay-control-app/tests/*.rs` (e.g. `corruption_tests.rs`) — server functions exercised via `test_router`
@@ -106,6 +107,8 @@ Note: a launch-triggered restart can flip `system_storage` when a mount is busy,
 ## Metadata Analysis
 
 When analyzing metadata source coverage or quality across a ROM set (release dates, developers, genres, cover art, etc.), **exclude** ROM hacks, translations, homebrew, and aftermarket. Filter by No-Intro filename tags: `[h]`, `[h1-3]`, `(Hack)`, `[T+XX]`, `[T-XX]`, `[a]`, `[b]`, `[o]`, `[f]`, `(Unl)`, `(Aftermarket)`, `(Homebrew)`, `[BIOS]`. Keep prototypes, betas, official regional variants, and Virtual Console re-releases. Official metadata databases index only original releases, so matching hacks/translations systematically inflates "missing" counts and pollutes per-source comparisons. This rule applies only to **analysis** — runtime code that displays the user's actual library must not filter their ROMs.
+
+**Don't hand-roll the data extraction — use the per-ROM metadata export.** The canonical per-ROM analysis dataset already exists: `replay_control_core_server::library::coverage_export::build_system_coverage` (re-exported as `coverage_export`), served over HTTP at `GET /api/export/library.csv[?system=<folder>]` (admin-gated; UI is Metadata → Advanced → "Export metadata"). One row per ROM, with a two-tier **catalog vs LaunchBox** split per field (`year_catalog`/`year_launchbox`, `genre_*`, `developer_*`, `publisher_*`, `players_*`, `rating_*`, `has_description_*`), `source_catalog` (no-intro/community/wikidata provenance), media presence (`box_art`/`screenshot`/`title_image`), RA (`ra_id`/`ra_count`), grouping keys (`genre_group`, `series_key`), and a `classification` column (full `RomTier`: original/revision/hack/translation/unlicensed/homebrew/prerelease/pirate/region_variant). For the exclude rule above, filter on `classification` (drop hack/translation/unlicensed/homebrew/pirate) — finer than the `is_special` boolean, which over-excludes keepers (proto/beta) and can't distinguish unlicensed/homebrew/pirate. Caveat: `classification` (via `rom_tags::classify`) folds official `Rev 1`/`Rev A` and TOSEC `[a]/[o]/[f]` into the same `revision` tier, and console `[BIOS]` isn't tagged — a precise `analysis_excluded` flag needs a dedicated `rom_tags` exclusion fn (deferred). The older `src/bin/library_report.rs` produces aggregate per-system coverage counts from the same lookups; `coverage_export` is the per-ROM version — prefer it for new analysis.
 
 ## Rust
 

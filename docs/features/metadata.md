@@ -103,6 +103,16 @@ Two identity-related rows appear where relevant:
 
 Systems RetroAchievements doesn't cover at all (Amiga, C64, DOS, …) show a "not supported" note instead of a bar. Systems it does cover but whose RePlay emulator can't award achievements — for example PlayStation, PC Engine CD, and arcade MAME — keep the coverage bar, since the matches are real, but add a note that they aren't earnable on RePlay today.
 
+## Export Metadata (CSV)
+
+The **Advanced** section of the metadata page offers an **Export metadata (CSV)** download — a per-ROM metadata report aimed at people who maintain ROM packs or upstream metadata sources. Pick a system from the selector (or leave it on **All systems**, the default) and download.
+
+Each row is one ROM. Most columns are filled in where data exists and left blank where it's missing, so the blanks are the gap report; a `missing_fields` column summarises which key fields are absent for quick sorting. Alongside identity columns (system, filename, title, region, content hash, verified name, and tags such as hack/translation/clone), every metadata field is split into two columns — one for the built-in catalog and one for the imported LaunchBox data. That split shows not just *that* a field is missing but *which* source is missing it, so the gap can be fixed in the right place.
+
+Box-art, screenshot, and title-image columns report what is actually present in this device's media folders, and the RetroAchievements columns show the matched game id and its achievement count. The export reflects the live library on the device, including hacks and translations (flagged, not hidden).
+
+For source-coverage analysis, each row also carries a `classification` (original, revision, hack, translation, unlicensed, homebrew, prerelease, pirate, region_variant — finer than the hack/translation flags), the catalog provenance (`source_catalog`: no-intro / community / wikidata), and grouping keys (`genre_group`, `series_key`). To compare original releases only, drop the rows whose `classification` is hack, translation, unlicensed, homebrew, or pirate.
+
 ## Cache Management
 
 The metadata page provides tools to manage stored data:

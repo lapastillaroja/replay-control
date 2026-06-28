@@ -8,6 +8,8 @@ pub mod save_states;
 #[cfg(feature = "library")]
 pub mod boxart;
 #[cfg(feature = "library")]
+pub mod coverage_export;
+#[cfg(feature = "library")]
 pub mod db;
 #[cfg(feature = "library")]
 pub mod enrichment;

@@ -48,6 +48,8 @@ pub use library::save_states;
 #[cfg(feature = "library")]
 pub use library::boxart;
 #[cfg(feature = "library")]
+pub use library::coverage_export;
+#[cfg(feature = "library")]
 pub use library::db as library_db;
 #[cfg(feature = "library")]
 pub use library::enrichment;
