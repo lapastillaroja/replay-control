@@ -1365,7 +1365,9 @@ mod ssr {
                         http::HeaderValue::from_static(api::CACHE_REVALIDATE),
                     ))
                     .service(
-                        ServeDir::new(format!("{site_root}/pkg/snippets")).precompressed_gzip(),
+                        ServeDir::new(format!("{site_root}/pkg/snippets"))
+                            .precompressed_br()
+                            .precompressed_gzip(),
                     ),
             )
             .nest_service(
@@ -1375,7 +1377,11 @@ mod ssr {
                         http::header::CACHE_CONTROL,
                         http::HeaderValue::from_static(api::CACHE_IMMUTABLE),
                     ))
-                    .service(ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip()),
+                    .service(
+                        ServeDir::new(format!("{site_root}/pkg"))
+                            .precompressed_br()
+                            .precompressed_gzip(),
+                    ),
             )
             .nest_service(
                 "/static/icons",

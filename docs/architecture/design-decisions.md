@@ -190,10 +190,10 @@ Cross-compiled for `aarch64-unknown-linux-gnu` via `./build.sh aarch64`. Static 
 
 Custom `build.sh` handles the two-step compilation:
 1. WASM hydrate: `cargo build --target wasm32-unknown-unknown --profile wasm-release --features hydrate`
-2. wasm-bindgen + wasm-opt (`-Oz`)
+2. wasm-bindgen + wasm-opt (`-Oz`), then gzip and brotli pre-compression of the hashed WASM
 3. Server SSR: `cargo build --release --features ssr`
 
-This gives direct control over compilation profiles (separate optimization levels for WASM size vs server speed), wasm-opt flags, and cross-compilation without depending on cargo-leptos's assumptions.
+`wasm-opt` and `brotli` are required for release builds — `build.sh` fails if either is missing rather than silently shipping an unoptimized or gzip-only bundle. This gives direct control over compilation profiles (separate optimization levels for WASM size vs server speed), wasm-opt flags, and cross-compilation without depending on cargo-leptos's assumptions.
 
 Six Cargo profiles serve different goals:
 - `dev-fast` (SSR): opt-level 0 for fast `dev.sh` iteration
@@ -222,7 +222,7 @@ include_str!(concat!(env!("OUT_DIR"), "/style.css"))
 
 No disk reads for these assets at runtime. CSS partials (`style/_*.css`) are concatenated at build time by `replay-control-app/build.rs`.
 
-WASM bundle and icons are served from disk (`target/site/pkg/`, `target/site/icons/`) via `tower_http::ServeDir` since they are larger binary files where embedding would bloat startup memory.
+WASM bundle and icons are served from disk (`target/site/pkg/`, `target/site/icons/`) via `tower_http::ServeDir` since they are larger binary files where embedding would bloat startup memory. The WASM is served pre-compressed: `build.sh` emits `.wasm.br` and `.wasm.gz` beside the raw file, and the pkg `ServeDir` (`precompressed_br().precompressed_gzip()`) returns the brotli or gzip variant per the client's `Accept-Encoding`, falling back to the raw file (the identity fallback, so the raw must stay). Dev builds produce no pre-compressed variants, so they fall back to on-the-fly gzip via the `CompressionLayer`.
 
 **Files**: `replay-control-app/src/main.rs`, `replay-control-app/src/api/mod.rs`, `replay-control-app/build.rs`
 

@@ -178,8 +178,10 @@ Optional anonymous usage analytics. When the user opts in via Settings, the app 
 `./build.sh aarch64` produces an ARM binary for Raspberry Pi deployment. The build is a two-step process:
 
 1. WASM hydrate: `cargo build --target wasm32-unknown-unknown --profile wasm-release --features hydrate`
-2. wasm-bindgen + wasm-opt (`-Oz`)
+2. wasm-bindgen + wasm-opt (`-Oz`), then gzip and brotli pre-compression of the hashed WASM
 3. Server SSR: `cargo build --release --features ssr` (with `aarch64-unknown-linux-gnu` target for Pi)
+
+`wasm-opt` and `brotli` are required for release builds; `build.sh` fails if either is missing rather than shipping an unoptimized or gzip-only bundle.
 
 See [Design Decisions #13](design-decisions.md) for why the project uses a custom build script instead of cargo-leptos.
 

@@ -114,23 +114,25 @@ wasm-bindgen \
   --target web \
   --no-typescript
 
-# Optimize WASM with wasm-opt if available.
+# Optimize the WASM with wasm-opt. Required for release builds — fail loudly
+# rather than silently shipping an unoptimized (much larger) bundle.
 WASM_FILE="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
 JS_FILE="$PKG_DIR/${CRATE_SNAKE}.js"
-if command -v wasm-opt &>/dev/null; then
-    echo "==> Running wasm-opt -Oz..."
-    BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
-    wasm-opt -Oz \
-        --enable-bulk-memory \
-        --enable-nontrapping-float-to-int \
-        --enable-sign-ext \
-        --enable-mutable-globals \
-        "$WASM_FILE" -o "$WASM_FILE"
-    AFTER=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
-    echo "    WASM: ${BEFORE} -> ${AFTER} bytes ($(( (BEFORE - AFTER) * 100 / BEFORE ))% reduction)"
-else
-    echo "    (wasm-opt not found, skipping)"
+if ! command -v wasm-opt &>/dev/null; then
+    echo "ERROR: wasm-opt not found — required to optimize the release WASM." >&2
+    echo "       Install binaryen (e.g. 'apt-get install binaryen'); CI installs it in build-release.yml." >&2
+    exit 1
 fi
+echo "==> Running wasm-opt -Oz..."
+BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+wasm-opt -Oz \
+    --enable-bulk-memory \
+    --enable-nontrapping-float-to-int \
+    --enable-sign-ext \
+    --enable-mutable-globals \
+    "$WASM_FILE" -o "$WASM_FILE"
+AFTER=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+echo "    WASM: ${BEFORE} -> ${AFTER} bytes ($(( (BEFORE - AFTER) * 100 / BEFORE ))% reduction)"
 
 # Content-hash assets for cache busting (Leptos hash_files convention).
 echo "==> Hashing assets..."
@@ -145,11 +147,22 @@ printf 'js: %s\nwasm: %s\n' "$JS_HASH" "$WASM_HASH" > "$OUT_DIR/hash.txt"
 echo "    js:   ${JS_HASH}"
 echo "    wasm: ${WASM_HASH}"
 
-# Pre-compress WASM for static serving.
+# Pre-compress the WASM for static serving (the server prefers .br, then .gz,
+# then the raw file). A release build must produce the brotli variant, so fail
+# loudly if the tool is missing rather than silently shipping without it — the
+# server's gzip fallback exists only for dev builds and non-brotli clients.
 echo "==> Pre-compressing WASM..."
 gzip -9 -k -f "$HASHED_WASM"
 GZ_SIZE=$(stat -c%s "${HASHED_WASM}.gz" 2>/dev/null || echo 0)
 echo "    ${HASHED_WASM}.gz: ${GZ_SIZE} bytes"
+if ! command -v brotli >/dev/null 2>&1; then
+    echo "ERROR: brotli not found — required to pre-compress the release WASM." >&2
+    echo "       Install it (e.g. 'apt-get install brotli'); CI installs it in build-release.yml." >&2
+    exit 1
+fi
+brotli -q 11 -k -f "$HASHED_WASM"
+BR_SIZE=$(stat -c%s "${HASHED_WASM}.br" 2>/dev/null || echo 0)
+echo "    ${HASHED_WASM}.br: ${BR_SIZE} bytes"
 
 # Copy static assets
 cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"

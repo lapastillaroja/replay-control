@@ -7,6 +7,8 @@ Replay Control is a personal project — I built it for my own retro gaming setu
 - **Rust** (stable) via [rustup](https://rustup.rs/)
 - **wasm-bindgen-cli**: `cargo binstall wasm-bindgen-cli`
 - **mold** (fast linker): `sudo dnf install mold` (Fedora) / `sudo apt install mold` (Debian/Ubuntu)
+- **brotli** (release builds pre-compress the WASM with it; `build.sh` fails if it's missing): `sudo dnf install brotli` / `sudo apt install brotli`
+- **binaryen** (provides `wasm-opt`; release builds run `wasm-opt -Oz` to shrink the WASM and `build.sh` fails without it): `sudo dnf install binaryen` / `sudo apt install binaryen`
 - **Rust targets**:
   ```
   rustup target add wasm32-unknown-unknown
