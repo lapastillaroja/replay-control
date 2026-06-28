@@ -6,6 +6,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [Unreleased]
 
+### Added
+
+- New arcade hardware board: **CoJag** (Atari's coin-op Jaguar hardware) — games such as Area 51 and Maximum Force now group under it.
+
 ### Changed
 
 - Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).

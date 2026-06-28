@@ -78,6 +78,8 @@ pub enum ArcadeBoard {
     JalecoMegaSystem1,
     // Gaelco
     Gaelco3d,
+    // Atari
+    Cojag,
 }
 
 impl ArcadeBoard {
@@ -133,6 +135,7 @@ impl ArcadeBoard {
         ArcadeBoard::IremM92,
         ArcadeBoard::JalecoMegaSystem1,
         ArcadeBoard::Gaelco3d,
+        ArcadeBoard::Cojag,
     ];
 
     /// Stable ASCII slug stored in `arcade_game.board` and
@@ -189,6 +192,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM92 => "irem_m92",
             ArcadeBoard::JalecoMegaSystem1 => "jaleco_mega_system_1",
             ArcadeBoard::Gaelco3d => "gaelco_3d",
+            ArcadeBoard::Cojag => "cojag",
         }
     }
 
@@ -244,6 +248,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM92 => "M92",
             ArcadeBoard::JalecoMegaSystem1 => "Mega System 1",
             ArcadeBoard::Gaelco3d => "3D",
+            ArcadeBoard::Cojag => "CoJag",
         }
     }
 
@@ -294,6 +299,7 @@ impl ArcadeBoard {
             ArcadeBoard::IremM72 | ArcadeBoard::IremM92 => "Irem",
             ArcadeBoard::JalecoMegaSystem1 => "Jaleco",
             ArcadeBoard::Gaelco3d => "Gaelco",
+            ArcadeBoard::Cojag => "Atari",
         }
     }
 
@@ -384,6 +390,11 @@ impl ArcadeBoard {
             ArcadeBoard::IremM92 => &["irem/m92.cpp", "m92.c"],
             ArcadeBoard::JalecoMegaSystem1 => &["jaleco/megasys1.cpp", "pre90s/megasys1.cpp"],
             ArcadeBoard::Gaelco3d => &["gaelco/gaelco3d.cpp"],
+            // Atari's coin-op Jaguar hardware (CoJag). MAME shares this driver
+            // file with the Jaguar *console* machines (jaguar, jaguarcd); those
+            // aren't arcade ROMs, so this coarse sourcefile mapping is fine.
+            // `cojag.c` is the MAME 2003-Plus legacy spelling.
+            ArcadeBoard::Cojag => &["atari/jaguar.cpp", "cojag.c"],
         }
     }
 
@@ -607,6 +618,23 @@ mod tests {
         assert_eq!(
             ArcadeBoard::from_sourcefile("sony/taitogn.cpp"),
             Some(ArcadeBoard::TaitoGNet)
+        );
+    }
+
+    #[test]
+    fn issue_82_requested_board_resolves() {
+        // Issue #82 requested Atari CoJag (coin-op Jaguar) and Taito Power-JC.
+        // Only CoJag was added: the romset has CoJag games (fishfren, freezeat)
+        // but no Power-JC (Operation Tiger) ROMs, so that board was deliberately
+        // skipped. CoJag resolves from current-MAME `atari/jaguar.cpp` and the
+        // MAME 2003-Plus legacy `cojag.c`.
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("atari/jaguar.cpp"),
+            Some(ArcadeBoard::Cojag)
+        );
+        assert_eq!(
+            ArcadeBoard::from_sourcefile("cojag.c"),
+            Some(ArcadeBoard::Cojag)
         );
     }
 }

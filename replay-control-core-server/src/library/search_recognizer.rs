@@ -128,6 +128,7 @@ fn board_tokens(board: ArcadeBoard) -> Vec<String> {
         ArcadeBoard::NamcoSystem10 => &["system 10", "namco system 10", "namcos10"],
         ArcadeBoard::NamcoSystem22 => &["system 22", "namco system 22", "namcos22"],
         ArcadeBoard::Gaelco3d => &["gaelco 3d", "gaelco3d", "gaelco"],
+        ArcadeBoard::Cojag => &["cojag", "coin-op jaguar", "coinop jaguar"],
         _ => &[],
     };
     for syn in extras {
