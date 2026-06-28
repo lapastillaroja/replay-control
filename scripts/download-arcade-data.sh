@@ -7,6 +7,14 @@
 # you want to refresh the data.
 #
 # Usage: ./scripts/download-arcade-data.sh
+#
+# MAINTENANCE: MAME/FBNeo occasionally rename driver sourcefiles between
+# releases. When they do, ArcadeBoard::sourcefiles() in
+# replay-control-core/src/platform/arcade_board.rs goes stale and the affected
+# board silently loses games (a board can drop to zero with no build error).
+# After refreshing this data, re-check per-board game counts (Metadata coverage
+# view / library_report) and add any renamed driver spelling. See
+# docs/architecture/arcade-boards.md.
 
 set -euo pipefail
 

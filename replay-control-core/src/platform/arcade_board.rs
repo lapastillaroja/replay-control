@@ -1,10 +1,34 @@
 //! Curated arcade hardware boards (CPS-2, Neo Geo MVS, Taito F3, …) used as
 //! a stable, denormalized value on `arcade_game` and `game_library`.
 //!
+//! This is a **curated** list of notable hardware platforms, not a 1:1 mirror
+//! of emulator drivers. A board earns a variant only when it groups *several*
+//! games — single-game drivers are deliberately left out (a board page should
+//! surface a family of titles, not one game), as are per-maker gambling and
+//! mahjong driver families, which are maker categories rather than boards.
+//!
 //! The enum is the single source of truth: it carries every board's display
 //! name, manufacturer, and the MAME-driver-sourcefile mapping. There is no
 //! companion CSV or database table — adding a new board is one variant + one
 //! `from_sourcefile` arm.
+//!
+//! ## Sourcefile drift on upstream updates
+//!
+//! Driver sourcefile names change between MAME/FBNeo releases — MAME renamed
+//! `taito/taitof3.cpp` → `taito/taito_f3.cpp`, moved `cave/cave.cpp` →
+//! `atlus/cave.cpp`, and `sega/atomiswave.cpp` → `sega/dc_atomiswave.cpp`. When
+//! a spelling we list disappears upstream, [`Self::from_sourcefile`] silently
+//! returns `None` and the board quietly loses games — it can drop to zero with
+//! no build error. The round-trip tests below only prove the list is
+//! self-consistent, **not** that it still matches the bundled data.
+//!
+//! So after refreshing `data/upstream/` (via `scripts/download-arcade-data.sh`),
+//! re-verify each board still resolves: grep the affected games' `sourcefile=`
+//! in the new XML/dat and add any renamed spelling to [`Self::sourcefiles`].
+//! There is no automated guard — eyeball per-board game counts (Metadata →
+//! coverage, or `replay-control-core-server/src/bin/library_report.rs`)
+//! before/after a bump; a board trending toward zero means a driver was renamed.
+//! See `docs/architecture/arcade-boards.md`.
 
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +95,7 @@ pub enum ArcadeBoard {
     // Data East
     DataEastDeco32,
     DataEastDecoCassette,
+    DataEastMecM1,
     // Irem
     IremM72,
     IremM92,
@@ -131,6 +156,7 @@ impl ArcadeBoard {
         ArcadeBoard::KonamiM2,
         ArcadeBoard::DataEastDeco32,
         ArcadeBoard::DataEastDecoCassette,
+        ArcadeBoard::DataEastMecM1,
         ArcadeBoard::IremM72,
         ArcadeBoard::IremM92,
         ArcadeBoard::JalecoMegaSystem1,
@@ -188,6 +214,7 @@ impl ArcadeBoard {
             ArcadeBoard::KonamiM2 => "konami_m2",
             ArcadeBoard::DataEastDeco32 => "dataeast_deco32",
             ArcadeBoard::DataEastDecoCassette => "dataeast_deco_cassette",
+            ArcadeBoard::DataEastMecM1 => "dataeast_mec_m1",
             ArcadeBoard::IremM72 => "irem_m72",
             ArcadeBoard::IremM92 => "irem_m92",
             ArcadeBoard::JalecoMegaSystem1 => "jaleco_mega_system_1",
@@ -244,6 +271,7 @@ impl ArcadeBoard {
             ArcadeBoard::KonamiM2 => "M2",
             ArcadeBoard::DataEastDeco32 => "DECO32",
             ArcadeBoard::DataEastDecoCassette => "DECO Cassette",
+            ArcadeBoard::DataEastMecM1 => "MEC-M1",
             ArcadeBoard::IremM72 => "M72",
             ArcadeBoard::IremM92 => "M92",
             ArcadeBoard::JalecoMegaSystem1 => "Mega System 1",
@@ -295,7 +323,9 @@ impl ArcadeBoard {
             | ArcadeBoard::KonamiMysticWarriors
             | ArcadeBoard::KonamiGq
             | ArcadeBoard::KonamiM2 => "Konami",
-            ArcadeBoard::DataEastDeco32 | ArcadeBoard::DataEastDecoCassette => "Data East",
+            ArcadeBoard::DataEastDeco32
+            | ArcadeBoard::DataEastDecoCassette
+            | ArcadeBoard::DataEastMecM1 => "Data East",
             ArcadeBoard::IremM72 | ArcadeBoard::IremM92 => "Irem",
             ArcadeBoard::JalecoMegaSystem1 => "Jaleco",
             ArcadeBoard::Gaelco3d => "Gaelco",
@@ -357,20 +387,42 @@ impl ArcadeBoard {
             ArcadeBoard::SegaStv => &["sega/stv.cpp"],
             ArcadeBoard::SegaNaomi => &["sega/naomi.cpp"],
             ArcadeBoard::SegaNaomi2 => &["sega/naomi2.cpp"],
-            ArcadeBoard::SammyAtomiswave => &["sega/atomiswave.cpp"],
-            ArcadeBoard::TaitoF2 => &["taito/taitof2.cpp", "taitof2.c"],
-            ArcadeBoard::TaitoF3 => &["taito/taitof3.cpp", "taitof3.c"],
+            ArcadeBoard::SammyAtomiswave => &["sega/atomiswave.cpp", "sega/dc_atomiswave.cpp"],
+            ArcadeBoard::TaitoF2 => &["taito/taitof2.cpp", "taito/taito_f2.cpp", "taito_f2.c"],
+            ArcadeBoard::TaitoF3 => &["taito/taitof3.cpp", "taito/taito_f3.cpp", "taito_f3.c"],
             ArcadeBoard::TaitoZ => &["taito/taito_z.cpp", "taito/taitoz.cpp"],
             ArcadeBoard::TaitoGNet => &["sony/taitogn.cpp"],
             ArcadeBoard::SonyZn => &["sony/zn.cpp", "zn.c"],
             ArcadeBoard::IgsPgm => &["igs/pgm.cpp", "pgm/pgm.cpp", "pgm.c"],
             ArcadeBoard::IgsPgm2 => &["igs/pgm2.cpp", "pgm2/pgm2.cpp"],
-            ArcadeBoard::CaveFirstGen => &["cave/cave.cpp"],
+            // Cave first-generation 68000 hardware. Current MAME groups every
+            // title in atlus/cave.cpp; FBNeo splits them one driver per game;
+            // MAME 2003+ uses the legacy cave.c. (The old "cave/cave.cpp"
+            // spelling matched none of our upstreams — the board was empty.)
+            ArcadeBoard::CaveFirstGen => &[
+                "atlus/cave.cpp",
+                "cave.c",
+                "cave/dodonpachi.cpp",
+                "cave/donpachi.cpp",
+                "cave/esprade.cpp",
+                "cave/feversos.cpp",
+                "cave/gaia.cpp",
+                "cave/guwange.cpp",
+                "cave/hotdogst.cpp",
+                "cave/korokoro.cpp",
+                "cave/mazinger.cpp",
+                "cave/metmqstr.cpp",
+                "cave/pwrinst2.cpp",
+                "cave/sailormn.cpp",
+                "cave/uopoko.cpp",
+            ],
             ArcadeBoard::CaveCv1000 => &["cave/cv1k.cpp"],
-            ArcadeBoard::MidwayWolfUnit => &["midway/midwunit.cpp"],
-            ArcadeBoard::MidwayTUnit => &["midway/midtunit.cpp"],
+            ArcadeBoard::MidwayWolfUnit => {
+                &["midway/midwunit.cpp", "midway/wunit.cpp", "midwunit.c"]
+            }
+            ArcadeBoard::MidwayTUnit => &["midway/midtunit.cpp", "midway/tunit.cpp", "midtunit.c"],
             ArcadeBoard::MidwayVUnit => &["midway/midvunit.cpp"],
-            ArcadeBoard::MidwayYUnit => &["midway/midyunit.cpp"],
+            ArcadeBoard::MidwayYUnit => &["midway/midyunit.cpp", "midway/yunit.cpp", "midyunit.c"],
             ArcadeBoard::MidwaySeattle => &["midway/seattle.cpp"],
             ArcadeBoard::MidwayVegas => &["midway/vegas.cpp"],
             ArcadeBoard::NamcoSystem1 => &["namco/namcos1.cpp", "pre90s/namcos1.cpp", "namcos1.c"],
@@ -385,7 +437,15 @@ impl ArcadeBoard {
             ArcadeBoard::KonamiGq => &["konami/konamigq.cpp"],
             ArcadeBoard::KonamiM2 => &["konami/konamim2.cpp"],
             ArcadeBoard::DataEastDeco32 => &["dataeast/deco32.cpp"],
-            ArcadeBoard::DataEastDecoCassette => &["dataeast/dec0.cpp"],
+            // DECO Cassette System (BurgerTime, Burnin' Rubber). Previously this
+            // pointed at dataeast/dec0.cpp by mistake — that's the MEC-M1 board
+            // below, not the cassette system.
+            ArcadeBoard::DataEastDecoCassette => &["dataeast/decocass.cpp", "decocass.c"],
+            // Data East MEC-M1 (Bad Dudes, Robocop, Heavy Barrel). MAME's dec0
+            // driver also folds in a few related DE PCBs (Boulder Dash, Midnight
+            // Resistance) — the same coarse driver-granularity as Irem M72/M84.
+            // FBNeo's dataeast/d_dec0.cpp normalizes to dataeast/dec0.cpp.
+            ArcadeBoard::DataEastMecM1 => &["dataeast/dec0.cpp", "dec0.c"],
             ArcadeBoard::IremM72 => &["irem/m72.cpp", "m72.c"],
             ArcadeBoard::IremM92 => &["irem/m92.cpp", "m92.c"],
             ArcadeBoard::JalecoMegaSystem1 => &["jaleco/megasys1.cpp", "pre90s/megasys1.cpp"],
@@ -465,7 +525,7 @@ mod tests {
             ("midway/vegas.cpp", ArcadeBoard::MidwayVegas),
             ("namco/namcos10.cpp", ArcadeBoard::NamcoSystem10),
             ("gaelco/gaelco3d.cpp", ArcadeBoard::Gaelco3d),
-            ("dataeast/dec0.cpp", ArcadeBoard::DataEastDecoCassette),
+            ("dataeast/decocass.cpp", ArcadeBoard::DataEastDecoCassette),
             ("jaleco/megasys1.cpp", ArcadeBoard::JalecoMegaSystem1),
         ];
         for (sf, expected) in curated_paths {
@@ -636,5 +696,41 @@ mod tests {
             ArcadeBoard::from_sourcefile("cojag.c"),
             Some(ArcadeBoard::Cojag)
         );
+    }
+
+    #[test]
+    fn drifted_and_broken_board_spellings_resolve() {
+        // Fixes for sourcefile drift found while auditing MAME 0.285 + FBNeo:
+        // CaveFirstGen was empty (cave/cave.cpp matched nothing); DecoCassette
+        // pointed at dec0.cpp (the DE-0 board) instead of the cassette system;
+        // and several boards lacked their current-MAME / FBNeo / 2003+ spelling.
+        use ArcadeBoard::*;
+        let cases: &[(&str, ArcadeBoard)] = &[
+            // CaveFirstGen — current MAME, a per-game FBNeo driver, and 2003+.
+            ("atlus/cave.cpp", CaveFirstGen),
+            ("cave/dodonpachi.cpp", CaveFirstGen),
+            ("cave.c", CaveFirstGen),
+            // DECO Cassette — now the real driver, not dec0.cpp.
+            ("dataeast/decocass.cpp", DataEastDecoCassette),
+            // Data East MEC-M1 — the dec0 games (Bad Dudes, Robocop) get their
+            // own board instead of being mislabeled DECO Cassette or orphaned.
+            ("dataeast/dec0.cpp", DataEastMecM1),
+            ("dec0.c", DataEastMecM1),
+            // Drifted current-MAME spellings + the 2003+ legacy `.c` forms,
+            // which MAME 2003+ spells with an underscore (taito_f2.c, not taitof2.c).
+            ("taito/taito_f2.cpp", TaitoF2),
+            ("taito/taito_f3.cpp", TaitoF3),
+            ("taito_f2.c", TaitoF2),
+            ("taito_f3.c", TaitoF3),
+            ("sega/dc_atomiswave.cpp", SammyAtomiswave),
+            // Midway units — FBNeo drops the "mid" prefix; 2003+ uses legacy .c.
+            ("midway/yunit.cpp", MidwayYUnit),
+            ("midway/tunit.cpp", MidwayTUnit),
+            ("midway/wunit.cpp", MidwayWolfUnit),
+            ("midyunit.c", MidwayYUnit),
+        ];
+        for (sf, want) in cases {
+            assert_eq!(ArcadeBoard::from_sourcefile(sf), Some(*want), "{sf}");
+        }
     }
 }

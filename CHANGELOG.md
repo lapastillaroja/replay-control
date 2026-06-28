@@ -9,6 +9,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Added
 
 - New arcade hardware board: **CoJag** (Atari's coin-op Jaguar hardware) — games such as Area 51 and Maximum Force now group under it.
+- New arcade hardware board: **MEC-M1** (Data East) — Bad Dudes, Robocop, Heavy Barrel, and related Data East games now group under it.
 
 ### Changed
 
@@ -19,6 +20,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Fixed
 
 - Fixed the action result message under the RePlayOS device controls sitting flush against the buttons; it now uses the standard spacing.
+- Fixed several arcade hardware boards that grouped the wrong games or none at all — Cave 1st-generation shmups (DoDonPachi, DonPachi, ESP Ra.De.), DECO Cassette, and a few others now group correctly across all ROM sets.
 
 ---
 
