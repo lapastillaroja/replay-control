@@ -925,6 +925,15 @@ pub fn is_arcade_system(folder_name: &str) -> bool {
     find_system(folder_name).is_some_and(System::is_arcade)
 }
 
+/// Whether `folder_name` is a non-game multimedia system whose entries are not
+/// indexed in the game library — today only Alpha Player (RePlayOS' video and
+/// audio player). The device writes the same Recents/Favorites play markers for
+/// these as for games, so a detail-page lookup that misses the library must
+/// render a minimal multimedia view instead of treating the miss as "ROM not found".
+pub fn is_multimedia_system(folder_name: &str) -> bool {
+    find_system(folder_name).is_some_and(|s| matches!(s.category, SystemCategory::Utility))
+}
+
 /// Whether the library resolves RetroAchievements for `folder_name` (see
 /// [`System::has_retroachievements`]). Unknown systems return `false`.
 pub fn system_has_retroachievements(folder_name: &str) -> bool {
@@ -1044,6 +1053,16 @@ mod tests {
         assert!(is_arcade_system("arcade_stv"));
         assert!(!is_arcade_system("nintendo_snes"));
         assert!(!is_arcade_system("unknown_arcade_like_name"));
+    }
+
+    #[test]
+    fn alpha_player_is_a_multimedia_system() {
+        // Alpha Player movies/audio aren't games, so the detail page renders a
+        // minimal multimedia view instead of erroring with "ROM not found".
+        assert!(is_multimedia_system("alpha_player"));
+        assert!(!is_multimedia_system("nintendo_snes"));
+        assert!(!is_multimedia_system("arcade_fbneo"));
+        assert!(!is_multimedia_system("unknown_system"));
     }
 
     #[test]

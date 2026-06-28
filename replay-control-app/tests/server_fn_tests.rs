@@ -899,3 +899,60 @@ async fn sfn_launch_game_in_standalone_stays_simulated() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("Launch simulated"), "got: {body}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_get_rom_detail_renders_alpha_player_movie_without_error() {
+    setup();
+    let env = TestEnv::new().await;
+
+    // Alpha Player is a hidden multimedia system: its movies are never scanned
+    // into the library, but the device writes Recents/Favorites markers for
+    // them. Opening one used to fail with "ROM not found"; it must now render a
+    // minimal detail page instead.
+    let storage = env.state.storage();
+    let dir = storage.roms_dir().join("alpha_player");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Willow.mkv"), b"fake-movie").unwrap();
+
+    let app = test_router(env.state.clone());
+    let (status, body) = invoke_server_fn_response::<server_fns::GetRomDetail>(
+        app,
+        form_body(&[("system", "alpha_player"), ("filename", "Willow.mkv")]),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "alpha_player detail must not error: {body}"
+    );
+    assert!(
+        body.contains("Willow"),
+        "movie title should be present: {body}"
+    );
+    assert!(
+        body.contains("alpha_player"),
+        "system should be present: {body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_get_rom_detail_still_errors_for_missing_real_game() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    // A non-multimedia system that misses the library keeps the existing
+    // not-found behavior — the graceful branch is scoped to multimedia only.
+    let status = invoke_server_fn::<server_fns::GetRomDetail>(
+        app,
+        form_body(&[("system", "nintendo_nes"), ("filename", "DoesNotExist.nes")]),
+    )
+    .await;
+
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "missing real game should still error"
+    );
+}

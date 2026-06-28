@@ -1,6 +1,10 @@
 use super::*;
 use replay_control_core::library_db::LibraryResourceLink;
 #[cfg(feature = "ssr")]
+use replay_control_core::{systems, title_utils};
+#[cfg(feature = "ssr")]
+use replay_control_core_server::favorites;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::recents::add_recent;
@@ -254,14 +258,27 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .read(move |conn| LibraryDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
         .and_then(|r| r.ok())
-        .flatten()
-        .ok_or_else(|| {
-            if !state.is_idle() {
-                ServerFnError::new("Game data is temporarily unavailable while the library is being rebuilt. Please try again in a moment.")
+        .flatten();
+
+    let entry = match entry {
+        Some(entry) => entry,
+        // Alpha Player movies (and any other multimedia/utility system) are never
+        // indexed in the library, yet the device writes the same Recents/
+        // Favorites markers for them. Don't error — render a minimal detail page
+        // from the marker so the entry opens. Real games keep the usual errors.
+        None if systems::is_multimedia_system(&system) => {
+            return Ok(multimedia_rom_detail(&storage, &system, &filename).await);
+        }
+        None => {
+            return Err(if !state.is_idle() {
+                ServerFnError::new(
+                    "Game data is temporarily unavailable while the library is being rebuilt. Please try again in a moment.",
+                )
             } else {
                 ServerFnError::new(format!("ROM not found: {filename}"))
-            }
-        })?;
+            });
+        }
+    };
 
     let is_favorite =
         replay_control_core_server::favorites::is_favorite(&storage, &system, &filename).await;
@@ -369,6 +386,85 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         manual_suggestions: manual_suggestions.unwrap_or_default(),
         video_suggestions: video_suggestions.unwrap_or_default(),
     })
+}
+
+/// Build a minimal [`RomDetail`] for a multimedia/utility entry (an Alpha Player
+/// movie or audio file) that has no `game_library` row. Carries only the
+/// marker-derived title and path so the detail page opens cleanly; all the
+/// game-only sections (metadata, box art, RetroAchievements, resources) stay
+/// empty and rename is disabled. See [`systems::is_multimedia_system`].
+#[cfg(feature = "ssr")]
+async fn multimedia_rom_detail(
+    storage: &StorageLocation,
+    system: &str,
+    filename: &str,
+) -> RomDetail {
+    let rom_path = format!("/roms/{system}/{filename}");
+    let game_ref = GameRef::from_parts(system, filename.to_string(), rom_path.clone(), None);
+    let display_name = game_ref
+        .display_name
+        .clone()
+        .unwrap_or_else(|| filename.to_string());
+    let base_title = title_utils::base_title(&display_name);
+
+    let is_favorite = favorites::is_favorite(storage, system, filename).await;
+    let size_bytes = list_rom_group(storage, system, &rom_path)
+        .map(|group| group.iter().map(|file| file.size_bytes).sum())
+        .unwrap_or(0);
+
+    let game = GameInfo {
+        system: game_ref.system,
+        system_display: game_ref.system_display,
+        rom_filename: game_ref.rom_filename,
+        rom_path: game_ref.rom_path,
+        display_name,
+        year: String::new(),
+        release_date: None,
+        release_precision: None,
+        release_region_used: None,
+        genre: String::new(),
+        developer: String::new(),
+        players: 0,
+        cooperative: false,
+        rotation: None,
+        driver_status: None,
+        is_clone: None,
+        parent_rom: None,
+        arcade_category: None,
+        arcade_board: None,
+        arcade_board_tag: None,
+        region: None,
+        ra_id: String::new(),
+        ra_count: 0,
+        description: None,
+        rating: None,
+        publisher: None,
+        box_art_url: None,
+        screenshot_url: None,
+        title_url: None,
+    };
+
+    RomDetail {
+        game,
+        size_bytes,
+        is_m3u: false,
+        is_favorite,
+        user_screenshots: Vec::new(),
+        variant_count: 0,
+        is_hack: false,
+        is_special: false,
+        base_title,
+        rename_allowed: false,
+        rename_reason: None,
+        disc_info: None,
+        library_resources: Vec::new(),
+        documents: Vec::new(),
+        local_manuals: Vec::new(),
+        saved_videos: Vec::new(),
+        saved_resource_links: Vec::new(),
+        manual_suggestions: Vec::new(),
+        video_suggestions: Vec::new(),
+    }
 }
 
 /// One trip through the reader pool to fetch every `library_game_resource`
