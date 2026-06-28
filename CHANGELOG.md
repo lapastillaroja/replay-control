@@ -4,6 +4,31 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.0.0]
+
+> First stable release. Manage your RePlayOS game library, metadata, and device settings from any phone, tablet, or desktop on your network — nothing to install.
+>
+> Learn more and see screenshots at <https://lapastillaroja.github.io/replay-control/>, and learn more about RePlayOS, the libretro emulator frontend it pairs with, at <https://www.replayos.com/>.
+
+### Highlights
+
+- **Library** — browse by system with box art, search, and infinite scroll; favorites organized into folders by system, genre, developer, or arcade board; multi-disc M3U handling; inline rename and delete with multi-file safety; and live updates as ROMs change.
+- **Systems** — 43 platforms across consoles (NES / Famicom, Super Nintendo, Mega Drive / Genesis, PlayStation, Saturn, Dreamcast, Nintendo 64, PC Engine / TurboGrafx-16, and more), handhelds (Game Boy / Color / Advance, Nintendo DS, Game Gear, Lynx, Neo Geo Pocket), and home computers (Commodore Amiga and 64, MSX, Amstrad CPC, ZX Spectrum, Sharp X68000, DOS, and ScummVM).
+- **Arcade** — human-readable names for 15K+ playable games and curated hardware-board grouping (CPS, Neo Geo MVS, Sega / Taito / Namco / Konami systems, Sony ZN, Taito G-Net, and more) across MAME, FBNeo, Naomi / Atomiswave, and Sega ST-V.
+- **Metadata & media** — offline databases covering ~34K console, handheld, and computer games plus ~15K arcade games, optional one-click LaunchBox import, per-system box-art, screenshot, and title-screen download with smart matching, and a maintainer CSV metadata export (Metadata → Advanced) for auditing per-ROM coverage.
+- **Discover** — recommendations of several kinds that work together: **Because You Love [game]**, genre-based **Rediscover Your Library** spotlights, **Hidden Gems** (highly rated games you haven't played yet), **Related Games** on every detail page, and a rotating **Curated Spotlight** — never repeating a game across sections — plus quick Discover pills, cross-system fuzzy search, developer pages, and series / franchise navigation.
+- **Game detail** — box art, screenshots, captures, pinned trailers, on-demand manuals, RetroAchievements status and achievement count, and one-tap launch on the TV.
+- **RePlayOS integration** — official Net Control API for launching games, now-playing detection, and reading device settings including skin and log level.
+- **Settings & system** — Wi-Fi, NFS, hostname, and password from the browser; skin sync; storage auto-detection (SD / USB / NVMe / NFS) with corruption recovery; and system logs.
+- **Blazing fast** — pages render in just 5-6 ms, so browsing feels instant thanks to ["blast processing"](https://segaretro.org/Blast_processing) — and it sips so little memory it leaves your Pi's resources free for the games.
+- **Polished experience** — a responsive interface for phone, tablet, and desktop with smooth client-side navigation, swappable skins synced from your device, an installable PWA, and full English / Español / 日本語 translations.
+
+### Thanks
+
+A heartfelt thank-you to everyone who ran the beta releases and took the time to send bug reports, feature ideas, and encouragement. Your support and feedback shaped this 1.0 — it would not be what it is without you.
+
+---
+
 ## [0.10.0-beta.6]
 
 > Adds CSV metadata export, speeds up first load with precompressed WASM, and stops incorrectly flagging multi-disc CHD games as unable to earn RetroAchievements.
