@@ -101,7 +101,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --title "$TAG" \
               --generate-notes \
-              --prerelease
+              --draft
           fi
           gh release upload "$TAG" \
             replay-control-app-aarch64-linux.tar.gz \
@@ -111,12 +111,20 @@ jobs:
             checksums.sha256 \
             --clobber
 
-          # SemVer prerelease tags (vX.Y.Z-foo) must be flagged as prerelease and
-          # excluded from /releases/latest. release-plz creates the release without
-          # these flags, so normalize after upload.
+          # release-plz created the release as a draft (git_release_draft), so it
+          # has stayed invisible until now. Publish it with its assets attached.
+          # SemVer prerelease tags (vX.Y.Z-foo) are badged as prerelease and kept
+          # out of /releases/latest; stable tags become the latest release.
           if [[ "$TAG" == *-* ]]; then
             gh release edit "$TAG" \
               --repo "${{ github.repository }}" \
+              --draft=false \
               --prerelease \
               --latest=false
+          else
+            gh release edit "$TAG" \
+              --repo "${{ github.repository }}" \
+              --draft=false \
+              --prerelease=false \
+              --latest
           fi

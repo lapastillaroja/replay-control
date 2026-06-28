@@ -5,6 +5,11 @@ publish = false
 git_only = true
 # Create git tags and GitHub Releases
 git_release_enable = true
+# Create the GitHub Release as a draft. build-release.yml (chained after the
+# tag is created) attaches the artifacts and only then publishes it, so a
+# release is never visible without its assets. See the "Publish the draft"
+# step in build-release.yml.
+git_release_draft = true
 git_tag_enable = true
 # Single version tag for the workspace (v0.1.0, not crate-v0.1.0)
 git_tag_name = "v{{ version }}"

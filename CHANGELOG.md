@@ -14,6 +14,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).
 - Rebooting the device from **Settings → RePlayOS** now asks for confirmation first, matching Power off.
+- GitHub releases are now published only once their build artifacts are attached, so a release is never listed without its downloads.
 
 ### Fixed
 
