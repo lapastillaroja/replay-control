@@ -2770,7 +2770,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "replay-control-app"
-version = "0.10.0-beta.5"
+version = "0.10.0-beta.6"
 dependencies = [
  "any_spawner",
  "async-stream",
@@ -2818,7 +2818,7 @@ dependencies = [
 
 [[package]]
 name = "replay-control-core"
-version = "0.10.0-beta.5"
+version = "0.10.0-beta.6"
 dependencies = [
  "crc32fast",
  "semver",
@@ -2832,7 +2832,7 @@ dependencies = [
 
 [[package]]
 name = "replay-control-core-server"
-version = "0.10.0-beta.5"
+version = "0.10.0-beta.6"
 dependencies = [
  "base64",
  "chd",

@@ -4,6 +4,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.10.0-beta.6]
+
+> Adds CSV metadata export, speeds up first load with precompressed WASM, and stops incorrectly flagging multi-disc CHD games as unable to earn RetroAchievements.
+
+### Added
+
+- Added a **metadata export** (Metadata → Advanced) that downloads a per-ROM CSV of your library — one row per game with its catalog and LaunchBox metadata, media presence, RetroAchievements details, and classification — for auditing coverage and upstream sources.
+
+### Changed
+
+- Faster first load: the WASM bundle is now served Brotli-precompressed.
+
+### Fixed
+
+- Multi-disc CHD games are no longer flagged as unable to earn RetroAchievements — the disc-format limitation that note described is resolved on the device, so the warning has been removed.
+
+---
+
 ## [0.10.0-beta.5]
 
 > Fixes removing games from Recently Played, iOS/WebKit browser Back from game detail pages, and keeps list launch buttons working after returning to search results.
