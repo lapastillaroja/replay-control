@@ -1,11 +1,11 @@
 # Performance Benchmarks
 
-Last updated: 2026-06-21
-Primary benchmark build: 0.9.0 release build, commit `ac518f9`.
+Last updated: 2026-06-28
+Primary benchmark build: 1.0.0 release build, commit `433e899`. Measured over HTTPS (now on by default) with an authenticated session, so server times include the TLS handshake and the session check — a few ms above the earlier plain-HTTP figures. Search and stress-load figures are carried over from 0.9.0 (the load harness has not yet been re-run against the authenticated HTTPS endpoint).
 
-Replay Control is designed to run quietly on a Raspberry Pi while still handling large game libraries. The practical result from the 0.9.0 measurements is:
+Replay Control is designed to run quietly on a Raspberry Pi while still handling large game libraries. The practical result from the 1.0.0 measurements is:
 
-- Normal browsing is fast. Home renders in about 6 ms of server time, system and game pages in 2 ms, and common searches in about 35 ms (USB) on a Pi 5.
+- Normal browsing is fast. Home renders in about 9 ms of server time over HTTPS (TLS + session check included), system and game pages in 5-6 ms, and common searches in about 35 ms (USB) on a Pi 5.
 - Idle CPU is negligible: effectively 0% of one core with no requests, and under 1% (USB) while one person browses.
 - Idle memory settles to about 99 MB resident (41 MB heap) within ~3 minutes of startup. It is modestly higher than earlier releases, mostly because the on-device game catalog is memory-mapped for fast lookups — shared, file-backed cache the kernel reclaims under pressure, not heap. See [Regressions and Analysis](#regressions-and-analysis).
 - Heavy artificial load peaks variably (around 0.7-1.1 GB across runs, as large result sets are built in memory) and the service stays responsive; it settles back to roughly 190-250 MB, though the allocator retains the grown heap rather than returning fully to idle.
@@ -28,8 +28,8 @@ CPU is reported as percent of one core. On a Pi 5, 100% means one core is fully 
 
 | State | Pi 5 - USB (26,777) | Pi 5 - NFS (103,896) | Pi 4 |
 |---|---:|---:|---|
-| Idle, no requests | 0.00% | 0.07% | _pending_ |
-| One user browsing, no game running | 0.87% | 2.23% | _pending_ |
+| Idle, no requests | 0.00% | 0.03% | _pending_ |
+| One user browsing, no game running | 0.87% | 2.13% | _pending_ |
 | Heavy concurrent load | see [Stress Tests](#stress-tests) | see [Stress Tests](#stress-tests) | _pending_ |
 
 The larger NFS library costs more CPU per request because each search and listing touches more rows.
@@ -57,9 +57,9 @@ Warm, single-user requests on Pi 5. "Server time" is time-to-first-byte (SSR pro
 
 | Page | USB server time | USB total | NFS server time | NFS total | Notes |
 |---|---:|---:|---:|---:|---|
-| Home | 5.8 ms | 7.3 ms | 6.2 ms | 6.6 ms | Main library view |
-| System list (NES) | 2.2 ms | 3.0 ms | 2.2 ms | 8.5 ms | NFS NES list is larger |
-| System list (Arcade) | 2.2 ms | 7.0 ms | 2.1 ms | 8.7 ms | |
+| Home | 8.6 ms | 10.4 ms | 8.9 ms | 9.3 ms | Main library view |
+| System list (NES) | 5.5 ms | 6.0 ms | 5.2 ms | 11.8 ms | NFS NES list is larger |
+| System list (Arcade) | 5.8 ms | 11.1 ms | 5.3 ms | 12.4 ms | |
 | Game detail | ~1 ms | ~2 ms | ~1 ms | ~2 ms | From load test, c=1 median |
 | Search "mario" | 35 ms | — | 114 ms | — | c=1 median, scales with library |
 | Search "street fighter" | 27 ms | — | 89 ms | — | c=1 median |
@@ -69,13 +69,13 @@ Warm, single-user requests on Pi 5. "Server time" is time-to-first-byte (SSR pro
 
 The web app's static files. WASM is served gzip-compressed by the server.
 
-| File | Raw | Gzip |
-|---|---:|---:|
-| WASM bundle | 5,318 KB | 1,110 KB |
-| CSS | 163 KB | 29 KB |
-| Home HTML | 55 KB | - |
+| File | Raw | Gzip | Brotli |
+|---|---:|---:|---:|
+| WASM bundle | 4,695 KB | 1,429 KB | 944 KB |
+| CSS | 177 KB | 31 KB | - |
+| Home HTML | 57 KB | - | - |
 
-This build was produced without the optional `wasm-opt -Oz` pass, so the WASM bundle is marginally larger than a CI release (which runs it). Even so the gzipped bundle is close to prior releases.
+This is a CI release build, so the WASM bundle includes the `wasm-opt -Oz` pass — the raw bundle is 4,725 KB, down from 0.9.0's 5,318 KB. This benchmark build served the gzip variant (1,431 KB, at maximum gzip). 1.0.0 adds brotli pre-compression: browsers that accept `br` download **944 KB — about 485 KB (34%) smaller than gzip**. Gzip remains the fallback for clients or builds without brotli.
 
 ## Stress Tests
 

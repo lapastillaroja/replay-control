@@ -49,6 +49,17 @@ else
     JSON_FILE="$RESULTS_DIR/${TIMESTAMP}.json"
 fi
 
+# ─── HTTPS / auth ───────────────────────────────────────────────────
+# When the target is HTTPS (e.g. the Pi with https-by-default) accept its
+# self-signed cert, and when BENCH_COOKIE is set (e.g.
+# BENCH_COOKIE="ReplayControlSession=...") send it so authenticated routes
+# return the real app instead of a login redirect / 401. Wrapping `curl`
+# applies these to every request the script makes.
+CURL_EXTRA=()
+[[ "$TARGET" == https://* ]] && CURL_EXTRA+=(--insecure)
+[[ -n "${BENCH_COOKIE:-}" ]] && CURL_EXTRA+=(--cookie "$BENCH_COOKIE")
+curl() { command curl "${CURL_EXTRA[@]}" "$@"; }
+
 # ─── Helpers ───────────────────────────────────────────────────────
 
 median() {

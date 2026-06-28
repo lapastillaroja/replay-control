@@ -61,9 +61,18 @@ run_ssh() {
         ssh $SSH_OPTS "${PI_USER}@${PI_IP}" "$@"
 }
 
+# HTTPS / auth: set PI_SCHEME=https (+ PI_PORT=8443) for https-by-default builds,
+# and PI_COOKIE="ReplayControlSession=..." so the browse load hits the real app
+# instead of a login redirect / "Use HTTPS" page. Wrapping curl applies both.
+PI_SCHEME="${PI_SCHEME:-http}"
+CURL_EXTRA=()
+[[ "$PI_SCHEME" == https ]] && CURL_EXTRA+=(--insecure)
+[[ -n "${PI_COOKIE:-}" ]] && CURL_EXTRA+=(--cookie "$PI_COOKIE")
+curl() { command curl "${CURL_EXTRA[@]}" "$@"; }
+
 # Sanity check.
-if ! curl -s -o /dev/null --max-time 5 "http://${PI_IP}:${PI_PORT}/manifest.json" 2>/dev/null; then
-    echo "ERROR: replay-control not reachable at http://${PI_IP}:${PI_PORT}" >&2
+if ! curl -s -o /dev/null --max-time 5 "${PI_SCHEME}://${PI_IP}:${PI_PORT}/manifest.json" 2>/dev/null; then
+    echo "ERROR: replay-control not reachable at ${PI_SCHEME}://${PI_IP}:${PI_PORT}" >&2
     exit 1
 fi
 
@@ -77,7 +86,7 @@ if $BROWSE; then
         "/games/snes/Super%20Mario%20World%20%28USA%29.sfc"
         "/games/snes/Super%20Mario%20World%20%28USA%29.sfc#manuals"
     )
-    BASE="http://${PI_IP}:${PI_PORT}"
+    BASE="${PI_SCHEME}://${PI_IP}:${PI_PORT}"
     (
         while true; do
             for p in "${BROWSE_PATHS[@]}"; do
