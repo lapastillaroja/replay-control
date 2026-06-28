@@ -11,6 +11,7 @@ pub const GIT_HASH: &str = env!("GIT_HASH");
 /// both. Revisit if those grid column counts change.
 pub const MAX_PICKS: usize = 12;
 
+pub mod client_cache;
 pub mod components;
 pub mod hooks;
 pub mod i18n;
@@ -153,6 +154,10 @@ pub fn App() -> impl IntoView {
     // Fed by SseEventsListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
+
+    // Session caches that freeze recommendation data so browser Back resumes the
+    // same set the user saw (see client_cache).
+    client_cache::provide_client_caches();
 
     view! {
         <InitialLoadingShell />

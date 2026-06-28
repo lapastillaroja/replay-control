@@ -4,11 +4,12 @@ use leptos_router::hooks::use_params_map;
 use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
+use crate::client_cache::{FavRecsCache, use_frozen_resource};
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
-use crate::hooks::{LaunchControl, use_launch_control};
+use crate::hooks::{LaunchControl, use_launch_control, use_scroll_memory};
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
@@ -17,7 +18,12 @@ use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 pub fn FavoritesPage() -> impl IntoView {
     let i18n = use_i18n();
     let favorites = Resource::new(|| (), |_| server_fns::get_favorites());
-    let recommendations = Resource::new(|| (), |_| server_fns::get_favorites_recommendations());
+    // Freeze the personalized recommendations client-side so browser Back resumes
+    // the same set (see `client_cache` for the deliberate no-invalidation
+    // tradeoff: stale-until-reload after a favorite/storage mutation).
+    let recommendations = use_frozen_resource(expect_context::<FavRecsCache>().0, || {
+        server_fns::get_favorites_recommendations()
+    });
     let grouped_view = RwSignal::new(false);
 
     let toggle_label = move || {
@@ -134,6 +140,22 @@ where
             .collect::<Vec<_>>()
     };
 
+    // Preserve the "Recently Added" row's horizontal scroll across Back. Signature
+    // is the favorite markers, so adding/removing a favorite (which changes the
+    // row) resets it to 0 rather than restoring a stale offset.
+    let recently_added_ref = NodeRef::<leptos::html::Div>::new();
+    use_scroll_memory(recently_added_ref, || {
+        let path = leptos_router::hooks::use_location()
+            .pathname
+            .get_untracked();
+        let sig = recent_items()
+            .iter()
+            .map(|f| f.fav.marker_filename.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        (format!("{path}|favorites-recently-added"), sig)
+    });
+
     // System summary: for each system, count and the most recently added favorite.
     let system_cards = move || {
         let favs = favorites.read();
@@ -190,7 +212,7 @@ where
             <Show when=move || !recent_items().is_empty()>
                 <section class="section">
                     <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesRecentlyAdded)}</h2>
-                    <div class="scroll-card-row">
+                    <div class="scroll-card-row" node_ref=recently_added_ref>
                         {move || recent_items().into_iter().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                             let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());

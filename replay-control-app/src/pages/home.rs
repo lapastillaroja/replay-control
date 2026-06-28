@@ -3,12 +3,14 @@ use leptos_router::components::A;
 use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
+use crate::client_cache::{RecsCache, use_frozen_resource};
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::setup_checklist::SetupChecklist;
 use crate::components::stat_card::StatCard;
 use crate::components::system_card::SystemCard;
+use crate::hooks::use_scroll_memory;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::RecentWithArt;
@@ -22,9 +24,14 @@ pub fn HomePage() -> impl IntoView {
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let recents_signal: RwSignal<Vec<RecentWithArt>> = RwSignal::new(Vec::new());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
-    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
+    // Freeze the recommendations snapshot client-side so browser Back resumes the
+    // same set (see `client_cache` for the deliberate no-invalidation tradeoff:
+    // stale-until-reload after a favorite/storage mutation).
+    let recommendations = use_frozen_resource(expect_context::<RecsCache>().0, || {
+        server_fns::get_recommendations()
+    });
 
-    let delete_recent = move |marker_filename: String| {
+    let on_delete = Callback::new(move |marker_filename: String| {
         let locale = i18n.locale.get_untracked();
         confirm_dialog.confirm(
             t(locale, Key::HomeDeleteRecent),
@@ -61,7 +68,7 @@ pub fn HomePage() -> impl IntoView {
                 });
             }),
         );
-    };
+    });
 
     view! {
         <div class="page home-page">
@@ -95,7 +102,7 @@ pub fn HomePage() -> impl IntoView {
                                         <button
                                             class="recent-delete-btn"
                                             title=t(locale, Key::HomeDeleteRecent)
-                                            on:click=move |_| delete_recent(marker.clone())
+                                            on:click=move |_| on_delete.run(marker.clone())
                                         >
                                             "×"
                                         </button>
@@ -122,30 +129,7 @@ pub fn HomePage() -> impl IntoView {
                             if items.is_empty() {
                                 view! { <p class="empty-state">{t(locale, Key::HomeNoRecent)}</p> }.into_any()
                             } else {
-                                view! {
-                                    <div class="scroll-card-row">
-                                        {items.into_iter().map(|item| {
-                                            let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
-                                            let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
-                                            let art_url = item.box_art_url.clone();
-                                            let system = system_abbreviation(&item.entry.game.system);
-                                            let system_folder = item.entry.game.system.clone();
-                                            let marker = item.entry.marker_filename.clone();
-                                            view! {
-                                                <div class="recent-card-wrapper">
-                                                    <GameScrollCard href name system system_folder box_art_url=art_url />
-                                                    <button
-                                                        class="recent-delete-btn"
-                                                        title=t(locale, Key::HomeDeleteRecent)
-                                                        on:click=move |_| delete_recent(marker.clone())
-                                                    >
-                                                        "×"
-                                                    </button>
-                                                </div>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
+                                view! { <RecentsScrollRow items on_delete /> }.into_any()
                             }
                         })
                     })}
@@ -214,6 +198,56 @@ pub fn HomePage() -> impl IntoView {
                     })}
                 </Suspense>
             </section>
+        </div>
+    }
+}
+
+/// The "Recently Played" horizontal row. Extracted so it can keep its
+/// horizontal scroll across browser Back via `use_scroll_memory`. The signature
+/// is the recents markers, so playing/removing a game (which changes the row)
+/// starts it back at 0 instead of restoring a stale offset.
+#[component]
+fn RecentsScrollRow(
+    items: Vec<RecentWithArt>,
+    #[prop(into)] on_delete: Callback<String>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+    let row_ref = NodeRef::<leptos::html::Div>::new();
+    use_scroll_memory(row_ref, || {
+        let path = leptos_router::hooks::use_location()
+            .pathname
+            .get_untracked();
+        let key = format!("{path}|recently-played");
+        let sig = items
+            .iter()
+            .map(|item| item.entry.marker_filename.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        (key, sig)
+    });
+
+    view! {
+        <div class="scroll-card-row" node_ref=row_ref>
+            {items.into_iter().map(|item| {
+                let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
+                let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
+                let art_url = item.box_art_url.clone();
+                let system = system_abbreviation(&item.entry.game.system);
+                let system_folder = item.entry.game.system.clone();
+                let marker = item.entry.marker_filename.clone();
+                view! {
+                    <div class="recent-card-wrapper">
+                        <GameScrollCard href name system system_folder box_art_url=art_url />
+                        <button
+                            class="recent-delete-btn"
+                            title=move || t(i18n.locale.get(), Key::HomeDeleteRecent)
+                            on:click=move |_| on_delete.run(marker.clone())
+                        >
+                            "×"
+                        </button>
+                    </div>
+                }
+            }).collect::<Vec<_>>()}
         </div>
     }
 }
