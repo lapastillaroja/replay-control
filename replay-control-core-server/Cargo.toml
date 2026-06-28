@@ -32,7 +32,7 @@ chd = { version = "0.3.4", optional = true }
 reqwest = { workspace = true, features = ["stream", "query"] }
 tempfile = "3.27.0"
 getrandom = "0.4.3"
-rcgen = "0.13.2"
+rcgen = "0.14.8"
 base64 = "0.22.1"
 time = "0.3.49"
 rustls = { version = "0.23.40", default-features = false, features = ["ring", "std", "tls12"] }
