@@ -751,4 +751,18 @@ pub enum Key {
     SaveStatesOverwriteBody,
     SaveStatesLoadTitle,
     SaveStatesLoadBody,
+    // Game status / My Games
+    NavMyGames,
+    GameStatusTitle,
+    GameStatusWantToPlay,
+    GameStatusInProgress,
+    GameStatusCompleted,
+    GameStatusPlatinum,
+    MyGamesTitle,
+    MyGamesAll,
+    MyGamesWantToPlay,
+    MyGamesInProgress,
+    MyGamesCompleted,
+    MyGamesPlatinum,
+    MyGamesEmpty,
 }

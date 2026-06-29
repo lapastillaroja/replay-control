@@ -7,13 +7,14 @@ use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::confirm_dialog::use_confirm_dialog;
+use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
 use crate::hooks::confirm_replace_running_game;
 use crate::i18n::{Key, t, tf, use_i18n};
 #[cfg(feature = "hydrate")]
 use crate::server_fns::PlaytimeAvailability;
-use crate::server_fns::{self, RecommendedGame, RomDetail};
+use crate::server_fns::{self, GameStatus, RecommendedGame, RomDetail};
 use crate::types::NowPlayingState;
 #[cfg(feature = "hydrate")]
 use crate::util::format_elapsed_short;
@@ -141,6 +142,8 @@ fn GameDetailContent(
     ));
     let system_sv = StoredValue::new(system.clone());
     let base_title_sv = StoredValue::new(detail.base_title.clone());
+    // Play status ("My Progress"); set by the status section's initial fetch.
+    let current_status = RwSignal::new(None::<GameStatus>);
 
     // Total play time for this game. Browser-only fetch so a slow or
     // unimplemented `get_playtime` endpoint never blocks the SSR response.
@@ -870,6 +873,12 @@ fn GameDetailContent(
                     delete_capture_at(image_index - offset);
                 }
             })
+        />
+
+        <GameStatusSection
+            system=system_sv
+            rom_filename=filename_sv
+            current_status=current_status
         />
 
         <GameResourcesSection
