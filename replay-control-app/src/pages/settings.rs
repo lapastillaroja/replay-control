@@ -5,6 +5,7 @@ use leptos_router::hooks::use_location;
 use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
+use crate::components::theme_selector::ThemeSelector;
 use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::server_fns::SystemLiveStats;
@@ -150,6 +151,10 @@ fn AppearanceSection() -> impl IntoView {
                     {move || Suspend::new(async move {
                         match values.await {
                             Ok(values) => view! {
+                                <div class="settings-inline-setting">
+                                    <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::ThemeTitle)}</h4>
+                                    <ThemeSelector />
+                                </div>
                                 <div class="settings-inline-setting">
                                     <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
                                     <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>

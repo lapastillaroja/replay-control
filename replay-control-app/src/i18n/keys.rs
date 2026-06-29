@@ -751,4 +751,15 @@ pub enum Key {
     SaveStatesOverwriteBody,
     SaveStatesLoadTitle,
     SaveStatesLoadBody,
+    // Themes
+    ThemeTitle,
+    ThemeDefault,
+    ThemeLight,
+    ThemeAmber,
+    ThemeGreen,
+    ThemeMidnight,
+    ThemeRose,
+    ThemeNord,
+    ThemeHighContrast,
+    ThemeActive,
 }

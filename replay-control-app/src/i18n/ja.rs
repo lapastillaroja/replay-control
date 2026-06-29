@@ -839,5 +839,16 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
         Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
+        // Themes
+        Key::ThemeTitle => "Web UIテーマ",
+        Key::ThemeDefault => "デフォルト",
+        Key::ThemeLight => "ライト",
+        Key::ThemeAmber => "アンバーCRT",
+        Key::ThemeGreen => "グリーンCRT",
+        Key::ThemeMidnight => "ミッドナイト",
+        Key::ThemeRose => "ローズ",
+        Key::ThemeNord => "ノルド",
+        Key::ThemeHighContrast => "ハイコントラスト",
+        Key::ThemeActive => "アクティブ",
     }
 }
