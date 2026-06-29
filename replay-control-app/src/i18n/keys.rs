@@ -751,4 +751,9 @@ pub enum Key {
     SaveStatesOverwriteBody,
     SaveStatesLoadTitle,
     SaveStatesLoadBody,
+    // Game notes
+    GameNotesTitle,
+    GameNotesPlaceholder,
+    GameNotesSave,
+    GameNotesSaving,
 }

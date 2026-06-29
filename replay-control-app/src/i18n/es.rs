@@ -853,5 +853,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} ya tiene un estado. Guardar ahora lo reemplazará.",
         Key::SaveStatesLoadTitle => "¿Cargar estado?",
         Key::SaveStatesLoadBody => "Cargar {0} reemplazará el estado actual del juego.",
+        // Game notes
+        Key::GameNotesTitle => "Notas",
+        Key::GameNotesPlaceholder => "Añade notas sobre este juego...",
+        Key::GameNotesSave => "Guardar",
+        Key::GameNotesSaving => "Guardando...",
     }
 }
