@@ -6,6 +6,7 @@ use server_fn::ServerFnError;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
+use crate::components::achievements_section::AchievementsSection;
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
@@ -878,6 +879,13 @@ fn GameDetailContent(
         <GameStatusSection
             system=system_sv
             rom_filename=filename_sv
+            current_status=current_status
+        />
+
+        <AchievementsSection
+            system=system_sv
+            rom_filename=filename_sv
+            display_name=game_name_sv
             current_status=current_status
         />
 

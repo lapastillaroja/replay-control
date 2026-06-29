@@ -853,5 +853,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::MyGamesCompleted => "クリア",
         Key::MyGamesPlatinum => "コンプリート",
         Key::MyGamesEmpty => "まだこの状態のゲームはありません",
+        // Achievements gallery + RA Web API key
+        Key::AchievementsTitle => "実績",
+        Key::AchievementsPoints => "ポイント",
+        Key::AchievementsShowAll => "すべての実績を表示",
+        Key::RaApiKeyLabel => "Web APIキー",
+        Key::RaApiKeyHint => "RetroAchievementsのWeb APIキー（読み取り専用）。retroachievements.org/settingsで確認できます。獲得した実績の表示に使います。",
     }
 }

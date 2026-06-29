@@ -857,5 +857,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::MyGamesCompleted => "Completed",
         Key::MyGamesPlatinum => "Platinum",
         Key::MyGamesEmpty => "No games with this status yet",
+        // Achievements gallery + RA Web API key
+        Key::AchievementsTitle => "Achievements",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Show all achievements",
+        Key::RaApiKeyLabel => "Web API Key",
+        Key::RaApiKeyHint => "Your RetroAchievements Web API key (read-only). Find it at retroachievements.org/settings. Used to show your earned achievements.",
     }
 }

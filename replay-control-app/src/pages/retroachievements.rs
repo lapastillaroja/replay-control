@@ -181,6 +181,64 @@ fn RetroAchievementsForm(config: server_fns::RetroAchievementsConfig) -> impl In
                     }}
                 </button>
             </div>
+
+            <RaApiKeyField />
+        </div>
+    }
+}
+
+/// Web API key field for the per-game achievements gallery. Stored separately
+/// from the rcheevos password above (read-only RA Web API), saved without a
+/// service restart.
+#[component]
+fn RaApiKeyField() -> impl IntoView {
+    let i18n = use_i18n();
+    let api_key = RwSignal::new(String::new());
+    let saving = RwSignal::new(false);
+    let saved = RwSignal::new(false);
+
+    let loaded = Resource::new_blocking(|| (), |_| server_fns::get_ra_api_key());
+    let _sync = Effect::new(move || {
+        if let Some(Ok(k)) = loaded.get() {
+            api_key.set(k);
+        }
+    });
+
+    let on_save = move |_| {
+        saving.set(true);
+        saved.set(false);
+        let k = api_key.get_untracked();
+        leptos::task::spawn_local(async move {
+            let _ = server_fns::save_ra_api_key(k).await;
+            saving.set(false);
+            saved.set(true);
+        });
+    };
+
+    view! {
+        <div class="form-field">
+            <label class="form-label">{move || t(i18n.locale.get(), Key::RaApiKeyLabel)}</label>
+            <input
+                type="password"
+                class="form-input"
+                bind:value=api_key
+                autocomplete="off"
+            />
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::RaApiKeyHint)}</p>
+            <button
+                class="form-btn"
+                on:click=on_save
+                disabled=move || saving.get()
+            >
+                {move || {
+                    let locale = i18n.locale.get();
+                    if saved.get() {
+                        t(locale, Key::RetroAchievementsSaved)
+                    } else {
+                        t(locale, Key::SettingsSave)
+                    }
+                }}
+            </button>
         </div>
     }
 }
