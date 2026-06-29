@@ -839,5 +839,13 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
         Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
+        // HowLongToBeat
+        Key::HltbTitle => "クリア時間",
+        Key::HltbFetch => "クリア時間を調べる",
+        Key::HltbFetching => "検索中...",
+        Key::HltbNoData => "HowLongToBeatにデータなし",
+        Key::HltbMain => "メインストーリー",
+        Key::HltbMainExtra => "メイン＋エクストラ",
+        Key::HltbCompletionist => "完全クリア",
     }
 }

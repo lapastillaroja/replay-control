@@ -843,5 +843,13 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
         Key::SaveStatesLoadTitle => "Load save state?",
         Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
+        // HowLongToBeat
+        Key::HltbTitle => "How Long to Beat",
+        Key::HltbFetch => "Look up completion time",
+        Key::HltbFetching => "Fetching...",
+        Key::HltbNoData => "No data found on HowLongToBeat",
+        Key::HltbMain => "Main Story",
+        Key::HltbMainExtra => "Main + Extras",
+        Key::HltbCompletionist => "Completionist",
     }
 }
