@@ -6,6 +6,7 @@ pub mod locale;
 pub mod replay_api;
 pub mod runtime_env;
 pub mod search_scoring;
+pub mod stats;
 pub mod update;
 
 mod platform;
