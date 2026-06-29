@@ -855,5 +855,10 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
         Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
+        // Game notes
+        Key::GameNotesTitle => "メモ",
+        Key::GameNotesPlaceholder => "このゲームについてのメモを追加...",
+        Key::GameNotesSave => "保存",
+        Key::GameNotesSaving => "保存中...",
     }
 }
