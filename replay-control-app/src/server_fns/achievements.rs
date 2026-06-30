@@ -194,10 +194,18 @@ fn get_ra_credentials(state: &crate::api::AppState) -> Option<(String, String)> 
         .filter(|s| !s.is_empty())
         .or_else(|| config.ra_api_key().map(|s| s.to_string()))?;
 
+    // Username lives on the device's replay.cfg (rcheevos_username), exposed via
+    // ReplayConfig — not the app settings store. Reuse it instead of duplicating.
     let username = std::env::var("RA_USERNAME")
         .ok()
         .filter(|s| !s.is_empty())
-        .or_else(|| config.retroachievements_username().map(|s| s.to_string()))?;
+        .or_else(|| {
+            let guard = state.replay_config.read().ok()?;
+            guard
+                .as_ref()?
+                .retroachievements_username()
+                .map(|s| s.to_string())
+        })?;
 
     Some((key, username))
 }
