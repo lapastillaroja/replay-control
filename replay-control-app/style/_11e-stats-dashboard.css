@@ -186,7 +186,8 @@
   color: var(--color-text);
 }
 
-.coverage-count {
+.coverage-count,
+.coverage-value {
   font-size: 0.75rem;
   color: var(--color-text-muted);
 }

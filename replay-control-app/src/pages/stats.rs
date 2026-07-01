@@ -112,18 +112,19 @@ fn SegmentBar(segments: Vec<(String, usize, &'static str)>) -> impl IntoView {
 #[component]
 fn CoverageRow(label: String, count: usize, percentage: f64) -> impl IntoView {
     let width = format!("{:.1}%", percentage);
-    let pct_str = format!("{:.1}%", percentage);
+    // Match the player-mode legend style the UI already uses: label on the left,
+    // "count · pct" together on the right, with the bar underneath.
+    let value = format!("{} \u{00B7} {:.1}%", crate::util::format_number(count), percentage);
 
     view! {
         <div class="coverage-row">
             <div class="coverage-label">
                 <span>{label}</span>
-                <span class="coverage-count">{crate::util::format_number(count)}</span>
+                <span class="coverage-value">{value}</span>
             </div>
             <div class="coverage-track">
                 <div class="coverage-fill" style:width=width></div>
             </div>
-            <span class="coverage-pct">{pct_str}</span>
         </div>
     }
 }
