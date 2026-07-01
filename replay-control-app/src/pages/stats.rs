@@ -112,19 +112,18 @@ fn SegmentBar(segments: Vec<(String, usize, &'static str)>) -> impl IntoView {
 #[component]
 fn CoverageRow(label: String, count: usize, percentage: f64) -> impl IntoView {
     let width = format!("{:.1}%", percentage);
-    // Match the player-mode legend style the UI already uses: label on the left,
-    // "count · pct" together on the right, with the bar underneath.
-    let value = format!("{} \u{00B7} {:.1}%", crate::util::format_number(count), percentage);
+    let pct_str = format!("{:.1}%", percentage);
 
     view! {
         <div class="coverage-row">
             <div class="coverage-label">
                 <span>{label}</span>
-                <span class="coverage-value">{value}</span>
+                <span class="coverage-count">{crate::util::format_number(count)}</span>
             </div>
             <div class="coverage-track">
                 <div class="coverage-fill" style:width=width></div>
             </div>
+            <span class="coverage-pct">{pct_str}</span>
         </div>
     }
 }
@@ -150,12 +149,6 @@ pub fn StatsDashboardPage() -> impl IntoView {
 
                     let arcade_count = dashboard.summary.arcade_count;
                     let console_count = dashboard.summary.total_games.saturating_sub(arcade_count);
-
-                    // Variant percentages are "share of the whole romset" (visible +
-                    // hidden clones/hacks/…), so verified/clones/etc. read as
-                    // independent fractions of the collection rather than a fake pie.
-                    let total_all = dashboard.summary.total_all_games;
-                    let vpct = move |c: usize| if total_all > 0 { c as f64 / total_all as f64 * 100.0 } else { 0.0 };
 
                     let locale = i18n.locale.get();
 
@@ -254,31 +247,13 @@ pub fn StatsDashboardPage() -> impl IntoView {
 
                             <section class="stats-section">
                                 <h2 class="stats-section-title">{t(locale, Key::StatsVariants)}</h2>
-                                <CoverageRow
-                                    label=t(locale, Key::StatsVerified).to_string()
-                                    count=dashboard.variants.verified
-                                    percentage=vpct(dashboard.variants.verified)
-                                />
-                                <CoverageRow
-                                    label=t(locale, Key::StatsClones).to_string()
-                                    count=dashboard.variants.clones
-                                    percentage=vpct(dashboard.variants.clones)
-                                />
-                                <CoverageRow
-                                    label=t(locale, Key::StatsHacks).to_string()
-                                    count=dashboard.variants.hacks
-                                    percentage=vpct(dashboard.variants.hacks)
-                                />
-                                <CoverageRow
-                                    label=t(locale, Key::StatsTranslations).to_string()
-                                    count=dashboard.variants.translations
-                                    percentage=vpct(dashboard.variants.translations)
-                                />
-                                <CoverageRow
-                                    label=t(locale, Key::StatsSpecial).to_string()
-                                    count=dashboard.variants.special
-                                    percentage=vpct(dashboard.variants.special)
-                                />
+                                <SegmentBar segments=vec![
+                                    (t(locale, Key::StatsVerified).to_string(), dashboard.variants.verified, "#27ae60"),
+                                    (t(locale, Key::StatsClones).to_string(), dashboard.variants.clones, "#3498db"),
+                                    (t(locale, Key::StatsHacks).to_string(), dashboard.variants.hacks, "#e67e22"),
+                                    (t(locale, Key::StatsTranslations).to_string(), dashboard.variants.translations, "#9b59b6"),
+                                    (t(locale, Key::StatsSpecial).to_string(), dashboard.variants.special, "#95a5a6"),
+                                ] />
                             </section>
 
                             <section class="stats-section">
