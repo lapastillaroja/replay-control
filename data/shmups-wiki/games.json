@@ -168,8 +168,12 @@
     "video_index": true
   },
   {
+    "normalized_title": "bluewish",
+    "page_title": "Blue Wish"
+  },
+  {
     "normalized_title": "bluewish2005",
-    "page_title": "Blue Wish 2005"
+    "page_title": "Blue Wish"
   },
   {
     "normalized_title": "bluewishdesire",
@@ -268,6 +272,11 @@
   },
   {
     "normalized_title": "crimzonclover",
+    "page_title": "Crimzon Clover",
+    "video_index": true
+  },
+  {
+    "normalized_title": "crimzoncloverworldexplosion",
     "page_title": "Crimzon Clover",
     "video_index": true
   },
@@ -771,6 +780,10 @@
     "video_index": true
   },
   {
+    "normalized_title": "gradiusneo",
+    "page_title": "Gradius Neo"
+  },
+  {
     "normalized_title": "gradiusseries",
     "page_title": "Gradius series"
   },
@@ -796,7 +809,7 @@
   },
   {
     "normalized_title": "grev",
-    "page_title": "G.Rev"
+    "page_title": "G.rev"
   },
   {
     "normalized_title": "grindstormer",
@@ -1077,6 +1090,10 @@
     "video_index": true
   },
   {
+    "normalized_title": "listofshootinggames",
+    "page_title": "List of shooting games"
+  },
+  {
     "normalized_title": "listofsuperplaymaterials",
     "page_title": "List of superplay materials"
   },
@@ -1160,7 +1177,11 @@
   },
   {
     "normalized_title": "mrhelinodaiboken",
-    "page_title": "Mr. HELI no Daiboken"
+    "page_title": "Mr. HELI no Daibouken"
+  },
+  {
+    "normalized_title": "mrhelinodaibouken",
+    "page_title": "Mr. HELI no Daibouken"
   },
   {
     "normalized_title": "muchimuchipork",
@@ -1492,6 +1513,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "rezon",
+    "page_title": "Rezon",
+    "video_index": true
+  },
+  {
     "normalized_title": "rigidforcealpha",
     "page_title": "Rigid Force Alpha"
   },
@@ -1511,6 +1537,10 @@
   {
     "normalized_title": "rtype",
     "page_title": "R-Type"
+  },
+  {
+    "normalized_title": "rtypedelta",
+    "page_title": "R-Type Delta"
   },
   {
     "normalized_title": "rtypeii",
@@ -1634,8 +1664,12 @@
     "page_title": "Sky Adventure"
   },
   {
+    "normalized_title": "skyforce",
+    "page_title": "Sky Force"
+  },
+  {
     "normalized_title": "skyforce2004",
-    "page_title": "Sky Force 2004"
+    "page_title": "Sky Force"
   },
   {
     "normalized_title": "slapfight",
@@ -1660,6 +1694,10 @@
   {
     "normalized_title": "solidstatesurvivor",
     "page_title": "Solid State Survivor"
+  },
+  {
+    "normalized_title": "solitespirits",
+    "page_title": "Solite Spirits"
   },
   {
     "normalized_title": "sonicwings2",
@@ -1760,6 +1798,11 @@
   {
     "normalized_title": "strikers1945iii",
     "page_title": "Strikers 1999",
+    "video_index": true
+  },
+  {
+    "normalized_title": "strikers1945plus",
+    "page_title": "Strikers 1945 Plus",
     "video_index": true
   },
   {
@@ -1984,6 +2027,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "underdefeat",
+    "page_title": "Under Defeat",
+    "video_index": true
+  },
+  {
     "normalized_title": "universalsonoritytwilightinsanitysoundtrack",
     "page_title": "UNIversal SONority -TWilight INSanity SOUNDTRACK-"
   },
@@ -2123,6 +2171,10 @@
   {
     "normalized_title": "zoe",
     "page_title": "ZOE"
+  },
+  {
+    "normalized_title": "zunsoft",
+    "page_title": "Team Shanghai Alice"
   },
   {
     "normalized_title": "弾幕の器",
