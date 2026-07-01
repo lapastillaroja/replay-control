@@ -6,6 +6,13 @@ use replay_control_core::stats::{
 use replay_control_core::systems;
 use rusqlite::Connection;
 
+/// Games shown in the library UI — excludes clones, hacks, translations, and
+/// romset-special entries. Dashboard totals and coverage percentages count only
+/// these so the numbers match what the user actually sees; otherwise a
+/// clone-heavy system (e.g. 54k ZX Spectrum ROMs) drags every percentage down.
+/// Mirrors the visibility filter used across recommendations/relationships.
+const VISIBLE: &str = "is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0";
+
 fn count(conn: &Connection, sql: &str) -> Result<usize> {
     conn.query_row(sql, [], |r| r.get::<_, i64>(0))
         .map(|v| v as usize)
@@ -36,15 +43,15 @@ pub fn compute_dashboard(conn: &Connection) -> Result<StatsDashboard> {
 }
 
 fn compute_library_summary(conn: &Connection) -> Result<LibrarySummary> {
-    let total_games = count(conn, "SELECT COUNT(*) FROM game_library")?;
-    let total_systems = count(conn, "SELECT COUNT(DISTINCT system) FROM game_library")?;
+    let total_games = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE {VISIBLE}"))?;
+    let total_systems = count(conn, &format!("SELECT COUNT(DISTINCT system) FROM game_library WHERE {VISIBLE}"))?;
     let total_size_bytes: u64 = conn
-        .query_row("SELECT COALESCE(SUM(size_bytes), 0) FROM game_library", [], |r| {
+        .query_row(&format!("SELECT COALESCE(SUM(size_bytes), 0) FROM game_library WHERE {VISIBLE}"), [], |r| {
             r.get::<_, i64>(0).map(|v| v as u64)
         })
         .map_err(|e| Error::Other(format!("sum size: {e}")))?;
 
-    let arcade_count = count(conn, "SELECT COUNT(*) FROM game_library WHERE driver_status IS NOT NULL")?;
+    let arcade_count = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE driver_status IS NOT NULL AND {VISIBLE}"))?;
 
     Ok(LibrarySummary {
         total_games,
@@ -58,10 +65,11 @@ fn compute_library_summary(conn: &Connection) -> Result<LibrarySummary> {
 fn compute_system_stats(conn: &Connection) -> Result<Vec<SystemStat>> {
     let mut stmt = conn
         .prepare(
-            "SELECT system, COUNT(*) as game_count, COALESCE(SUM(size_bytes), 0) as total_size
+            &format!("SELECT system, COUNT(*) as game_count, COALESCE(SUM(size_bytes), 0) as total_size
              FROM game_library
+             WHERE {VISIBLE}
              GROUP BY system
-             ORDER BY game_count DESC",
+             ORDER BY game_count DESC"),
         )
         .map_err(|e| Error::Other(format!("prepare system stats: {e}")))?;
 
@@ -97,12 +105,12 @@ fn compute_system_stats(conn: &Connection) -> Result<Vec<SystemStat>> {
 fn compute_genre_stats(conn: &Connection, total_games: usize) -> Result<Vec<GenreStat>> {
     let mut stmt = conn
         .prepare(
-            "SELECT genre_group, COUNT(*) as cnt
+            &format!("SELECT genre_group, COUNT(*) as cnt
              FROM game_library
-             WHERE genre_group != ''
+             WHERE genre_group != '' AND {VISIBLE}
              GROUP BY genre_group
              ORDER BY cnt DESC
-             LIMIT 15",
+             LIMIT 15"),
         )
         .map_err(|e| Error::Other(format!("prepare genre stats: {e}")))?;
 
@@ -133,11 +141,11 @@ fn compute_genre_stats(conn: &Connection, total_games: usize) -> Result<Vec<Genr
 fn compute_decade_stats(conn: &Connection) -> Result<Vec<DecadeStat>> {
     let mut stmt = conn
         .prepare(
-            "SELECT CAST(SUBSTR(release_date, 1, 3) AS INTEGER) * 10 as decade, COUNT(*) as cnt
+            &format!("SELECT CAST(SUBSTR(release_date, 1, 3) AS INTEGER) * 10 as decade, COUNT(*) as cnt
              FROM game_library
-             WHERE release_date IS NOT NULL AND LENGTH(release_date) >= 4
+             WHERE release_date IS NOT NULL AND LENGTH(release_date) >= 4 AND {VISIBLE}
              GROUP BY decade
-             ORDER BY decade",
+             ORDER BY decade"),
         )
         .map_err(|e| Error::Other(format!("prepare decade stats: {e}")))?;
 
@@ -159,12 +167,12 @@ fn compute_decade_stats(conn: &Connection) -> Result<Vec<DecadeStat>> {
 fn compute_developer_stats(conn: &Connection) -> Result<Vec<DeveloperStat>> {
     let mut stmt = conn
         .prepare(
-            "SELECT developer, COUNT(*) as cnt
+            &format!("SELECT developer, COUNT(*) as cnt
              FROM game_library
-             WHERE developer != ''
+             WHERE developer != '' AND {VISIBLE}
              GROUP BY developer
              ORDER BY cnt DESC
-             LIMIT 15",
+             LIMIT 15"),
         )
         .map_err(|e| Error::Other(format!("prepare developer stats: {e}")))?;
 
@@ -188,10 +196,10 @@ fn compute_developer_stats(conn: &Connection) -> Result<Vec<DeveloperStat>> {
 }
 
 fn compute_player_mode_stats(conn: &Connection) -> Result<PlayerModeStat> {
-    let single_player = count(conn, "SELECT COUNT(*) FROM game_library WHERE players = 1")?;
-    let multiplayer = count(conn, "SELECT COUNT(*) FROM game_library WHERE players > 1 AND cooperative = 0")?;
-    let cooperative = count(conn, "SELECT COUNT(*) FROM game_library WHERE cooperative = 1")?;
-    let unknown = count(conn, "SELECT COUNT(*) FROM game_library WHERE players IS NULL OR players = 0")?;
+    let single_player = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players = 1 AND {VISIBLE}"))?;
+    let multiplayer = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players > 1 AND cooperative = 0 AND {VISIBLE}"))?;
+    let cooperative = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE cooperative = 1 AND {VISIBLE}"))?;
+    let unknown = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE (players IS NULL OR players = 0) AND {VISIBLE}"))?;
 
     Ok(PlayerModeStat {
         single_player,
@@ -202,6 +210,8 @@ fn compute_player_mode_stats(conn: &Connection) -> Result<PlayerModeStat> {
 }
 
 fn compute_variant_stats(conn: &Connection) -> Result<VariantStat> {
+    // Intentionally NOT filtered by VISIBLE: this section reports how many of
+    // those otherwise-hidden entries exist (clones/hacks/translations/special).
     let clones = count(conn, "SELECT COUNT(*) FROM game_library WHERE is_clone = 1")?;
     let hacks = count(conn, "SELECT COUNT(*) FROM game_library WHERE is_hack = 1")?;
     let translations = count(conn, "SELECT COUNT(*) FROM game_library WHERE is_translation = 1")?;
@@ -226,11 +236,21 @@ fn compute_metadata_coverage(conn: &Connection, total_games: usize) -> Result<Me
         }
     };
 
-    let with_genre = count(conn, "SELECT COUNT(*) FROM game_library WHERE genre_group != ''")?;
-    let with_developer = count(conn, "SELECT COUNT(*) FROM game_library WHERE developer != ''")?;
-    let with_rating = count(conn, "SELECT COUNT(*) FROM game_library WHERE rating IS NOT NULL")?;
-    let with_boxart = count(conn, "SELECT COUNT(*) FROM game_library WHERE box_art_url IS NOT NULL")?;
-    let with_screenshot = count(conn, "SELECT COUNT(*) FROM game_metadata WHERE screenshot_path IS NOT NULL")?;
+    let with_genre = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE genre_group != '' AND {VISIBLE}"))?;
+    let with_developer = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE developer != '' AND {VISIBLE}"))?;
+    let with_rating = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE rating IS NOT NULL AND {VISIBLE}"))?;
+    let with_boxart = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE box_art_url IS NOT NULL AND {VISIBLE}"))?;
+    // game_metadata is a legacy table with no visibility columns; scope its
+    // screenshot count to visible games via the game_library join.
+    let with_screenshot = count(conn,
+        "SELECT COUNT(*) FROM game_metadata gm
+         WHERE gm.screenshot_path IS NOT NULL
+           AND EXISTS (SELECT 1 FROM game_library gl
+                       WHERE gl.system = gm.system AND gl.rom_filename = gm.rom_filename
+                         AND gl.is_clone = 0 AND gl.is_translation = 0
+                         AND gl.is_hack = 0 AND gl.is_special = 0)"
+    )
+    .unwrap_or(0);
 
     Ok(MetadataCoverage {
         with_genre,
