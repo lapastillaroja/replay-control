@@ -1484,6 +1484,14 @@
  },
  {
   "hashes": [
+   "e3172d7217a5da161618e1bd30034331"
+  ],
+  "num_achievements": 16,
+  "ra_id": "8356",
+  "title": "~Homebrew~ Filthy Kitchen"
+ },
+ {
+  "hashes": [
    "aea36c6703336ed118701e1d4b9e5211"
   ],
   "num_achievements": 6,
@@ -5371,8 +5379,7 @@
  {
   "hashes": [
    "1b994bda62ba9a8bf0893133fa012831",
-   "842e4b95648af5fb04fea4e281265fdc",
-   "feb7399972c2908687d2a39dfb646daf"
+   "842e4b95648af5fb04fea4e281265fdc"
   ],
   "num_achievements": 49,
   "ra_id": "1476",

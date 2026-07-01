@@ -1089,6 +1089,15 @@
  },
  {
   "hashes": [
+   "82880772ebd67b839c497dfe4308a0a0",
+   "afe51a74c6967711ddd263e3998b7afd"
+  ],
+  "num_achievements": 24,
+  "ra_id": "9993",
+  "title": "Bear in the Big Blue House"
+ },
+ {
+  "hashes": [
    "e7c022031cb882912e81970eb63d4f61"
   ],
   "num_achievements": 70,
@@ -1429,7 +1438,7 @@
    "4fd68c1cf8b57e90a5b11b054fc68b46",
    "5315c21eaffde4a641a02d89f18e2a95"
   ],
-  "num_achievements": 19,
+  "num_achievements": 18,
   "ra_id": "4187",
   "title": "Donald Duck: Goin' Quackers"
  },
@@ -2872,7 +2881,7 @@
   "hashes": [
    "1fd75c2b798c04acd4b99ad2f1006280"
   ],
-  "num_achievements": 33,
+  "num_achievements": 36,
   "ra_id": "732",
   "title": "Super Mario Bros. Deluxe"
  },

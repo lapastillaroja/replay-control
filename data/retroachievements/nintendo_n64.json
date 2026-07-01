@@ -97,6 +97,14 @@
  },
  {
   "hashes": [
+   "1ab34e5f27c3fda7b190f10ed23dc684"
+  ],
+  "num_achievements": 21,
+  "ra_id": "38905",
+  "title": "~Hack~ Any Other Color"
+ },
+ {
+  "hashes": [
    "1384d56f304ab446c9b2ca35e31834e1",
    "404996a834f8d98c1b9be2af3f12c0a9",
    "7ea2660aa957cf88f96f74746488e91e",
@@ -363,6 +371,14 @@
   "num_achievements": 14,
   "ra_id": "13738",
   "title": "~Hack~ Doki Doki Mario 64"
+ },
+ {
+  "hashes": [
+   "fe63f970bb7f1d6798878d5835e1026c"
+  ],
+  "num_achievements": 124,
+  "ra_id": "38038",
+  "title": "~Hack~ DOOM 64: Complete Edition"
  },
  {
   "hashes": [
@@ -803,6 +819,14 @@
   "num_achievements": 61,
   "ra_id": "24007",
   "title": "~Hack~ Master Quest 2 Two: Best Buy Edition"
+ },
+ {
+  "hashes": [
+   "dee1b8da62561daed3049e59cd7d019a"
+  ],
+  "num_achievements": 10,
+  "ra_id": "34453",
+  "title": "~Hack~ Nightshift at the Beta Museum"
  },
  {
   "hashes": [
@@ -2076,7 +2100,8 @@
    "4e76858409fe32bca0e9fccc4f7bd4e1",
    "680480a85e2985ed609d6dde913a2506",
    "e01e7afe6e6edc60bdc755ad4dfb717e",
-   "e5c3c8477abb0901915f52a3f41eaf3d"
+   "e5c3c8477abb0901915f52a3f41eaf3d",
+   "fc3135cff82ef17854c7c42133b71f00"
   ],
   "num_achievements": 35,
   "ra_id": "34498",
@@ -3364,6 +3389,14 @@
   "num_achievements": 72,
   "ra_id": "10256",
   "title": "Mickey's Speedway USA"
+ },
+ {
+  "hashes": [
+   "4f256146bac4a3dde5ad0d5f9c909251"
+  ],
+  "num_achievements": 30,
+  "ra_id": "10485",
+  "title": "Milo's Astro Lanes"
  },
  {
   "hashes": [

@@ -65,6 +65,14 @@
  },
  {
   "hashes": [
+   "ab52ef6da185309678524b7e693cfe0f"
+  ],
+  "num_achievements": 39,
+  "ra_id": "38628",
+  "title": "~Hack~ Broken Knuckles"
+ },
+ {
+  "hashes": [
    "64bfd8145d581041c165204cc0a105bd"
   ],
   "num_achievements": 18,
@@ -4006,6 +4014,16 @@
  },
  {
   "hashes": [
+   "3a12dc6b4f41681e0dc0ae3b2f894b4f",
+   "800c7c12bc1eae7ddb61186875b29733",
+   "841e347b30a6e298ee2b0c722f19fe74"
+  ],
+  "num_achievements": 68,
+  "ra_id": "15",
+  "title": "Sonic Spinball"
+ },
+ {
+  "hashes": [
    "1b1d9ac862c387367e904036114c4825",
    "1bc674be034e43c96b86487ac69d9293",
    "4382459fead8b3790199b68fd3b0fc76",
@@ -4044,16 +4062,6 @@
  },
  {
   "hashes": [
-   "3a12dc6b4f41681e0dc0ae3b2f894b4f",
-   "800c7c12bc1eae7ddb61186875b29733",
-   "841e347b30a6e298ee2b0c722f19fe74"
-  ],
-  "num_achievements": 68,
-  "ra_id": "15",
-  "title": "Sonic the Hedgehog Spinball"
- },
- {
-  "hashes": [
    "587c51be6c60b82514e928f951e730b1"
   ],
   "num_achievements": 28,
@@ -4088,7 +4096,7 @@
   "hashes": [
    "ae982c9a1de304ada59b089603c7bd9c"
   ],
-  "num_achievements": 23,
+  "num_achievements": 22,
   "ra_id": "35",
   "title": "Speedball 2: Brutal Deluxe"
  },

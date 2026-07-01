@@ -3139,6 +3139,7 @@
  },
  {
   "hashes": [
+   "34626887281e3be3e5f75e3ccb792c55",
    "370cc3b832f905a2b5511c1665e4a8bc",
    "8b0fe9b5156781d1686b0add2a31b9b3",
    "8efe8b2aaed97149e897570cd123ff6e",
@@ -3885,7 +3886,7 @@
    "a3658157b02a6f5618866af93c9b771d",
    "f6c0a645317d6ed90abc4e04f7b33b46"
   ],
-  "num_achievements": 58,
+  "num_achievements": 57,
   "ra_id": "2171",
   "title": "Mario Tennis: Power Tour"
  },
@@ -4340,6 +4341,14 @@
   "num_achievements": 55,
   "ra_id": "30988",
   "title": "Mother 3 [Subset - Melody Master]"
+ },
+ {
+  "hashes": [
+   "fc221b4371061c27cbf6a8b08db82543"
+  ],
+  "num_achievements": 55,
+  "ra_id": "6270",
+  "title": "MotoGP"
  },
  {
   "hashes": [
@@ -5299,7 +5308,7 @@
    "6664b43c51935ea8f06f5b37ce83feca",
    "a219b3042eb65899baafa5143c53560c"
   ],
-  "num_achievements": 40,
+  "num_achievements": 39,
   "ra_id": "557",
   "title": "Sonic Advance 2"
  },
@@ -5595,7 +5604,9 @@
  },
  {
   "hashes": [
+   "1ae72dd57f41903769cbeef614c9bb9b",
    "5a0bd0ec784823f2c45fdaa5dd914bea",
+   "6cacd13da2006f351fe14a421c9757ef",
    "bb09508c782f37934c9519c5f8a7350c"
   ],
   "num_achievements": 66,
@@ -5726,6 +5737,15 @@
   "num_achievements": 87,
   "ra_id": "5029",
   "title": "Tactics Ogre: The Knight of Lodis"
+ },
+ {
+  "hashes": [
+   "05b2267bdf77e3d36d0b96c22d3af844",
+   "c7174179fdb9d5dca2a150351adc3a58"
+  ],
+  "num_achievements": 29,
+  "ra_id": "7729",
+  "title": "Tak 2: The Staff of Dreams"
  },
  {
   "hashes": [
