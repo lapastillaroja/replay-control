@@ -1,3 +1,4 @@
+pub mod achievements_section;
 pub mod asset_health_banner;
 pub mod boxart_picker;
 pub mod boxart_placeholder;
@@ -8,6 +9,7 @@ pub mod device_only_notice;
 pub mod filter_chips;
 pub mod game_list_item;
 pub mod game_section_row;
+pub mod game_status_section;
 pub mod genre_dropdown;
 pub mod hero_card;
 pub mod manual_section;

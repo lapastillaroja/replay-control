@@ -843,5 +843,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
         Key::SaveStatesLoadTitle => "Load save state?",
         Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
+        // Game status / My Games
+        Key::NavMyGames => "My Games",
+        Key::GameStatusTitle => "My Progress",
+        Key::GameStatusWantToPlay => "Want to Play",
+        Key::GameStatusInProgress => "In Progress",
+        Key::GameStatusCompleted => "Completed",
+        Key::GameStatusPlatinum => "Platinum",
+        Key::MyGamesTitle => "My Games",
+        Key::MyGamesAll => "All",
+        Key::MyGamesWantToPlay => "Want to Play",
+        Key::MyGamesInProgress => "In Progress",
+        Key::MyGamesCompleted => "Completed",
+        Key::MyGamesPlatinum => "Platinum",
+        Key::MyGamesEmpty => "No games with this status yet",
+        // Achievements gallery + RA Web API key
+        Key::AchievementsTitle => "Achievements",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Show all achievements",
+        Key::RaApiKeyLabel => "Web API Key",
+        Key::RaApiKeyHint => "Your RetroAchievements Web API key (read-only). Find it at retroachievements.org/settings. Used to show your earned achievements.",
     }
 }

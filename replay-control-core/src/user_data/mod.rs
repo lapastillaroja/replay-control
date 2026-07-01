@@ -28,3 +28,49 @@ pub struct ResourceEntry {
     pub added_at: u64,
     pub rom_filename: String,
 }
+
+/// User-defined play status for a game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GameStatus {
+    /// Want to play (backlog)
+    WantToPlay,
+    /// Currently playing
+    InProgress,
+    /// Finished the game
+    Completed,
+    /// 100% completion (all RetroAchievements, etc.)
+    Platinum,
+}
+
+impl GameStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GameStatus::WantToPlay => "want_to_play",
+            GameStatus::InProgress => "in_progress",
+            GameStatus::Completed => "completed",
+            GameStatus::Platinum => "platinum",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "want_to_play" => Some(GameStatus::WantToPlay),
+            "in_progress" => Some(GameStatus::InProgress),
+            "completed" => Some(GameStatus::Completed),
+            "platinum" => Some(GameStatus::Platinum),
+            _ => None,
+        }
+    }
+}
+
+/// A game with its user-assigned status, enriched with display info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusGameEntry {
+    pub system: String,
+    pub rom_filename: String,
+    pub display_name: String,
+    pub status: GameStatus,
+    pub box_art_url: Option<String>,
+    pub genre: Option<String>,
+    pub updated_at: u64,
+}
