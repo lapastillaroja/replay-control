@@ -1266,14 +1266,6 @@
  },
  {
   "hashes": [
-   "25ec0916ff6f24a1878a9f30991d301d"
-  ],
-  "num_achievements": 37,
-  "ra_id": "7821",
-  "title": "Arcade Classic No. 1: Asteroids + Missile Command"
- },
- {
-  "hashes": [
    "19fd29efaf7ea9e314bd613954a92169",
    "e7af45fbb8cba8a3bf049eec038452d8"
   ],
@@ -3172,7 +3164,7 @@
    "3132056c8f17e4088b95e4264ca59575",
    "3d45c1ee9abd5738df46d2bdda8b57dc"
   ],
-  "num_achievements": 90,
+  "num_achievements": 93,
   "ra_id": "724",
   "title": "Pokémon Red Version"
  },
@@ -3471,6 +3463,14 @@
   "num_achievements": 45,
   "ra_id": "4112",
   "title": "Spud's Adventure"
+ },
+ {
+  "hashes": [
+   "63098fde8f2dcb977c9a8f0389e0d033"
+  ],
+  "num_achievements": 17,
+  "ra_id": "8327",
+  "title": "Star Wars"
  },
  {
   "hashes": [
@@ -3934,6 +3934,14 @@
   "num_achievements": 27,
   "ra_id": "2180",
   "title": "Trip World"
+ },
+ {
+  "hashes": [
+   "fe68b048f7f77454f73ddef30c16316f"
+  ],
+  "num_achievements": 41,
+  "ra_id": "13955",
+  "title": "Turok: Battle of the Bionosaurs"
  },
  {
   "hashes": [

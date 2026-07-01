@@ -1422,6 +1422,14 @@
  },
  {
   "hashes": [
+   "d4fe6f1b4eedf003c9b6fa7f1c6c4c95"
+  ],
+  "num_achievements": 59,
+  "ra_id": "14368",
+  "title": "~Hack~ Mario Game"
+ },
+ {
+  "hashes": [
    "3a8bf590b3a020f73d8311ac1ad864da"
   ],
   "num_achievements": 40,
@@ -1756,6 +1764,14 @@
   "num_achievements": 11,
   "ra_id": "25294",
   "title": "~Hack~ My QLDC Level"
+ },
+ {
+  "hashes": [
+   "042ebbbb5e52835f35b23f68e480adea"
+  ],
+  "num_achievements": 34,
+  "ra_id": "38654",
+  "title": "~Hack~ Nemesis"
  },
  {
   "hashes": [
@@ -2351,6 +2367,14 @@
  },
  {
   "hashes": [
+   "efef67c634bf0253400d4b06f763a31d"
+  ],
+  "num_achievements": 43,
+  "ra_id": "13714",
+  "title": "~Hack~ Super Castlevania IV: Other Castle"
+ },
+ {
+  "hashes": [
    "f208e5cd6842a35fb01fee9fe81ced0f"
   ],
   "num_achievements": 33,
@@ -2751,6 +2775,14 @@
   "num_achievements": 25,
   "ra_id": "2842",
   "title": "~Hack~ Super Mario World: Tsunami Island"
+ },
+ {
+  "hashes": [
+   "d58536b669534bb2d07f5cef29da6900"
+  ],
+  "num_achievements": 7,
+  "ra_id": "39042",
+  "title": "~Hack~ Super Mario Worldle"
  },
  {
   "hashes": [
@@ -4809,6 +4841,14 @@
  },
  {
   "hashes": [
+   "0ef71b727646941dfa63b8e4c259038f"
+  ],
+  "num_achievements": 46,
+  "ra_id": "871",
+  "title": "Dennis the Menace"
+ },
+ {
+  "hashes": [
    "646d795f3244d780f32cb27f34daa7c8"
   ],
   "num_achievements": 20,
@@ -6796,6 +6836,15 @@
   "num_achievements": 86,
   "ra_id": "3242",
   "title": "Metal Max Returns"
+ },
+ {
+  "hashes": [
+   "1f353927e2990450e870bc3182de84ad",
+   "8b5ee08a3a3ec8cabee756c1055b18ec"
+  ],
+  "num_achievements": 23,
+  "ra_id": "3243",
+  "title": "Metal Slader Glory: Director's Cut"
  },
  {
   "hashes": [
@@ -9526,7 +9575,7 @@
   "hashes": [
    "80d1144dc2d6f7ad5bbbcb1dd448b6cf"
   ],
-  "num_achievements": 46,
+  "num_achievements": 35,
   "ra_id": "1287",
   "title": "The Twisted Tales of Spike McFang"
  },

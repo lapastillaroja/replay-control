@@ -317,6 +317,15 @@
  },
  {
   "hashes": [
+   "5b0659fc95d81f10400bc449c2da251b",
+   "ce8bf6e6baec621d9cc8302f2b0565b4"
+  ],
+  "num_achievements": 11,
+  "ra_id": "26230",
+  "title": "Hook"
+ },
+ {
+  "hashes": [
    "7b089a66acc807a71adc58c9bd679ecc",
    "7dd2ef762d2284a0e551447a9ee11458"
   ],
@@ -717,6 +726,14 @@
  },
  {
   "hashes": [
+   "8e3b44fda375ad9748b678e9c6b45502"
+  ],
+  "num_achievements": 35,
+  "ra_id": "12650",
+  "title": "Sonic Spinball"
+ },
+ {
+  "hashes": [
    "8a95b36139206a5ba13a38bb626aee25"
   ],
   "num_achievements": 27,
@@ -730,14 +747,6 @@
   "num_achievements": 31,
   "ra_id": "12652",
   "title": "Sonic the Hedgehog 2"
- },
- {
-  "hashes": [
-   "8e3b44fda375ad9748b678e9c6b45502"
-  ],
-  "num_achievements": 35,
-  "ra_id": "12650",
-  "title": "Sonic the Hedgehog Spinball"
  },
  {
   "hashes": [
@@ -950,6 +959,15 @@
   "num_achievements": 40,
   "ra_id": "12564",
   "title": "Wonder Boy"
+ },
+ {
+  "hashes": [
+   "0e8146c23d7947b4677b9b2ca12850e0",
+   "8e6934c31498569302ff3119c2496043"
+  ],
+  "num_achievements": 40,
+  "ra_id": "12565",
+  "title": "Wonder Boy: The Dragon's Trap"
  },
  {
   "hashes": [

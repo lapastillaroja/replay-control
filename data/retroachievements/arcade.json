@@ -2195,6 +2195,14 @@
  },
  {
   "hashes": [
+   "4ff5d1d03e562385d46962dc4d501e4a"
+  ],
+  "num_achievements": 24,
+  "ra_id": "12306",
+  "title": "Märchen Maze"
+ },
+ {
+  "hashes": [
    "de2f15d014d40b93578d255e6221fd60"
   ],
   "num_achievements": 22,
@@ -3143,6 +3151,14 @@
   "num_achievements": 8,
   "ra_id": "12359",
   "title": "Rambo III"
+ },
+ {
+  "hashes": [
+   "b28d81fd5c81ab464843fed52834691b"
+  ],
+  "num_achievements": 16,
+  "ra_id": "12360",
+  "title": "Rastan"
  },
  {
   "hashes": [
