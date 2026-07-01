@@ -60,6 +60,7 @@ use pages::nfs::NfsPage;
 use pages::replay_net_control::ReplayNetControlPage;
 use pages::retroachievements::RetroAchievementsPage;
 use pages::search::SearchPage;
+use pages::stats::StatsDashboardPage;
 use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
@@ -223,6 +224,7 @@ fn AppChrome() -> impl IntoView {
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
+                        <Route path=path!("/stats") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><StatsDashboardPage /></ErrorBoundary> } />
                         <Route path=path!("/settings") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SettingsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
