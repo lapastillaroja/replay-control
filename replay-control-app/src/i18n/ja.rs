@@ -48,6 +48,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CollectionsOpen => "コレクションを見る",
         Key::CollectionsLoading => "コレクションを読み込み中…",
         Key::CollectionsEmpty => "ここにはまだコレクションがありません",
+        Key::CollectionsGeneral => "お気に入り",
 
         // Organize favorites
         Key::OrganizeTitle => "お気に入りを整理",
