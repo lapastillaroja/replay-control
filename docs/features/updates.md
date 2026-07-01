@@ -32,11 +32,16 @@ Click **Check for Updates** to check immediately. The button shows a loading sta
 
 ## Update Banner
 
-When a new version is available, the banner shows the version number and three actions:
+When a new version is available, the banner shows the version number, a **What's new** changelog, and two actions:
 
 - **Update Now** -- starts the download and install process
-- **View on GitHub** -- opens the release notes in a new tab
 - **Skip this version** -- dismisses this specific version; it won't appear again unless a newer version is released
+
+### What's new
+
+The banner lists the release notes for **every version released since the one you're running**, newest first -- not just the latest -- so you can see everything an update brings before installing it. Each version is collapsible (the newest is expanded); a link to the full release on GitHub is available under each one if you want it.
+
+On the **Stable** channel, beta (pre-release) versions are hidden by default; tick **Show beta releases** to read them too. They stay informational -- Update Now still installs the latest stable version. On the **Beta** channel, all versions are shown.
 
 ## Install Process
 

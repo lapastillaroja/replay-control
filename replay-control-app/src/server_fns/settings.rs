@@ -1,7 +1,12 @@
 use super::*;
 
 #[cfg(feature = "ssr")]
+use crate::api::response_cache::TtlSlot;
+#[cfg(feature = "ssr")]
 use replay_control_core::replay_api::{ConfigKind, ReplayApiStatus, SetCommand};
+use replay_control_core::update::UpdateChangelog;
+#[cfg(feature = "ssr")]
+use replay_control_core::update::{ChangelogEntry, UpdateChannel};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::auth::{PasswordSubject, verify_os_password};
 #[cfg(feature = "ssr")]
@@ -1106,6 +1111,74 @@ pub async fn skip_version(version: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     replay_control_core_server::settings::write_skipped_version(&state.settings, &version)
         .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[cfg(feature = "ssr")]
+#[derive(Clone)]
+struct CachedChangelog {
+    entries: Vec<ChangelogEntry>,
+    load_failed: bool,
+}
+
+/// Changelog cache (reuses the shared `TtlSlot`, whose `RESPONSE_TTL` is 5 min).
+/// The GitHub releases fetch is the expensive, rate-limited part and only changes
+/// when a release ships, so cache it process-globally (no `AppState` field) to
+/// keep user-triggered views from spending the admin's GitHub token / rate
+/// budget. `crate::VERSION` and the repo are constant, so the entries need no
+/// key; the channel is re-applied per request. Fetch failures are not cached:
+/// the next Settings visit should retry instead of pinning a transient outage.
+#[cfg(feature = "ssr")]
+static CHANGELOG_CACHE: std::sync::LazyLock<TtlSlot<CachedChangelog>> =
+    std::sync::LazyLock::new(TtlSlot::default);
+
+/// Fetch the in-app changelog: every release newer than the running version
+/// (newest first, notes rendered to HTML) plus the active channel. The banner
+/// uses the channel to decide whether prerelease entries show by default.
+#[server(prefix = "/sfn")]
+pub async fn get_update_changelog() -> Result<UpdateChangelog, ServerFnError> {
+    use replay_control_core_server::update as update_io;
+
+    let state = expect_context::<crate::api::AppState>();
+    let settings = state.settings.load();
+    let channel = UpdateChannel::from_str_value(settings.update_channel());
+    let github_key = settings.github_api_key().map(|s| s.to_string());
+    drop(settings);
+
+    let cached = match CHANGELOG_CACHE.get() {
+        Some(cached) => cached,
+        None => {
+            let cached = match update_io::fetch_changelog(
+                crate::VERSION,
+                &update_io::github_api_base_url(),
+                crate::api::background::BackgroundManager::REPO,
+                github_key.as_deref(),
+            )
+            .await
+            {
+                Ok(entries) => CachedChangelog {
+                    entries,
+                    load_failed: false,
+                },
+                Err(error) => {
+                    tracing::warn!("Changelog fetch failed: {error}");
+                    CachedChangelog {
+                        entries: Vec::new(),
+                        load_failed: true,
+                    }
+                }
+            };
+            if !cached.load_failed {
+                CHANGELOG_CACHE.set(cached.clone());
+            }
+            cached
+        }
+    };
+
+    Ok(UpdateChangelog {
+        channel,
+        entries: cached.entries,
+        load_failed: cached.load_failed,
+    })
 }
 
 #[cfg(all(test, feature = "ssr"))]

@@ -10,12 +10,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - New arcade hardware board: **CoJag** (Atari's coin-op Jaguar hardware) — games such as Area 51 and Maximum Force now group under it.
 - New arcade hardware board: **MEC-M1** (Data East) — Bad Dudes, Robocop, Heavy Barrel, and related Data East games now group under it.
+- Added a mature-category audit for arcade metadata: affected system overview rows now show the `* Mature *` count, link to a per-system filtered game list, and each flagged game shows the mature category on its detail page.
+- Added an in-app **What's new** changelog to Settings → Updates, showing release notes for every version newer than the one you're running, with beta notes hidden behind a toggle on the stable channel.
 
 ### Changed
 
 - Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).
 - Rebooting the device from **Settings → RePlayOS** now asks for confirmation first, matching Power off.
 - GitHub releases are now published only once their build artifacts are attached, so a release is never listed without its downloads.
+- Refined genre grouping for arcade and catalog metadata: Gambling, Tabletop, and Mahjong are now separate groups instead of being collapsed into Board & Card.
+- The update notice now appears as a compact app-wide banner and opens Settings → Updates instead of sending you straight to GitHub.
 
 ### Fixed
 

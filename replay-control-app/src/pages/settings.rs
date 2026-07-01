@@ -5,12 +5,14 @@ use leptos_router::hooks::use_location;
 use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
-use crate::i18n::{Key, Locale, t, use_i18n};
+use crate::components::confirm_dialog::use_confirm_dialog;
+use crate::hooks::use_update_state;
+use crate::i18n::{Key, Locale, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::SystemLiveStats;
 use crate::util::{format_elapsed_short, format_size};
 use replay_control_core::auth::{AuthRole, AuthStatus};
-use replay_control_core::update::UpdateState;
+use replay_control_core::update::{ChangelogEntry, UpdateChannel, UpdateState};
 
 /// Section definitions: (ID, i18n key) — single source of truth for sidebar + scroll-spy.
 const SECTIONS: [(&str, Key); 7] = [
@@ -610,8 +612,7 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
 #[component]
 fn UpdatesSection() -> impl IntoView {
     let i18n = use_i18n();
-    let update_state =
-        use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
+    let update_state = use_update_state();
     let system_values = Resource::new_blocking(|| (), |_| load_system_values());
 
     view! {
@@ -641,19 +642,34 @@ fn UpdatesSectionContent(
     update_state: RwSignal<UpdateState>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let confirm_dialog = use_confirm_dialog();
 
+    // Skip is guarded by a confirmation: it's an easy mis-tap and there's no
+    // un-skip UI — a stray tap would silently hide the update until the next
+    // release. The dialog names the version so the choice is deliberate.
     let on_skip = move |_| {
         if !admin_unlocked {
             return;
         }
-        let state = update_state.get_untracked();
-        if let UpdateState::Available(ref available) = state {
-            let tag = available.tag.clone();
+        let UpdateState::Available(available) = update_state.get_untracked() else {
+            return;
+        };
+        let locale = i18n.locale.get();
+        let tag = available.tag.clone();
+        let do_skip = Callback::new(move |()| {
+            let tag = tag.clone();
             leptos::task::spawn_local(async move {
                 let _ = server_fns::skip_version(tag).await;
                 update_state.set(UpdateState::None);
             });
-        }
+        });
+        confirm_dialog.confirm(
+            t(locale, Key::UpdateSkipConfirmTitle),
+            tf(locale, Key::UpdateSkipConfirmMessage, &[&available.version]),
+            t(locale, Key::UpdateSkip),
+            false,
+            do_skip,
+        );
     };
 
     let version_text = move || {
@@ -670,20 +686,17 @@ fn UpdatesSectionContent(
             if let UpdateState::Available(ref available) = state {
                 let locale = i18n.locale.get();
                 let banner_text = t(locale, Key::UpdateAvailable).replace("{0}", &available.version);
-                let release_url = available.release_notes_url.clone();
                 Some(view! {
                     <div class="update-banner">
                         <div class="update-banner-title">{banner_text}</div>
-                        <div class="update-actions">
-                            <Show when=move || admin_unlocked>
+                        <Show when=move || admin_unlocked>
+                            <div class="update-actions">
                                 <A href="/updating" attr:class="form-btn">
                                     {move || t(i18n.locale.get(), Key::UpdateNow)}
                                 </A>
-                            </Show>
-                            <a href=release_url target="_blank" rel="noopener" class="form-btn form-btn-secondary">
-                                {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
-                            </a>
-                        </div>
+                            </div>
+                        </Show>
+                        <UpdateChangelogView release_notes_url=available.release_notes_url.clone() />
                         <Show when=move || admin_unlocked>
                             <button class="update-skip-link" on:click=on_skip>
                                 {move || t(i18n.locale.get(), Key::UpdateSkip)}
@@ -812,6 +825,134 @@ fn AdminUpdateControls(update_state: RwSignal<UpdateState>) -> impl IntoView {
         {move || check_error.get().map(|msg| view! {
             <div class="status-msg status-err">{msg}</div>
         })}
+    }
+}
+
+/// In-app "what's new" changelog shown inside the update banner: every release
+/// newer than the running version, newest first, with notes rendered in-app
+/// instead of linking out to GitHub. On the stable channel, prerelease entries
+/// are hidden behind a toggle; on the beta channel they show by default.
+#[component]
+fn UpdateChangelogView(release_notes_url: String) -> impl IntoView {
+    let i18n = use_i18n();
+    let changelog = Resource::new(|| (), |_| server_fns::get_update_changelog());
+    let show_betas = RwSignal::new(false);
+
+    // Always-available fallback to the GitHub release page, built directly from
+    // the discovered update (no network fetch). Shown when the live changelog
+    // fetch fails so the user can still read the notes on GitHub.
+    let release_notes_url = StoredValue::new(release_notes_url);
+    let changelog_error = move || {
+        let url = release_notes_url.get_value();
+        view! {
+            <div class="changelog-error">
+                {move || t(i18n.locale.get(), Key::UpdateChangelogError)}
+                {(!url.is_empty()).then(|| view! {
+                    <a
+                        class="changelog-gh-link"
+                        href=url.clone()
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
+                    </a>
+                })}
+            </div>
+        }
+    };
+
+    view! {
+        <div class="update-changelog">
+            <div class="update-changelog-title">
+                {move || t(i18n.locale.get(), Key::UpdateWhatsNew)}
+            </div>
+            <Transition fallback=|| ()>
+                {move || Suspend::new(async move {
+                    match changelog.await {
+                        Ok(data) => {
+                            if data.load_failed {
+                                return changelog_error().into_any();
+                            }
+
+                            let beta_channel = matches!(data.channel, UpdateChannel::Beta);
+                            let has_betas = data.entries.iter().any(|entry| entry.prerelease);
+                            // Toggle only on stable channel, and only when there
+                            // are betas to reveal.
+                            let show_toggle = !beta_channel && has_betas;
+                            let entries = StoredValue::new(data.entries);
+
+                            let visible = move || {
+                                let reveal = beta_channel || show_betas.get();
+                                entries.with_value(|all| {
+                                    all.iter()
+                                        .filter(|entry| reveal || !entry.prerelease)
+                                        .enumerate()
+                                        .map(|(index, entry)| {
+                                            view! {
+                                                <ChangelogItem entry=entry.clone() open=index == 0 />
+                                            }
+                                        })
+                                        .collect_view()
+                                })
+                            };
+
+                            let toggle = show_toggle.then(|| view! {
+                                <label class="changelog-beta-toggle">
+                                    <input
+                                        type="checkbox"
+                                        prop:checked=move || show_betas.get()
+                                        on:change=move |ev| {
+                                            show_betas.set(event_target_checked(&ev));
+                                        }
+                                    />
+                                    <span>{move || t(i18n.locale.get(), Key::UpdateShowBetas)}</span>
+                                </label>
+                            });
+
+                            view! {
+                                <div class="changelog-list">{visible}</div>
+                                {toggle}
+                            }
+                            .into_any()
+                        }
+                        Err(_) => changelog_error().into_any(),
+                    }
+                })}
+            </Transition>
+        </div>
+    }
+}
+
+/// One release in the changelog: a collapsible section (newest open) with the
+/// version, an optional beta tag, the date, the rendered notes, and an
+/// unobtrusive link to the GitHub release.
+#[component]
+fn ChangelogItem(entry: ChangelogEntry, open: bool) -> impl IntoView {
+    let i18n = use_i18n();
+    let date = entry.published_at.get(0..10).unwrap_or("").to_string();
+    let prerelease = entry.prerelease;
+
+    view! {
+        <details class="changelog-item" open=open>
+            <summary class="changelog-summary">
+                <span class="changelog-version">{entry.version}</span>
+                {prerelease.then(|| view! {
+                    <span class="changelog-beta-tag">
+                        {move || t(i18n.locale.get(), Key::UpdateBetaTag)}
+                    </span>
+                })}
+                <span class="changelog-date">{date}</span>
+            </summary>
+            <div class="changelog-notes" inner_html=entry.notes_html></div>
+            <a
+                class="changelog-gh-link"
+                href=entry.release_url
+                target="_blank"
+                rel="noopener"
+            >
+                {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
+            </a>
+        </details>
     }
 }
 

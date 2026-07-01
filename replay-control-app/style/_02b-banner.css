@@ -104,6 +104,40 @@
     --secondary-meta-color: var(--feedback-attention-muted);
 }
 
+/* Update notice below the status stack. Matches the full-bleed banner-strip
+   look of the sticky banners (full width, no radius, banner padding) but sits
+   in normal flow so it scrolls away — an available update is informational,
+   not urgent. Clickable: links to the full changelog + actions in
+   Settings → Updates rather than carrying them itself. */
+
+.update-notice-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--panel-gap);
+    width: 100%;
+    padding: var(--banner-padding-default);
+    background: var(--feedback-info-bg);
+    color: var(--feedback-info-text);
+    text-decoration: none;
+    font-size: var(--font-size-compact-scale-default);
+    line-height: 1.3;
+}
+
+.update-notice-banner:hover {
+    background: color-mix(in srgb, var(--feedback-info-text) 10%, var(--feedback-info-bg));
+}
+
+.update-notice-banner:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+}
+
+.update-notice-banner-cta {
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
 /* ================================================================
    Update Banner — shown when a new Replay Control version is
    available and the user can launch the updater or skip the release
@@ -114,10 +148,20 @@
     border: var(--border-width-default) solid color-mix(in srgb, var(--accent) 30%, var(--border));
     border-radius: var(--radius-sm);
     margin-bottom: var(--stack-gap-lg);
+    /* Override the shared status-banner shell, which centers text for short
+       alerts. This banner now carries a version heading and a changelog, which
+       read as left-aligned content. */
+    text-align: left;
 }
 
 .update-banner-title {
     --group-title-margin-bottom: var(--header-margin-bottom-spacious);
+}
+
+/* Push the low-emphasis skip action clear of the changelog so it isn't tapped
+   by mistake (it's also confirmation-gated). */
+.update-banner .update-skip-link {
+    margin-top: var(--stack-gap-md);
 }
 
 .update-actions {
@@ -129,4 +173,130 @@
     width: auto;
     padding: var(--surface-inset-wide);
     text-decoration: none;
+}
+
+/* In-app "what's new" changelog inside the update banner. Replaces the old
+   "View on GitHub" link: the release notes for every version since the
+   running one are shown inline, newest first. */
+
+.update-changelog {
+    margin-bottom: var(--control-stack-gap-sm);
+}
+
+.update-changelog-title {
+    font-size: var(--font-size-compact-default);
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: var(--stack-gap-xs);
+}
+
+.changelog-list {
+    display: flex;
+    flex-direction: column;
+    /* Keep a long history (many versions, or one release with huge notes)
+       inside a single bounded scroll region instead of letting it grow the
+       settings page without limit. Title and beta toggle stay outside it. */
+    max-height: 55vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.changelog-item {
+    border-top: var(--border-width-default) solid
+        color-mix(in srgb, var(--accent) 18%, var(--border));
+    padding: var(--surface-inset-md) 0;
+}
+
+.changelog-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--stack-gap-xs);
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+}
+
+.changelog-summary:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+}
+
+.changelog-version {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.changelog-beta-tag {
+    font-size: var(--font-size-mini-default);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--surface-inset-sm);
+}
+
+.changelog-date {
+    margin-left: auto;
+    font-size: var(--secondary-meta-size-banner);
+    color: var(--text-secondary);
+}
+
+.changelog-notes {
+    margin-top: var(--stack-gap-xs);
+    font-size: var(--font-size-compact-default);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.changelog-notes :is(ul, ol) {
+    margin: var(--stack-gap-xs) 0;
+    padding-left: 1.25em;
+}
+
+.changelog-notes :is(h1, h2, h3, h4) {
+    font-size: var(--font-size-compact-default);
+    font-weight: 600;
+    color: var(--text);
+    margin: var(--stack-gap-xs) 0;
+}
+
+.changelog-notes p {
+    margin: var(--stack-gap-xs) 0;
+}
+
+.changelog-notes a {
+    color: var(--accent);
+    overflow-wrap: anywhere;
+}
+
+.changelog-notes code {
+    font-size: 0.9em;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0 0.3em;
+}
+
+.changelog-gh-link {
+    display: inline-block;
+    margin-top: var(--stack-gap-xs);
+    font-size: var(--font-size-mini-default);
+    color: var(--text-secondary);
+}
+
+.changelog-beta-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--stack-gap-xs);
+    margin-top: var(--control-stack-gap-sm);
+    font-size: var(--font-size-compact-default);
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.changelog-error {
+    font-size: var(--font-size-compact-default);
+    color: var(--text-secondary);
 }

@@ -18,6 +18,32 @@ pub struct AvailableUpdate {
     pub catalog_size: u64,
 }
 
+/// One release's notes, shown in the in-app changelog (newest-first) so users
+/// can read everything that landed since their running version without leaving
+/// the app. `notes_html` is the release body rendered to a safe HTML subset
+/// server-side (raw HTML stripped); the client injects it directly.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChangelogEntry {
+    pub version: String,
+    pub tag: String,
+    pub prerelease: bool,
+    pub published_at: String,
+    pub notes_html: String,
+    pub release_url: String,
+}
+
+/// The in-app changelog payload: the releases newer than the running version
+/// (newest first) plus the active channel, which the banner uses to decide
+/// whether prerelease entries are shown by default (Beta) or hidden behind a
+/// "show betas" toggle (Stable).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UpdateChangelog {
+    pub channel: UpdateChannel,
+    pub entries: Vec<ChangelogEntry>,
+    #[serde(default)]
+    pub load_failed: bool,
+}
+
 /// Client-side update lifecycle state.
 /// Single source of truth for all update UI — provided as app-level context.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

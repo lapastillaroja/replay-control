@@ -25,3 +25,4 @@ pub mod stat_card;
 pub mod storage_status_banner;
 pub mod system_card;
 pub mod system_status_banner;
+pub mod update_banner;

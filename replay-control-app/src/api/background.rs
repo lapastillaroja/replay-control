@@ -2186,7 +2186,7 @@ impl BackgroundManager {
     // ── Update system ─────────────────────────────────────────────────
 
     /// GitHub repository for release checks and downloads.
-    const REPO: &'static str = "lapastillaroja/replay-control";
+    pub(crate) const REPO: &'static str = "lapastillaroja/replay-control";
     /// Maximum time for the entire StartUpdate operation (5 minutes).
     const UPDATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 

@@ -12,8 +12,8 @@ use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 
 pub use replay_control_core::update::{
-    AvailableUpdate, UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT, UpdateChannel, UpdateState, is_newer,
-    validate_version,
+    AvailableUpdate, ChangelogEntry, UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT, UpdateChannel,
+    UpdateState, is_newer, validate_version,
 };
 
 use crate::http::shared_client;
@@ -211,6 +211,182 @@ pub async fn fetch_latest_beta(
     Ok(best)
 }
 
+/// How many recent releases to pull when building the changelog. A user many
+/// versions behind sees the most recent `CHANGELOG_PER_PAGE` releases newer
+/// than their version; older entries beyond that window are omitted.
+const CHANGELOG_PER_PAGE: u32 = 30;
+
+/// True when a link/image URL uses a scheme safe to emit into the app DOM.
+///
+/// Allowlist: `http`, `https`, `mailto`, and same-origin relative URLs (no
+/// scheme). Anything else — notably `javascript:`, `data:`, `vbscript:`,
+/// `file:` — is rejected, as are protocol-relative `//host` URLs (which the
+/// browser resolves to an off-origin link). The scheme is matched after
+/// stripping leading/embedded whitespace and control characters, which browsers
+/// ignore (so `java\tscript:` can't slip through).
+fn link_scheme_is_safe(url: &str) -> bool {
+    // Protocol-relative ("//host/…") would render as a live off-origin link;
+    // treat it as unsafe rather than as a same-origin relative path.
+    if url.trim_start().starts_with("//") {
+        return false;
+    }
+    let mut scheme = String::new();
+    for ch in url.chars() {
+        match ch {
+            // Path/query/fragment delimiter before any ':' => relative URL.
+            '/' | '?' | '#' => return true,
+            ':' => {
+                let normalized: String = scheme
+                    .chars()
+                    .filter(|c| !c.is_whitespace() && !c.is_control())
+                    .collect();
+                return matches!(
+                    normalized.to_ascii_lowercase().as_str(),
+                    "http" | "https" | "mailto"
+                );
+            }
+            _ => scheme.push(ch),
+        }
+    }
+    // No ':' at all => relative URL.
+    true
+}
+
+/// Render GitHub-flavored release notes (markdown) to a safe HTML subset.
+///
+/// Raw HTML in the source is dropped rather than passed through, and link/image
+/// URLs are restricted to safe schemes (see [`link_scheme_is_safe`]), so a
+/// release body can only produce headings, lists, emphasis, safe links, and code
+/// — never `<script>`, arbitrary markup, or a `javascript:` link. The notes come
+/// from our own GitHub releases (a trusted author), so this is defense-in-depth,
+/// but `notes_html` is rendered via `inner_html` for every viewer, so we don't
+/// rely on the author being the only writer.
+pub fn render_release_notes(markdown: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser, Tag, html};
+
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+
+    let events = Parser::new_ext(markdown, options)
+        .filter(|event| !matches!(event, Event::Html(_) | Event::InlineHtml(_)))
+        .map(|event| match event {
+            // Neutralize unsafe link/image schemes by blanking the destination
+            // ("#"), keeping the visible link text/alt intact.
+            Event::Start(Tag::Link { dest_url, .. }) if !link_scheme_is_safe(&dest_url) => {
+                Event::Start(Tag::Link {
+                    link_type: pulldown_cmark::LinkType::Inline,
+                    dest_url: "#".into(),
+                    title: "".into(),
+                    id: "".into(),
+                })
+            }
+            Event::Start(Tag::Image {
+                dest_url,
+                title,
+                id,
+                ..
+            }) if !link_scheme_is_safe(&dest_url) => Event::Start(Tag::Image {
+                link_type: pulldown_cmark::LinkType::Inline,
+                dest_url: "".into(),
+                title,
+                id,
+            }),
+            other => other,
+        });
+
+    let mut out = String::new();
+    html::push_html(&mut out, events);
+    out
+}
+
+/// Parse a GitHub release JSON object into a `ChangelogEntry`, rendering its
+/// markdown body to safe HTML. Returns `None` for releases without a valid
+/// semver tag, drafts, or releases not newer than `current_version` — the
+/// version filter runs *before* the markdown render so discarded releases
+/// never pay the rendering cost.
+fn parse_changelog_entry(
+    json: &serde_json::Value,
+    current_version: &str,
+) -> Option<ChangelogEntry> {
+    let tag = json.get("tag_name")?.as_str()?;
+    let version = tag.strip_prefix('v').unwrap_or(tag);
+    if semver::Version::parse(version).is_err() {
+        return None;
+    }
+
+    // Only releases newer than the running version reach the render step.
+    if !is_newer(current_version, version) {
+        return None;
+    }
+
+    // Skip GitHub draft releases: project policy publishes releases as draft
+    // until artifacts are attached, so a draft has nothing to offer the user.
+    // (Prereleases are intentionally NOT filtered — the beta channel shows them.)
+    if json.get("draft").and_then(|d| d.as_bool()).unwrap_or(false) {
+        return None;
+    }
+
+    let prerelease = json
+        .get("prerelease")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let published_at = json
+        .get("published_at")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let release_url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let body = json.get("body").and_then(|v| v.as_str()).unwrap_or("");
+
+    Some(ChangelogEntry {
+        version: version.to_string(),
+        tag: tag.to_string(),
+        prerelease,
+        published_at,
+        notes_html: render_release_notes(body),
+        release_url,
+    })
+}
+
+/// Fetch the changelog: every release newer than `current_version`, newest
+/// first, with notes rendered to HTML. Includes prereleases regardless of
+/// channel — the client decides whether to show them (a stable-channel user
+/// reveals betas with a toggle; a beta-channel user sees them by default).
+pub async fn fetch_changelog(
+    current_version: &str,
+    base_url: &str,
+    repo: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<ChangelogEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    let url = format!("{base_url}/repos/{repo}/releases?per_page={CHANGELOG_PER_PAGE}");
+    let json = github_get(&url, api_key).await?;
+
+    let empty = vec![];
+    let releases = json.as_array().unwrap_or(&empty);
+
+    let mut entries: Vec<ChangelogEntry> = releases
+        .iter()
+        .filter_map(|json| parse_changelog_entry(json, current_version))
+        .collect();
+
+    // Newest first. Both versions parse (filtered above), so default to Equal.
+    entries.sort_by(|a, b| {
+        let va = semver::Version::parse(&a.version);
+        let vb = semver::Version::parse(&b.version);
+        match (va, vb) {
+            (Ok(va), Ok(vb)) => vb.cmp(&va),
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+
+    Ok(entries)
+}
+
 /// Check GitHub for a newer release than the running version.
 pub async fn check_github_update(
     current_version: &str,
@@ -400,6 +576,7 @@ mod tests {
             "prerelease": prerelease,
             "html_url": format!("https://github.com/test/releases/tag/{tag}"),
             "published_at": "2026-04-01T00:00:00Z",
+            "body": format!("### {tag}\n\n- Did a thing\n- Fixed a bug"),
             "assets": [
                 {"name": "replay-control-app-aarch64.tar.gz", "size": 10000000,
                  "browser_download_url": format!("https://example.com/{tag}/binary.tar.gz")},
@@ -811,6 +988,143 @@ mod tests {
         .await
         .unwrap();
         assert!(result.is_none());
+    }
+
+    // ── render_release_notes ────────────────────────────────────────
+
+    #[test]
+    fn render_release_notes_renders_markdown() {
+        let html = render_release_notes("### Heading\n\n- one\n- two\n\n**bold** and `code`");
+        assert!(html.contains("<h3>Heading</h3>"));
+        assert!(html.contains("<li>one</li>"));
+        assert!(html.contains("<strong>bold</strong>"));
+        assert!(html.contains("<code>code</code>"));
+    }
+
+    #[test]
+    fn render_release_notes_drops_raw_html() {
+        let html =
+            render_release_notes("Safe text\n\n<script>alert(1)</script>\n\n<img src=x onerror=y>");
+        assert!(html.contains("Safe text"));
+        assert!(!html.contains("<script"));
+        assert!(!html.contains("onerror"));
+    }
+
+    #[test]
+    fn render_release_notes_keeps_links() {
+        let html = render_release_notes("[notes](https://example.com/v1)");
+        assert!(html.contains(r#"href="https://example.com/v1""#));
+    }
+
+    #[test]
+    fn render_release_notes_blocks_unsafe_link_schemes() {
+        // Security invariant: no unsafe scheme ever lands in an href. A link that
+        // parses gets its dest blanked to "#"; one that doesn't parse (e.g. a tab
+        // inside the URL) stays inert text — either way, never a clickable href.
+        for md in [
+            "[x](javascript:alert(1))",
+            "[x](JavaScript:alert(1))",
+            "[x](java\tscript:alert(1))",
+            "[x](data:text/plain,hello)",
+            "[x](vbscript:msgbox(1))",
+        ] {
+            let lower = render_release_notes(md).to_ascii_lowercase();
+            assert!(
+                !lower.contains(r#"href="java"#)
+                    && !lower.contains(r#"href="data:"#)
+                    && !lower.contains(r#"href="vbscript"#),
+                "unsafe scheme leaked into href for {md:?}: {lower}"
+            );
+        }
+        // A link that DOES parse keeps its text but is blanked to "#".
+        let html = render_release_notes("[click me](javascript:alert(1))");
+        assert!(
+            html.contains(r##"href="#""##),
+            "expected blanked href: {html}"
+        );
+        assert!(
+            html.contains("click me"),
+            "link text should survive: {html}"
+        );
+    }
+
+    #[test]
+    fn render_release_notes_keeps_relative_and_mailto_links() {
+        assert!(render_release_notes("[a](/docs/x)").contains(r#"href="/docs/x""#));
+        assert!(render_release_notes("[a](mailto:x@y.z)").contains(r#"href="mailto:x@y.z""#));
+    }
+
+    #[test]
+    fn link_scheme_is_safe_allowlist() {
+        assert!(link_scheme_is_safe("https://example.com"));
+        assert!(link_scheme_is_safe("http://example.com"));
+        assert!(link_scheme_is_safe("mailto:a@b.c"));
+        assert!(link_scheme_is_safe("/relative/path"));
+        assert!(link_scheme_is_safe("#anchor"));
+        assert!(link_scheme_is_safe("relative"));
+        assert!(!link_scheme_is_safe("javascript:alert(1)"));
+        assert!(!link_scheme_is_safe(" JAVASCRIPT:alert(1)"));
+        assert!(!link_scheme_is_safe("data:text/html,x"));
+        assert!(!link_scheme_is_safe("vbscript:x"));
+        assert!(!link_scheme_is_safe("file:///etc/passwd"));
+        // Protocol-relative resolves off-origin in the browser — reject it.
+        assert!(!link_scheme_is_safe("//evil.com/x"));
+        assert!(!link_scheme_is_safe("  //evil.com/x"));
+    }
+
+    // ── fetch_changelog ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn fetch_changelog_filters_newer_and_sorts_desc() {
+        let gh = mock_github(
+            None,
+            serde_json::json!([
+                make_release_json("v0.3.0", false),
+                make_release_json("v0.2.0-beta.1", true),
+                make_release_json("v0.1.0", false),
+                make_release_json("v0.0.9", false),
+            ]),
+        )
+        .await;
+        let entries = fetch_changelog("0.1.0", &gh.server.url(), REPO, None)
+            .await
+            .unwrap();
+        let versions: Vec<&str> = entries.iter().map(|e| e.version.as_str()).collect();
+        // Only releases newer than 0.1.0, newest first; 0.1.0 and 0.0.9 dropped.
+        assert_eq!(versions, vec!["0.3.0", "0.2.0-beta.1"]);
+        assert!(entries[0].notes_html.contains("<li>"));
+        assert!(entries[1].prerelease);
+    }
+
+    #[tokio::test]
+    async fn fetch_changelog_skips_draft_releases() {
+        // A newer release still in draft (artifacts not yet attached) must not
+        // appear in the changelog, even though its tag is valid semver.
+        let mut draft = make_release_json("v0.4.0", false);
+        draft["draft"] = serde_json::json!(true);
+        let gh = mock_github(
+            None,
+            serde_json::json!([draft, make_release_json("v0.3.0", false),]),
+        )
+        .await;
+        let entries = fetch_changelog("0.1.0", &gh.server.url(), REPO, None)
+            .await
+            .unwrap();
+        let versions: Vec<&str> = entries.iter().map(|e| e.version.as_str()).collect();
+        assert_eq!(versions, vec!["0.3.0"]);
+    }
+
+    #[tokio::test]
+    async fn fetch_changelog_empty_when_up_to_date() {
+        let gh = mock_github(
+            None,
+            serde_json::json!([make_release_json("v1.0.0", false)]),
+        )
+        .await;
+        let entries = fetch_changelog("1.0.0", &gh.server.url(), REPO, None)
+            .await
+            .unwrap();
+        assert!(entries.is_empty());
     }
 
     #[tokio::test]

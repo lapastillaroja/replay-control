@@ -41,6 +41,7 @@ use components::now_playing_bar::NowPlayingBar;
 use components::replay_api_status_banner::ReplayApiStatusBanner;
 use components::rom_watcher_banner::RomWatcherBanner;
 use components::storage_status_banner::StorageStatusBanner;
+use components::update_banner::UpdateAvailableBanner;
 use hooks::Clock;
 use i18n::{Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
@@ -217,6 +218,7 @@ fn AppChrome() -> impl IntoView {
                 </header>
 
                 <StatusStack />
+                <UpdateAvailableBanner />
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
