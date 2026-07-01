@@ -1,5 +1,6 @@
 pub mod access;
 pub mod board;
+pub mod collections;
 pub mod developer;
 pub mod favorites;
 pub mod first_setup;
