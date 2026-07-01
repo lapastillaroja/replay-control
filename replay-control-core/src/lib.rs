@@ -1,6 +1,7 @@
 pub mod asset_health;
 pub mod auth;
 pub mod error;
+pub mod hltb;
 pub mod languages;
 pub mod locale;
 pub mod replay_api;
