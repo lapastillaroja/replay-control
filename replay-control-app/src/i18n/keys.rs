@@ -52,6 +52,7 @@ pub enum Key {
     CollectionsOpen,
     CollectionsLoading,
     CollectionsEmpty,
+    CollectionsGeneral,
 
     // Organize favorites
     OrganizeTitle,

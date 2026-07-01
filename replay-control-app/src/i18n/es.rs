@@ -48,6 +48,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CollectionsOpen => "Explorar colecciones",
         Key::CollectionsLoading => "Cargando colecciones…",
         Key::CollectionsEmpty => "Aún no hay colecciones aquí",
+        Key::CollectionsGeneral => "Favoritos",
 
         // Organize favorites
         Key::OrganizeTitle => "Organizar favoritos",
