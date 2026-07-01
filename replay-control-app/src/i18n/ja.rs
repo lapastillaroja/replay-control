@@ -839,5 +839,19 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
         Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
+        // Game status / My Games
+        Key::NavMyGames => "マイゲーム",
+        Key::GameStatusTitle => "プレイ状況",
+        Key::GameStatusWantToPlay => "プレイ予定",
+        Key::GameStatusInProgress => "プレイ中",
+        Key::GameStatusCompleted => "クリア",
+        Key::GameStatusPlatinum => "コンプリート",
+        Key::MyGamesTitle => "マイゲーム",
+        Key::MyGamesAll => "すべて",
+        Key::MyGamesWantToPlay => "プレイ予定",
+        Key::MyGamesInProgress => "プレイ中",
+        Key::MyGamesCompleted => "クリア",
+        Key::MyGamesPlatinum => "コンプリート",
+        Key::MyGamesEmpty => "まだこの状態のゲームはありません",
     }
 }

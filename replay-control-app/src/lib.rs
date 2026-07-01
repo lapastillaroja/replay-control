@@ -56,6 +56,7 @@ use pages::hostname::HostnamePage;
 use pages::login::LoginPage;
 use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
+use pages::my_games::MyGamesPage;
 use pages::nfs::NfsPage;
 use pages::replay_net_control::ReplayNetControlPage;
 use pages::retroachievements::RetroAchievementsPage;
@@ -222,6 +223,7 @@ fn AppChrome() -> impl IntoView {
                         <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
+                        <Route path=path!("/my-games") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MyGamesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
                         <Route path=path!("/settings") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SettingsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
