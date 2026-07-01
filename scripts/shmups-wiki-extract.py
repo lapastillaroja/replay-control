@@ -56,29 +56,49 @@ USER_AGENT = "ReplayControl-ShmupsWiki/1.0 (+https://github.com/lapastillaroja/r
 #      `Battle Garegga/Strategy`, `1942/Video Index`, etc. — guide pages
 #      under a parent game article).
 #   2. Exclude pages whose title is also a category name (developer pages
-#      like "CAVE", "Capcom", "Compile", "MOSS", mechanic pages, etc. —
-#      every developer that has its own per-publisher category also has a
-#      page with that same name).
-#   3. Exclude an explicit denylist of meta pages whose names don't collide
-#      with categories but are obviously not games (style guides, glossary,
-#      record lists, etc.).
+#      like "CAVE", mechanic pages, etc. — a developer with its own
+#      per-publisher category also has a page with that same name). Most
+#      developer/publisher pages have no matching category on this wiki
+#      (verified: only CAVE does among the ones checked), so this rule alone
+#      is not sufficient — see rule 3.
+#   3. Exclude an explicit denylist of meta and developer/publisher pages
+#      that don't collide with a category but are obviously not games
+#      (style guides, glossary, record lists, company bios, etc.).
+#   4. Exclude any title starting with "List of " (wiki-curated meta lists
+#      like "List of shooting games" — a rule rather than individual
+#      denylist entries since new ones appear over time).
 META_PAGE_DENYLIST = frozenset(
     {
         "Archival Efforts",
         "Beginner's Guide to Shooting Games",
         "Boghog's bullet hell shmup 101",
         "Book of Star Mythology",
+        "Capcom",
         "Category guidelines",
+        "Compile",
+        "G.rev",
         "Glossary",
         "Glossary of shmups",
         "Graze",
         "Grazing",
         "Hall of Records",
         "Help:Contents",
+        "Konami",
         "Main Page",
+        "Milestone",
+        "Raizing",
         "STG Hall of Records",
+        "Success",
+        "Team Shanghai Alice",
+        "Toaplan",
+        "Video System",
     }
 )
+
+# Prefix for wiki-curated meta list pages (e.g. "List of shooting games",
+# "List of superplay materials") — not games, and new ones appear over time,
+# so this is a rule rather than individual denylist entries.
+META_PAGE_PREFIXES = ("List of ",)
 
 # MediaWiki namespace IDs.
 NS_MAIN = 0
@@ -317,11 +337,11 @@ def list_redirects_for_targets(targets: set[str]) -> dict[str, str]:
 
 def collect_game_pages() -> list[str]:
     """Apply the strategy described at the top of the file: enumerate every
-    main-ns page, then drop subpages, the explicit meta-page denylist, and
-    category-named pages (developers, genres, mechanics) — except when the
-    page is also enumerated by an orientation category, which means it's a
-    real game whose article happens to share its name with a per-game
-    subcategory."""
+    main-ns page, then drop subpages, the explicit meta/developer-page
+    denylist, "List of ..." meta pages, and category-named pages (developers,
+    genres, mechanics) — except when the page is also enumerated by an
+    orientation category, which means it's a real game whose article happens
+    to share its name with a per-game subcategory."""
     all_titles = list_main_ns_pages()
     category_names = list_all_category_names()
     known_games = list_orientation_games()
@@ -329,12 +349,16 @@ def collect_game_pages() -> list[str]:
     rejected_subpages = 0
     rejected_category_match = 0
     rejected_meta = 0
+    rejected_list_prefix = 0
     for title in all_titles:
         if "/" in title:
             rejected_subpages += 1
             continue
         if title in META_PAGE_DENYLIST:
             rejected_meta += 1
+            continue
+        if title.startswith(META_PAGE_PREFIXES):
+            rejected_list_prefix += 1
             continue
         if title in category_names and title not in known_games:
             rejected_category_match += 1
@@ -346,6 +370,7 @@ def collect_game_pages() -> list[str]:
         f"{rejected_subpages} subpages skipped, "
         f"{rejected_category_match} non-game category pages skipped, "
         f"{rejected_meta} meta pages skipped, "
+        f"{rejected_list_prefix} meta list pages skipped, "
         f"{len(accepted)} game candidates",
         file=sys.stderr,
     )

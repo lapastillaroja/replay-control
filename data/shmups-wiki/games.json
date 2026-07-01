@@ -168,8 +168,12 @@
     "video_index": true
   },
   {
+    "normalized_title": "bluewish",
+    "page_title": "Blue Wish"
+  },
+  {
     "normalized_title": "bluewish2005",
-    "page_title": "Blue Wish 2005"
+    "page_title": "Blue Wish"
   },
   {
     "normalized_title": "bluewishdesire",
@@ -209,10 +213,6 @@
     "page_title": "Bullet Sorceress"
   },
   {
-    "normalized_title": "capcom",
-    "page_title": "Capcom"
-  },
-  {
     "normalized_title": "celtreos",
     "page_title": "Celtreos"
   },
@@ -241,10 +241,6 @@
     "page_title": "Collapse Dream"
   },
   {
-    "normalized_title": "compile",
-    "page_title": "Compile"
-  },
-  {
     "normalized_title": "cosmodreamer",
     "page_title": "Cosmo Dreamer",
     "video_index": true
@@ -268,6 +264,11 @@
   },
   {
     "normalized_title": "crimzonclover",
+    "page_title": "Crimzon Clover",
+    "video_index": true
+  },
+  {
+    "normalized_title": "crimzoncloverworldexplosion",
     "page_title": "Crimzon Clover",
     "video_index": true
   },
@@ -570,10 +571,6 @@
     "page_title": "Eden's Aegis"
   },
   {
-    "normalized_title": "eighting",
-    "page_title": "Raizing"
-  },
-  {
     "normalized_title": "eschatos",
     "page_title": "Eschatos",
     "video_index": true
@@ -771,6 +768,10 @@
     "video_index": true
   },
   {
+    "normalized_title": "gradiusneo",
+    "page_title": "Gradius Neo"
+  },
+  {
     "normalized_title": "gradiusseries",
     "page_title": "Gradius series"
   },
@@ -793,10 +794,6 @@
     "normalized_title": "greatmahoudaisakusen",
     "page_title": "Great Mahou Daisakusen",
     "video_index": true
-  },
-  {
-    "normalized_title": "grev",
-    "page_title": "G.Rev"
   },
   {
     "normalized_title": "grindstormer",
@@ -1059,10 +1056,6 @@
     "video_index": true
   },
   {
-    "normalized_title": "konami",
-    "page_title": "Konami"
-  },
-  {
     "normalized_title": "kyuukyokutiger",
     "page_title": "Kyuukyoku Tiger"
   },
@@ -1075,10 +1068,6 @@
     "normalized_title": "likedreamer",
     "page_title": "Like Dreamer",
     "video_index": true
-  },
-  {
-    "normalized_title": "listofsuperplaymaterials",
-    "page_title": "List of superplay materials"
   },
   {
     "normalized_title": "lotuslandstory",
@@ -1143,10 +1132,6 @@
     "page_title": "Metal Torrent"
   },
   {
-    "normalized_title": "milestone",
-    "page_title": "Milestone"
-  },
-  {
     "normalized_title": "milestoneshootingcollection2",
     "page_title": "MileStone Shooting Collection 2"
   },
@@ -1160,7 +1145,11 @@
   },
   {
     "normalized_title": "mrhelinodaiboken",
-    "page_title": "Mr. HELI no Daiboken"
+    "page_title": "Mr. HELI no Daibouken"
+  },
+  {
+    "normalized_title": "mrhelinodaibouken",
+    "page_title": "Mr. HELI no Daibouken"
   },
   {
     "normalized_title": "muchimuchipork",
@@ -1441,10 +1430,6 @@
     "video_index": true
   },
   {
-    "normalized_title": "raizing",
-    "page_title": "Raizing"
-  },
-  {
     "normalized_title": "raycrisis",
     "page_title": "RayCrisis",
     "video_index": true
@@ -1492,6 +1477,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "rezon",
+    "page_title": "Rezon",
+    "video_index": true
+  },
+  {
     "normalized_title": "rigidforcealpha",
     "page_title": "Rigid Force Alpha"
   },
@@ -1511,6 +1501,10 @@
   {
     "normalized_title": "rtype",
     "page_title": "R-Type"
+  },
+  {
+    "normalized_title": "rtypedelta",
+    "page_title": "R-Type Delta"
   },
   {
     "normalized_title": "rtypeii",
@@ -1634,8 +1628,12 @@
     "page_title": "Sky Adventure"
   },
   {
+    "normalized_title": "skyforce",
+    "page_title": "Sky Force"
+  },
+  {
     "normalized_title": "skyforce2004",
-    "page_title": "Sky Force 2004"
+    "page_title": "Sky Force"
   },
   {
     "normalized_title": "slapfight",
@@ -1660,6 +1658,10 @@
   {
     "normalized_title": "solidstatesurvivor",
     "page_title": "Solid State Survivor"
+  },
+  {
+    "normalized_title": "solitespirits",
+    "page_title": "Solite Spirits"
   },
   {
     "normalized_title": "sonicwings2",
@@ -1763,13 +1765,14 @@
     "video_index": true
   },
   {
-    "normalized_title": "strikers1999",
-    "page_title": "Strikers 1999",
+    "normalized_title": "strikers1945plus",
+    "page_title": "Strikers 1945 Plus",
     "video_index": true
   },
   {
-    "normalized_title": "success",
-    "page_title": "Success"
+    "normalized_title": "strikers1999",
+    "page_title": "Strikers 1999",
+    "video_index": true
   },
   {
     "normalized_title": "sumikkou",
@@ -1818,10 +1821,6 @@
   {
     "normalized_title": "teamoverloaded",
     "page_title": "Team Overloaded"
-  },
-  {
-    "normalized_title": "teamshanghaialice",
-    "page_title": "Team Shanghai Alice"
   },
   {
     "normalized_title": "technosoft",
@@ -1884,10 +1883,6 @@
   {
     "normalized_title": "tinyxevivos",
     "page_title": "Tiny XEVIVOS"
-  },
-  {
-    "normalized_title": "toaplan",
-    "page_title": "Toaplan"
   },
   {
     "normalized_title": "transcendpang",
@@ -1984,6 +1979,11 @@
     "video_index": true
   },
   {
+    "normalized_title": "underdefeat",
+    "page_title": "Under Defeat",
+    "video_index": true
+  },
+  {
     "normalized_title": "universalsonoritytwilightinsanitysoundtrack",
     "page_title": "UNIversal SONority -TWilight INSanity SOUNDTRACK-"
   },
@@ -2016,10 +2016,6 @@
   {
     "normalized_title": "vfive",
     "page_title": "V-V"
-  },
-  {
-    "normalized_title": "videosystem",
-    "page_title": "Video System"
   },
   {
     "normalized_title": "viperphase1",

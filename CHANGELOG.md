@@ -26,6 +26,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed the home and favorites pages losing your horizontal scroll position in the Recently Played, recommendations, and favorites rows when you return with browser Back — they now resume where you left off instead of jumping back to the start.
 - Fixed the action result message under the RePlayOS device controls sitting flush against the buttons; it now uses the standard spacing.
 - Fixed several arcade hardware boards that grouped the wrong games or none at all — Cave 1st-generation shmups (DoDonPachi, DonPachi, ESP Ra.De.), DECO Cassette, and a few others now group correctly across all ROM sets.
+- Fixed the Shmups Wiki strategy-guide index occasionally pointing at a non-game wiki page (developer/publisher pages like Compile, Capcom, G.rev, Team Shanghai Alice, or meta list pages) instead of an actual game, due to overly narrow filtering in the index refresh script.
 
 ---
 
