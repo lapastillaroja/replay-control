@@ -44,6 +44,7 @@ pub fn compute_dashboard(conn: &Connection) -> Result<StatsDashboard> {
 
 fn compute_library_summary(conn: &Connection) -> Result<LibrarySummary> {
     let total_games = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE {VISIBLE}"))?;
+    let total_all_games = count(conn, "SELECT COUNT(*) FROM game_library")?;
     let total_systems = count(conn, &format!("SELECT COUNT(DISTINCT system) FROM game_library WHERE {VISIBLE}"))?;
     let total_size_bytes: u64 = conn
         .query_row(&format!("SELECT COALESCE(SUM(size_bytes), 0) FROM game_library WHERE {VISIBLE}"), [], |r| {
@@ -55,6 +56,7 @@ fn compute_library_summary(conn: &Connection) -> Result<LibrarySummary> {
 
     Ok(LibrarySummary {
         total_games,
+        total_all_games,
         total_systems,
         total_size_bytes,
         total_favorites: 0,
@@ -196,10 +198,14 @@ fn compute_developer_stats(conn: &Connection) -> Result<Vec<DeveloperStat>> {
 }
 
 fn compute_player_mode_stats(conn: &Connection) -> Result<PlayerModeStat> {
-    let single_player = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players = 1 AND {VISIBLE}"))?;
-    let multiplayer = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players > 1 AND cooperative = 0 AND {VISIBLE}"))?;
+    // Mutually exclusive partition so the four buckets sum to the visible total:
+    // cooperative wins first, then the rest split by player count. Without the
+    // COALESCE(cooperative,0)=0 guard a 1-player game flagged cooperative was
+    // double-counted (single_player AND cooperative), inflating the total.
     let cooperative = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE cooperative = 1 AND {VISIBLE}"))?;
-    let unknown = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE (players IS NULL OR players = 0) AND {VISIBLE}"))?;
+    let single_player = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players = 1 AND COALESCE(cooperative, 0) = 0 AND {VISIBLE}"))?;
+    let multiplayer = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE players > 1 AND COALESCE(cooperative, 0) = 0 AND {VISIBLE}"))?;
+    let unknown = count(conn, &format!("SELECT COUNT(*) FROM game_library WHERE (players IS NULL OR players = 0) AND COALESCE(cooperative, 0) = 0 AND {VISIBLE}"))?;
 
     Ok(PlayerModeStat {
         single_player,

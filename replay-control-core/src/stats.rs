@@ -71,7 +71,11 @@ pub struct MetadataCoverage {
 /// Top-level library summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibrarySummary {
+    /// Visible games only (excludes clones/hacks/translations/romset-special).
     pub total_games: usize,
+    /// Whole collection including hidden variants — denominator for the
+    /// variant breakdown so those percentages are "share of the full romset".
+    pub total_all_games: usize,
     pub total_systems: usize,
     pub total_size_bytes: u64,
     pub total_favorites: usize,

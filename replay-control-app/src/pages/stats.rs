@@ -47,7 +47,13 @@ fn BarRow(label: String, count: usize, max: usize, suffix: Option<String>) -> im
         <div class="bar-row">
             <div class="bar-label">
                 <span class="bar-name">{label}</span>
-                <span class="bar-count">{count} {suffix}</span>
+                <span class="bar-count">
+                    {if suffix.is_empty() {
+                        crate::util::format_number(count)
+                    } else {
+                        format!("{} {}", crate::util::format_number(count), suffix)
+                    }}
+                </span>
             </div>
             <div class="bar-track">
                 <div class="bar-fill" style:width=width></div>
@@ -91,7 +97,9 @@ fn SegmentBar(segments: Vec<(String, usize, &'static str)>) -> impl IntoView {
                         <div class="legend-item">
                             <span class="legend-dot" style:background=color></span>
                             <span class="legend-label">{label}</span>
-                            <span class="legend-value">{count} {move || format!("{:.0}%", pct_val)}</span>
+                            <span class="legend-value">
+                                {format!("{} · {:.0}%", crate::util::format_number(count), pct_val)}
+                            </span>
                         </div>
                     }
                 }).collect::<Vec<_>>()}
@@ -110,7 +118,7 @@ fn CoverageRow(label: String, count: usize, percentage: f64) -> impl IntoView {
         <div class="coverage-row">
             <div class="coverage-label">
                 <span>{label}</span>
-                <span class="coverage-count">{count}</span>
+                <span class="coverage-count">{crate::util::format_number(count)}</span>
             </div>
             <div class="coverage-track">
                 <div class="coverage-fill" style:width=width></div>
@@ -142,6 +150,12 @@ pub fn StatsDashboardPage() -> impl IntoView {
                     let arcade_count = dashboard.summary.arcade_count;
                     let console_count = dashboard.summary.total_games.saturating_sub(arcade_count);
 
+                    // Variant percentages are "share of the whole romset" (visible +
+                    // hidden clones/hacks/…), so verified/clones/etc. read as
+                    // independent fractions of the collection rather than a fake pie.
+                    let total_all = dashboard.summary.total_all_games;
+                    let vpct = move |c: usize| if total_all > 0 { c as f64 / total_all as f64 * 100.0 } else { 0.0 };
+
                     let locale = i18n.locale.get();
 
                     Ok::<_, server_fn::ServerFnError>(view! {
@@ -149,12 +163,12 @@ pub fn StatsDashboardPage() -> impl IntoView {
                             <div class="stat-cards-grid">
                                 <StatCard
                                     label=t(locale, Key::StatsTotalGames).to_string()
-                                    value=dashboard.summary.total_games.to_string()
+                                    value=crate::util::format_number(dashboard.summary.total_games)
                                     icon="\u{1F3AE}"
                                 />
                                 <StatCard
                                     label=t(locale, Key::StatsTotalSystems).to_string()
-                                    value=dashboard.summary.total_systems.to_string()
+                                    value=crate::util::format_number(dashboard.summary.total_systems)
                                     icon="\u{1F4BE}"
                                 />
                                 <StatCard
@@ -164,7 +178,7 @@ pub fn StatsDashboardPage() -> impl IntoView {
                                 />
                                 <StatCard
                                     label=t(locale, Key::StatsFavorites).to_string()
-                                    value=dashboard.summary.total_favorites.to_string()
+                                    value=crate::util::format_number(dashboard.summary.total_favorites)
                                     icon="\u{2B50}"
                                 />
                             </div>
@@ -239,13 +253,31 @@ pub fn StatsDashboardPage() -> impl IntoView {
 
                             <section class="stats-section">
                                 <h2 class="stats-section-title">{t(locale, Key::StatsVariants)}</h2>
-                                <SegmentBar segments=vec![
-                                    (t(locale, Key::StatsVerified).to_string(), dashboard.variants.verified, "#27ae60"),
-                                    (t(locale, Key::StatsClones).to_string(), dashboard.variants.clones, "#3498db"),
-                                    (t(locale, Key::StatsHacks).to_string(), dashboard.variants.hacks, "#e67e22"),
-                                    (t(locale, Key::StatsTranslations).to_string(), dashboard.variants.translations, "#9b59b6"),
-                                    (t(locale, Key::StatsSpecial).to_string(), dashboard.variants.special, "#95a5a6"),
-                                ] />
+                                <CoverageRow
+                                    label=t(locale, Key::StatsVerified).to_string()
+                                    count=dashboard.variants.verified
+                                    percentage=vpct(dashboard.variants.verified)
+                                />
+                                <CoverageRow
+                                    label=t(locale, Key::StatsClones).to_string()
+                                    count=dashboard.variants.clones
+                                    percentage=vpct(dashboard.variants.clones)
+                                />
+                                <CoverageRow
+                                    label=t(locale, Key::StatsHacks).to_string()
+                                    count=dashboard.variants.hacks
+                                    percentage=vpct(dashboard.variants.hacks)
+                                />
+                                <CoverageRow
+                                    label=t(locale, Key::StatsTranslations).to_string()
+                                    count=dashboard.variants.translations
+                                    percentage=vpct(dashboard.variants.translations)
+                                />
+                                <CoverageRow
+                                    label=t(locale, Key::StatsSpecial).to_string()
+                                    count=dashboard.variants.special
+                                    percentage=vpct(dashboard.variants.special)
+                                />
                             </section>
 
                             <section class="stats-section">
