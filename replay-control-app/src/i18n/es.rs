@@ -853,5 +853,16 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} ya tiene un estado. Guardar ahora lo reemplazará.",
         Key::SaveStatesLoadTitle => "¿Cargar estado?",
         Key::SaveStatesLoadBody => "Cargar {0} reemplazará el estado actual del juego.",
+        // Themes
+        Key::ThemeTitle => "Tema de la Web",
+        Key::ThemeDefault => "Predeterminado",
+        Key::ThemeLight => "Claro",
+        Key::ThemeAmber => "Ámbar CRT",
+        Key::ThemeGreen => "Verde CRT",
+        Key::ThemeMidnight => "Medianoche",
+        Key::ThemeRose => "Rosa",
+        Key::ThemeNord => "Nord",
+        Key::ThemeHighContrast => "Alto Contraste",
+        Key::ThemeActive => "Activo",
     }
 }

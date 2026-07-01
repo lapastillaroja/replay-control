@@ -134,6 +134,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_i18n();
+    crate::components::theme_selector::init_theme();
     provide_confirm_dialog();
 
     let update_state = RwSignal::new(UpdateState::None);

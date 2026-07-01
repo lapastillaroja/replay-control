@@ -843,5 +843,16 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
         Key::SaveStatesLoadTitle => "Load save state?",
         Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
+        // Themes
+        Key::ThemeTitle => "Web UI Theme",
+        Key::ThemeDefault => "Default",
+        Key::ThemeLight => "Light",
+        Key::ThemeAmber => "Amber CRT",
+        Key::ThemeGreen => "Green CRT",
+        Key::ThemeMidnight => "Midnight",
+        Key::ThemeRose => "Rose",
+        Key::ThemeNord => "Nord",
+        Key::ThemeHighContrast => "High Contrast",
+        Key::ThemeActive => "Active",
     }
 }
