@@ -105,6 +105,17 @@
     border-top: var(--control-border-subtle);
 }
 
+.metadata-audit-link {
+    color: var(--accent);
+    font-weight: 650;
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+}
+
+.metadata-audit-link:hover {
+    color: var(--accent-hover);
+}
+
 .manage-action-hint {
     margin-top: var(--section-gap-sm);
     margin-bottom: 0;

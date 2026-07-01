@@ -31,8 +31,8 @@ pub fn RomList(system: String) -> impl IntoView {
     // Genre list resource for this system.
     let sys_for_genres = system.clone();
     let genres_resource = Resource::new(
-        move || sys_for_genres.clone(),
-        server_fns::get_system_genres,
+        move || (sys_for_genres.clone(), filters.only_mature.get()),
+        move |(system, only_mature)| server_fns::get_system_genres(system, only_mature),
     );
 
     // Search: synced with URL query param `?q=...`.
@@ -75,6 +75,19 @@ pub fn RomList(system: String) -> impl IntoView {
             }
         });
 
+        // Sync URL -> hidden audit filter on browser Back/Forward. The filter
+        // state is initialized from the query map, but it also needs to follow
+        // later history changes because removing the pill pushes a new URL.
+        Effect::new(move || {
+            let url_mature = query_map
+                .read()
+                .get("only_mature")
+                .is_some_and(|v| v == "true");
+            if url_mature != filters.only_mature.get_untracked() {
+                filters.only_mature.set(url_mature);
+            }
+        });
+
         // Immediate update for filter toggle changes (no debounce needed).
         // Skip the first run: URL already reflects initial values and the
         // Router's pushState hasn't completed yet. Calling replaceState before
@@ -92,6 +105,7 @@ pub fn RomList(system: String) -> impl IntoView {
             let mr = filters.min_rating.get();
             let miny = filters.min_year.get();
             let maxy = filters.max_year.get();
+            let mature = filters.only_mature.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
                 filters_initialized.set_value(true);
@@ -110,6 +124,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 min_rating: mr,
                 min_year: miny,
                 max_year: maxy,
+                only_mature: mature,
                 query: &debounced_search.get_untracked(),
             });
         });
@@ -138,12 +153,16 @@ pub fn RomList(system: String) -> impl IntoView {
                 filters.min_rating.get(),
                 // Nested so the dependency tuple stays within the 12-field
                 // PartialEq impl that `Resource` requires.
-                (filters.min_year.get(), filters.max_year.get()),
+                (
+                    filters.min_year.get(),
+                    filters.max_year.get(),
+                    filters.only_mature.get(),
+                ),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, mp, co, ha, mr, (miny, maxy))| {
+        move |(system, query, hh, ht, hb, hc, gf, mp, co, ha, mr, (miny, maxy, mature))| {
             server_fns::get_roms_page(
-                system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, co, ha, mr, miny, maxy,
+                system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, co, ha, mr, miny, maxy, mature,
             )
         },
     );
@@ -178,6 +197,7 @@ pub fn RomList(system: String) -> impl IntoView {
         let mr = filters.min_rating.get_untracked();
         let miny = filters.min_year.get_untracked();
         let maxy = filters.max_year.get_untracked();
+        let mature = filters.only_mature.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) = server_fns::get_roms_page(
                 system,
@@ -195,6 +215,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 mr,
                 miny,
                 maxy,
+                mature,
             )
             .await
             {
@@ -306,6 +327,49 @@ pub fn RomList(system: String) -> impl IntoView {
                                 </div>
                             }
                         });
+                        let mature_pill = filters.only_mature.get().then(|| {
+                            let prefix = t(locale, Key::SearchFilterPrefix).to_string();
+                            let label = t(locale, Key::GameDetailMatureCategory).to_string();
+                            #[cfg(feature = "hydrate")]
+                            let remove_href = build_filter_url(FilterUrlParams {
+                                system: sys.get_value(),
+                                hide_hacks: filters.hide_hacks.get_untracked(),
+                                hide_translations: filters.hide_translations.get_untracked(),
+                                hide_betas: filters.hide_betas.get_untracked(),
+                                hide_clones: filters.hide_clones.get_untracked(),
+                                multiplayer_only: filters.multiplayer_only.get_untracked(),
+                                coop_only: filters.coop_only.get_untracked(),
+                                has_achievements: filters.has_achievements.get_untracked(),
+                                genre: &filters.genre.get_untracked(),
+                                min_rating: filters.min_rating.get_untracked(),
+                                min_year: filters.min_year.get_untracked(),
+                                max_year: filters.max_year.get_untracked(),
+                                only_mature: false,
+                                query: &debounced_search.get_untracked(),
+                            });
+                            view! {
+                                <div class="search-filter-pill">
+                                    <button
+                                        type="button"
+                                        class="filter-chip filter-chip-active"
+                                        on:click=move |_| {
+                                            #[cfg(feature = "hydrate")]
+                                            {
+                                                let navigate = navigate.get_value();
+                                                navigate(&remove_href, Default::default());
+                                                filters.only_mature.set(false);
+                                            }
+                                            #[cfg(not(feature = "hydrate"))]
+                                            {
+                                                filters.only_mature.set(false);
+                                            }
+                                        }
+                                    >
+                                        {prefix} ": " {label} " \u{2715}"
+                                    </button>
+                                </div>
+                            }
+                        });
                         view! {
                             <div class="rom-header">
                                 <A href="/" attr:class="back-btn">
@@ -324,6 +388,7 @@ pub fn RomList(system: String) -> impl IntoView {
                             </div>
                             <p class="rom-count">{count_text}</p>
                             {recognized_pill}
+                            {mature_pill}
                             <div class="rom-list">
                                 // First page ROMs (from SSR).
                                 {page.roms.into_iter().map(|rom| {
@@ -410,6 +475,7 @@ struct FilterUrlParams<'a> {
     min_rating: Option<f32>,
     min_year: Option<u16>,
     max_year: Option<u16>,
+    only_mature: bool,
     query: &'a str,
 }
 
@@ -418,52 +484,59 @@ struct FilterUrlParams<'a> {
 #[cfg(feature = "hydrate")]
 fn update_filter_url(p: FilterUrlParams<'_>) {
     if let Some(window) = web_sys::window() {
-        let mut params = Vec::new();
-        if !p.query.is_empty() {
-            params.push(format!("q={}", urlencoding::encode(p.query)));
-        }
-        if p.hide_hacks {
-            params.push("hide_hacks=true".to_string());
-        }
-        if p.hide_translations {
-            params.push("hide_translations=true".to_string());
-        }
-        if p.hide_betas {
-            params.push("hide_betas=true".to_string());
-        }
-        if p.hide_clones {
-            params.push("hide_clones=true".to_string());
-        }
-        if p.multiplayer_only {
-            params.push("multiplayer=true".to_string());
-        }
-        if p.coop_only {
-            params.push("coop=true".to_string());
-        }
-        if p.has_achievements {
-            params.push("has_achievements=true".to_string());
-        }
-        if !p.genre.is_empty() {
-            params.push(format!("genre={}", urlencoding::encode(p.genre)));
-        }
-        if let Some(mr) = p.min_rating {
-            params.push(format!("min_rating={mr}"));
-        }
-        if let Some(y) = p.min_year {
-            params.push(format!("min_year={y}"));
-        }
-        if let Some(y) = p.max_year {
-            params.push(format!("max_year={y}"));
-        }
-        let qs = if params.is_empty() {
-            String::new()
-        } else {
-            format!("?{}", params.join("&"))
-        };
-        let system = &p.system;
-        let url = format!("/games/{system}{qs}");
+        let url = build_filter_url(p);
         let _ = window
             .history()
             .and_then(|h| h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url)));
     }
+}
+
+#[cfg(feature = "hydrate")]
+fn build_filter_url(p: FilterUrlParams<'_>) -> String {
+    let mut params = Vec::new();
+    if !p.query.is_empty() {
+        params.push(format!("q={}", urlencoding::encode(p.query)));
+    }
+    if p.hide_hacks {
+        params.push("hide_hacks=true".to_string());
+    }
+    if p.hide_translations {
+        params.push("hide_translations=true".to_string());
+    }
+    if p.hide_betas {
+        params.push("hide_betas=true".to_string());
+    }
+    if p.hide_clones {
+        params.push("hide_clones=true".to_string());
+    }
+    if p.multiplayer_only {
+        params.push("multiplayer=true".to_string());
+    }
+    if p.coop_only {
+        params.push("coop=true".to_string());
+    }
+    if p.has_achievements {
+        params.push("has_achievements=true".to_string());
+    }
+    if !p.genre.is_empty() {
+        params.push(format!("genre={}", urlencoding::encode(p.genre)));
+    }
+    if let Some(mr) = p.min_rating {
+        params.push(format!("min_rating={mr}"));
+    }
+    if let Some(y) = p.min_year {
+        params.push(format!("min_year={y}"));
+    }
+    if let Some(y) = p.max_year {
+        params.push(format!("max_year={y}"));
+    }
+    if p.only_mature {
+        params.push("only_mature=true".to_string());
+    }
+    let qs = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+    format!("/games/{}{qs}", p.system)
 }

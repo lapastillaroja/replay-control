@@ -249,6 +249,9 @@ pub struct GameInfo {
     pub is_clone: Option<bool>,
     pub parent_rom: Option<String>,
     pub arcade_category: Option<String>,
+    /// True when arcade category data marks this entry as mature/adult.
+    #[serde(default)]
+    pub is_mature: bool,
     /// Curated hardware-board label (e.g. "CPS-2 (Capcom)"). None for
     /// non-arcade systems and for arcade ROMs whose driver sourcefile isn't
     /// mapped in `arcade_board`.
@@ -457,6 +460,7 @@ pub(crate) async fn build_game_detail(
         },
         parent_rom,
         arcade_category,
+        is_mature: entry.is_mature,
         arcade_board,
         arcade_board_tag,
         region: if entry.region.is_empty() {

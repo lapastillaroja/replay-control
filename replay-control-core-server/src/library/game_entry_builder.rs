@@ -25,20 +25,19 @@ struct CatalogLookup {
 }
 
 /// Intermediate metadata extracted from game/arcade databases and filename tags.
-///
-/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative, board, ra_id)
-type RomMetadata = (
-    Option<String>,
-    String,
-    Option<u8>,
-    bool,
-    String,
-    String,
-    Option<u16>,
-    bool,
-    Option<ArcadeBoard>,
-    String,
-);
+struct RomMetadata {
+    genre_detail: Option<String>,
+    genre_group: String,
+    players: Option<u8>,
+    is_clone: bool,
+    base_title: String,
+    developer: String,
+    release_year: Option<u16>,
+    cooperative: bool,
+    board: Option<ArcadeBoard>,
+    ra_id: String,
+    is_mature: bool,
+}
 
 /// Build `GameEntry` records from scanned ROM entries.
 ///
@@ -92,18 +91,19 @@ fn build_single_entry(
     // Two-tier genre: `genre` = detail/original, `genre_group` = normalized.
     // Also extract developer (manufacturer for arcade, empty for console — enriched later).
     // release_year comes from game_db (baked-in) or TOSEC tags (fallback).
-    let (
+    let RomMetadata {
         genre_detail,
         genre_group,
-        players_lookup,
+        players: players_lookup,
         is_clone,
         base_title,
-        dev,
+        developer: dev,
         release_year,
         cooperative,
         board,
         ra_id,
-    ) = if is_arcade {
+        is_mature,
+    } = if is_arcade {
         build_arcade_metadata(stem, batch)
     } else {
         build_console_metadata(r, rom_filename, stem, hash_results, batch)
@@ -207,6 +207,7 @@ fn build_single_entry(
         normalized_title: String::new(),
         normalized_title_alt: String::new(),
         board,
+        is_mature,
         ra_id,
         rc_hash: hash.and_then(|h| h.rc_hash.clone()),
     })
@@ -401,33 +402,35 @@ fn build_arcade_metadata(stem: &str, batch: &CatalogLookup) -> Option<RomMetadat
             let group = genre::normalize_genre(&info.category).to_string();
             let dev = developer::normalize_developer(&info.manufacturer);
             let year: Option<u16> = info.year.parse::<u16>().ok().filter(|&y| y > 0);
-            Some((
-                detail,
-                group,
-                Some(info.players),
-                info.is_clone,
-                title_utils::base_title(&info.display_name),
-                dev,
-                year,
-                false,
-                info.board,
+            Some(RomMetadata {
+                genre_detail: detail,
+                genre_group: group,
+                players: Some(info.players),
+                is_clone: info.is_clone,
+                base_title: title_utils::base_title(&info.display_name),
+                developer: dev,
+                release_year: year,
+                cooperative: false,
+                board: info.board,
                 // Arcade RA id: hash-matched at catalog-build time from the
                 // romset name (md5), carried straight through from arcade_db.
-                info.ra_id,
-            ))
+                ra_id: info.ra_id,
+                is_mature: info.is_mature,
+            })
         }
-        None => Some((
-            None,
-            String::new(),
-            None,
-            false,
-            title_utils::base_title(stem),
-            String::new(),
-            None,
-            false,
-            None,
-            String::new(),
-        )),
+        None => Some(RomMetadata {
+            genre_detail: None,
+            genre_group: String::new(),
+            players: None,
+            is_clone: false,
+            base_title: title_utils::base_title(stem),
+            developer: String::new(),
+            release_year: None,
+            cooperative: false,
+            board: None,
+            ra_id: String::new(),
+            is_mature: false,
+        }),
     }
 }
 
@@ -493,35 +496,37 @@ fn build_console_metadata(
             let group = genre::normalize_genre(&g.genre).to_string();
             let year: Option<u16> = if g.year > 0 { Some(g.year) } else { None };
             let cooperative = g.coop.unwrap_or(false);
-            Some((
-                detail,
-                group,
-                if g.players > 0 { Some(g.players) } else { None },
-                false,
-                bt,
-                developer::normalize_developer(&g.developer),
-                year,
+            Some(RomMetadata {
+                genre_detail: detail,
+                genre_group: group,
+                players: if g.players > 0 { Some(g.players) } else { None },
+                is_clone: false,
+                base_title: bt,
+                developer: developer::normalize_developer(&g.developer),
+                release_year: year,
                 cooperative,
-                None,
+                board: None,
                 ra_id,
-            ))
+                is_mature: false,
+            })
         }
         // No catalog title row for display/genre — but `ra_id` was resolved
         // independently from the content hash (rc_hash/CRC → ra_hash) and must
         // survive. Hash-matched discs in particular often lack a canonical_game
         // row yet still carry a verified RA id.
-        None => Some((
-            None,
-            String::new(),
-            None,
-            false,
-            bt,
-            String::new(),
-            None,
-            false,
-            None,
+        None => Some(RomMetadata {
+            genre_detail: None,
+            genre_group: String::new(),
+            players: None,
+            is_clone: false,
+            base_title: bt,
+            developer: String::new(),
+            release_year: None,
+            cooperative: false,
+            board: None,
             ra_id,
-        )),
+            is_mature: false,
+        }),
     }
 }
 
@@ -796,7 +801,7 @@ mod tests {
         let rom = rom_entry("commodore_ami", "AmigaVision.hdf", Some("AmigaVision"));
         let hash_results = HashMap::new();
 
-        let (_, _, _, _, _, developer, ..) = build_console_metadata(
+        let meta = build_console_metadata(
             &rom,
             "AmigaVision.hdf",
             "AmigaVision",
@@ -805,7 +810,7 @@ mod tests {
         )
         .expect("metadata should resolve");
 
-        assert_eq!(developer, "AmigaVision Project");
+        assert_eq!(meta.developer, "AmigaVision Project");
     }
 
     #[test]

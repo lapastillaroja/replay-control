@@ -244,6 +244,7 @@ fn GameDetailContent(
     let parent_rom = game.parent_rom.clone();
     let arcade_category = StoredValue::new(game.arcade_category.clone());
     let has_category = game.arcade_category.is_some();
+    let is_mature = game.is_mature;
     let arcade_board = game.arcade_board.clone();
     let arcade_board_tag = game.arcade_board_tag.clone();
 
@@ -747,6 +748,12 @@ fn GameDetailContent(
                     <div class="info-row game-info-row">
                         <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRawCategory)}</span>
                         <span class="info-value">{arcade_category.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || is_mature>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailMatureCategory)}</span>
+                        <span class="info-value">{move || t(i18n.locale.get(), Key::CommonYes)}</span>
                     </div>
                 </Show>
                 <Show when=move || is_clone>

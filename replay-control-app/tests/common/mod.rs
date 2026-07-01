@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use replay_control_app::api::AppState;
 use replay_control_core::systems::visible_systems;
+use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
 static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -51,6 +52,38 @@ async fn populate_test_library(state: &replay_control_app::api::AppState) {
             )
             .await;
     }
+}
+
+/// Build a minimal NES `GameEntry` for seeding, with the content-relevant fields
+/// (genre/base_title/is_mature/genre_group) set and everything else defaulted.
+pub fn nes_entry(filename: &str, base_title: &str, genre: &str, is_mature: bool) -> GameEntry {
+    GameEntry {
+        system: "nintendo_nes".to_string(),
+        rom_filename: filename.to_string(),
+        rom_path: format!("roms/nintendo_nes/{filename}"),
+        display_name: Some(base_title.to_string()),
+        genre: Some(genre.to_string()),
+        genre_group: genre.to_string(),
+        base_title: base_title.to_string(),
+        region: "usa".to_string(),
+        is_mature,
+        ..Default::default()
+    }
+}
+
+/// Seed a whole system's library rows directly (bypassing the scan) so tests can
+/// create entries with specific content flags. `save_system_entries` is a
+/// full-system sync (it drops rows not in this batch), so pass ALL entries for
+/// the system at once. Visible to the read pool immediately — both pools share
+/// the per-storage `library.db`.
+pub async fn seed_system(state: &AppState, system: &str, entries: Vec<GameEntry>) {
+    let system = system.to_string();
+    state
+        .library_writer
+        .try_write(move |conn| LibraryDb::save_system_entries(conn, &system, &entries, None))
+        .await
+        .expect("library write pool")
+        .expect("save_system_entries");
 }
 
 impl Drop for TestEnv {

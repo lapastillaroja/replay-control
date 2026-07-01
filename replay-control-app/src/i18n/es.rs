@@ -355,6 +355,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::GameDetailEmulation => "Compatibilidad",
         Key::GameDetailRawCategory => "Categoría MAME",
+        Key::GameDetailMatureCategory => "Categoría adulta",
         Key::GameDetailRegion => "Región",
         Key::GameDetailDescription => "Descripción",
         Key::GameDetailShowMore => "Ver más",
@@ -683,6 +684,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonError => "Error",
         Key::CommonSeeAll => "Ver todo",
         Key::CommonSystems => "Sistemas",
+        Key::CommonYes => "Sí",
         Key::CommonClearing => "Borrando...",
         Key::CommonUpdating => "Actualizando...",
         Key::CommonUpdate => "Actualizar",
@@ -732,6 +734,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreSectionUpdates => "Actualizaciones",
         Key::UpdateAvailable => "La versión {0} está disponible",
         Key::UpdateViewRelease => "Ver en GitHub",
+        Key::UpdateWhatsNew => "Novedades",
+        Key::UpdateShowBetas => "Mostrar versiones beta",
+        Key::UpdateBetaTag => "Beta",
+        Key::UpdateChangelogError => "No se pudo cargar el registro de cambios.",
+        Key::UpdateSkipConfirmTitle => "¿Omitir esta versión?",
+        Key::UpdateSkipConfirmMessage => {
+            "No volverás a recibir avisos sobre la versión {0} hasta que se publique una más nueva."
+        }
         Key::UpdateSkip => "Omitir esta versión",
         Key::UpdateNow => "Actualizar ahora",
         Key::UpdateCheckButton => "Buscar actualizaciones",

@@ -11,6 +11,7 @@ use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, Event};
 use quick_xml::reader::Reader;
 use replay_control_core::arcade_board::ArcadeBoard;
+use replay_control_core::genre;
 use replay_control_core::library::resource_kind;
 use replay_control_core::title_utils;
 use rusqlite::{Connection, params};
@@ -87,6 +88,9 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             -- set (rc_hash hashes the romset NAME). Empty when unmatched.
             ra_id TEXT NOT NULL DEFAULT '',
             ra_hash TEXT NOT NULL DEFAULT '',
+            -- True when the catver category carries the '* Mature *' marker
+            -- (adult / strip mahjong, etc.); shown as metadata/audit info.
+            is_mature INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (rom_name, source)
         );
 
@@ -883,38 +887,6 @@ fn status_str(status: &str) -> &'static str {
     }
 }
 
-fn normalize_arcade_genre(category: &str) -> &'static str {
-    let primary = category.split(" / ").next().unwrap_or(category).trim();
-    match primary {
-        "Fighter" => "Fighting",
-        "Platform" | "Climbing" => "Platform",
-        "Shooter" => "Shooter",
-        "Driving" => "Driving",
-        "Sports" => "Sports",
-        "Puzzle" => "Puzzle",
-        "Maze" => "Maze",
-        "Casino" | "Gambling" | "Slot Machine" => "Board & Card",
-        "Tabletop" => "Board & Card",
-        "Quiz" | "Trivia" => "Quiz",
-        "Pinball" => "Pinball",
-        "Ball & Paddle" | "Breakout" => "Action",
-        "Music" | "Rhythm" => "Music",
-        "Racing" => "Driving",
-        "Beat'em Up" | "BeatEmUp" => "Beat'em Up",
-        "Action" => "Action",
-        "Adventure" => "Adventure",
-        "Simulation" | "Flight" => "Simulation",
-        "Strategy" => "Strategy",
-        "Board Game" | "Cards" => "Board & Card",
-        "Educational" => "Educational",
-        "Role-Playing" | "RPG" => "Role-Playing",
-        "System" | "BIOS" | "Utilities" | "Electromechanical" | "Device" | "Rewritable"
-        | "Not Coverage" | "Mature" => "Other",
-        _ if category.is_empty() => "",
-        _ => "Other",
-    }
-}
-
 // =============================================================================
 // Arcade DB insertion
 // =============================================================================
@@ -1000,8 +972,9 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
     let mut stmt = conn.prepare(
         "INSERT INTO arcade_game \
          (rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-          is_clone, is_bios, parent, category, normalized_genre, board, ra_id, ra_hash) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+          is_clone, is_bios, parent, category, normalized_genre, board, ra_id, ra_hash, \
+          is_mature) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
     )?;
     let mut stmt_rd = conn
         .prepare("INSERT INTO arcade_release_date (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
@@ -1030,7 +1003,8 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
             if entry.is_bios {
                 total_bios += 1;
             }
-            let norm_genre = normalize_arcade_genre(&entry.category);
+            let norm_genre = genre::normalize_genre(&entry.category);
+            let is_mature = genre::is_mature_category(&entry.category);
             // RA Arcade match: rc_hash for Arcade is md5(lowercase romset_name).
             let ra_hash = md5_hex(&entry.rom_name.to_lowercase());
             let (ra_id, ra_hash) = match arcade_ra.get(&ra_hash) {
@@ -1057,6 +1031,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
                 entry.board,
                 ra_id,
                 ra_hash,
+                is_mature as i64,
             ])?;
             total_inserted += 1;
 
@@ -1547,34 +1522,6 @@ fn load_tgdb_name_map(path: &Path) -> HashMap<u32, String> {
 // =============================================================================
 // Console normalization helpers
 // =============================================================================
-
-fn normalize_console_genre(genre: &str) -> &'static str {
-    match genre {
-        "Action" => "Action",
-        "Adventure" => "Adventure",
-        "Beat'em Up" | "Beat-'Em-Up" | "Beat 'Em Up" => "Beat'em Up",
-        "Board" | "Card" | "Board Game" | "Casino" | "Gambling" => "Board & Card",
-        "Racing" | "Driving" => "Driving",
-        "Educational" => "Educational",
-        "Fighting" => "Fighting",
-        "Music" | "Rhythm" => "Music",
-        "Pinball" => "Pinball",
-        "Platform" => "Platform",
-        "Puzzle" => "Puzzle",
-        "Quiz" | "Trivia" => "Quiz",
-        "Role-Playing" | "Role-playing (RPG)" | "RPG" | "Role-Playing (RPG)" => "Role-Playing",
-        "Shooter" | "Shoot-'Em-Up" | "Shoot'em Up" | "Lightgun Shooter" | "Run & Gun"
-        | "Shoot 'Em Up" => "Shooter",
-        "Simulation" | "Flight Simulator" | "Virtual Life" => "Simulation",
-        "Sports" | "Fitness" => "Sports",
-        "Strategy" => "Strategy",
-        "Maze" => "Maze",
-        "Compilation" | "Party" => "Action",
-        "Sandbox" | "Stealth" | "Horror" | "MMO" | "Family" | "Comedy" => "Action",
-        _ if genre.is_empty() => "",
-        _ => "Other",
-    }
-}
 
 fn normalize_title(name: &str) -> String {
     let base = name.split('(').next().unwrap_or(name).trim();
@@ -2305,7 +2252,7 @@ fn insert_amiga_games(
                 let matched = tgdb_lookup(&lookup_name, platform_ids, tgdb_data);
                 total_tgdb += matched.is_some() as usize;
                 let m = matched.unwrap_or_default();
-                let norm_genre = normalize_console_genre(&m.genre);
+                let norm_genre = genre::normalize_genre(&m.genre);
                 stmt_cg.execute(params![
                     system,
                     display_name,
@@ -2349,7 +2296,7 @@ fn insert_amiga_games(
                 let matched = tgdb_lookup(display_name, platform_ids, tgdb_data);
                 total_tgdb += matched.is_some() as usize;
                 let m = matched.unwrap_or_default();
-                let norm_genre = normalize_console_genre(&m.genre);
+                let norm_genre = genre::normalize_genre(&m.genre);
                 stmt_cg.execute(params![
                     system,
                     display_name,
@@ -2827,7 +2774,7 @@ fn insert_console_games(
         // Insert canonical games and collect their actual SQLite rowids
         let mut canonical_game_ids: Vec<i64> = Vec::with_capacity(canonical_game.len());
         for game in canonical_game.iter() {
-            let norm_genre = normalize_console_genre(&game.genre);
+            let norm_genre = genre::normalize_genre(&game.genre);
             let coop_val: Option<i64> = game.coop.map(|b| b as i64);
             stmt_cg.execute(params![
                 sys.folder_name,
@@ -4138,13 +4085,14 @@ mod tests {
 <m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
 <m name="100lions" rotate="0" players="1" status="good"><d>100 Lions</d><y>2006</y><f>Aristocrat</f></m>
 <m name="apple2gsr0p" rotate="0" status="good"><d>Apple IIgs (ROM00 prototype)</d><y>1986</y><f>Apple</f></m>
+<m name="mjmature" rotate="0" players="1" status="good"><d>Mature Mahjong Test</d><y>1990</y><f>Test</f></m>
 </mame>
 "#,
         )
         .unwrap();
         fs::write(
             up.join("catver-mame-current.ini"),
-            "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\n",
+            "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\nmjmature=Tabletop / Mahjong * Mature *\n",
         )
         .unwrap();
 
@@ -4154,12 +4102,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM arcade_game WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
+                "SELECT COUNT(*) FROM arcade_game WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p', 'mjmature')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
 
         let genre: String = conn
             .query_row(
@@ -4168,7 +4116,28 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(genre, "Board & Card");
+        assert_eq!(genre, "Gambling");
+
+        // Mahjong sub-category splits out of Tabletop, and the catver "* Mature *"
+        // marker sets is_mature; a non-mature row stays is_mature = 0.
+        let (mj_genre, mj_mature): (String, i64) = conn
+            .query_row(
+                "SELECT normalized_genre, is_mature FROM arcade_game WHERE rom_name = 'mjmature'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(mj_genre, "Mahjong");
+        assert_eq!(mj_mature, 1);
+
+        let ssi_mature: i64 = conn
+            .query_row(
+                "SELECT is_mature FROM arcade_game WHERE rom_name = 'ssipkr30'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ssi_mature, 0);
 
         fs::remove_dir_all(dir).unwrap();
     }

@@ -355,6 +355,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::GameDetailEmulation => "互換性",
         Key::GameDetailRawCategory => "MAMEカテゴリ",
+        Key::GameDetailMatureCategory => "成人向けカテゴリ",
         Key::GameDetailRegion => "地域",
         Key::GameDetailDescription => "説明",
         Key::GameDetailShowMore => "さらに表示",
@@ -677,6 +678,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonError => "エラー",
         Key::CommonSeeAll => "すべて見る",
         Key::CommonSystems => "システム",
+        Key::CommonYes => "はい",
         Key::CommonClearing => "削除中...",
         Key::CommonUpdating => "更新中...",
         Key::CommonUpdate => "更新",
@@ -724,6 +726,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreSectionUpdates => "アップデート",
         Key::UpdateAvailable => "バージョン {0} が利用可能です",
         Key::UpdateViewRelease => "GitHubで見る",
+        Key::UpdateWhatsNew => "新着情報",
+        Key::UpdateShowBetas => "ベータ版を表示",
+        Key::UpdateBetaTag => "ベータ",
+        Key::UpdateChangelogError => "変更履歴を読み込めませんでした。",
+        Key::UpdateSkipConfirmTitle => "このバージョンをスキップしますか？",
+        Key::UpdateSkipConfirmMessage => {
+            "新しいバージョンが公開されるまで、バージョン {0} について再通知されません。"
+        }
         Key::UpdateSkip => "このバージョンをスキップ",
         Key::UpdateNow => "今すぐアップデート",
         Key::UpdateCheckButton => "アップデートを確認",

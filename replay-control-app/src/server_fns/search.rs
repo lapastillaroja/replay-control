@@ -204,6 +204,7 @@ pub async fn global_search(
                 max_year,
                 board: None,
                 has_achievements,
+                only_mature: false,
             };
             LibraryDb::search_game_library_ranked(
                 conn,
@@ -306,13 +307,18 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
 
 /// Get genres available for a specific system.
 #[server(prefix = "/sfn")]
-pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnError> {
+pub async fn get_system_genres(
+    system: String,
+    #[server(default)] only_mature: bool,
+) -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
         .library_reader
-        .read(move |conn| LibraryDb::system_genre_groups(conn, &system).unwrap_or_default())
+        .read(move |conn| {
+            LibraryDb::system_genre_groups(conn, &system, only_mature).unwrap_or_default()
+        })
         .await
         .unwrap_or_default();
 
@@ -487,6 +493,7 @@ pub async fn get_developer_games(
                 max_year,
                 board: None,
                 has_achievements,
+                only_mature: false,
             };
             let (entries, total) = LibraryDb::search_game_library(
                 conn,
@@ -761,6 +768,7 @@ pub async fn get_board_games(
                 max_year,
                 board: board_enum,
                 has_achievements,
+                only_mature: false,
             };
             let (entries, total) = LibraryDb::search_game_library(
                 conn,

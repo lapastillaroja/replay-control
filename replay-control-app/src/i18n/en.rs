@@ -353,6 +353,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::GameDetailEmulation => "Compatibility",
         Key::GameDetailRawCategory => "MAME Category",
+        Key::GameDetailMatureCategory => "Mature category",
         Key::GameDetailRegion => "Region",
         Key::GameDetailDescription => "Description",
         Key::GameDetailShowMore => "Show more",
@@ -675,6 +676,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonError => "Error",
         Key::CommonSeeAll => "See all",
         Key::CommonSystems => "Systems",
+        Key::CommonYes => "Yes",
         Key::CommonClearing => "Clearing...",
         Key::CommonUpdating => "Updating...",
         Key::CommonUpdate => "Update",
@@ -722,6 +724,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreSectionUpdates => "Updates",
         Key::UpdateAvailable => "Version {0} is available",
         Key::UpdateViewRelease => "View on GitHub",
+        Key::UpdateWhatsNew => "What's new",
+        Key::UpdateShowBetas => "Show beta releases",
+        Key::UpdateBetaTag => "Beta",
+        Key::UpdateChangelogError => "Couldn't load the changelog.",
+        Key::UpdateSkipConfirmTitle => "Skip this version?",
+        Key::UpdateSkipConfirmMessage => {
+            "You won't be reminded about version {0} again until a newer one is released."
+        }
         Key::UpdateSkip => "Skip this version",
         Key::UpdateNow => "Update Now",
         Key::UpdateCheckButton => "Check for Updates",

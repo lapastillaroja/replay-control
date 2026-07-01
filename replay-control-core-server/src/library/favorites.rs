@@ -822,6 +822,7 @@ mod tests {
             category: String::new(),
             normalized_genre: String::new(),
             board,
+            is_mature: false,
             ra_id: String::new(),
             alt_display_names: Vec::new(),
         }

@@ -93,6 +93,8 @@ pub struct SystemCoverage {
     #[serde(default)]
     pub special_count: usize,
     #[serde(default)]
+    pub mature_count: usize,
+    #[serde(default)]
     pub coop_count: usize,
     #[serde(default)]
     pub verified_count: usize,

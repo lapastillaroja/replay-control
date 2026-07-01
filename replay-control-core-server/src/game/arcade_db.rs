@@ -46,6 +46,9 @@ pub struct ArcadeGameInfo {
     /// catalog-build time from the upstream MAME driver sourcefile. `None`
     /// for unmapped or non-arcade rows.
     pub board: Option<ArcadeBoard>,
+    /// True when the catver category carries the `* Mature *` marker (adult /
+    /// strip mahjong, etc.); shown as metadata/audit info.
+    pub is_mature: bool,
     /// RetroAchievements game id, resolved at catalog-build time by matching
     /// `md5(lowercase rom_name)` against RA's Arcade hash set. Empty when the
     /// romset has no RA set. (The matched hash itself stays in the catalog as
@@ -79,6 +82,7 @@ struct SourceRow {
     normalized_genre: String,
     board: Option<ArcadeBoard>,
     ra_id: String,
+    is_mature: bool,
 }
 
 fn rotation_from_str(s: &str) -> Rotation {
@@ -124,6 +128,7 @@ fn row_to_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRow> {
         normalized_genre: row.get(12)?,
         board: ArcadeBoard::from_tag(&board_tag),
         ra_id: row.get(14)?,
+        is_mature: row.get::<_, i64>(15)? != 0,
     })
 }
 
@@ -151,10 +156,11 @@ pub(crate) const ARCADE_COL_NAMES: &[&str] = &[
     "board",
     "ra_id",
     "ra_hash",
+    "is_mature",
 ];
 
 const ARCADE_COLS: &str = "rom_name, source, display_name, year, manufacturer, players, rotation, status, \
-     is_clone, is_bios, parent, category, normalized_genre, board, ra_id";
+     is_clone, is_bios, parent, category, normalized_genre, board, ra_id, is_mature";
 
 /// Merge a `rom_name`'s per-source rows into a single `ArcadeGameInfo`,
 /// walking the system's priority list first and falling back to any
@@ -176,6 +182,7 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         category: String::new(),
         normalized_genre: String::new(),
         board: None,
+        is_mature: false,
         ra_id: String::new(),
         alt_display_names: Vec::new(),
     };
@@ -215,6 +222,9 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
         if info.ra_id.is_empty() {
             info.ra_id = row.ra_id.clone();
         }
+        // Mature if *any* source flags it — a content property, not per-source
+        // metadata the priority merge would pick a single winner for.
+        info.is_mature |= row.is_mature;
         if !got_bool_decision {
             info.is_clone = row.is_clone;
             info.is_bios = row.is_bios;
@@ -534,6 +544,7 @@ mod tests {
             normalized_genre: String::new(),
             board: None,
             ra_id: String::new(),
+            is_mature: false,
         }
     }
 

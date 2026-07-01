@@ -53,6 +53,9 @@ pub struct FilterState {
     pub hide_translations: RwSignal<bool>,
     pub hide_betas: RwSignal<bool>,
     pub hide_clones: RwSignal<bool>,
+    /// URL-only audit mode used by per-system metadata links. It is not shown
+    /// as a normal filter because mature flags only exist for some systems.
+    pub only_mature: RwSignal<bool>,
     pub multiplayer_only: RwSignal<bool>,
     pub coop_only: RwSignal<bool>,
     pub has_achievements: RwSignal<bool>,
@@ -80,6 +83,7 @@ impl FilterState {
             hide_translations: RwSignal::new(bool_param("hide_translations")),
             hide_betas: RwSignal::new(bool_param("hide_betas")),
             hide_clones: RwSignal::new(bool_param("hide_clones")),
+            only_mature: RwSignal::new(bool_param("only_mature")),
             multiplayer_only: RwSignal::new(bool_param("multiplayer")),
             coop_only: RwSignal::new(bool_param("coop")),
             has_achievements: RwSignal::new(bool_param("has_achievements")),

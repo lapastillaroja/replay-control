@@ -1,19 +1,18 @@
 //! Discovery queries: random, top-rated, genre counts, similar-by-genre, series siblings.
 
+use rusqlite::types::ToSql;
 use rusqlite::{Connection, params};
 
 use replay_control_core::error::{Error, Result};
 
 use super::{GameEntry, LibraryDb};
 
-/// Standard column list for `row_to_game_entry()`. All queries that use
-/// `Self::row_to_game_entry` as the row mapper MUST select these columns
-/// in this exact order.
-const GAME_ENTRY_COLS: &str = "system, rom_filename, rom_path, display_name, base_title, series_key,
-                        region, developer, genre, genre_group, rating, rating_count, players,
-                        is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
-                        release_date, release_precision, release_region_used, cooperative";
+// Share the one canonical projection (`game_library::GAME_ENTRY_COLUMNS`) that
+// matches `row_to_game_entry`'s positional indices, instead of a divergent copy.
+// The old local list dropped `identity_state`/`board`/`ra_id`/`is_mature`, so
+// those decoded as defaults here; sharing fixes that. The alias keeps the
+// `{GAME_ENTRY_COLS}` call sites unchanged.
+use super::game_library::GAME_ENTRY_COLUMNS as GAME_ENTRY_COLS;
 
 impl LibraryDb {
     /// Get random cached ROMs with box art from all systems.
@@ -145,37 +144,22 @@ impl LibraryDb {
     /// Get all distinct genre groups across the entire game library.
     /// Returns sorted genre group names (excludes empty strings).
     pub fn all_genre_groups(conn: &Connection) -> Result<Vec<String>> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT genre_group FROM game_library
-                 WHERE genre_group != ''
-                 ORDER BY genre_group",
-            )
-            .map_err(|e| Error::Other(format!("Prepare all_genre_groups: {e}")))?;
-
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| Error::Other(format!("Query all_genre_groups: {e}")))?;
-
-        Ok(rows.flatten().collect())
+        Self::distinct_genre_groups(conn, "genre_group != ''", &[], false)
     }
 
     /// Get distinct genre groups for a specific system.
     /// Returns sorted genre group names (excludes empty strings).
-    pub fn system_genre_groups(conn: &Connection, system: &str) -> Result<Vec<String>> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT genre_group FROM game_library
-                 WHERE system = ?1 AND genre_group != ''
-                 ORDER BY genre_group",
-            )
-            .map_err(|e| Error::Other(format!("Prepare system_genre_groups: {e}")))?;
-
-        let rows = stmt
-            .query_map(params![system], |row| row.get::<_, String>(0))
-            .map_err(|e| Error::Other(format!("Query system_genre_groups: {e}")))?;
-
-        Ok(rows.flatten().collect())
+    pub fn system_genre_groups(
+        conn: &Connection,
+        system: &str,
+        only_mature: bool,
+    ) -> Result<Vec<String>> {
+        Self::distinct_genre_groups(
+            conn,
+            "system = ?1 AND genre_group != ''",
+            &[&system as &dyn ToSql],
+            only_mature,
+        )
     }
 
     /// Get non-favorited ROMs from a system, optionally filtered by genre.

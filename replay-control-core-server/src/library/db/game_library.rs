@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rusqlite::types::ToSql;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use replay_control_core::error::{Error, Result};
@@ -18,13 +19,15 @@ const MAX_THUMBNAIL_JOB_ATTEMPTS: i64 = 5;
 /// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
 ///
 /// The column order must match the positional indices in `row_to_game_entry()`.
-const GAME_ENTRY_COLUMNS: &str = "\
+/// `pub(crate)` so the recommendations module shares this one projection rather
+/// than maintaining a divergent (and historically misaligned) copy.
+pub(crate) const GAME_ENTRY_COLUMNS: &str = "\
     system, rom_filename, rom_path, display_name, base_title, series_key, \
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name, \
     identity_state, release_date, release_precision, release_region_used, cooperative, \
-    normalized_title, normalized_title_alt, board, ra_id, rc_hash";
+    normalized_title, normalized_title_alt, board, ra_id, rc_hash, is_mature";
 
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
@@ -116,9 +119,52 @@ pub struct SearchFilter<'a> {
     /// Restrict results to games that have a RetroAchievements set
     /// (`ra_id != ''`). Ignored when `false`.
     pub has_achievements: bool,
+    /// URL-only audit mode for per-system library views. When set, restricts
+    /// results to rows carrying the arcade `* Mature *` category marker.
+    pub only_mature: bool,
 }
 
 impl LibraryDb {
+    /// SQL predicate for the metadata audit link that scopes a system list to
+    /// games flagged by arcade category data as mature.
+    pub(crate) const MATURE_ONLY: &'static str = "is_mature = 1";
+
+    /// Trailing SQL fragment for optional mature-only audit mode.
+    pub(crate) fn mature_only_clause(only_mature: bool) -> &'static str {
+        if only_mature {
+            " AND is_mature = 1"
+        } else {
+            ""
+        }
+    }
+
+    /// Distinct, sorted `genre_group` values for an arbitrary WHERE scope.
+    /// Backs the four public genre-group queries (all / system / developer /
+    /// board), which differ only in their scope clause and bound parameters.
+    /// `scope_clause` must include the `genre_group != ''` guard and any
+    /// positional placeholders bound by `params`; the mature-only audit filter
+    /// is appended automatically when requested.
+    pub(crate) fn distinct_genre_groups(
+        conn: &Connection,
+        scope_clause: &str,
+        params: &[&dyn ToSql],
+        only_mature: bool,
+    ) -> Result<Vec<String>> {
+        let mature_clause = Self::mature_only_clause(only_mature);
+        let sql = format!(
+            "SELECT DISTINCT genre_group FROM game_library
+             WHERE {scope_clause}{mature_clause}
+             ORDER BY genre_group"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare distinct_genre_groups: {e}")))?;
+        let rows = stmt
+            .query_map(params, |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query distinct_genre_groups: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Batch lookup of game entries by primary key `(system, rom_filename)`.
     ///
     /// Groups keys by system and uses `WHERE system = ? AND rom_filename IN (...)`
@@ -471,10 +517,10 @@ impl LibraryDb {
                  box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
                  scan_token, identity_state,
                  release_date, release_precision, release_region_used, cooperative,
-                 normalized_title, normalized_title_alt, board, ra_id, rc_hash)
+                 normalized_title, normalized_title_alt, board, ra_id, rc_hash, is_mature)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                          ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27,
-                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37)
+                         ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     rom_path = excluded.rom_path,
                     display_name = excluded.display_name,
@@ -510,7 +556,8 @@ impl LibraryDb {
                     normalized_title_alt = excluded.normalized_title_alt,
                     board = excluded.board,
                     ra_id = excluded.ra_id,
-                    rc_hash = excluded.rc_hash",
+                    rc_hash = excluded.rc_hash,
+                    is_mature = excluded.is_mature",
             )
             .map_err(|e| Error::Other(format!("Prepare game_library upsert: {e}")))?;
 
@@ -560,6 +607,7 @@ impl LibraryDb {
                 rom.board.map(|b| b.as_tag()).unwrap_or_default(),
                 &rom.ra_id,
                 &rom.rc_hash,
+                rom.is_mature,
             ])
             .map_err(|e| Error::Other(format!("Upsert game_library failed: {e}")))?;
         }
@@ -2409,34 +2457,19 @@ impl LibraryDb {
         developer: &str,
         system_filter: Option<&str>,
     ) -> Result<Vec<String>> {
-        let has_system = system_filter.is_some_and(|s| !s.is_empty());
-
-        if has_system {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT DISTINCT genre_group FROM game_library
-                     WHERE developer = ?1 AND genre_group != '' AND system = ?2
-                     ORDER BY genre_group",
-                )
-                .map_err(|e| Error::Other(format!("Prepare developer_genre_groups: {e}")))?;
-            let rows = stmt
-                .query_map(params![developer, system_filter.unwrap()], |row| {
-                    row.get::<_, String>(0)
-                })
-                .map_err(|e| Error::Other(format!("Query developer_genre_groups: {e}")))?;
-            Ok(rows.flatten().collect())
-        } else {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT DISTINCT genre_group FROM game_library
-                     WHERE developer = ?1 AND genre_group != ''
-                     ORDER BY genre_group",
-                )
-                .map_err(|e| Error::Other(format!("Prepare developer_genre_groups: {e}")))?;
-            let rows = stmt
-                .query_map(params![developer], |row| row.get::<_, String>(0))
-                .map_err(|e| Error::Other(format!("Query developer_genre_groups: {e}")))?;
-            Ok(rows.flatten().collect())
+        match system_filter.filter(|s| !s.is_empty()) {
+            Some(system) => Self::distinct_genre_groups(
+                conn,
+                "developer = ?1 AND genre_group != '' AND system = ?2",
+                &[&developer as &dyn ToSql, &system],
+                false,
+            ),
+            None => Self::distinct_genre_groups(
+                conn,
+                "developer = ?1 AND genre_group != ''",
+                &[&developer as &dyn ToSql],
+                false,
+            ),
         }
     }
 
@@ -2483,6 +2516,9 @@ impl LibraryDb {
         if board_tag.is_empty() {
             return Ok(Vec::new());
         }
+        // COUNT(DISTINCT base_title) with the same clone/translation/hack/special
+        // exclusions as `games_by_board` so the chip count matches the deduped
+        // list exactly (mirrors `board_game_counts`).
         let mut stmt = conn
             .prepare(
                 "SELECT system, COUNT(DISTINCT base_title) as cnt
@@ -2572,39 +2608,27 @@ impl LibraryDb {
         if board_tag.is_empty() {
             return Ok(Vec::new());
         }
-        let has_system = system_filter.is_some_and(|s| !s.is_empty());
-
-        if has_system {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT DISTINCT genre_group FROM game_library
-                     WHERE board = ?1 AND genre_group != '' AND system = ?2
-                     ORDER BY genre_group",
-                )
-                .map_err(|e| Error::Other(format!("Prepare board_genre_groups: {e}")))?;
-            let rows = stmt
-                .query_map(params![board_tag, system_filter.unwrap()], |row| {
-                    row.get::<_, String>(0)
-                })
-                .map_err(|e| Error::Other(format!("Query board_genre_groups: {e}")))?;
-            Ok(rows.flatten().collect())
-        } else {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT DISTINCT genre_group FROM game_library
-                     WHERE board = ?1 AND genre_group != ''
-                     ORDER BY genre_group",
-                )
-                .map_err(|e| Error::Other(format!("Prepare board_genre_groups: {e}")))?;
-            let rows = stmt
-                .query_map(params![board_tag], |row| row.get::<_, String>(0))
-                .map_err(|e| Error::Other(format!("Query board_genre_groups: {e}")))?;
-            Ok(rows.flatten().collect())
+        match system_filter.filter(|s| !s.is_empty()) {
+            Some(system) => Self::distinct_genre_groups(
+                conn,
+                "board = ?1 AND genre_group != '' AND system = ?2",
+                &[&board_tag as &dyn ToSql, &system],
+                false,
+            ),
+            None => Self::distinct_genre_groups(
+                conn,
+                "board = ?1 AND genre_group != ''",
+                &[&board_tag as &dyn ToSql],
+                false,
+            ),
         }
     }
 
     /// Get systems where a developer has games, with display names and game counts.
     pub fn developer_systems(conn: &Connection, developer: &str) -> Result<Vec<(String, usize)>> {
+        // COUNT(DISTINCT base_title) with the same clone/translation/hack/special
+        // exclusions as `games_by_developer` so the chip count matches the
+        // deduped list exactly.
         let mut stmt = conn
             .prepare(
                 "SELECT system, COUNT(DISTINCT base_title) as cnt
@@ -2730,6 +2754,9 @@ impl LibraryDb {
         }
         if filter.hide_clones {
             where_clauses.push("is_clone = 0".to_string());
+        }
+        if filter.only_mature {
+            where_clauses.push(Self::MATURE_ONLY.to_string());
         }
         if filter.multiplayer_only {
             where_clauses.push("players >= 2".to_string());
@@ -3131,6 +3158,7 @@ mod tests {
     use super::super::tests::*;
     use super::super::{IdentityState, LibraryDb, LibraryGameResource, PhaseState, library_meta};
     use super::SearchFilter;
+    use replay_control_core::arcade_board::ArcadeBoard;
     use replay_control_core::resource_kind;
     use replay_control_core::rom_tags::RegionPreference;
 
@@ -4152,6 +4180,56 @@ mod tests {
     }
 
     #[test]
+    fn build_filter_clauses_applies_only_mature_audit_filter() {
+        let (default_clauses, _) =
+            LibraryDb::build_filter_clauses(None, None, &[], &super::SearchFilter::default());
+        assert!(!default_clauses.iter().any(|c| c == "is_mature = 1"));
+
+        let f = super::SearchFilter {
+            only_mature: true,
+            ..Default::default()
+        };
+        let (clauses, _) = LibraryDb::build_filter_clauses(None, None, &[], &f);
+        assert!(clauses.iter().any(|c| c == "is_mature = 1"));
+    }
+
+    #[test]
+    fn developer_systems_dedupes_counts() {
+        let (mut conn, _dir) = open_temp_db();
+        // Two variants of one base title (one a clone) plus a mature title, all by Acme.
+        let mut clone = make_game_entry_with_developer("snes", "Game (Japan).sfc", "Acme", "Game");
+        clone.is_clone = true;
+        let orig = make_game_entry_with_developer("snes", "Game (USA).sfc", "Acme", "Game");
+        let mut mature = make_game_entry_with_developer("snes", "Adult.sfc", "Acme", "Adult");
+        mature.is_mature = true;
+        LibraryDb::save_system_entries(&mut conn, "snes", &[clone, orig, mature], None).unwrap();
+
+        let systems = LibraryDb::developer_systems(&conn, "Acme").unwrap();
+        assert_eq!(systems.iter().map(|(_, count)| *count).sum::<usize>(), 2);
+    }
+
+    #[test]
+    fn board_systems_dedupes_counts() {
+        let (mut conn, _dir) = open_temp_db();
+        let mut clone = make_game_entry("arcade_fbneo", "gamej.zip", false);
+        clone.base_title = "Game".to_string();
+        clone.board = Some(ArcadeBoard::Cps2);
+        clone.is_clone = true;
+        let mut orig = make_game_entry("arcade_fbneo", "gameu.zip", false);
+        orig.base_title = "Game".to_string();
+        orig.board = Some(ArcadeBoard::Cps2);
+        let mut mature = make_game_entry("arcade_fbneo", "adult.zip", false);
+        mature.base_title = "Adult".to_string();
+        mature.board = Some(ArcadeBoard::Cps2);
+        mature.is_mature = true;
+        LibraryDb::save_system_entries(&mut conn, "arcade_fbneo", &[clone, orig, mature], None)
+            .unwrap();
+
+        let systems = LibraryDb::board_systems(&conn, ArcadeBoard::Cps2.as_tag()).unwrap();
+        assert_eq!(systems.iter().map(|(_, count)| *count).sum::<usize>(), 2);
+    }
+
+    #[test]
     fn developer_games_system_and_genre_combined() {
         let (mut conn, _dir) = open_temp_db();
         LibraryDb::save_system_entries(
@@ -4497,7 +4575,6 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].region, "europe");
     }
-
     // ── count_system_entries + load_system_entries_page ───────────────
 
     #[test]

@@ -97,7 +97,7 @@ pub fn year_from_release_date(date: &str) -> Option<u16> {
 }
 
 /// A cached ROM entry from the `game_library` table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GameEntry {
     pub system: String,
     pub rom_filename: String,
@@ -163,6 +163,10 @@ pub struct GameEntry {
     /// in `ArcadeBoard::from_sourcefile`. Populated at scan time from
     /// `arcade_db::ArcadeGameInfo::board`.
     pub board: Option<ArcadeBoard>,
+    /// True when the game's catver category carries the `* Mature *` marker
+    /// (adult / strip mahjong, etc.). Populated at scan time from
+    /// `arcade_db::ArcadeGameInfo::is_mature`; shown as metadata/audit info.
+    pub is_mature: bool,
     /// RetroAchievements game id, hash-matched per dump: whole-file carts via
     /// the CRC-matched `rom_entry.ra_id`, header carts/discs via `rc_hash` →
     /// catalog `ra_hash`. Empty when the dump has no RA set. Used by the "has
@@ -176,8 +180,9 @@ pub struct GameEntry {
 }
 
 /// Durable identity state for ROM hash matching.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IdentityState {
+    #[default]
     Unknown = 0,
     NotApplicable = 1,
     Pending = 2,
@@ -469,6 +474,7 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         normalized_title TEXT NOT NULL DEFAULT '',
         normalized_title_alt TEXT NOT NULL DEFAULT '',
         board TEXT NOT NULL DEFAULT '',
+        is_mature INTEGER NOT NULL DEFAULT 0,
         ra_id TEXT NOT NULL DEFAULT '',
         rc_hash TEXT,
         PRIMARY KEY (system, rom_filename)
@@ -606,6 +612,7 @@ const CREATE_GAME_LIBRARY_SYSTEM_STATS_SQL: &str = "
         homebrew_count INTEGER NOT NULL DEFAULT 0,
         unlicensed_count INTEGER NOT NULL DEFAULT 0,
         special_count INTEGER NOT NULL DEFAULT 0,
+        mature_count INTEGER NOT NULL DEFAULT 0,
         region_counts_json TEXT,
         release_year_min INTEGER,
         release_year_max INTEGER,
@@ -701,6 +708,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "normalized_title",
     "normalized_title_alt",
     "board",
+    "is_mature",
     "ra_id",
     "rc_hash",
 ];
@@ -745,6 +753,7 @@ const GAME_LIBRARY_SYSTEM_STATS_COLUMNS: &[&str] = &[
     "homebrew_count",
     "unlicensed_count",
     "special_count",
+    "mature_count",
     "region_counts_json",
     "release_year_min",
     "release_year_max",
@@ -1194,7 +1203,7 @@ impl LibraryDb {
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
     ///   identity_state, release_date, release_precision, release_region_used, cooperative,
-    ///   normalized_title, normalized_title_alt, board, ra_id
+    ///   normalized_title, normalized_title_alt, board, ra_id, rc_hash, is_mature
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -1253,6 +1262,7 @@ impl LibraryDb {
                 .and_then(|tag| ArcadeBoard::from_tag(&tag)),
             ra_id: row.get::<_, String>(33).unwrap_or_default(),
             rc_hash: row.get::<_, Option<String>>(34).unwrap_or_default(),
+            is_mature: row.get(35).unwrap_or_default(),
         })
     }
 }
@@ -1313,6 +1323,7 @@ mod tests {
             board: None,
             ra_id: String::new(),
             rc_hash: None,
+            is_mature: false,
         }
     }
 
@@ -1518,9 +1529,10 @@ mod tests {
         filename: &str,
         genre: &str,
     ) -> GameEntry {
+        use replay_control_core::genre::normalize_genre;
         GameEntry {
             genre: Some(genre.into()),
-            genre_group: replay_control_core::genre::normalize_genre(genre).to_string(),
+            genre_group: normalize_genre(genre).to_string(),
             ..make_game_entry(system, filename, false)
         }
     }

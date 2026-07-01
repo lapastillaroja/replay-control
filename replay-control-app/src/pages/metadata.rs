@@ -1351,6 +1351,8 @@ fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
                 {move || composition_text(cov, i18n.locale.get())}
             </div>
 
+            {move || mature_row_view(cov, i18n.locale.get())}
+
             <div class="footer-row">{playtime_line}</div>
 
             {move || media_row_view(cov, i18n.locale.get())}
@@ -1449,6 +1451,30 @@ fn composition_text(cov: StoredValue<SystemCoverage>, locale: crate::i18n::Local
         .collect::<Vec<_>>()
         .join(" \u{00B7} ")
     })
+}
+
+fn mature_row_view(
+    cov: StoredValue<SystemCoverage>,
+    locale: crate::i18n::Locale,
+) -> Option<leptos::prelude::AnyView> {
+    let (system, count) = cov.with_value(|c| (c.system.clone(), c.mature_count));
+    if count == 0 {
+        return None;
+    }
+    let href = format!("/games/{system}?only_mature=true");
+    let text = format!(
+        "{} {}",
+        format_number(count),
+        t(locale, Key::GameDetailMatureCategory)
+    );
+    Some(
+        view! {
+            <div class="footer-row">
+                <A href=href attr:class="metadata-audit-link">{text}</A>
+            </div>
+        }
+        .into_any(),
+    )
 }
 
 fn media_row_view(

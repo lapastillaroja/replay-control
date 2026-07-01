@@ -1096,6 +1096,7 @@ mod tests {
             board: None,
             ra_id: String::new(),
             rc_hash: None,
+            is_mature: false,
         }
     }
 

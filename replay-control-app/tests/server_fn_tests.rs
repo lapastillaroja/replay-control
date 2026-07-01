@@ -158,6 +158,95 @@ async fn sfn_get_roms_page_returns_roms() {
     assert!(!body.is_empty(), "response body should not be empty");
 }
 
+/// POST a server function (form-encoded) and parse its JSON response.
+async fn post_json<F: ServerFn>(app: axum::Router, body: String) -> serde_json::Value {
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(F::PATH)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("accept", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "{} should return 200",
+        F::PATH
+    );
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| panic!("invalid JSON from {}: {e}", F::PATH))
+}
+
+// The per-system metadata audit link uses `only_mature=true` to show only
+// rows flagged by arcade category data as mature. Normal browsing is not
+// filtered by the mature flag.
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_get_roms_page_only_mature_audit_filter() {
+    setup();
+    let env = TestEnv::new().await;
+    common::seed_system(
+        &env.state,
+        "nintendo_nes",
+        vec![
+            common::nes_entry("CleanGame.nes", "Clean Game", "Puzzle", false),
+            common::nes_entry("MatureGame.nes", "Mature Game", "Puzzle", true),
+        ],
+    )
+    .await;
+    let app = test_router(env.state.clone());
+
+    let filenames = |v: &serde_json::Value| -> Vec<String> {
+        v["roms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|r| r["rom_filename"].as_str().map(str::to_string))
+            .collect()
+    };
+
+    // Default browsing shows both clean and mature rows.
+    let v = post_json::<server_fns::GetRomsPage>(
+        app.clone(),
+        form_body(&[
+            ("system", "nintendo_nes"),
+            ("offset", "0"),
+            ("limit", "200"),
+            ("search", ""),
+        ]),
+    )
+    .await;
+    let all = filenames(&v);
+    assert!(all.contains(&"CleanGame.nes".to_string()), "{all:?}");
+    assert!(all.contains(&"MatureGame.nes".to_string()), "{all:?}");
+
+    // Audit mode shows only mature rows.
+    let v = post_json::<server_fns::GetRomsPage>(
+        app,
+        form_body(&[
+            ("system", "nintendo_nes"),
+            ("offset", "0"),
+            ("limit", "200"),
+            ("search", ""),
+            ("only_mature", "true"),
+        ]),
+    )
+    .await;
+    let mature = filenames(&v);
+    assert!(
+        !mature.contains(&"CleanGame.nes".to_string()),
+        "only_mature excludes clean games: {mature:?}"
+    );
+    assert!(
+        mature.contains(&"MatureGame.nes".to_string()),
+        "only_mature shows mature games: {mature:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_random_game_for_system_returns_requested_system() {
     setup();

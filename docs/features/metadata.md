@@ -31,12 +31,13 @@ Commodore Amiga and Amiga CD32 titles are identified across their common naming 
 Covers [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, category, and the hardware **board** it ran on (CPS-2, Neo Geo MVS, Taito F3, …).
 
 Entries from the source metadata are retained, including categories such as gambling, slot machine, computer, handheld, and electromechanical, so ROMs from full MAME sets can still be identified.
+Entries marked with the source `* Mature *` category marker are counted in each affected system's library overview. The count links to that system's game list filtered to only those flagged entries.
 
 The board powers a dedicated browse-by-board experience — board pages, board search, and board recommendations. See [Arcade Boards](arcade-boards.md).
 
 ### Genre Taxonomy
 
-Both console and arcade databases map to a shared set of ~18 normalized genres: Action, Adventure, Beat'em Up, Board & Card, Driving, Educational, Fighting, Maze, Music, Pinball, Platform, Puzzle, Quiz, Role-Playing, Shooter, Simulation, Sports, Strategy, and Other.
+Both console and arcade databases map to a shared set of ~20 normalized genres: Action, Adventure, Beat'em Up, Driving, Educational, Fighting, Gambling, Mahjong, Maze, Music, Pinball, Platform, Puzzle, Quiz, Role-Playing, Shooter, Simulation, Sports, Strategy, Tabletop, and Other.
 
 ### Series Data
 

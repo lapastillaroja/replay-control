@@ -4,6 +4,7 @@ use rusqlite::{Connection, params};
 
 use replay_control_core::error::{Error, Result};
 
+use super::game_library::GAME_ENTRY_COLUMNS as GAME_ENTRY_COLS;
 use super::{AliasInsert, GameEntry, LibraryDb, SeriesInsert};
 
 impl LibraryDb {
@@ -234,11 +235,7 @@ impl LibraryDb {
                   AND gl.is_special = 0
                   AND gl.base_title != ?2 COLLATE NOCASE
             )
-            SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                    region, developer, genre, genre_group, rating, rating_count, players,
-                    is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_size_bytes, hash_matched_name,
-                    release_date, release_precision, release_region_used, cooperative, series_order
+            SELECT {GAME_ENTRY_COLS}, series_order
             FROM deduped WHERE rn = 1
             ORDER BY {order_prefix},
                 series_order IS NULL,
@@ -256,7 +253,8 @@ impl LibraryDb {
                 params![system, base_title, region_pref, limit as i64],
                 |row| {
                     let entry = Self::row_to_game_entry(row)?;
-                    let order: Option<i32> = row.get(28)?;
+                    // By name, not index — robust to GAME_ENTRY_COLUMNS changes.
+                    let order: Option<i32> = row.get("series_order")?;
                     Ok((entry, order))
                 },
             )

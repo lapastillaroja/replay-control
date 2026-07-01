@@ -167,6 +167,7 @@ pub async fn get_roms_page(
     #[server(default)] min_rating: Option<f32>,
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
+    #[server(default)] only_mature: bool,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::systems as sys_db;
 
@@ -210,6 +211,7 @@ pub async fn get_roms_page(
                 max_year,
                 board: recognized_board,
                 has_achievements,
+                only_mature,
             };
             LibraryDb::search_game_library_ranked(
                 conn,
@@ -431,6 +433,7 @@ async fn multimedia_rom_detail(
         is_clone: None,
         parent_rom: None,
         arcade_category: None,
+        is_mature: false,
         arcade_board: None,
         arcade_board_tag: None,
         region: None,
