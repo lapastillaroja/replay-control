@@ -4145,25 +4145,25 @@
   },
   {
     "game_title": "Brett Hull Hockey",
-    "series_name": "",
+    "series_name": "Brett Hull Hockey",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Brett Hull Hockey '95"
   },
   {
     "game_title": "Brett Hull Hockey '95",
-    "series_name": "",
+    "series_name": "Brett Hull Hockey",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Brett Hull Hockey",
     "followed_by": ""
   },
   {
     "game_title": "Brett Hull Hockey '95",
-    "series_name": "",
+    "series_name": "Brett Hull Hockey",
     "system": "sega_smd",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Brett Hull Hockey",
     "followed_by": ""
   },
@@ -6828,16 +6828,16 @@
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "follows": "Dance Dance Revolution X3",
+    "followed_by": "Dance Dance Revolution A"
   },
   {
     "game_title": "Dance Dance Revolution",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Dance Dance Revolution X3",
-    "followed_by": "Dance Dance Revolution A"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Dance Dance Revolution",
@@ -23042,6 +23042,14 @@
   {
     "game_title": "NBA Jam: Tournament Edition",
     "series_name": "NBA Jam",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NBA Jam: Tournament Edition",
+    "series_name": "NBA Jam",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "",
@@ -25320,6 +25328,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Panic Space",
+    "series_name": "Famimaga Disk",
+    "system": "nintendo_nes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Panorama Cotton",
     "series_name": "Cotton",
     "system": "sega_smd",
@@ -25385,89 +25401,89 @@
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "arcade_fbneo",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_gbc",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_n64",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_nes",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "sega_dc",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "sega_gg",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": "Paperboy 2"
   },
   {
     "game_title": "Paperboy 2",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Paperboy",
     "followed_by": ""
   },
   {
     "game_title": "Paperboy 2",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_nes",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Paperboy",
     "followed_by": ""
   },
   {
     "game_title": "Paperboy 2",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Paperboy",
     "followed_by": ""
   },
   {
     "game_title": "Paperboy 2",
-    "series_name": "",
+    "series_name": "Paperboy",
     "system": "sega_smd",
-    "series_order": null,
+    "series_order": 2,
     "follows": "Paperboy",
     "followed_by": ""
   },
@@ -29808,6 +29824,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Romance of the Three Kingdoms VI: Awakening of the Dragon",
+    "series_name": "Romance of the Three Kingdoms",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Romancia",
     "series_name": "Dragon Slayer",
     "system": "microsoft_msx",
@@ -33588,6 +33612,14 @@
     "series_name": "Spindizzy",
     "system": "nintendo_snes",
     "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Splatterhouse",
+    "series_name": "Splatterhouse",
+    "system": "arcade_fbneo",
+    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -37412,16 +37444,16 @@
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "",
-    "followed_by": "The Black Bass"
+    "follows": "The Black Bass",
+    "followed_by": ""
   },
   {
     "game_title": "The Black Bass",
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "The Black Bass",
-    "followed_by": ""
+    "follows": "",
+    "followed_by": "The Black Bass"
   },
   {
     "game_title": "The Blue Crystal Rod",
@@ -40368,6 +40400,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "TrackMania Turbo",
+    "series_name": "TrackMania",
+    "system": "nintendo_ds",
+    "series_order": 7,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Trade & Battle: Card Hero",
     "series_name": "Kousoku Card Battle: Card Hero",
     "system": "nintendo_gbc",
@@ -43251,7 +43291,7 @@
     "game_title": "Worms World Party",
     "series_name": "Worms",
     "system": "nintendo_gba",
-    "series_order": null,
+    "series_order": 5,
     "follows": "Worms Armageddon",
     "followed_by": "Worms 3D"
   },
@@ -43259,7 +43299,7 @@
     "game_title": "Worms World Party",
     "series_name": "Worms",
     "system": "sega_dc",
-    "series_order": null,
+    "series_order": 5,
     "follows": "Worms Armageddon",
     "followed_by": "Worms 3D"
   },
@@ -43267,7 +43307,7 @@
     "game_title": "Worms World Party",
     "series_name": "Worms",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 5,
     "follows": "Worms Armageddon",
     "followed_by": "Worms 3D"
   },
