@@ -1,15 +1,43 @@
 //! Runtime genre normalizer.
 //!
 //! Maps raw genre strings from any source (baked-in databases, LaunchBox,
-//! catver.ini) to a small set of ~18 canonical genre groups. This is the
-//! single source of truth for genre normalization at runtime, superseding
-//! the build-time `normalize_arcade_genre()` and `normalize_console_genre()`
-//! functions (which remain in build.rs for code-gen but use the same mapping).
+//! catver.ini) to a small set of ~20 canonical genre groups. This is the single
+//! source of truth for genre normalization — at runtime AND at catalog build
+//! time (`tools/build-catalog` calls `normalize_genre` directly rather than
+//! keeping its own copy).
 //!
 //! Handles:
 //!  - LaunchBox semicolon separators ("Action; Platform" -> normalize first part)
 //!  - catver.ini slash separators ("Maze / Shooter" -> normalize first part)
 //!  - Direct genre strings ("Fighting", "Shoot'em Up", etc.)
+
+/// Canonical name of the gambling genre group. Kept as a single named constant
+/// (rather than a scattered magic string) so the normalizer and any consumer
+/// reference the one literal.
+pub const GENRE_GROUP_GAMBLING: &str = "Gambling";
+
+/// True when a raw genre string is the Mahjong sub-category — the catver
+/// "Tabletop / Mahjong" form or a direct "Mahjong" primary. Keyed on the PRIMARY
+/// segment, not a bare substring, so device categories that merely mention it
+/// (e.g. "Game Console / Home Mahjong", "Handheld / Plug n' Play TV Game /
+/// Mahjong") fall through to their real (non-tabletop) primary and become
+/// "Other". Internal to `normalize_genre`, which all producers route through.
+fn is_mahjong_primary(raw: &str) -> bool {
+    // Case-insensitive compare on the borrowed primary segment — no allocation
+    // on the common path; only the rare "tabletop" branch lowercases the whole.
+    let primary = raw.split(" / ").next().unwrap_or("").trim();
+    primary.eq_ignore_ascii_case("mahjong")
+        || (primary.eq_ignore_ascii_case("tabletop")
+            && raw.to_ascii_lowercase().contains("mahjong"))
+}
+
+/// True when a catver category carries the `* Mature *` content marker (adult /
+/// strip mahjong, etc.). The companion to `is_mahjong_primary` — keeps the
+/// catver content-marker rules together; used by `build-catalog` to set
+/// `arcade_game.is_mature`.
+pub fn is_mature_category(raw: &str) -> bool {
+    raw.contains("* Mature *")
+}
 
 /// Normalize a raw genre string to one of the canonical genre groups.
 ///
@@ -19,6 +47,12 @@ pub fn normalize_genre(raw: &str) -> &'static str {
     let raw = raw.trim();
     if raw.is_empty() {
         return "";
+    }
+
+    // Mahjong is detected before the first-segment split below would fold the
+    // "Tabletop / Mahjong" sub-category into Tabletop.
+    if is_mahjong_primary(raw) {
+        return "Mahjong";
     }
 
     // Extract the first genre segment:
@@ -38,7 +72,8 @@ fn normalize_single(genre: &str) -> &'static str {
         "Action" => return "Action",
         "Adventure" => return "Adventure",
         "Beat'em Up" => return "Beat'em Up",
-        "Board & Card" => return "Board & Card",
+        "Gambling" => return "Gambling",
+        "Tabletop" => return "Tabletop",
         "Driving" => return "Driving",
         "Educational" => return "Educational",
         "Fighting" => return "Fighting",
@@ -70,9 +105,11 @@ fn normalize_single(genre: &str) -> &'static str {
         // ── Beat'em Up ──
         "beat'em up" | "beat-'em-up" | "beat 'em up" | "beatemup" => "Beat'em Up",
 
-        // ── Board & Card ──
-        "board" | "card" | "board game" | "casino" | "gambling" | "tabletop" | "slot machine"
-        | "cards" | "board & card" => "Board & Card",
+        // ── Gambling ── (slots, casino, gambling-cards/lottery/bingo via first segment)
+        "casino" | "gambling" | "slot machine" | "slot" => "Gambling",
+
+        // ── Tabletop ── (board games, chess, shanghai, hanafuda, non-gambling cards)
+        "board" | "card" | "board game" | "cards" | "tabletop" => "Tabletop",
 
         // ── Driving ──
         "driving" | "racing" => "Driving",
@@ -146,7 +183,9 @@ mod tests {
         assert_eq!(normalize_genre("Action"), "Action");
         assert_eq!(normalize_genre("Adventure"), "Adventure");
         assert_eq!(normalize_genre("Beat'em Up"), "Beat'em Up");
-        assert_eq!(normalize_genre("Board & Card"), "Board & Card");
+        assert_eq!(normalize_genre("Gambling"), "Gambling");
+        assert_eq!(normalize_genre("Tabletop"), "Tabletop");
+        assert_eq!(normalize_genre("Mahjong"), "Mahjong");
         assert_eq!(normalize_genre("Driving"), "Driving");
         assert_eq!(normalize_genre("Educational"), "Educational");
         assert_eq!(normalize_genre("Fighting"), "Fighting");
@@ -201,12 +240,28 @@ mod tests {
     }
 
     #[test]
-    fn arcade_casino_tabletop() {
-        assert_eq!(normalize_genre("Casino"), "Board & Card");
-        assert_eq!(normalize_genre("Slot Machine"), "Board & Card");
-        assert_eq!(normalize_genre("Tabletop"), "Board & Card");
-        assert_eq!(normalize_genre("Board Game"), "Board & Card");
-        assert_eq!(normalize_genre("Cards"), "Board & Card");
+    fn arcade_gambling_tabletop_mahjong() {
+        // Gambling — first segment carries it (Gambling / *, Slot Machine / *).
+        assert_eq!(normalize_genre("Casino"), "Gambling");
+        assert_eq!(normalize_genre("Slot Machine"), "Gambling");
+        assert_eq!(normalize_genre("Slot Machine / Video Slot"), "Gambling");
+        assert_eq!(normalize_genre("Gambling / Cards"), "Gambling");
+        // Tabletop — board/chess/shanghai/hanafuda, non-gambling cards.
+        assert_eq!(normalize_genre("Tabletop"), "Tabletop");
+        assert_eq!(normalize_genre("Board Game"), "Tabletop");
+        assert_eq!(normalize_genre("Board Game / Chess Machine"), "Tabletop");
+        assert_eq!(normalize_genre("Tabletop / Shanghai"), "Tabletop");
+        assert_eq!(normalize_genre("Tabletop / Hanafuda"), "Tabletop");
+        assert_eq!(normalize_genre("Cards"), "Tabletop");
+        // Mahjong — split out of the Tabletop sub-category by the full-string check.
+        assert_eq!(normalize_genre("Tabletop / Mahjong"), "Mahjong");
+        assert_eq!(normalize_genre("Mahjong"), "Mahjong");
+        // Device categories that merely mention mahjong stay "Other" (overmatch guard).
+        assert_eq!(normalize_genre("Game Console / Home Mahjong"), "Other");
+        assert_eq!(
+            normalize_genre("Handheld / Plug n' Play TV Game / Mahjong"),
+            "Other"
+        );
     }
 
     #[test]
@@ -246,9 +301,9 @@ mod tests {
 
     #[test]
     fn console_board_card_variants() {
-        assert_eq!(normalize_genre("Board"), "Board & Card");
-        assert_eq!(normalize_genre("Card"), "Board & Card");
-        assert_eq!(normalize_genre("Gambling"), "Board & Card");
+        assert_eq!(normalize_genre("Board"), "Tabletop");
+        assert_eq!(normalize_genre("Card"), "Tabletop");
+        assert_eq!(normalize_genre("Gambling"), "Gambling");
     }
 
     #[test]

@@ -11,10 +11,11 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::community::{CommunityEntry, CommunityFile};
+use replay_control_core::genre::normalize_genre;
 use replay_control_core::library::resource_kind;
 use replay_control_core::title_utils;
 
-use crate::{normalize_console_genre, normalize_title, sha256_resource_id};
+use crate::{normalize_title, sha256_resource_id};
 
 /// Walk `data/community/*.json` and write community entries into
 /// `canonical_game`, `rom_entry`, and `catalog_game_resource`. Returns the
@@ -165,7 +166,7 @@ fn insert_entry(conn: &Connection, system: &str, entry: &CommunityEntry) -> rusq
     }
     let coop_val: Option<i64> = entry.coop.map(|b| b as i64);
     let genre = entry.genre.clone().unwrap_or_default();
-    let normalized_genre = normalize_console_genre(&genre);
+    let normalized_genre = normalize_genre(&genre);
     conn.execute(
         "INSERT INTO canonical_game \
          (system, display_name, year, genre, developer, publisher, players, coop, rating, normalized_genre, description, source) \
@@ -725,7 +726,7 @@ mod tests {
         assert_eq!(genre, "Action / Platformer");
         assert!(
             !normalized_genre.is_empty(),
-            "normalized_genre should pass through normalize_console_genre, got empty"
+            "normalized_genre should pass through normalize_genre, got empty"
         );
     }
 
