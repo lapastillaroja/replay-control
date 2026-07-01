@@ -89,27 +89,55 @@ pub fn DeveloperPage() -> impl IntoView {
     let (loading_more, set_loading_more) = signal(false);
     let (offset, set_offset) = signal(PAGE_SIZE);
 
-    // First page resource — depends on all filter signals.
+    // First page resource — depends on all filter signals. Tracked as a struct,
+    // not a tuple: Rust tuples only implement `PartialEq` up to 12 elements, and
+    // `Resource` needs it to detect input changes.
+    #[derive(Clone, PartialEq)]
+    struct DeveloperParams {
+        developer: String,
+        system: String,
+        hide_hacks: bool,
+        hide_translations: bool,
+        hide_betas: bool,
+        hide_clones: bool,
+        genre: String,
+        multiplayer_only: bool,
+        min_rating: Option<f32>,
+        min_year: Option<u16>,
+        max_year: Option<u16>,
+        has_achievements: bool,
+    }
     let first_page = Resource::new(
-        move || {
-            (
-                dev.get(),
-                system_filter.get(),
-                filters.hide_hacks.get(),
-                filters.hide_translations.get(),
-                filters.hide_betas.get(),
-                filters.hide_clones.get(),
-                debounced_genre.get(),
-                filters.multiplayer_only.get(),
-                filters.min_rating.get(),
-                filters.min_year.get(),
-                filters.max_year.get(),
-                filters.has_achievements.get(),
-            )
+        move || DeveloperParams {
+            developer: dev.get(),
+            system: system_filter.get(),
+            hide_hacks: filters.hide_hacks.get(),
+            hide_translations: filters.hide_translations.get(),
+            hide_betas: filters.hide_betas.get(),
+            hide_clones: filters.hide_clones.get(),
+            genre: debounced_genre.get(),
+            multiplayer_only: filters.multiplayer_only.get(),
+            min_rating: filters.min_rating.get(),
+            min_year: filters.min_year.get(),
+            max_year: filters.max_year.get(),
+            has_achievements: filters.has_achievements.get(),
         },
-        move |(developer, system, hh, ht, hb, hc, gf, mp, mr, miny, maxy, ha)| {
+        move |p| {
             server_fns::get_developer_games(
-                developer, system, 0, PAGE_SIZE, hh, ht, hb, hc, mp, gf, mr, miny, maxy, ha,
+                p.developer,
+                p.system,
+                0,
+                PAGE_SIZE,
+                p.hide_hacks,
+                p.hide_translations,
+                p.hide_betas,
+                p.hide_clones,
+                p.multiplayer_only,
+                p.genre,
+                p.min_rating,
+                p.min_year,
+                p.max_year,
+                p.has_achievements,
             )
         },
     );

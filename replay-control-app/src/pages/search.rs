@@ -136,25 +136,54 @@ pub fn SearchPage() -> impl IntoView {
     }
 
     // Search results resource.
+    // Tracked as a struct, not a tuple: Rust tuples only implement `PartialEq`
+    // up to 12 elements, and `Resource` needs it to detect input changes.
+    #[derive(Clone, PartialEq)]
+    struct SearchParams {
+        query: String,
+        hide_hacks: bool,
+        hide_translations: bool,
+        hide_betas: bool,
+        hide_clones: bool,
+        multiplayer_only: bool,
+        coop_only: bool,
+        has_achievements: bool,
+        genre: String,
+        min_rating: Option<f32>,
+        min_year: Option<u16>,
+        max_year: Option<u16>,
+    }
     let results = Resource::new(
-        move || {
-            (
-                debounced_query.get(),
-                filters.hide_hacks.get(),
-                filters.hide_translations.get(),
-                filters.hide_betas.get(),
-                filters.hide_clones.get(),
-                filters.multiplayer_only.get(),
-                filters.coop_only.get(),
-                filters.has_achievements.get(),
-                debounced_genre.get(),
-                filters.min_rating.get(),
-                filters.min_year.get(),
-                filters.max_year.get(),
-            )
+        move || SearchParams {
+            query: debounced_query.get(),
+            hide_hacks: filters.hide_hacks.get(),
+            hide_translations: filters.hide_translations.get(),
+            hide_betas: filters.hide_betas.get(),
+            hide_clones: filters.hide_clones.get(),
+            multiplayer_only: filters.multiplayer_only.get(),
+            coop_only: filters.coop_only.get(),
+            has_achievements: filters.has_achievements.get(),
+            genre: debounced_genre.get(),
+            min_rating: filters.min_rating.get(),
+            min_year: filters.min_year.get(),
+            max_year: filters.max_year.get(),
         },
-        |(q, hh, ht, hb, hc, mp, co, ha, g, mr, miny, maxy)| {
-            server_fns::global_search(q, hh, ht, hb, hc, mp, co, ha, mr, g, 3, miny, maxy)
+        |p| {
+            server_fns::global_search(
+                p.query,
+                p.hide_hacks,
+                p.hide_translations,
+                p.hide_betas,
+                p.hide_clones,
+                p.multiplayer_only,
+                p.coop_only,
+                p.has_achievements,
+                p.min_rating,
+                p.genre,
+                3,
+                p.min_year,
+                p.max_year,
+            )
         },
     );
 
