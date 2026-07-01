@@ -1,0 +1,80 @@
+/* Collections — browse the _favorites folder tree as navigable playlists. */
+
+.collections-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--control-gap-tight, 0.25rem);
+    margin-bottom: 1rem;
+}
+
+.collections-breadcrumb .crumb {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font: inherit;
+    padding: 0.2em 0.3em;
+}
+
+.collections-breadcrumb .crumb:hover {
+    text-decoration: underline;
+}
+
+.collections-breadcrumb .crumb-sep {
+    color: var(--text-secondary);
+    padding: 0 0.1em;
+}
+
+.collections-folder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--control-gap-compact, 0.75rem);
+    margin-bottom: 1.5rem;
+}
+
+.collection-folder {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1rem;
+    background: var(--surface, var(--bg));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-medium, 8px);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--motion-base), border-color var(--motion-base);
+}
+
+.collection-folder:hover {
+    border-color: var(--accent);
+}
+
+.collection-folder-icon {
+    font-size: 1.4em;
+    line-height: 1;
+}
+
+.collection-folder-name {
+    flex: 1;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collection-folder-count {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    background: var(--border);
+    border-radius: 999px;
+    padding: 0.1em 0.6em;
+}
+
+.collections-game-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--control-gap-compact, 0.75rem);
+    justify-items: center;
+}

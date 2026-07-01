@@ -300,6 +300,9 @@ where
                     <button class="toggle-btn" on:click=move |_| grouped_view.update(|v| *v = !*v)>
                         {toggle_label.clone()}
                     </button>
+                    <A href="/collections" attr:class="toggle-btn">
+                        {move || format!("\u{1F4C1} {}", t(i18n.locale.get(), Key::CollectionsOpen))}
+                    </A>
                 </div>
 
                 <div class="fav-filter-bar">

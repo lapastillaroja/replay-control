@@ -47,6 +47,12 @@ pub enum Key {
     FavoritesAll,
     FavoritesRemoveConfirm,
 
+    // Collections (browse the _favorites folder tree)
+    CollectionsTitle,
+    CollectionsOpen,
+    CollectionsLoading,
+    CollectionsEmpty,
+
     // Organize favorites
     OrganizeTitle,
     OrganizeDescription,
