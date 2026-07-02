@@ -1,0 +1,51 @@
+/* Collections page — favorites `_favorites/` folder tree.
+   Reuses the My Games idiom: chip row (.my-games-tabs / .my-games-tab) + card
+   grid (.my-games-grid / .my-games-card). Only breadcrumb + chip count are
+   bespoke here. */
+
+.collections-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--control-gap-tight, 0.25rem);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.collections-breadcrumb .crumb {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    padding: 0.2em 0.35em;
+    border-radius: var(--radius-sm);
+}
+
+.collections-breadcrumb .crumb:hover {
+    color: var(--text);
+}
+
+.collections-breadcrumb .crumb.active {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.collections-breadcrumb .crumb-sep {
+    color: var(--text-secondary);
+    opacity: 0.6;
+    padding: 0 0.1em;
+}
+
+.collections-chips {
+    margin-bottom: 1.25rem;
+}
+
+/* Count badge inside a collection chip */
+.collection-chip-count {
+    font-size: 0.7rem;
+    opacity: 0.75;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 999px;
+    padding: 0.1em 0.55em;
+}

@@ -45,6 +45,7 @@ use i18n::{Key, provide_i18n, t, use_i18n};
 use pages::ErrorDisplay;
 use pages::access::AccessSecurityPage;
 use pages::board::BoardPage;
+use pages::collections::CollectionsPage;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::first_setup::FirstSetupPage;
@@ -221,6 +222,7 @@ fn AppChrome() -> impl IntoView {
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
                         <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
+                        <Route path=path!("/collections") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><CollectionsPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
                         <Route path=path!("/settings") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SettingsPage /></ErrorBoundary> } />
