@@ -30,7 +30,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.4",
     "vite": "^7.3.6"
   },
   "engines": {
