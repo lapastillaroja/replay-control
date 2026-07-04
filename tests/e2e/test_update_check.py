@@ -13,6 +13,7 @@ from conftest import (
     SEL_BANNER,
     SEL_CHANNEL_SELECT,
     click_check,
+    confirm_in_app_dialog,
     get_pi_version,
     goto_settings,
     set_channel,
@@ -43,7 +44,10 @@ class TestUpdateBanner:
         wait_for_banner(page)
 
         expect(page.locator("a").filter(has_text="Update Now")).to_be_visible()
-        expect(page.locator(f"{SEL_BANNER} a").filter(has_text="GitHub")).to_be_visible()
+        # Default channel is beta, so the changelog shows every entry newer
+        # than current (stable + beta) — one "View on GitHub" link per entry,
+        # so this must not be a strict-mode (exactly-one) match.
+        expect(page.locator(f"{SEL_BANNER} a").filter(has_text="GitHub").first).to_be_visible()
         expect(page.locator(".update-skip-link")).to_be_visible()
 
 
@@ -54,7 +58,10 @@ class TestSkipVersion:
         click_check(page)
         banner = wait_for_banner(page)
 
+        # Skip is guarded by a confirmation dialog (an easy mis-tap with no
+        # un-skip UI), so clicking the link only opens it.
         page.locator(".update-skip-link").click()
+        confirm_in_app_dialog(page, "Skip this version")
         expect(banner).not_to_be_visible(timeout=5000)
 
 
@@ -101,7 +108,11 @@ class TestCheckButton:
 
         banner = wait_for_banner(page)
         assert MOCK_STABLE_VERSION in banner.text_content()
-        assert "beta" not in banner.text_content().lower()
+        # Betas are hidden behind a toggle on the stable channel, not absent
+        # from the DOM — the toggle's own label ("Show beta releases") always
+        # contains the word "beta", so assert the beta *version* is what's
+        # actually hidden rather than the substring "beta" anywhere at all.
+        assert MOCK_BETA_VERSION not in banner.text_content()
 
 
 class TestVersionDisplay:

@@ -838,7 +838,18 @@ fn DataManagementSection(
             }>
                 <RescanActionCard
                     rescanning=rescanning
-                    result=result_message
+                    // Rebuild/rescan/identity-matching all funnel their terminal
+                    // message into the same result_message signal (see
+                    // dispatch_terminal — an Identity pass can't be attributed to
+                    // just one of the two triggers), and the Rebuild card below
+                    // shares it too. Only one of the two cards is ever the
+                    // "current" one for this message: show it here when Advanced
+                    // is collapsed (this is the only card visible), and let it
+                    // move to the Rebuild card once Advanced is open — otherwise
+                    // the same text renders twice on the page simultaneously.
+                    result=Signal::derive(move || {
+                        if show_advanced.get() { None } else { result_message.get() }
+                    })
                     label_key=Key::MetadataRescanGameLibrary
                     rescanning_key=Key::MetadataRescanningGameLibrary
                     hint_key=Key::MetadataRescanGameLibraryHint
@@ -1011,7 +1022,7 @@ fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
 #[component]
 fn RescanActionCard(
     #[prop(into)] rescanning: Signal<bool>,
-    result: RwSignal<Option<String>>,
+    #[prop(into)] result: Signal<Option<String>>,
     label_key: Key,
     rescanning_key: Key,
     hint_key: Key,
