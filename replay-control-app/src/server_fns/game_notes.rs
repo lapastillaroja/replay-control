@@ -6,7 +6,7 @@ use replay_control_core_server::user_data_db::UserDataDb;
 pub async fn get_game_note(
     system: String,
     rom_filename: String,
-) -> Result<Option<(String, u64)>, ServerFnError> {
+) -> Result<Option<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let result = state
         .user_data_reader

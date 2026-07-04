@@ -69,7 +69,7 @@ impl UserDataDb {
         "game_videos",
         "game_manual_resource",
         "game_resource_link",
-        "game_notes",
+        "game_note",
     ];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
@@ -178,11 +178,10 @@ impl UserDataDb {
                 CREATE INDEX IF NOT EXISTS game_resource_link_idx_url
                     ON game_resource_link(system, rom_filename, url);
 
-                CREATE TABLE IF NOT EXISTS game_notes (
+                CREATE TABLE IF NOT EXISTS game_note (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
                     note TEXT NOT NULL,
-                    updated_at INTEGER NOT NULL,
                     PRIMARY KEY (system, rom_filename)
                 );",
         )
@@ -690,24 +689,19 @@ impl UserDataDb {
         Ok(())
     }
 
-    /// Delete all user data entries for a ROM (box art overrides, videos, manuals, links).
     /// Get the note for a single game. Returns None if no note exists.
     pub fn get_game_note(
         conn: &Connection,
         system: &str,
         rom_filename: &str,
-    ) -> Result<Option<(String, u64)>> {
+    ) -> Result<Option<String>> {
         conn.query_row(
-            "SELECT note, updated_at FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            "SELECT note FROM game_note WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
-            |row| {
-                let note: String = row.get(0)?;
-                let updated_at: i64 = row.get(1)?;
-                Ok((note, updated_at as u64))
-            },
+            |row| row.get(0),
         )
         .optional()
-        .map_err(|e| Error::Other(format!("Failed to query game_notes: {e}")))
+        .map_err(|e| Error::Other(format!("Failed to query game_note: {e}")))
     }
 
     /// Set or update the note for a game.
@@ -717,15 +711,10 @@ impl UserDataDb {
         rom_filename: &str,
         note: &str,
     ) -> Result<()> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-
         conn.execute(
-            "INSERT OR REPLACE INTO game_notes (system, rom_filename, note, updated_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![system, rom_filename, note, now],
+            "INSERT OR REPLACE INTO game_note (system, rom_filename, note)
+             VALUES (?1, ?2, ?3)",
+            params![system, rom_filename, note],
         )
         .map_err(|e| Error::Other(format!("Failed to set game_note: {e}")))?;
         Ok(())
@@ -734,13 +723,14 @@ impl UserDataDb {
     /// Remove the note for a game.
     pub fn clear_game_note(conn: &Connection, system: &str, rom_filename: &str) -> Result<()> {
         conn.execute(
-            "DELETE FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            "DELETE FROM game_note WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         )
         .map_err(|e| Error::Other(format!("Failed to clear game_note: {e}")))?;
         Ok(())
     }
 
+    /// Delete all user data entries for a ROM (box art overrides, videos, manuals, links).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -759,7 +749,7 @@ impl UserDataDb {
             params![system, rom_filename],
         );
         let _ = conn.execute(
-            "DELETE FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            "DELETE FROM game_note WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
     }
@@ -791,10 +781,10 @@ impl UserDataDb {
             tracing::warn!("Failed to update game_resource_link: {e}");
         }
         if let Err(e) = conn.execute(
-            "UPDATE game_notes SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            "UPDATE game_note SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
             params![system, old_filename, new_filename],
         ) {
-            tracing::warn!("Failed to update game_notes: {e}");
+            tracing::warn!("Failed to update game_note: {e}");
         }
     }
 }

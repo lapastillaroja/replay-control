@@ -860,5 +860,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameNotesPlaceholder => "このゲームについてのメモを追加...",
         Key::GameNotesSave => "保存",
         Key::GameNotesSaving => "保存中...",
+        Key::GameNotesSaved => "保存しました",
+        Key::GameNotesError => "メモの保存に失敗しました。",
     }
 }

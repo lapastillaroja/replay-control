@@ -768,4 +768,6 @@ pub enum Key {
     GameNotesPlaceholder,
     GameNotesSave,
     GameNotesSaving,
+    GameNotesSaved,
+    GameNotesError,
 }

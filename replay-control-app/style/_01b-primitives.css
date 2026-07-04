@@ -1120,14 +1120,14 @@
     margin: var(--subsection-title-margin);
 }
 
-:where(.manual-error, .video-add-error, .setup-task-error, .game-action-error) {
+:where(.manual-error, .video-add-error, .setup-task-error, .game-action-error, .game-notes-error) {
     margin-top: var(--error-message-margin-top, var(--message-margin-top-tight));
     color: var(--error);
     font-size: var(--error-message-font-size);
     text-align: var(--error-message-text-align, inherit);
 }
 
-:where(.manual-error, .video-add-error, .setup-task-error) {
+:where(.manual-error, .video-add-error, .setup-task-error, .game-notes-error) {
     --error-message-font-size: var(--error-message-font-size-compact);
 }
 
@@ -1137,13 +1137,13 @@
     --error-message-text-align: center;
 }
 
-:where(.manual-success, .video-add-success, .settings-saved, .manage-action-result) {
+:where(.manual-success, .video-add-success, .settings-saved, .manage-action-result, .game-notes-saved) {
     margin-top: var(--success-message-margin-top, var(--message-margin-top-tight));
     color: var(--success);
     font-size: var(--success-message-font-size);
 }
 
-:where(.manual-success, .video-add-success) {
+:where(.manual-success, .video-add-success, .game-notes-saved) {
     --success-message-font-size: var(--success-message-font-size-compact);
 }
 

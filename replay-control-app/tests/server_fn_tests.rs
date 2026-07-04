@@ -1045,3 +1045,61 @@ async fn sfn_get_rom_detail_still_errors_for_missing_real_game() {
         "missing real game should still error"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_game_note_set_get_clear_round_trip() {
+    setup();
+    let env = TestEnv::new().await;
+
+    let (_, get_body) = invoke_server_fn_response::<server_fns::GetGameNote>(
+        test_router(env.state.clone()),
+        form_body(&[("system", "nintendo_nes"), ("rom_filename", "Zelda.nes")]),
+    )
+    .await;
+    assert!(
+        get_body.contains("null"),
+        "no note saved yet: {get_body}"
+    );
+
+    let (set_status, _) = invoke_server_fn_response::<server_fns::SetGameNote>(
+        test_router(env.state.clone()),
+        form_body(&[
+            ("system", "nintendo_nes"),
+            ("rom_filename", "Zelda.nes"),
+            ("note", "great soundtrack"),
+        ]),
+    )
+    .await;
+    assert_eq!(set_status, StatusCode::OK, "SetGameNote should return 200");
+
+    let (_, get_body_after_set) = invoke_server_fn_response::<server_fns::GetGameNote>(
+        test_router(env.state.clone()),
+        form_body(&[("system", "nintendo_nes"), ("rom_filename", "Zelda.nes")]),
+    )
+    .await;
+    assert!(
+        get_body_after_set.contains("great soundtrack"),
+        "saved note text should survive the round trip: {get_body_after_set}"
+    );
+
+    let (clear_status, _) = invoke_server_fn_response::<server_fns::ClearGameNote>(
+        test_router(env.state.clone()),
+        form_body(&[("system", "nintendo_nes"), ("rom_filename", "Zelda.nes")]),
+    )
+    .await;
+    assert_eq!(
+        clear_status,
+        StatusCode::OK,
+        "ClearGameNote should return 200"
+    );
+
+    let (_, get_body_after_clear) = invoke_server_fn_response::<server_fns::GetGameNote>(
+        test_router(env.state.clone()),
+        form_body(&[("system", "nintendo_nes"), ("rom_filename", "Zelda.nes")]),
+    )
+    .await;
+    assert!(
+        get_body_after_clear.contains("null"),
+        "note should be gone after clear: {get_body_after_clear}"
+    );
+}

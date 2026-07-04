@@ -19,9 +19,11 @@ pub fn GameNotesSection(
 
     let note_text = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
+    let save_error = RwSignal::new(false);
+    let saved = RwSignal::new(false);
 
     let _sync = Effect::new(move || {
-        if let Some(Ok(Some((text, _)))) = note_resource.get() {
+        if let Some(Ok(Some(text))) = note_resource.get() {
             note_text.set(text);
         }
     });
@@ -29,13 +31,19 @@ pub fn GameNotesSection(
     let do_save = move || {
         let text = note_text.get_untracked();
         saving.set(true);
+        save_error.set(false);
+        saved.set(false);
         let sys = system.get_value();
         let fname = rom_filename.get_value();
         leptos::task::spawn_local(async move {
-            if text.trim().is_empty() {
-                let _ = server_fns::clear_game_note(sys, fname).await;
+            let result = if text.trim().is_empty() {
+                server_fns::clear_game_note(sys, fname).await
             } else {
-                let _ = server_fns::set_game_note(sys, fname, text).await;
+                server_fns::set_game_note(sys, fname, text).await
+            };
+            match result {
+                Ok(()) => saved.set(true),
+                Err(_) => save_error.set(true),
             }
             saving.set(false);
         });
@@ -73,6 +81,12 @@ pub fn GameNotesSection(
                         }}
                     </button>
                 </div>
+                <Show when=move || save_error.get()>
+                    <p class="game-notes-error">{move || t(i18n.locale.get(), Key::GameNotesError)}</p>
+                </Show>
+                <Show when=move || saved.get()>
+                    <p class="game-notes-saved">{move || t(i18n.locale.get(), Key::GameNotesSaved)}</p>
+                </Show>
             </div>
         </section>
     }
