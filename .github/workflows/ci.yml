@@ -66,11 +66,14 @@ jobs:
         run: sudo apt-get install -y binaryen
 
       - name: Build (x86_64)
+        # Builds the catalog from replay-control-core/fixtures/ (BUILD_CATALOG_STUB=1)
+        # instead of downloading real data — this job validates that the build
+        # pipeline itself works, not catalog coverage, so it doesn't need live
+        # third-party hosts or a TGDB key. test-full.yml builds from real data
+        # (on push + nightly) to catch upstream data drift.
         run: ./build.sh
         env:
-          # Build the full catalog (strict preflight), same as build-release.yml
-          # and test-full.yml. Without this the keyless build hard-fails.
-          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
+          BUILD_CATALOG_STUB: "1"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
