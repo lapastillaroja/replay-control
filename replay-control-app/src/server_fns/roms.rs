@@ -9,7 +9,10 @@ use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::recents::add_recent;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::roms::list_rom_group;
+use replay_control_core_server::roms::{
+    FileKind, GroupedFile, check_rename_allowed, delete_rom_group, detect_disc_set,
+    list_data_dir_contents, list_rom_group, rename_rom as rename_rom_file,
+};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::screenshots;
 #[cfg(feature = "ssr")]
@@ -136,7 +139,6 @@ pub struct DiscInfoDto {
 pub struct RomFileGroup {
     pub files: Vec<RomFileEntry>,
     pub total_size: u64,
-    pub file_count: usize,
 }
 
 /// A single file entry in a ROM group summary.
@@ -144,7 +146,11 @@ pub struct RomFileGroup {
 pub struct RomFileEntry {
     pub filename: String,
     pub size_bytes: u64,
-    pub kind: String,
+    /// Set when this entry summarizes a whole companion directory with more
+    /// files than the display cap: the number of files inside. The client
+    /// renders the localized "N files" suffix from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir_file_count: Option<usize>,
 }
 
 // clippy::too_many_arguments — Leptos server functions require flat parameter lists
@@ -322,19 +328,15 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let base_title = replay_control_core::title_utils::base_title(&game.display_name);
 
     // Determine rename restrictions.
-    let (rename_allowed, rename_reason) = replay_control_core_server::roms::check_rename_allowed(
-        &storage,
-        &system,
-        entry.rom_path.trim_start_matches('/'),
-    );
+    let (rename_allowed, rename_reason) =
+        check_rename_allowed(&storage, &system, entry.rom_path.trim_start_matches('/'));
 
     // Detect multi-disc set.
-    let disc_info = replay_control_core_server::roms::detect_disc_set(&storage, &system, &filename)
-        .map(|di| DiscInfoDto {
-            disc_number: di.disc_number,
-            total_discs: di.total_discs,
-            siblings: di.siblings,
-        });
+    let disc_info = detect_disc_set(&storage, &system, &filename).map(|di| DiscInfoDto {
+        disc_number: di.disc_number,
+        total_discs: di.total_discs,
+        siblings: di.siblings,
+    });
 
     let library_resources = load_library_resources(&state, &system, &filename).await;
 
@@ -523,18 +525,15 @@ pub async fn get_rom_file_group(
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
-    let mut group =
-        replay_control_core_server::roms::list_rom_group(&storage, &system, &relative_path)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut group = list_rom_group(&storage, &system, &relative_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // If this ROM is part of a multi-disc set (no M3U), include sibling discs.
     let rom_filename = std::path::Path::new(&relative_path)
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
-    if let Some(disc_info) =
-        replay_control_core_server::roms::detect_disc_set(&storage, &system, &rom_filename)
-    {
+    if let Some(disc_info) = detect_disc_set(&storage, &system, &rom_filename) {
         let system_dir = storage.system_roms_dir(&system);
         for sibling in &disc_info.siblings {
             if *sibling == rom_filename {
@@ -545,45 +544,62 @@ pub async fn get_rom_file_group(
                 let size = std::fs::metadata(&sibling_path)
                     .map(|m| m.len())
                     .unwrap_or(0);
-                group.push(replay_control_core_server::roms::GroupedFile {
+                group.push(GroupedFile {
                     path: sibling_path,
                     size_bytes: size,
-                    kind: replay_control_core_server::roms::FileKind::Disc,
+                    kind: FileKind::Disc,
                 });
             }
         }
     }
 
     let total_size: u64 = group.iter().map(|g| g.size_bytes).sum();
-    let file_count = group.len();
 
-    let files = group
-        .into_iter()
-        .map(|g| {
-            let filename = g
-                .path
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| g.path.display().to_string());
-            let kind = match g.kind {
-                replay_control_core_server::roms::FileKind::Primary => "primary",
-                replay_control_core_server::roms::FileKind::Disc => "disc",
-                replay_control_core_server::roms::FileKind::Companion => "companion",
-                replay_control_core_server::roms::FileKind::DataDir => "directory",
-            };
-            RomFileEntry {
-                filename,
-                size_bytes: g.size_bytes,
-                kind: kind.to_string(),
+    // How many individual files a directory entry expands into before the
+    // dialog shows a count summary instead — a ScummVM game folder can hold
+    // hundreds of files.
+    const DATA_DIR_DISPLAY_CAP: usize = 8;
+
+    let mut files = Vec::with_capacity(group.len());
+    for g in group {
+        let name = g
+            .path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| g.path.display().to_string());
+
+        // A DataDir (e.g. a MAME CHD companion folder, a ScummVM game
+        // folder) is one GroupedFile representing a whole directory. Expand
+        // it into its individual files so the delete confirmation shows what
+        // will actually be removed, unless there are too many to usefully
+        // list — then one summary row carrying the true file count.
+        if g.kind == FileKind::DataDir {
+            let (contents, count) = list_data_dir_contents(&g.path, DATA_DIR_DISPLAY_CAP);
+            if count > contents.len() {
+                files.push(RomFileEntry {
+                    filename: format!("{name}/"),
+                    size_bytes: g.size_bytes,
+                    dir_file_count: Some(count),
+                });
+            } else {
+                for (relative, size_bytes) in contents {
+                    files.push(RomFileEntry {
+                        filename: format!("{name}/{}", relative.display()),
+                        size_bytes,
+                        dir_file_count: None,
+                    });
+                }
             }
-        })
-        .collect();
+        } else {
+            files.push(RomFileEntry {
+                filename: name,
+                size_bytes: g.size_bytes,
+                dir_file_count: None,
+            });
+        }
+    }
 
-    Ok(RomFileGroup {
-        files,
-        total_size,
-        file_count,
-    })
+    Ok(RomFileGroup { files, total_size })
 }
 
 #[server(prefix = "/sfn")]
@@ -600,15 +616,13 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
         .unwrap_or_default();
 
     // Check for multi-disc set — include siblings in the deletion.
-    let disc_siblings: Vec<String> =
-        replay_control_core_server::roms::detect_disc_set(&storage, &system, &rom_filename)
-            .map(|di| di.siblings)
-            .unwrap_or_default();
+    let disc_siblings: Vec<String> = detect_disc_set(&storage, &system, &rom_filename)
+        .map(|di| di.siblings)
+        .unwrap_or_default();
 
     // Delete the primary ROM group.
-    let report =
-        replay_control_core_server::roms::delete_rom_group(&storage, &system, &relative_path)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let report = delete_rom_group(&storage, &system, &relative_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if !report.errors.is_empty() {
         tracing::warn!("Errors during ROM group delete: {:?}", report.errors);
@@ -620,9 +634,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
             continue; // Already deleted as part of the primary group.
         }
         let sibling_rel = format!("roms/{system}/{sibling}");
-        if let Err(e) =
-            replay_control_core_server::roms::delete_rom_group(&storage, &system, &sibling_rel)
-        {
+        if let Err(e) = delete_rom_group(&storage, &system, &sibling_rel) {
             tracing::warn!("Failed to delete disc sibling {sibling}: {e}");
         }
     }
@@ -818,9 +830,8 @@ pub async fn rename_rom(
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let new_path =
-        replay_control_core_server::roms::rename_rom(&storage, &relative_path, &new_filename)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let new_path = rename_rom_file(&storage, &system, &relative_path, &new_filename)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Phase 3: Rename cascade — update all associated data.
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;

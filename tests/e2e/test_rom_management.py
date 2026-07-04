@@ -4,9 +4,9 @@ End-to-end coverage for ROM rename and delete on the game-detail page.
 Both are destructive library operations (admin-gated on device; the standalone
 container bypasses auth) that mutate the filesystem under roms/<system>/ and the
 library. These drive the inline rename UI (`.game-rename-inline`) and the
-two-step delete confirm (`.game-action-delete` -> `.game-action-delete-confirm`),
-then assert the on-disk effect. Container only — mutates `/media/usb`. The `page`
-fixture also asserts no JS console errors.
+delete action's shared confirm dialog (`.game-action-delete` -> the app-wide
+`.app-confirm-dialog`), then assert the on-disk effect. Container only —
+mutates `/media/usb`. The `page` fixture also asserts no JS console errors.
 """
 
 import pytest
@@ -15,6 +15,7 @@ from playwright.sync_api import expect
 from conftest import (
     CONTAINER,
     ROMS_DIR,
+    confirm_in_app_dialog,
     goto_hydrated,
     path_exists,
     wait_until,
@@ -54,9 +55,7 @@ def test_delete_rom_removes_file_and_returns_to_system(page, seeded_game):
 
     goto_hydrated(page, seeded_game["detail_url"])
     page.locator(".game-action-delete").click()
-    confirm = page.locator(".game-action-delete-confirm")
-    expect(confirm).to_be_visible(timeout=5000)
-    confirm.click()
+    confirm_in_app_dialog(page, "Delete")
 
     # Delete navigates back to the system ROM list.
     page.wait_for_url(lambda url: url.rstrip("/").endswith(f"/games/{system}"), timeout=10000)

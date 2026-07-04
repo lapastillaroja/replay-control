@@ -120,7 +120,7 @@ pub async fn list_roms(
     let roms_root = storage.roms_dir();
 
     let raw = walk_raw_roms_blocking(system_dir, roms_root.clone(), system).await?;
-    let raw = resolve_m3u_containers_blocking(raw, roms_root, system).await;
+    let raw = resolve_rom_companions_blocking(raw, roms_root, system).await;
     let mut roms = materialize_rom_entry(system, raw).await;
 
     roms.sort_by(|a, b| {
@@ -262,7 +262,9 @@ async fn walk_raw_roms_blocking(
     })
 }
 
-async fn resolve_m3u_containers_blocking(
+/// Runs the multi-file container resolution passes (M3U discs, MAME-family
+/// CHD companion directories) on the blocking pool in one round-trip.
+async fn resolve_rom_companions_blocking(
     raw: Vec<RawRom>,
     roms_root: PathBuf,
     system: &'static System,
@@ -271,13 +273,14 @@ async fn resolve_m3u_containers_blocking(
         let mut raw = raw;
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             resolve_m3u_containers(&mut raw, &roms_root, system);
+            resolve_arcade_chd_companions(&mut raw, &roms_root, system);
         }));
         raw
     };
     tokio::task::spawn_blocking(resolve)
         .await
         .unwrap_or_else(|e| {
-            tracing::warn!("m3u container resolution task join failed: {e}");
+            tracing::warn!("ROM container resolution task join failed: {e}");
             Vec::new()
         })
 }
@@ -308,8 +311,15 @@ pub fn delete_rom(storage: &StorageLocation, relative_path: &str) -> Result<()> 
 }
 
 /// Rename a ROM file.
+///
+/// Also renames the MAME-family CHD companion directory (see
+/// [`arcade_chd_companion_dir`]), if the ROM has one, so it keeps resolving
+/// under the new name — otherwise a rename would silently orphan it, undoing
+/// both the size-accounting fix (issue #93) and the delete-cleanup fix
+/// (issue #84) for that convention.
 pub fn rename_rom(
     storage: &StorageLocation,
+    system: &str,
     relative_path: &str,
     new_filename: &str,
 ) -> Result<PathBuf> {
@@ -322,8 +332,37 @@ pub fn rename_rom(
         .parent()
         .unwrap_or(Path::new("/"))
         .join(new_filename);
+    let old_companion_dir = arcade_chd_companion_dir(system, &full_path);
+    let companion_move = old_companion_dir.and_then(|old_dir| {
+        let new_stem = new_path.file_stem().and_then(|s| s.to_str())?;
+        let new_dir = new_path.parent().unwrap_or(Path::new("/")).join(new_stem);
+        (new_dir != old_dir).then_some((old_dir, new_dir))
+    });
+
+    // Preflight: if the companion directory's destination is already taken,
+    // fail before touching anything, rather than after the primary file has
+    // already moved (which would leave the rename half-applied).
+    if let Some((_, new_dir)) = &companion_move
+        && new_dir.exists()
+    {
+        return Err(Error::Other(format!(
+            "Cannot rename: {} already exists",
+            new_dir.display()
+        )));
+    }
 
     std::fs::rename(&full_path, &new_path).map_err(|e| Error::io(&full_path, e))?;
+
+    if let Some((old_dir, new_dir)) = companion_move
+        && let Err(e) = std::fs::rename(&old_dir, &new_dir)
+    {
+        // The primary file already moved; roll it back so the pair stays
+        // consistent (either both moved or neither did) rather than leaving
+        // the ROM renamed with an orphaned, stale-named companion directory.
+        let _ = std::fs::rename(&new_path, &full_path);
+        return Err(Error::io(&old_dir, e));
+    }
+
     Ok(new_path)
 }
 
@@ -536,14 +575,13 @@ pub fn list_rom_group(
     } else if ext == "chd" {
         // Single CHD: check for SBI companions.
         add_sbi_companion(&full_path, &mut group);
-
-        // For arcade_dc: check for companion GD-ROM CHD files.
-        if system == "arcade_dc" {
-            add_arcade_dc_companion_chds(&full_path, parent_dir, &mut group);
-        }
-    } else if ext == "zip" && system == "arcade_dc" {
-        // Arcade ZIP: check for companion GD-ROM CHD files.
-        add_arcade_dc_companion_chds(&full_path, parent_dir, &mut group);
+    } else if let Some(dir) = arcade_chd_companion_dir(system, &full_path) {
+        let size = dir_total_size(&dir);
+        group.push(GroupedFile {
+            path: dir,
+            size_bytes: size,
+            kind: FileKind::DataDir,
+        });
     }
 
     // Add SBI companion for the primary file itself (non-M3U case).
@@ -697,6 +735,17 @@ pub fn check_rename_allowed(
             Some(
                 "Rename is not available — this playlist contains embedded disc data.".to_string(),
             ),
+        );
+    }
+
+    // MAME-family CHD-based arcade sets: the emulator core matches this ROM
+    // to a driver by the ZIP's filename, not its contents, so renaming would
+    // stop the game from being recognized regardless of the companion
+    // directory being kept in sync (see `rename_rom`).
+    if arcade_chd_companion_dir(system, &full_path).is_some() {
+        return (
+            false,
+            Some("Rename is not available for this arcade game — it requires a disc image (CHD) matched to it by filename.".to_string()),
         );
     }
 
@@ -880,28 +929,47 @@ fn add_sbi_companion(rom_path: &Path, group: &mut Vec<GroupedFile>) {
     }
 }
 
-/// Add companion GD-ROM CHD files for arcade_dc ZIP/CHD ROMs.
+/// Directory holding a MAME-family CHD-based arcade set's disc image(s), if
+/// one exists next to `zip_path`. MAME sets like `kinst.zip` store the CHD(s)
+/// in a directory sharing the zip's exact basename (`kinst/kinst.chd`), which
+/// MAME resolves itself via its own rompath search at runtime — independent
+/// of what file the frontend launches. CHD filenames inside don't reliably
+/// match the ROM name (e.g. `raycris/raycrisj.chd`, `redearth/cap-wzd-3.chd`)
+/// and some sets ship more than one disc, so callers treat the whole
+/// directory as one unit rather than matching individual files inside it.
 ///
-/// In arcade_dc, games like `ikaruga.zip` have companion CHD files
-/// named like `gdl-0010.chd` or `gds-0009a.chd`.
-/// We look up known companion CHDs using the arcade_db.
-fn add_arcade_dc_companion_chds(_rom_path: &Path, parent_dir: &Path, group: &mut Vec<GroupedFile>) {
-    // Scan for any gdl-*.chd or gds-*.chd files in the same directory.
-    // These are always companion files, never standalone games.
-    if let Ok(entries) = std::fs::read_dir(parent_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if name.ends_with(".chd") && (name.starts_with("gdl-") || name.starts_with("gds-")) {
-                let path = entry.path();
-                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                group.push(GroupedFile {
-                    path,
-                    size_bytes: size,
-                    kind: FileKind::Companion,
-                });
-            }
-        }
+/// This is the single authoritative definition of the convention — all gates
+/// live here so scan, delete, and rename can't drift apart:
+/// - Arcade systems only; the convention is MAME's, and a same-named
+///   directory next to e.g. an `ibm_pc` zip is unrelated user content.
+/// - `.zip` primaries only.
+/// - At least one `.chd` file inside — a same-named folder could just as
+///   easily hold notes, artwork, or extracted files, which must never be
+///   folded into the ROM's size or deleted/renamed alongside it.
+fn arcade_chd_companion_dir(system: &str, zip_path: &Path) -> Option<PathBuf> {
+    if !systems::is_arcade_system(system) {
+        return None;
     }
+    if !zip_path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+    {
+        return None;
+    }
+    let stem = zip_path.file_stem()?.to_str()?;
+    let dir = zip_path.parent()?.join(stem);
+    if !dir.is_dir() {
+        return None;
+    }
+    let has_chd = std::fs::read_dir(&dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry.file_type().is_ok_and(|ft| ft.is_file())
+                && Path::new(&entry.file_name())
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("chd"))
+        })
+    });
+    has_chd.then_some(dir)
 }
 
 /// Compute the total size of all regular files under a directory. Best-effort:
@@ -910,6 +978,25 @@ fn dir_total_size(dir: &Path) -> u64 {
     let mut total = 0u64;
     let _ = fs_walk::for_each_file(dir, false, |_, _, metadata| total += metadata.len());
     total
+}
+
+/// Relative paths and sizes of the first `cap` regular files under `dir`,
+/// plus the true total file count. The cap is the caller's display policy
+/// (e.g. the delete confirmation lists a handful of files, then summarizes);
+/// this layer only enumerates and truncates, it doesn't decide how much to
+/// show. Best-effort: a partial walk on a filesystem error reports what it
+/// saw.
+pub fn list_data_dir_contents(dir: &Path, cap: usize) -> (Vec<(PathBuf, u64)>, usize) {
+    let mut files = Vec::new();
+    let mut total = 0usize;
+    let _ = fs_walk::for_each_file(dir, false, |_, path, metadata| {
+        total += 1;
+        if files.len() < cap {
+            let relative = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
+            files.push((relative, metadata.len()));
+        }
+    });
+    (files, total)
 }
 
 /// Remove duplicate entries from a GroupedFile list (by path).
@@ -1293,6 +1380,72 @@ fn resolve_m3u_containers(raw: &mut Vec<RawRom>, roms_root: &Path, system: &Syst
     });
 }
 
+/// Fold a MAME-family CHD-based arcade set's disc-image directory size into
+/// its ZIP's reported size, the same way [`resolve_m3u_containers`] folds a
+/// multi-disc M3U's referenced files into the playlist's size. Unlike M3U
+/// discs, the CHD files were never discovered as ROMs of their own (`.chd`
+/// isn't a registered extension for these systems — see
+/// [`arcade_chd_companion_dir`]), so there's nothing to consume out of `raw`,
+/// only a size to add.
+///
+/// This runs on every scan of a system that can hold thousands of ZIPs,
+/// possibly over NFS, so it must not probe the filesystem per ROM. Instead
+/// it reads each parent directory once to learn which subdirectories exist
+/// and only runs the (per-hit) companion check for ZIPs whose stem matches
+/// one — the common no-companions case then costs one readdir per directory
+/// instead of one stat per ZIP.
+fn resolve_arcade_chd_companions(raw: &mut [RawRom], roms_root: &Path, system: &System) {
+    if !system.is_arcade() {
+        return;
+    }
+    let storage_root = roms_root.parent().unwrap_or(Path::new("/"));
+
+    let mut zips_by_parent: HashMap<PathBuf, Vec<usize>> = HashMap::new();
+    for (idx, rom) in raw.iter().enumerate() {
+        let is_zip = Path::new(&rom.rom_filename)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
+        if !is_zip {
+            continue;
+        }
+        if let Some(parent) = raw_abs_path(rom, storage_root).parent() {
+            zips_by_parent
+                .entry(parent.to_path_buf())
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    for (parent, indices) in zips_by_parent {
+        let Ok(entries) = std::fs::read_dir(&parent) else {
+            continue;
+        };
+        // DirEntry::file_type doesn't follow symlinks; include symlinks so a
+        // linked companion dir isn't filtered out here (the companion check
+        // itself resolves them via is_dir).
+        let subdirs: HashSet<std::ffi::OsString> = entries
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|ft| ft.is_dir() || ft.is_symlink()))
+            .map(|e| e.file_name())
+            .collect();
+        if subdirs.is_empty() {
+            continue;
+        }
+        for idx in indices {
+            let has_same_named_dir = Path::new(&raw[idx].rom_filename)
+                .file_stem()
+                .is_some_and(|stem| subdirs.contains(stem));
+            if !has_same_named_dir {
+                continue;
+            }
+            let abs_path = raw_abs_path(&raw[idx], storage_root);
+            if let Some(dir) = arcade_chd_companion_dir(system.folder_name, &abs_path) {
+                raw[idx].size_bytes += dir_total_size(&dir);
+            }
+        }
+    }
+}
+
 /// Parse an M3U file and return the list of referenced filenames (just the
 /// filename portion, no directories).
 ///
@@ -1485,6 +1638,69 @@ mod tests {
             .await
             .unwrap();
         assert!(roms.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_folds_arcade_chd_companion_size() {
+        // Issue #93: system totals under-counted MAME CHD-based sets because
+        // the companion directory's size was never folded into the zip's.
+        let (_, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 1000, &[("kinst.chd", 9000)]);
+        let roms = list_roms(&storage, "arcade_mame", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 1, "the CHD dir must not become its own entry");
+        assert_eq!(roms[0].game.rom_filename, "kinst.zip");
+        assert_eq!(roms[0].size_bytes, 10000);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_folds_multiple_arcade_chd_files_regardless_of_name() {
+        // CHD filenames inside don't have to match the zip/dir name at all.
+        let (_, storage) = zip_with_companion_dir(
+            "arcade_mame",
+            "redearth.zip",
+            1000,
+            &[("cap-wzd-3.chd", 3000), ("cap-wzd-5.chd", 4000)],
+        );
+        let roms = list_roms(&storage, "arcade_mame", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 1);
+        assert_eq!(roms[0].size_bytes, 8000);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_ignores_same_named_arcade_dir_without_chd_contents() {
+        let (_, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 500, &[("notes.txt", 2000)]);
+        let roms = list_roms(&storage, "arcade_mame", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 1);
+        assert_eq!(
+            roms[0].size_bytes, 500,
+            "must not fold in a same-named dir with no .chd inside"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_ignores_same_named_dir_for_non_arcade_system() {
+        // Even a .chd inside doesn't make it a companion on a non-arcade
+        // system — the convention is MAME's.
+        let (_, storage) = zip_with_companion_dir("ibm_pc", "game.zip", 500, &[("game.chd", 200)]);
+        let roms = list_roms(&storage, "ibm_pc", RegionPreference::default(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(roms.len(), 1);
+        assert_eq!(
+            roms[0].size_bytes, 500,
+            "must not fold in the unrelated dir"
+        );
     }
 
     #[cfg(unix)]
@@ -2009,6 +2225,30 @@ mod tests {
         dir
     }
 
+    /// Fixture for the CHD-companion tests: `roms/<system>/<zip>` plus,
+    /// when `dir_files` is non-empty, a same-named directory holding those
+    /// files. Returns the system dir and the storage rooted at the tempdir.
+    fn zip_with_companion_dir(
+        system: &str,
+        zip: &str,
+        zip_size: usize,
+        dir_files: &[(&str, usize)],
+    ) -> (PathBuf, StorageLocation) {
+        let tmp = tempdir();
+        let system_dir = tmp.join("roms").join(system);
+        fs::create_dir_all(&system_dir).unwrap();
+        fs::write(system_dir.join(zip), vec![0u8; zip_size]).unwrap();
+        if !dir_files.is_empty() {
+            let dir = system_dir.join(zip.strip_suffix(".zip").unwrap());
+            fs::create_dir_all(&dir).unwrap();
+            for (name, size) in dir_files {
+                fs::write(dir.join(name), vec![0u8; *size]).unwrap();
+            }
+        }
+        let storage = StorageLocation::from_path(tmp, crate::storage::StorageKind::Sd);
+        (system_dir, storage)
+    }
+
     // --- parse_cue_file_references ---
 
     #[test]
@@ -2433,6 +2673,92 @@ mod tests {
         assert!(!game_dir.exists());
     }
 
+    #[test]
+    fn delete_arcade_mame_zip_removes_chd_companion_dir() {
+        // Issue #84: MAME CHD-based sets (e.g. Killer Instinct) store the
+        // disc image in a directory sharing the zip's exact basename.
+        let (mame_dir, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 1000, &[("kinst.chd", 9000)]);
+        let report =
+            delete_rom_group(&storage, "arcade_mame", "roms/arcade_mame/kinst.zip").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(report.bytes_freed, 10000);
+        assert!(!mame_dir.join("kinst.zip").exists());
+        assert!(!mame_dir.join("kinst").exists());
+    }
+
+    #[test]
+    fn delete_arcade_mame_zip_removes_multi_chd_companion_dir() {
+        // Some sets (e.g. R-Type Delta/Raycrisis, Mace, Red Earth) ship more
+        // than one CHD per set, with filenames that don't match the zip name.
+        let (mame_dir, storage) = zip_with_companion_dir(
+            "arcade_mame",
+            "raycris.zip",
+            1000,
+            &[("raycris.chd", 4000), ("raycrisj.chd", 5000)],
+        );
+        let report =
+            delete_rom_group(&storage, "arcade_mame", "roms/arcade_mame/raycris.zip").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(report.bytes_freed, 10000);
+        assert!(!mame_dir.join("raycris").exists());
+    }
+
+    #[test]
+    fn delete_arcade_zip_without_companion_dir_is_unaffected() {
+        // No companion directory: behaves exactly like a plain single-file delete.
+        let (_, storage) = zip_with_companion_dir("arcade_mame", "pacman.zip", 500, &[]);
+        let report =
+            delete_rom_group(&storage, "arcade_mame", "roms/arcade_mame/pacman.zip").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(report.deleted.len(), 1);
+        assert_eq!(report.bytes_freed, 500);
+    }
+
+    #[test]
+    fn delete_arcade_zip_ignores_same_named_dir_without_chd_contents() {
+        // A same-named directory next to an arcade ZIP isn't necessarily a
+        // CHD companion — it could be unrelated user content (notes, artwork,
+        // extracted files). Only a directory that actually contains a .chd
+        // may be folded into the ROM and deleted alongside it.
+        let (mame_dir, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 500, &[("notes.txt", 2000)]);
+        let report =
+            delete_rom_group(&storage, "arcade_mame", "roms/arcade_mame/kinst.zip").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(
+            report.bytes_freed, 500,
+            "must not fold in the non-CHD dir's size"
+        );
+        assert!(!mame_dir.join("kinst.zip").exists());
+        assert!(
+            mame_dir.join("kinst").exists(),
+            "non-CHD sibling dir must survive delete"
+        );
+    }
+
+    #[test]
+    fn delete_non_arcade_zip_ignores_same_named_sibling_dir() {
+        // The companion-dir convention is MAME-specific; a non-arcade system's
+        // zip must never treat a coincidentally same-named directory as part
+        // of the ROM (e.g. ibm_pc, which also uses bare .zip files) — even
+        // when that directory happens to contain a .chd.
+        let (pc_dir, storage) =
+            zip_with_companion_dir("ibm_pc", "game.zip", 500, &[("game.chd", 200)]);
+        let report = delete_rom_group(&storage, "ibm_pc", "roms/ibm_pc/game.zip").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(report.bytes_freed, 500);
+        assert!(
+            pc_dir.join("game").exists(),
+            "unrelated sibling dir must survive"
+        );
+    }
+
     // --- check_rename_allowed ---
 
     #[test]
@@ -2490,6 +2816,92 @@ mod tests {
             check_rename_allowed(&storage, "sharp_x68k", "roms/sharp_x68k/Game.m3u");
         assert!(!allowed);
         assert!(reason.is_some());
+    }
+
+    #[test]
+    fn rename_blocked_for_arcade_zip_with_chd_companion() {
+        // The emulator core matches an arcade ROM to its driver by filename,
+        // not content, so a rename would break the game regardless of
+        // whether the companion CHD directory is kept in sync.
+        let (_, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 500, &[("kinst.chd", 500)]);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "arcade_mame", "roms/arcade_mame/kinst.zip");
+        assert!(!allowed);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn rename_allowed_for_arcade_zip_without_chd_companion() {
+        let (_, storage) = zip_with_companion_dir("arcade_mame", "pacman.zip", 500, &[]);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "arcade_mame", "roms/arcade_mame/pacman.zip");
+        assert!(allowed);
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn rename_allowed_for_non_arcade_zip_with_same_named_chd_dir() {
+        // The companion convention is arcade-only: a non-arcade zip with a
+        // coincidentally same-named dir (even one holding a .chd) renames
+        // freely, and the dir stays put.
+        let (pc_dir, storage) =
+            zip_with_companion_dir("ibm_pc", "game.zip", 500, &[("game.chd", 200)]);
+        let (allowed, reason) = check_rename_allowed(&storage, "ibm_pc", "roms/ibm_pc/game.zip");
+        assert!(allowed);
+        assert!(reason.is_none());
+
+        rename_rom(&storage, "ibm_pc", "roms/ibm_pc/game.zip", "game2.zip").unwrap();
+        assert!(pc_dir.join("game").exists(), "unrelated dir must not move");
+        assert!(!pc_dir.join("game2").exists());
+    }
+
+    #[test]
+    fn rename_moves_chd_companion_dir_as_a_defensive_fallback() {
+        // check_rename_allowed steers the UI away from renaming these games,
+        // but rename_rom() itself still keeps the companion dir in sync as a
+        // safety net for any caller that renames anyway (e.g. a direct API
+        // call), so the size/delete fixes don't regress even in that case.
+        let (mame_dir, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 500, &[("kinst.chd", 9000)]);
+        rename_rom(
+            &storage,
+            "arcade_mame",
+            "roms/arcade_mame/kinst.zip",
+            "kinst2.zip",
+        )
+        .unwrap();
+
+        assert!(!mame_dir.join("kinst").exists());
+        assert!(mame_dir.join("kinst2").join("kinst.chd").exists());
+    }
+
+    #[test]
+    fn rename_fails_before_moving_anything_when_companion_destination_exists() {
+        // Preflight check: if the target companion directory is already
+        // taken, the rename must fail up front rather than leave the
+        // primary file renamed with a stale, orphaned companion directory.
+        let (mame_dir, storage) =
+            zip_with_companion_dir("arcade_mame", "kinst.zip", 500, &[("kinst.chd", 9000)]);
+        // Pre-existing directory occupying the rename's target companion path.
+        fs::create_dir_all(mame_dir.join("kinst2")).unwrap();
+
+        let result = rename_rom(
+            &storage,
+            "arcade_mame",
+            "roms/arcade_mame/kinst.zip",
+            "kinst2.zip",
+        );
+
+        assert!(result.is_err());
+        assert!(
+            mame_dir.join("kinst.zip").exists(),
+            "primary file must not have moved"
+        );
+        assert!(
+            mame_dir.join("kinst").exists(),
+            "companion dir must not have moved"
+        );
     }
 
     #[test]

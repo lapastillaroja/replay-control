@@ -871,6 +871,10 @@
     color: var(--text-secondary);
     font-size: var(--font-size-compact-default);
     line-height: 1.45;
+    /* Some confirmations (e.g. a ROM delete's file list) embed newlines. */
+    white-space: pre-line;
+    max-height: 12rem;
+    overflow-y: auto;
 }
 
 .app-confirm-actions {
@@ -1023,13 +1027,13 @@
     font-weight: var(--button-font-weight, inherit);
 }
 
-:where(.manual-confirm-btn, .game-action-delete-confirm) {
+:where(.manual-confirm-btn) {
     border-color: var(--danger-confirm-border-color, var(--error));
     color: var(--danger-confirm-color, var(--error));
     font-weight: var(--danger-confirm-font-weight, 600);
 }
 
-:where(.manual-confirm-btn, .game-action-delete-confirm):hover {
+:where(.manual-confirm-btn):hover {
     background: var(--danger-confirm-hover-bg, var(--error));
     color: var(--danger-confirm-hover-color, var(--text-on-danger));
 }
@@ -1167,8 +1171,7 @@
     .boxart-picker-loading,
     .boxart-picker-empty,
     .game-section-empty,
-    .game-action-note,
-    .delete-info
+    .game-action-note
 ) {
     color: var(--text-secondary);
     font-size: var(--muted-copy-font-size);

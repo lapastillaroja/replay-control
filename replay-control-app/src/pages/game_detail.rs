@@ -461,9 +461,6 @@ fn GameDetailContent(
         );
     };
 
-    // Delete confirmation state
-    let confirming_delete = RwSignal::new(false);
-
     // Rename state
     let is_renaming = RwSignal::new(false);
     // Pre-fill rename with stem only (extension is displayed separately).
@@ -915,7 +912,6 @@ fn GameDetailContent(
                 />
 
                 <GameDeleteAction
-                    confirming_delete
                     relative_path=relative_path_sv
                     system=system_sv
                 />
@@ -1169,80 +1165,99 @@ fn GameRenameAction(
     }
 }
 
-/// Delete action: shows file count and total size in confirmation.
-///
-/// When the user clicks "Delete", a file group is fetched to show what
-/// will be deleted, then the user confirms or cancels.
+/// Build the confirm-dialog message for a ROM delete: the standard shared
+/// `ConfirmDialog` only takes a plain string, so a multi-file group (e.g. a
+/// ZIP plus a MAME CHD companion folder) is rendered as one file per line
+/// rather than as its own dedicated dialog layout — kept consistent with
+/// every other confirmation in the app instead of a one-off custom panel.
+fn delete_confirm_message(locale: crate::i18n::Locale, group: &server_fns::RomFileGroup) -> String {
+    // Directory summary rows stand in for `dir_file_count` files each.
+    let total_files: usize = group
+        .files
+        .iter()
+        .map(|f| f.dir_file_count.unwrap_or(1))
+        .sum();
+    if total_files <= 1 {
+        return tf(
+            locale,
+            Key::GameDetailConfirmDeleteSingle,
+            &[&crate::util::format_size(group.total_size)],
+        );
+    }
+    let lines: String = group
+        .files
+        .iter()
+        .map(|f| {
+            let size = crate::util::format_size(f.size_bytes);
+            match f.dir_file_count {
+                Some(n) => format!(
+                    "\u{2022} {} ({}, {size})",
+                    f.filename,
+                    tf(locale, Key::GameDetailDeleteDirFiles, &[&n.to_string()]),
+                ),
+                None => format!("\u{2022} {} ({size})", f.filename),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    tf(
+        locale,
+        Key::GameDetailConfirmDeleteMultiple,
+        &[
+            &total_files.to_string(),
+            &crate::util::format_size(group.total_size),
+            &lines,
+        ],
+    )
+}
+
+/// Delete action: fetches the file group (ZIP, any companion directory
+/// contents) and shows it via the shared confirm dialog before deleting.
 #[component]
 fn GameDeleteAction(
-    confirming_delete: RwSignal<bool>,
     relative_path: StoredValue<String>,
     system: StoredValue<String>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let navigate = use_navigate();
-
-    // File group info for the delete confirmation.
-    let delete_info = RwSignal::new(Option::<(usize, String)>::None);
-
-    let on_start_delete = move |_| {
-        confirming_delete.set(true);
-        delete_info.set(None);
-
-        let sys = system.get_value();
-        let rp = relative_path.get_value();
-        leptos::task::spawn_local(async move {
-            if let Ok(group) = server_fns::get_rom_file_group(sys, rp).await {
-                let size_display = crate::util::format_size(group.total_size);
-                delete_info.set(Some((group.file_count, size_display)));
-            }
-        });
-    };
-
+    let confirm_dialog = use_confirm_dialog();
     let nav_sv = StoredValue::new(navigate);
-    let on_delete = move |_| {
-        let rp = relative_path.get_value();
+
+    let on_click_delete = move |_| {
         let sys = system.get_value();
-        let nav = nav_sv.get_value();
+        let rp = relative_path.get_value();
+        let locale = i18n.locale.get_untracked();
         leptos::task::spawn_local(async move {
-            if server_fns::delete_rom(sys.clone(), rp).await.is_ok() {
-                let href = format!("/games/{sys}");
-                nav(&href, Default::default());
-            }
+            let Ok(group) = server_fns::get_rom_file_group(sys.clone(), rp.clone()).await else {
+                return;
+            };
+            let message = delete_confirm_message(locale, &group);
+            let delete_label = t(locale, Key::CommonDelete).to_string();
+            confirm_dialog.confirm(
+                delete_label.clone(),
+                message,
+                delete_label,
+                true,
+                Callback::new(move |()| {
+                    let sys = sys.clone();
+                    let rp = rp.clone();
+                    let nav = nav_sv.get_value();
+                    leptos::task::spawn_local(async move {
+                        if server_fns::delete_rom(sys.clone(), rp).await.is_ok() {
+                            let href = format!("/games/{sys}");
+                            nav(&href, Default::default());
+                        }
+                    });
+                }),
+            );
         });
     };
 
     view! {
-        <Show when=move || confirming_delete.get() fallback=move || view! {
-            <button class="game-action-btn game-action-delete" on:click=on_start_delete>
-                <span class="game-action-icon">{"\u{2715}"}</span>
-                {move || t(i18n.locale.get(), Key::CommonDelete)}
-            </button>
-        }>
-            <div class="game-delete-confirm">
-                {move || {
-                    delete_info.get().map(|(count, size)| {
-                        if count > 1 {
-                            view! {
-                                <p class="delete-info">
-                                    {format!("{count} files ({size})")}
-                                </p>
-                            }.into_any()
-                        } else {
-                            view! {
-                                <p class="delete-info">{size}</p>
-                            }.into_any()
-                        }
-                    })
-                }}
-                <button class="game-action-btn game-action-delete-confirm" on:click=on_delete>
-                    {move || t(i18n.locale.get(), Key::GameDetailConfirmDelete)}
-                </button>
-                <button class="game-action-btn" on:click=move |_| confirming_delete.set(false)>
-                    {move || t(i18n.locale.get(), Key::CommonCancel)}
-                </button>
-            </div>
-        </Show>
+        <button class="game-action-btn game-action-delete" on:click=on_click_delete>
+            <span class="game-action-icon">{"\u{2715}"}</span>
+            {move || t(i18n.locale.get(), Key::CommonDelete)}
+        </button>
     }
 }
 

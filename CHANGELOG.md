@@ -15,6 +15,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Changed
 
+- The delete confirmation on a game's detail page now uses the standard confirmation dialog and lists every file that will be removed with its size — including a game's disc-image folder — so you can see exactly what goes before confirming.
+- Renaming is no longer offered for arcade games that come with a disc image (CHD): the emulator matches both the game and its disc folder by filename, so a rename would break the game.
 - Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).
 - Rebooting the device from **Settings → RePlayOS** now asks for confirmation first, matching Power off.
 - GitHub releases are now published only once their build artifacts are attached, so a release is never listed without its downloads.
@@ -27,6 +29,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed the action result message under the RePlayOS device controls sitting flush against the buttons; it now uses the standard spacing.
 - Fixed several arcade hardware boards that grouped the wrong games or none at all — Cave 1st-generation shmups (DoDonPachi, DonPachi, ESP Ra.De.), DECO Cassette, and a few others now group correctly across all ROM sets.
 - Fixed the Shmups Wiki strategy-guide index occasionally pointing at a non-game wiki page (developer/publisher pages like Compile, Capcom, G.rev, Team Shanghai Alice, or meta list pages) instead of an actual game, due to overly narrow filtering in the index refresh script.
+- Fixed deleting an arcade game leaving its disc image behind: MAME-style games that keep their disc (CHD) in a folder named after the game — like Killer Instinct's `kinst/` — now have that folder removed together with the game. (#84)
+- Fixed game and system sizes not counting arcade disc images (CHD) — a game like Killer Instinct now reports its real ~95 MB instead of just the 6 MB zip, and system storage totals match what's actually on disk. (#93)
 
 ---
 

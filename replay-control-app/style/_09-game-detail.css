@@ -484,11 +484,6 @@
     border-left: var(--control-border-strong);
 }
 
-.delete-info {
-    margin: 0;
-    padding: var(--block-padding-y-tight);
-}
-
 /* Regional variant chips */
 .regional-variants {
     --row-wrap: wrap;

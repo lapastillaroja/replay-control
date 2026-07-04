@@ -416,7 +416,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFavorite => "お気に入りに追加",
         Key::GameDetailUnfavorite => "お気に入りから削除",
         Key::GameDetailMoreActions => "その他の操作",
-        Key::GameDetailConfirmDelete => "削除の確認",
+        Key::GameDetailConfirmDeleteSingle => "このゲーム（{0}）を完全に削除します。",
+        Key::GameDetailConfirmDeleteMultiple => {
+            "{0} 個のファイル（合計 {1}）を完全に削除します：\n{2}"
+        }
+        Key::GameDetailDeleteDirFiles => "{0} 個のファイル",
         Key::GameDetailRegionalVariants => "地域別バリアント",
         Key::GameDetailArcadeVersions => "アーケードバージョン",
         Key::GameDetailTranslations => "翻訳版",

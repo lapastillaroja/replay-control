@@ -252,7 +252,7 @@ the standalone container):
 
 - Rename via the inline `.game-rename-inline` editor renames the file under
   `roms/<system>/` and navigates to the new game URL
-- Delete via the two-step `.game-action-delete` → `.game-action-delete-confirm`
+- Delete via `.game-action-delete` and the shared `.app-confirm-dialog`
   removes the file and returns to the system list
 
 ### `test_media_serving.py` — Container only, mutates storage

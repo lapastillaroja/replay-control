@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get};
 use axum::{Json, Router};
+use replay_control_core_server::launch::launch_parts;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
@@ -69,8 +70,12 @@ async fn rename_rom(
         .require_configured_storage_ready_for_mutation("rename ROMs")
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
+    // The request carries only the path; the system folder is its first
+    // component (`roms/<system>/...`).
+    let (system, _) = launch_parts(&payload.relative_path).map_err(|_| StatusCode::BAD_REQUEST)?;
     let new_path = replay_control_core_server::roms::rename_rom(
         &state.storage(),
+        system,
         &payload.relative_path,
         &payload.new_filename,
     )

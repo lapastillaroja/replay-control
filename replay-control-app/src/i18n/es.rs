@@ -418,7 +418,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFavorite => "Favorito",
         Key::GameDetailUnfavorite => "Quitar de favoritos",
         Key::GameDetailMoreActions => "Más acciones",
-        Key::GameDetailConfirmDelete => "Confirmar eliminación",
+        Key::GameDetailConfirmDeleteSingle => "Esto eliminará permanentemente este juego ({0}).",
+        Key::GameDetailConfirmDeleteMultiple => {
+            "Esto eliminará permanentemente {0} archivos ({1} en total):\n{2}"
+        }
+        Key::GameDetailDeleteDirFiles => "{0} archivos",
         Key::GameDetailRegionalVariants => "Variantes regionales",
         Key::GameDetailArcadeVersions => "Versiones arcade",
         Key::GameDetailTranslations => "Traducciones",
