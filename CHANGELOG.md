@@ -21,6 +21,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Removing a favorite from a game's detail page no longer asks for confirmation — the star toggles instantly (it's easy to re-add).
 - Rebooting the device from **Settings → RePlayOS** now asks for confirmation first, matching Power off.
 - GitHub releases are now published only once their build artifacts are attached, so a release is never listed without its downloads.
+- The developer deploy script now refuses to ship a stub (fixture-only) catalog to a device, and validates the catalog before stopping the service — a failed check no longer leaves the device half-deployed with its service down.
 - Refined genre grouping for arcade and catalog metadata: Gambling, Tabletop, and Mahjong are now separate groups instead of being collapsed into Board & Card.
 - The update notice now appears as a compact app-wide banner and opens Settings → Updates instead of sending you straight to GitHub.
 

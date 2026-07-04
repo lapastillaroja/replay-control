@@ -456,6 +456,24 @@ deploy_to_pi() {
         fatal "Site assets not found: $OUT_DIR"
     fi
 
+    # Validate the catalog BEFORE touching the device — these used to sit in
+    # the transfer section below, but failing there leaves the service
+    # stopped with a half-deployed install.
+    #
+    # Hard fail if missing — shipping with an absent (or zero-byte) catalog
+    # leaves SQLite to silently open an empty DB and every catalog query then
+    # fails with "no such table: arcade_games".
+    if [[ ! -s catalog.sqlite ]]; then
+        fatal "catalog.sqlite not found or empty — run: cargo run -p build-catalog -- --output catalog.sqlite"
+    fi
+    # Refuse to ship a stub catalog (BUILD_CATALOG_STUB=1 / --stub, the CI
+    # pipeline-validation build). It only holds a handful of fixture games, so
+    # deploying it wipes the device's catalog-derived metadata (names, genres,
+    # RA flags, box-art matching) on the next re-enrichment.
+    if [[ "$(python3 -c "import sqlite3; print(sqlite3.connect('catalog.sqlite').execute(\"SELECT value FROM db_meta WHERE key='is_stub'\").fetchone()[0])" 2>/dev/null)" == "1" ]]; then
+        fatal "catalog.sqlite is a stub fixture build — rebuild the real catalog first: cargo run --release -p build-catalog -- --output catalog.sqlite"
+    fi
+
     local bin_size
     bin_size=$(stat -c%s "$bin_path" 2>/dev/null || echo 0)
 
@@ -482,13 +500,7 @@ deploy_to_pi() {
     run_rsync --compress "$bin_path" "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app"
     run_ssh "chmod +x ${PI_INSTALL_DIR}/replay-control-app"
 
-    # Transfer catalog. Hard fail if missing — shipping with an absent (or
-    # zero-byte) catalog leaves SQLite to silently open an empty DB and every
-    # catalog query then fails with "no such table: arcade_games". Build the
-    # real catalog first rather than continuing with a broken deploy.
-    if [[ ! -s catalog.sqlite ]]; then
-        fatal "catalog.sqlite not found or empty — run: cargo run -p build-catalog -- --output catalog.sqlite"
-    fi
+    # Transfer catalog (validated before the service was stopped, above).
     info "Syncing catalog..."
     run_rsync --compress catalog.sqlite "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/catalog.sqlite"
 
