@@ -237,10 +237,12 @@ async fn api_export_library_csv_returns_per_rom_rows() {
     // Header first, then one CRLF-terminated row per seeded ROM.
     assert!(csv.starts_with(&csv_header_line()));
     assert!(csv.contains("TestGame.nes"));
+    assert!(csv.contains("roms/nintendo_nes/TestGame.nes"));
     assert!(csv.contains("AnotherGame (USA).nes"));
 
     let lines: Vec<&str> = csv.lines().filter(|l| !l.is_empty()).collect();
     assert_eq!(lines.len(), 3, "header + 2 ROM rows");
+    assert_eq!(CSV_COLUMNS[2], "rom_path");
     // Every row carries the full column set.
     for line in &lines[1..] {
         assert_eq!(line.split(',').count(), CSV_COLUMNS.len());

@@ -10,7 +10,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - New arcade hardware board: **CoJag** (Atari's coin-op Jaguar hardware) — games such as Area 51 and Maximum Force now group under it.
 - New arcade hardware board: **MEC-M1** (Data East) — Bad Dudes, Robocop, Heavy Barrel, and related Data East games now group under it.
-- The metadata CSV export now includes an `arcade_board` column for the resolved hardware board, such as `CPS-2 (Capcom)`, when known. (#86)
+- The metadata CSV export now includes a `rom_path` column showing where each game lives in the ROM folder, plus an `arcade_board` column for the resolved hardware board, such as `CPS-2 (Capcom)`, when known. (#86, #101)
 - Added a mature-category audit for arcade metadata: affected system overview rows now show the `* Mature *` count, link to a per-system filtered game list, and each flagged game shows the mature category on its detail page.
 - Added an in-app **What's new** changelog to Settings → Updates, showing release notes for every version newer than the one you're running, with beta notes hidden behind a toggle on the stable channel.
 

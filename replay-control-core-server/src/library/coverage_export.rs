@@ -42,6 +42,7 @@ use crate::thumbnails::ThumbnailKind;
 pub const CSV_COLUMNS: &[&str] = &[
     "system",
     "rom_filename",
+    "rom_path",
     "display_name",
     "base_title",
     "normalized_title",
@@ -86,6 +87,7 @@ pub const CSV_COLUMNS: &[&str] = &[
 pub struct RomCoverage {
     pub system: String,
     pub rom_filename: String,
+    pub rom_path: String,
     pub display_name: String,
     pub base_title: String,
     pub normalized_title: String,
@@ -138,6 +140,7 @@ impl RomCoverage {
         vec![
             self.system.clone(),
             self.rom_filename.clone(),
+            self.rom_path.clone(),
             self.display_name.clone(),
             self.base_title.clone(),
             self.normalized_title.clone(),
@@ -370,6 +373,7 @@ pub async fn build_system_coverage(
             RomCoverage {
                 system: entry.system.clone(),
                 rom_filename: entry.rom_filename.clone(),
+                rom_path: entry.rom_path.clone(),
                 display_name: entry
                     .display_name
                     .clone()
@@ -547,6 +551,26 @@ mod tests {
     fn header_matches_field_count() {
         let row = RomCoverage::default();
         assert_eq!(row.fields().len(), CSV_COLUMNS.len());
+    }
+
+    #[test]
+    fn rom_path_is_third_column() {
+        let row = RomCoverage {
+            system: "nintendo_nes".to_string(),
+            rom_filename: "TestGame.nes".to_string(),
+            rom_path: "roms/nintendo_nes/TestGame.nes".to_string(),
+            ..Default::default()
+        };
+
+        assert_eq!(&CSV_COLUMNS[..3], ["system", "rom_filename", "rom_path"]);
+        assert_eq!(
+            &row.fields()[..3],
+            [
+                "nintendo_nes".to_string(),
+                "TestGame.nes".to_string(),
+                "roms/nintendo_nes/TestGame.nes".to_string(),
+            ]
+        );
     }
 
     #[test]
