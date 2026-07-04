@@ -911,7 +911,7 @@ fn DataManagementSection(
                         on_confirm=on_clear_index
                         disabled=is_busy
                     />
-                    <ExportCoverageCard />
+                    <ExportCoverageCard disabled=is_busy />
                 </div>
             </Show>
         </section>
@@ -920,16 +920,31 @@ fn DataManagementSection(
 
 /// Export the per-ROM metadata coverage as a CSV — the entire library by
 /// default, or a single system. A native GET form so the download works without
-/// JS/hydration; the `system` select serializes to `?system=<folder>` (empty =
-/// all systems). The system list is fetched lazily; "All systems" always works
-/// even before it resolves.
+/// JS/hydration. Once hydrated, a short in-flight guard prevents accidental
+/// duplicate submits while the browser starts the file download.
 #[component]
-fn ExportCoverageCard() -> impl IntoView {
+fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
     let i18n = use_i18n();
     let systems = Resource::new(
         || (),
         |_| async move { server_fns::get_systems().await.unwrap_or_default() },
     );
+    let exporting = RwSignal::new(false);
+    let controls_disabled = Memo::new(move |_| disabled.get() || exporting.get());
+
+    let on_submit = move |ev: leptos::ev::SubmitEvent| {
+        if disabled.get_untracked() || exporting.get_untracked() {
+            ev.prevent_default();
+            return;
+        }
+
+        exporting.set(true);
+        #[cfg(target_arch = "wasm32")]
+        gloo_timers::callback::Timeout::new(5_000, move || {
+            exporting.set(false);
+        })
+        .forget();
+    };
 
     let all_systems_option = move || {
         view! {
@@ -944,10 +959,14 @@ fn ExportCoverageCard() -> impl IntoView {
             <span class="export-coverage-label">
                 {move || t(i18n.locale.get(), Key::MetadataExportCsv)}
             </span>
-            <form class="export-coverage-form" action="/api/export/library.csv" method="get">
+            <form class="export-coverage-form" action="/api/export/library.csv" method="get" on:submit=on_submit>
                 <Suspense fallback=move || {
                     view! {
-                        <select name="system" class="form-input export-coverage-select">
+                        <select
+                            name="system"
+                            class="form-input export-coverage-select"
+                            disabled=controls_disabled
+                        >
                             {all_systems_option()}
                         </select>
                     }
@@ -957,7 +976,11 @@ fn ExportCoverageCard() -> impl IntoView {
                         list.retain(|s| s.game_count > 0);
                         list.sort_by(|a, b| a.display_name.cmp(&b.display_name));
                         view! {
-                            <select name="system" class="form-input export-coverage-select">
+                            <select
+                                name="system"
+                                class="form-input export-coverage-select"
+                                disabled=controls_disabled
+                            >
                                 {all_systems_option()}
                                 {list
                                     .into_iter()
@@ -967,8 +990,14 @@ fn ExportCoverageCard() -> impl IntoView {
                         }
                     })}
                 </Suspense>
-                <button type="submit" class="form-btn">
-                    {move || t(i18n.locale.get(), Key::MetadataExportCsvDownload)}
+                <button type="submit" class="form-btn" disabled=controls_disabled>
+                    {move || {
+                        if exporting.get() {
+                            t(i18n.locale.get(), Key::MetadataExportCsvPreparing)
+                        } else {
+                            t(i18n.locale.get(), Key::MetadataExportCsvDownload)
+                        }
+                    }}
                 </button>
             </form>
             <p class="manage-action-hint">{move || t(i18n.locale.get(), Key::MetadataExportCsvHint)}</p>

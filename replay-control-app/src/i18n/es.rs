@@ -510,6 +510,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataExportCsv => "Exportar metadatos (CSV)",
         Key::MetadataExportCsvAllSystems => "Todos los sistemas",
         Key::MetadataExportCsvDownload => "Descargar",
+        Key::MetadataExportCsvPreparing => "Preparando...",
         Key::MetadataExportCsvHint => {
             "Una fila por juego con sus metadatos y lo que falta — para mantener packs de ROMs o fuentes de origen."
         }

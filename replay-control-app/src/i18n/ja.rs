@@ -508,6 +508,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataExportCsv => "メタデータをエクスポート（CSV）",
         Key::MetadataExportCsvAllSystems => "すべてのシステム",
         Key::MetadataExportCsvDownload => "ダウンロード",
+        Key::MetadataExportCsvPreparing => "準備中...",
         Key::MetadataExportCsvHint => {
             "ゲームごとに1行でメタデータと不足項目を表示 — ROMパックや上流ソースの整備用。"
         }
