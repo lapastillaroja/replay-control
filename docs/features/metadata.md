@@ -112,7 +112,7 @@ Each row is one ROM. Most columns are filled in where data exists and left blank
 
 Box-art, screenshot, and title-image columns report what is actually present in this device's media folders, and the RetroAchievements columns show the matched game id and its achievement count. The export reflects the live library on the device, including hacks and translations (flagged, not hidden).
 
-For source-coverage analysis, each row also carries a `classification` (original, revision, hack, translation, unlicensed, homebrew, prerelease, pirate, region_variant — finer than the hack/translation flags), the catalog provenance (`source_catalog`: no-intro / community / wikidata), and grouping keys (`genre_group`, `series_key`). To compare original releases only, drop the rows whose `classification` is hack, translation, unlicensed, homebrew, or pirate.
+For source-coverage analysis, each row also carries a `classification` (original, revision, hack, translation, unlicensed, homebrew, prerelease, pirate, region_variant — finer than the hack/translation flags), the catalog provenance (`source_catalog`: no-intro / community / wikidata), grouping keys (`genre_group`, `series_key`), and the resolved arcade hardware board (`arcade_board`, such as `CPS-2 (Capcom)`) when known. To compare original releases only, drop the rows whose `classification` is hack, translation, unlicensed, homebrew, or pirate.
 
 ## Cache Management
 

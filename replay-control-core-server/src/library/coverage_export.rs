@@ -60,6 +60,7 @@ pub const CSV_COLUMNS: &[&str] = &[
     "genre_catalog",
     "genre_launchbox",
     "genre_group",
+    "arcade_board",
     "developer_catalog",
     "developer_launchbox",
     "publisher_catalog",
@@ -106,6 +107,9 @@ pub struct RomCoverage {
     pub genre_catalog: String,
     pub genre_launchbox: String,
     pub genre_group: String,
+    /// User-facing arcade board label (`CPS-2 (Capcom)`, etc.). Empty for
+    /// non-arcade systems and arcade rows with no curated board match.
+    pub arcade_board: String,
     pub developer_catalog: String,
     pub developer_launchbox: String,
     pub publisher_catalog: String,
@@ -152,6 +156,7 @@ impl RomCoverage {
             self.genre_catalog.clone(),
             self.genre_launchbox.clone(),
             self.genre_group.clone(),
+            self.arcade_board.clone(),
             self.developer_catalog.clone(),
             self.developer_launchbox.clone(),
             self.publisher_catalog.clone(),
@@ -387,6 +392,10 @@ pub async fn build_system_coverage(
                 genre_catalog: cat.genre.clone(),
                 genre_launchbox,
                 genre_group: entry.genre_group.clone(),
+                arcade_board: entry
+                    .board
+                    .map(|board| board.display_label())
+                    .unwrap_or_default(),
                 developer_catalog: cat.developer.clone(),
                 developer_launchbox,
                 publisher_catalog: cat.publisher.clone(),

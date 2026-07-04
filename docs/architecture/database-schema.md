@@ -258,6 +258,7 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 | cooperative | INTEGER | Co-op support flag |
 | normalized_title | TEXT | Scan-time normalized title for enrichment matching |
 | normalized_title_alt | TEXT | Alternate normalized title for enrichment matching |
+| board | TEXT | Resolved arcade board slug, empty for non-arcade or unknown rows |
 
 **PRIMARY KEY**: `(system, rom_filename)`
 
