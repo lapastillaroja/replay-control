@@ -263,7 +263,8 @@ async fn walk_raw_roms_blocking(
 }
 
 /// Runs the multi-file container resolution passes (M3U discs, MAME-family
-/// CHD companion directories) on the blocking pool in one round-trip.
+/// CHD companion directories, self-contained folder-games) on the blocking
+/// pool in one round-trip.
 async fn resolve_rom_companions_blocking(
     raw: Vec<RawRom>,
     roms_root: PathBuf,
@@ -274,6 +275,7 @@ async fn resolve_rom_companions_blocking(
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             resolve_m3u_containers(&mut raw, &roms_root, system);
             resolve_arcade_chd_companions(&mut raw, &roms_root, system);
+            resolve_self_contained_folders(&mut raw, &roms_root, system);
         }));
         raw
     };
@@ -457,7 +459,25 @@ pub fn list_rom_group(
         kind: FileKind::Primary,
     });
 
-    if ext == "m3u" {
+    let self_contained_dir =
+        self_contained_folder_dir(system, &full_path, &storage.system_roms_dir(system));
+    let has_self_contained_dir = self_contained_dir.is_some();
+
+    if let Some(dir) = self_contained_dir {
+        // Self-contained folder-game (e.g. a standalone ScummVM .svm, no M3U
+        // wrapper — see `self_contained_folder_dir`): every data file the
+        // game needs lives in this same folder as the marker file, unlike
+        // the M3U/CHD-companion cases below where the marker sits *beside* a
+        // same-named data directory. Replace the lone-file entry with the
+        // whole folder so size and delete both reflect the real game, not
+        // just the marker.
+        let dir_size = dir_total_size(&dir);
+        group[0] = GroupedFile {
+            path: dir,
+            size_bytes: dir_size,
+            kind: FileKind::DataDir,
+        };
+    } else if ext == "m3u" {
         // Determine if this is a ScummVM M3U by checking the system folder.
         let is_scummvm = system == "scummvm";
 
@@ -584,8 +604,11 @@ pub fn list_rom_group(
         });
     }
 
-    // Add SBI companion for the primary file itself (non-M3U case).
-    if ext != "m3u" && ext != "cue" {
+    // Add SBI companion for the primary file itself (non-M3U case). Skipped
+    // for a self-contained folder-game: its whole folder is already the
+    // DataDir entry, and an SBI check makes no sense against a marker file
+    // that no longer has its own group entry.
+    if !has_self_contained_dir && ext != "m3u" && ext != "cue" {
         add_sbi_companion(&full_path, &mut group);
         // Deduplicate: remove any SBI that was added twice (by the primary check
         // and by the CHD-specific check).
@@ -970,6 +993,43 @@ fn arcade_chd_companion_dir(system: &str, zip_path: &Path) -> Option<PathBuf> {
         })
     });
     has_chd.then_some(dir)
+}
+
+/// Systems that ship a self-contained folder-game: a marker file living
+/// *inside* the very folder that holds all of the game's data, rather than
+/// *beside* a same-named data directory (contrast [`arcade_chd_companion_dir`]).
+/// Only ScummVM does this today (the official RePlayOS pack ships
+/// `<Game>/<Game>.svm` with no `.m3u` wrapper) — a data-driven table only
+/// earns its keep once a second system needs it.
+fn is_self_contained_folder_system(system: &str) -> bool {
+    system == "scummvm"
+}
+
+/// Directory holding a self-contained folder-game's data, if `path` is a
+/// marker file for one — see [`is_self_contained_folder_system`]. The whole
+/// folder (marker included) is the unit for size and delete, since the
+/// marker already sits inside it — contrast [`arcade_chd_companion_dir`] and
+/// [`resolve_m3u_containers`]'s FolderLauncher case, where the marker sits
+/// beside a same-named data directory instead. Excludes a bare marker
+/// dropped directly under `system_dir` (`roms/<system>/`, not a per-game
+/// subfolder) — that's not this convention and would otherwise treat the
+/// entire system folder as one game.
+///
+/// The single authoritative definition of the convention, mirroring
+/// [`arcade_chd_companion_dir`] — scan and delete both call this so they
+/// can't drift apart.
+fn self_contained_folder_dir(system: &str, path: &Path, system_dir: &Path) -> Option<PathBuf> {
+    if !is_self_contained_folder_system(system) {
+        return None;
+    }
+    let ext_matches = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("svm") || ext.eq_ignore_ascii_case("scummvm"));
+    if !ext_matches {
+        return None;
+    }
+    let parent = path.parent()?;
+    (parent.is_dir() && parent != system_dir).then(|| parent.to_path_buf())
 }
 
 /// Compute the total size of all regular files under a directory. Best-effort:
@@ -1442,6 +1502,27 @@ fn resolve_arcade_chd_companions(raw: &mut [RawRom], roms_root: &Path, system: &
             if let Some(dir) = arcade_chd_companion_dir(system.folder_name, &abs_path) {
                 raw[idx].size_bytes += dir_total_size(&dir);
             }
+        }
+    }
+}
+
+/// Fold a self-contained folder-game's real size into its own reported size
+/// at scan time — see [`self_contained_folder_dir`] for the convention and
+/// [`list_rom_group`]'s matching delete-side branch, which calls the same
+/// predicate so the two can't drift apart.
+fn resolve_self_contained_folders(raw: &mut [RawRom], roms_root: &Path, system: &System) {
+    if !is_self_contained_folder_system(system.folder_name) {
+        return;
+    }
+    let system_dir = roms_root.join(system.folder_name);
+    let storage_root = roms_root.parent().unwrap_or(Path::new("/"));
+    for rom in raw.iter_mut() {
+        if rom.is_m3u {
+            continue; // handled by resolve_m3u_containers
+        }
+        let abs_path = raw_abs_path(rom, storage_root);
+        if let Some(dir) = self_contained_folder_dir(system.folder_name, &abs_path, &system_dir) {
+            rom.size_bytes = dir_total_size(&dir);
         }
     }
 }
@@ -2123,7 +2204,7 @@ mod tests {
         fs::create_dir_all(&game_dir).unwrap();
 
         // .svm file with no M3U wrapper — should be shown as-is
-        fs::write(game_dir.join("Standalone Game.svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("Standalone Game.svm"), [0u8; 9]).unwrap();
         fs::write(game_dir.join("DATA.PAK"), [0u8; 2000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
@@ -2138,6 +2219,56 @@ mod tests {
         );
         assert_eq!(roms[0].game.rom_filename, "Standalone Game.svm");
         assert!(!roms[0].is_m3u);
+        // Issue #102: the official RePlayOS ScummVM pack ships games as a bare
+        // .svm with no M3U wrapper — the reported size must cover the whole
+        // game folder (marker + data), not just the tiny marker file.
+        assert_eq!(
+            roms[0].size_bytes, 2009,
+            "size must include the folder's data files, not just the .svm marker"
+        );
+    }
+
+    #[test]
+    fn delete_standalone_scummvm_removes_whole_folder() {
+        // Issue #104: deleting a standalone (no-M3U) ScummVM game must remove
+        // the whole folder, not just the .svm marker file.
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        let game_dir = scummvm_dir.join("Standalone Game");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::write(game_dir.join("Standalone Game.svm"), [0u8; 9]).unwrap();
+        fs::write(game_dir.join("DATA.PAK"), [0u8; 2000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let report = delete_rom_group(
+            &storage,
+            "scummvm",
+            "roms/scummvm/Standalone Game/Standalone Game.svm",
+        )
+        .unwrap();
+
+        assert!(report.errors.is_empty());
+        assert_eq!(report.bytes_freed, 2009);
+        assert!(!game_dir.exists(), "whole game folder must be removed");
+    }
+
+    #[test]
+    fn list_rom_group_standalone_scummvm_at_system_root_is_unaffected() {
+        // Guard: a bare .svm directly under roms/scummvm/ (no per-game
+        // subfolder — not the pack's convention) must not be treated as if
+        // the entire scummvm/ folder were "the game".
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        fs::create_dir_all(&scummvm_dir).unwrap();
+        fs::write(scummvm_dir.join("Loose Game.svm"), [0u8; 9]).unwrap();
+        fs::write(scummvm_dir.join("Other Game.svm"), [0u8; 500]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(&storage, "scummvm", "roms/scummvm/Loose Game.svm").unwrap();
+
+        assert_eq!(group.len(), 1);
+        assert_eq!(group[0].kind, FileKind::Primary);
+        assert_eq!(group[0].size_bytes, 9, "must not fold in sibling files");
     }
 
     #[tokio::test(flavor = "current_thread")]

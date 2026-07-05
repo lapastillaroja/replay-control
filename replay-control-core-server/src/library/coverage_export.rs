@@ -585,6 +585,53 @@ mod tests {
     }
 
     #[test]
+    fn game_name_with_comma_stays_one_field() {
+        // A display_name/rom_filename containing a comma (e.g. "Legend of
+        // Zelda, The") must not split into extra columns. Each is quoted as
+        // its own field, so a naive split on unquoted commas (RFC-4180
+        // "field boundary" commas only) still yields CSV_COLUMNS.len() cells.
+        let row = RomCoverage {
+            system: "nintendo_nes".to_string(),
+            rom_filename: "Legend of Zelda, The.nes".to_string(),
+            display_name: "Legend of Zelda, The".to_string(),
+            ..Default::default()
+        };
+        let line = row.to_csv_line();
+        assert!(line.contains("\"Legend of Zelda, The.nes\""));
+        assert!(line.contains("\"Legend of Zelda, The\""));
+        assert_eq!(split_rfc4180_line(&line).len(), CSV_COLUMNS.len());
+        assert_eq!(split_rfc4180_line(&line)[1], "Legend of Zelda, The.nes");
+        assert_eq!(split_rfc4180_line(&line)[3], "Legend of Zelda, The");
+    }
+
+    /// Minimal RFC-4180 field splitter for test verification only: honors
+    /// quoted fields (commas/CRLF inside quotes don't split) and unescapes
+    /// doubled quotes. Not a general-purpose parser — just enough to prove
+    /// `to_csv_line()`'s output round-trips to the right field count/values.
+    fn split_rfc4180_line(line: &str) -> Vec<String> {
+        let line = line.trim_end_matches("\r\n");
+        let mut fields = Vec::new();
+        let mut field = String::new();
+        let mut in_quotes = false;
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' if in_quotes && chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => in_quotes = !in_quotes,
+                ',' if !in_quotes => {
+                    fields.push(std::mem::take(&mut field));
+                }
+                c => field.push(c),
+            }
+        }
+        fields.push(field);
+        fields
+    }
+
+    #[test]
     fn csv_neutralizes_formula_injection() {
         // Leading =,+,-,@ get an apostrophe so spreadsheets treat them as text.
         assert_eq!(

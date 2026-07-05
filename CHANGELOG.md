@@ -4,6 +4,15 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed ScummVM games from the official RePlayOS ScummVM pack — which ships each game as a standalone `.svm` file with no `.m3u` playlist — not having their game folder removed when deleted. (#104)
+- Fixed the same standalone ScummVM games not counting their real folder size; only the tiny `.svm` marker file was counted, so game and system sizes were understated. (#102)
+
+---
+
 ## [1.1.0]
 
 > Adds board-aware arcade metadata tools, mature flags for arcade games, smoother browser Back navigation, safer CHD handling across systems, and an updated update UI with inline changelogs.
