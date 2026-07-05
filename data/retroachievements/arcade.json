@@ -2126,6 +2126,14 @@
  },
  {
   "hashes": [
+   "938beac2192f869559b2f07048a3f84b"
+  ],
+  "num_achievements": 26,
+  "ra_id": "14460",
+  "title": "Logic Pro 2"
+ },
+ {
+  "hashes": [
    "7eef33eb51dc35a4445ec6342130440d"
   ],
   "num_achievements": 7,
@@ -3156,7 +3164,7 @@
   "hashes": [
    "b28d81fd5c81ab464843fed52834691b"
   ],
-  "num_achievements": 16,
+  "num_achievements": 19,
   "ra_id": "12360",
   "title": "Rastan"
  },

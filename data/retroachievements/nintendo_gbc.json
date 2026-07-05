@@ -948,6 +948,15 @@
  },
  {
   "hashes": [
+   "30ec849758f703d7071e2ac28e048101",
+   "d97055e4a2fd4624fc924c4834ace35e"
+  ],
+  "num_achievements": 16,
+  "ra_id": "2582",
+  "title": "Alone in the Dark: The New Nightmare"
+ },
+ {
+  "hashes": [
    "12e82cb028ed40cdc0c80b2d2e3cf0cb",
    "6d9ab3b90805908d732c275157e29c79"
   ],
@@ -2111,6 +2120,14 @@
  },
  {
   "hashes": [
+   "42ff80b90350d30aafe41ea2c71a79bf"
+  ],
+  "num_achievements": 15,
+  "ra_id": "3647",
+  "title": "Men in Black: The Series"
+ },
+ {
+  "hashes": [
    "7971c95ad9745fe20df52e03cd52f636",
    "f6dd1b1e5747412b9e5f25376c972d5a"
   ],
@@ -2125,14 +2142,6 @@
   "num_achievements": 27,
   "ra_id": "4125",
   "title": "Metal Walker"
- },
- {
-  "hashes": [
-   "42ff80b90350d30aafe41ea2c71a79bf"
-  ],
-  "num_achievements": 15,
-  "ra_id": "3647",
-  "title": "MIB: Men in Black - The Series"
  },
  {
   "hashes": [

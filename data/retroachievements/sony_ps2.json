@@ -1459,6 +1459,15 @@
  },
  {
   "hashes": [
+   "3e82931b8e00aec6b6d45d928e65a334",
+   "93528ed147363ea890f0a67d06c75ae1"
+  ],
+  "num_achievements": 108,
+  "ra_id": "19084",
+  "title": "Deus Ex: The Conspiracy"
+ },
+ {
+  "hashes": [
    "9873357f36b9c98fbffa07d14cd856a9"
   ],
   "num_achievements": 142,
@@ -2604,14 +2613,6 @@
  },
  {
   "hashes": [
-   "61d1b633249acdf3982bdf41b7a1646d"
-  ],
-  "num_achievements": 40,
-  "ra_id": "37786",
-  "title": "Grand Theft Auto - San Andreas [Subset - Master Save]"
- },
- {
-  "hashes": [
    "8c571e6195962b27d890d9b94a13f6bf"
   ],
   "num_achievements": 180,
@@ -2640,6 +2641,14 @@
   "num_achievements": 261,
   "ra_id": "2772",
   "title": "Grand Theft Auto: San Andreas"
+ },
+ {
+  "hashes": [
+   "61d1b633249acdf3982bdf41b7a1646d"
+  ],
+  "num_achievements": 40,
+  "ra_id": "37786",
+  "title": "Grand Theft Auto: San Andreas [Subset - Master Save]"
  },
  {
   "hashes": [
@@ -3479,6 +3488,14 @@
   "num_achievements": 82,
   "ra_id": "2676",
   "title": "Legaia 2: Duel Saga"
+ },
+ {
+  "hashes": [
+   "2300e0546c9d15ad289df7334ffd9464"
+  ],
+  "num_achievements": 55,
+  "ra_id": "32985",
+  "title": "Legend of Herkules"
  },
  {
   "hashes": [
@@ -7220,6 +7237,14 @@
   "num_achievements": 74,
   "ra_id": "21173",
   "title": "Van Helsing"
+ },
+ {
+  "hashes": [
+   "cb8e478696bbf9b68cc9fcbf9d1fdafb"
+  ],
+  "num_achievements": 34,
+  "ra_id": "23940",
+  "title": "VeggieTales: LarryBoy and the Bad Apple"
  },
  {
   "hashes": [
