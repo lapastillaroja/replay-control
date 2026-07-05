@@ -17,7 +17,7 @@ use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::types::NowPlayingState;
 #[cfg(feature = "hydrate")]
 use crate::util::format_elapsed_short;
-use crate::util::format_size_for_system;
+use crate::util::format_game_size;
 use replay_control_core::replay_api::ReplayApiStatus;
 use replay_control_core::systems;
 
@@ -164,7 +164,9 @@ fn GameDetailContent(
     #[cfg(not(feature = "hydrate"))]
     let playtime_display = move || t(i18n.locale.get(), Key::PlaytimeUnavailable).to_string();
     let system_display = game.system_display.clone();
-    let size_display = format_size_for_system(detail.size_bytes, &system);
+    let size_display = format_game_size(detail.size_bytes, &system);
+    let storage_size_display = StoredValue::new(size_display.storage);
+    let rom_capacity_display = StoredValue::new(size_display.rom_capacity);
     let has_arcade = game.rotation.is_some();
     let (_, ext_lower) = split_filename(&game.rom_filename);
     let ext = ext_lower.to_uppercase();
@@ -634,9 +636,15 @@ fn GameDetailContent(
                     <span class="info-value" title=relative_path_sv.get_value()>{relative_path_sv.get_value()}</span>
                 </div>
                 <div class="info-row game-info-row">
-                    <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailFileSize)}</span>
-                    <span class="info-value">{size_display}</span>
+                    <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailStorageSize)}</span>
+                    <span class="info-value">{storage_size_display.get_value()}</span>
                 </div>
+                <Show when=move || rom_capacity_display.get_value().is_some()>
+                    <div class="info-row game-info-row">
+                        <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailRomCapacity)}</span>
+                        <span class="info-value">{move || rom_capacity_display.get_value().unwrap_or_default()}</span>
+                    </div>
+                </Show>
                 <Show when=move || !has_arcade>
                     <div class="info-row game-info-row">
                         <span class="info-label">{move || t(i18n.locale.get(), Key::GameDetailFormat)}</span>
@@ -1181,14 +1189,14 @@ fn delete_confirm_message(locale: crate::i18n::Locale, group: &server_fns::RomFi
         return tf(
             locale,
             Key::GameDetailConfirmDeleteSingle,
-            &[&crate::util::format_size(group.total_size)],
+            &[&crate::util::format_storage_size(group.total_size)],
         );
     }
     let lines: String = group
         .files
         .iter()
         .map(|f| {
-            let size = crate::util::format_size(f.size_bytes);
+            let size = crate::util::format_storage_size(f.size_bytes);
             match f.dir_file_count {
                 Some(n) => format!(
                     "\u{2022} {} ({}, {size})",
@@ -1205,7 +1213,7 @@ fn delete_confirm_message(locale: crate::i18n::Locale, group: &server_fns::RomFi
         Key::GameDetailConfirmDeleteMultiple,
         &[
             &total_files.to_string(),
-            &crate::util::format_size(group.total_size),
+            &crate::util::format_storage_size(group.total_size),
             &lines,
         ],
     )

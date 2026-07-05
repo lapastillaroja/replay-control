@@ -14,7 +14,7 @@ use crate::hooks::use_scroll_memory;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::RecentWithArt;
-use crate::util::format_size_short;
+use crate::util::format_storage_size_short;
 
 #[component]
 pub fn HomePage() -> impl IntoView {
@@ -158,8 +158,8 @@ pub fn HomePage() -> impl IntoView {
                         };
                         let storage_label = {
                             let kind = info.storage_kind.to_uppercase();
-                            let (used_num, used_unit) = format_size_short(info.disk_used_bytes);
-                            let (total_num, total_unit) = format_size_short(info.disk_total_bytes);
+                            let (used_num, used_unit) = format_storage_size_short(info.disk_used_bytes);
+                            let (total_num, total_unit) = format_storage_size_short(info.disk_total_bytes);
                             if used_unit == total_unit {
                                 format!("{used_num} / {total_num} {total_unit} {kind}")
                             } else {

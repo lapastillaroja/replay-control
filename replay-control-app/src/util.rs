@@ -169,17 +169,30 @@ fn format_month(year: u16, month: u8, locale: Locale) -> String {
     }
 }
 
-/// Format a byte count as a human-readable string (KB / MB / GB).
-pub fn format_size(bytes: u64) -> String {
-    const GB: u64 = 1_073_741_824;
-    const MB: u64 = 1_048_576;
+/// Display-ready size information for a game detail page.
+///
+/// `storage` is the actual filesystem size. `rom_capacity` is the historical
+/// cartridge/ROM-chip capacity, present only for systems where Mbit/Kbit is a
+/// meaningful user-facing convention.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameSizeDisplay {
+    pub storage: String,
+    pub rom_capacity: Option<String>,
+}
+
+/// Format a filesystem storage byte count as a human-readable decimal size
+/// (KB / MB / GB). This is for storage accounting surfaces: system totals,
+/// delete confirmations, downloaded files, and disk usage.
+pub fn format_storage_size(bytes: u64) -> String {
+    const GB: u64 = 1_000_000_000;
+    const MB: u64 = 1_000_000;
 
     if bytes >= GB {
         format!("{:.1} GB", bytes as f64 / GB as f64)
     } else if bytes >= MB {
         format!("{:.1} MB", bytes as f64 / MB as f64)
     } else {
-        format!("{} KB", bytes / 1024)
+        format!("{} KB", bytes / 1000)
     }
 }
 
@@ -213,30 +226,14 @@ pub fn format_elapsed_short(secs: u64) -> String {
     }
 }
 
-/// Check whether a system displays ROM sizes in Megabit.
-fn uses_megabit(system: &str) -> bool {
-    find_system_uses_megabit(system)
-}
-
-/// Format a byte count using historically appropriate units for the given system.
-///
-/// Cartridge-based and arcade ROM-chip systems display in Megabit (Mbit) or
-/// Kilobit (Kbit). Disc-based and computer systems display in KB/MB/GB.
-pub fn format_size_for_system(bytes: u64, system: &str) -> String {
-    if uses_megabit(system) {
-        format_size_megabit(bytes)
-    } else {
-        format_size(bytes)
-    }
-}
-
-/// Format bytes as Megabit (Mbit) or Kilobit (Kbit) for cartridge-based systems.
+/// Format bytes as Megabit (Mbit) or Kilobit (Kbit) for cartridge/ROM-chip
+/// capacity display.
 ///
 /// - Under 1 Mbit (131,072 bytes): displays as Kbit (e.g., "256 Kbit")
 /// - 1 Mbit and above: displays as Mbit, with one decimal place if not whole
 ///   (e.g., "16 Mbit", "4.5 Mbit")
 /// - Under 128 bytes (1 Kbit): falls back to showing bytes
-pub fn format_size_megabit(bytes: u64) -> String {
+pub fn format_rom_capacity(bytes: u64) -> String {
     let bits = bytes * 8;
     const MEGABIT: u64 = 1_048_576; // 1,048,576 bits = 1 Mbit
 
@@ -254,6 +251,21 @@ pub fn format_size_megabit(bytes: u64) -> String {
         } else {
             format!("{} bytes", bytes)
         }
+    }
+}
+
+/// Return historical ROM capacity for systems that conventionally expose ROM
+/// chip sizes in Mbit/Kbit. Disc, disk, and computer systems return `None`.
+pub fn rom_capacity_for_system(bytes: u64, system: &str) -> Option<String> {
+    find_system_uses_megabit(system).then(|| format_rom_capacity(bytes))
+}
+
+/// Build the game-detail size display: storage is always shown, and ROM
+/// capacity is shown in addition for cartridge/ROM-chip systems.
+pub fn format_game_size(bytes: u64, system: &str) -> GameSizeDisplay {
+    GameSizeDisplay {
+        storage: format_storage_size(bytes),
+        rom_capacity: rom_capacity_for_system(bytes, system),
     }
 }
 
@@ -330,12 +342,13 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>, &'static str> {
     Ok(result)
 }
 
-/// Like [`format_size`], but rounds GB values to whole numbers.
+/// Like [`format_storage_size`], but returns number/unit parts and rounds GB
+/// values to whole numbers.
 ///
 /// Returns `(number_string, unit)` — e.g. `("12", "GB")` or `("5.5", "MB")`.
-pub fn format_size_short(bytes: u64) -> (String, &'static str) {
-    const GB: u64 = 1_073_741_824;
-    const MB: u64 = 1_048_576;
+pub fn format_storage_size_short(bytes: u64) -> (String, &'static str) {
+    const GB: u64 = 1_000_000_000;
+    const MB: u64 = 1_000_000;
 
     if bytes >= GB {
         let gb = (bytes as f64 / GB as f64).round() as u64;
@@ -343,7 +356,7 @@ pub fn format_size_short(bytes: u64) -> (String, &'static str) {
     } else if bytes >= MB {
         (format!("{:.1}", bytes as f64 / MB as f64), "MB")
     } else {
-        ((bytes / 1024).to_string(), "KB")
+        ((bytes / 1000).to_string(), "KB")
     }
 }
 
@@ -403,78 +416,90 @@ mod tests {
 
     #[test]
     fn format_bytes_as_kb() {
-        assert_eq!(format_size(0), "0 KB");
-        assert_eq!(format_size(1024), "1 KB");
-        assert_eq!(format_size(512 * 1024), "512 KB");
+        assert_eq!(format_storage_size(0), "0 KB");
+        assert_eq!(format_storage_size(1000), "1 KB");
+        assert_eq!(format_storage_size(512_000), "512 KB");
     }
 
     #[test]
     fn format_bytes_as_mb() {
-        assert_eq!(format_size(1_048_576), "1.0 MB");
-        assert_eq!(format_size(5 * 1_048_576 + 524_288), "5.5 MB");
+        assert_eq!(format_storage_size(1_000_000), "1.0 MB");
+        assert_eq!(format_storage_size(5_500_000), "5.5 MB");
     }
 
     #[test]
     fn format_bytes_as_gb() {
-        assert_eq!(format_size(1_073_741_824), "1.0 GB");
-        assert_eq!(format_size(2_684_354_560), "2.5 GB");
+        assert_eq!(format_storage_size(1_000_000_000), "1.0 GB");
+        assert_eq!(format_storage_size(2_500_000_000), "2.5 GB");
     }
 
     #[test]
     fn format_short_gb_rounds() {
-        assert_eq!(format_size_short(1_073_741_824), ("1".to_string(), "GB"));
+        assert_eq!(
+            format_storage_size_short(1_000_000_000),
+            ("1".to_string(), "GB")
+        );
         // 2.5 GB rounds to 3
-        assert_eq!(format_size_short(2_684_354_560), ("3".to_string(), "GB"));
+        assert_eq!(
+            format_storage_size_short(2_500_000_000),
+            ("3".to_string(), "GB")
+        );
         // ~12.3 GB rounds to 12
-        assert_eq!(format_size_short(13_207_024_435), ("12".to_string(), "GB"));
+        assert_eq!(
+            format_storage_size_short(12_300_000_000),
+            ("12".to_string(), "GB")
+        );
     }
 
     #[test]
     fn format_short_mb_keeps_decimals() {
         assert_eq!(
-            format_size_short(5 * 1_048_576 + 524_288),
+            format_storage_size_short(5_500_000),
             ("5.5".to_string(), "MB")
         );
     }
 
     #[test]
     fn format_short_kb() {
-        assert_eq!(format_size_short(512 * 1024), ("512".to_string(), "KB"));
+        assert_eq!(
+            format_storage_size_short(512_000),
+            ("512".to_string(), "KB")
+        );
     }
 
-    // --- Edge cases for format_size ---
+    // --- Edge cases for format_storage_size ---
 
     #[test]
     fn format_zero_bytes() {
-        assert_eq!(format_size(0), "0 KB");
+        assert_eq!(format_storage_size(0), "0 KB");
     }
 
     #[test]
     fn format_one_byte() {
-        // Integer division: 1 / 1024 = 0
-        assert_eq!(format_size(1), "0 KB");
+        // Integer division: 1 / 1000 = 0
+        assert_eq!(format_storage_size(1), "0 KB");
     }
 
     #[test]
-    fn format_1023_bytes() {
+    fn format_999_bytes() {
         // Just under 1 KB
-        assert_eq!(format_size(1023), "0 KB");
+        assert_eq!(format_storage_size(999), "0 KB");
     }
 
     #[test]
     fn format_mb_boundary() {
         // Exactly at the MB boundary
-        assert_eq!(format_size(1_048_576), "1.0 MB");
+        assert_eq!(format_storage_size(1_000_000), "1.0 MB");
         // One byte below MB
-        assert_eq!(format_size(1_048_575), "1023 KB");
+        assert_eq!(format_storage_size(999_999), "999 KB");
     }
 
     #[test]
     fn format_gb_boundary() {
         // Exactly at the GB boundary
-        assert_eq!(format_size(1_073_741_824), "1.0 GB");
+        assert_eq!(format_storage_size(1_000_000_000), "1.0 GB");
         // One byte below GB -- should be MB
-        let below_gb = format_size(1_073_741_823);
+        let below_gb = format_storage_size(999_999_999);
         assert!(
             below_gb.ends_with("MB"),
             "Just below GB should be MB, got {below_gb}"
@@ -484,13 +509,13 @@ mod tests {
     #[test]
     fn format_very_large_value() {
         // 1 TB
-        assert_eq!(format_size(1_099_511_627_776), "1024.0 GB");
+        assert_eq!(format_storage_size(1_000_000_000_000), "1000.0 GB");
     }
 
     #[test]
     fn format_u64_max() {
         // Should not panic on max value
-        let result = format_size(u64::MAX);
+        let result = format_storage_size(u64::MAX);
         assert!(
             result.ends_with("GB"),
             "u64::MAX should show as GB, got {result}"
@@ -501,136 +526,141 @@ mod tests {
 
     #[test]
     fn format_short_zero() {
-        assert_eq!(format_size_short(0), ("0".to_string(), "KB"));
+        assert_eq!(format_storage_size_short(0), ("0".to_string(), "KB"));
     }
 
     #[test]
     fn format_short_one_byte() {
-        assert_eq!(format_size_short(1), ("0".to_string(), "KB"));
+        assert_eq!(format_storage_size_short(1), ("0".to_string(), "KB"));
     }
 
     #[test]
     fn format_short_mb_boundary() {
-        assert_eq!(format_size_short(1_048_576), ("1.0".to_string(), "MB"));
+        assert_eq!(
+            format_storage_size_short(1_000_000),
+            ("1.0".to_string(), "MB")
+        );
     }
 
     #[test]
     fn format_short_gb_rounding_up() {
         // 1.5 GB should round to 2
-        let bytes = 1_073_741_824 + 536_870_912; // 1.5 GB
-        assert_eq!(format_size_short(bytes), ("2".to_string(), "GB"));
+        let bytes = 1_500_000_000;
+        assert_eq!(format_storage_size_short(bytes), ("2".to_string(), "GB"));
     }
 
     #[test]
     fn format_short_gb_rounding_down() {
         // 1.4 GB should round to 1
-        let bytes = (1_073_741_824.0 * 1.4) as u64;
-        assert_eq!(format_size_short(bytes), ("1".to_string(), "GB"));
+        let bytes = 1_400_000_000;
+        assert_eq!(format_storage_size_short(bytes), ("1".to_string(), "GB"));
     }
 
-    // --- format_size_megabit tests ---
+    // --- format_rom_capacity tests ---
 
     #[test]
     fn megabit_zero() {
-        assert_eq!(format_size_megabit(0), "0 bytes");
+        assert_eq!(format_rom_capacity(0), "0 bytes");
     }
 
     #[test]
     fn megabit_tiny_bytes() {
         // Under 128 bytes (1 Kbit) -> falls back to bytes
-        assert_eq!(format_size_megabit(64), "64 bytes");
-        assert_eq!(format_size_megabit(1), "1 bytes");
+        assert_eq!(format_rom_capacity(64), "64 bytes");
+        assert_eq!(format_rom_capacity(1), "1 bytes");
     }
 
     #[test]
     fn megabit_kbit_values() {
         // 2 KB = 16 Kbit (Atari 2600 ROM)
-        assert_eq!(format_size_megabit(2048), "16 Kbit");
+        assert_eq!(format_rom_capacity(2048), "16 Kbit");
         // 4 KB = 32 Kbit
-        assert_eq!(format_size_megabit(4096), "32 Kbit");
+        assert_eq!(format_rom_capacity(4096), "32 Kbit");
         // 32 KB = 256 Kbit
-        assert_eq!(format_size_megabit(32_768), "256 Kbit");
+        assert_eq!(format_rom_capacity(32_768), "256 Kbit");
     }
 
     #[test]
     fn megabit_exact_mbit_values() {
         // 128 KB = 1 Mbit
-        assert_eq!(format_size_megabit(131_072), "1 Mbit");
+        assert_eq!(format_rom_capacity(131_072), "1 Mbit");
         // 256 KB = 2 Mbit
-        assert_eq!(format_size_megabit(262_144), "2 Mbit");
+        assert_eq!(format_rom_capacity(262_144), "2 Mbit");
         // 512 KB = 4 Mbit (classic SMS/GG)
-        assert_eq!(format_size_megabit(524_288), "4 Mbit");
+        assert_eq!(format_rom_capacity(524_288), "4 Mbit");
         // 1 MB = 8 Mbit (Super Mario World on SNES)
-        assert_eq!(format_size_megabit(1_048_576), "8 Mbit");
+        assert_eq!(format_rom_capacity(1_048_576), "8 Mbit");
         // 2 MB = 16 Mbit (Sonic 3)
-        assert_eq!(format_size_megabit(2_097_152), "16 Mbit");
+        assert_eq!(format_rom_capacity(2_097_152), "16 Mbit");
         // 3 MB = 24 Mbit (Phantasy Star IV)
-        assert_eq!(format_size_megabit(3_145_728), "24 Mbit");
+        assert_eq!(format_rom_capacity(3_145_728), "24 Mbit");
         // 4 MB = 32 Mbit (DKC on SNES)
-        assert_eq!(format_size_megabit(4_194_304), "32 Mbit");
+        assert_eq!(format_rom_capacity(4_194_304), "32 Mbit");
         // 8 MB = 64 Mbit (Super Mario 64)
-        assert_eq!(format_size_megabit(8_388_608), "64 Mbit");
+        assert_eq!(format_rom_capacity(8_388_608), "64 Mbit");
         // 32 MB = 256 Mbit (RE2 on N64)
-        assert_eq!(format_size_megabit(33_554_432), "256 Mbit");
+        assert_eq!(format_rom_capacity(33_554_432), "256 Mbit");
         // 64 MB = 512 Mbit (Conker's Bad Fur Day)
-        assert_eq!(format_size_megabit(67_108_864), "512 Mbit");
+        assert_eq!(format_rom_capacity(67_108_864), "512 Mbit");
     }
 
     #[test]
     fn megabit_whole_mbit_no_decimal() {
         // 768 KB = 6 Mbit (whole number)
-        assert_eq!(format_size_megabit(786_432), "6 Mbit");
+        assert_eq!(format_rom_capacity(786_432), "6 Mbit");
         // 640 KB = 5 Mbit (whole number)
-        assert_eq!(format_size_megabit(655_360), "5 Mbit");
+        assert_eq!(format_rom_capacity(655_360), "5 Mbit");
     }
 
     #[test]
     fn megabit_fractional_mbit() {
         // 192 KB = 1.5 Mbit
-        assert_eq!(format_size_megabit(196_608), "1.5 Mbit");
+        assert_eq!(format_rom_capacity(196_608), "1.5 Mbit");
         // 576 KB = 4.5 Mbit
-        assert_eq!(format_size_megabit(589_824), "4.5 Mbit");
+        assert_eq!(format_rom_capacity(589_824), "4.5 Mbit");
     }
 
     #[test]
     fn megabit_large_values() {
         // 86 MB = 688 Mbit (largest Neo Geo carts)
-        assert_eq!(format_size_megabit(90_177_536), "688 Mbit");
+        assert_eq!(format_rom_capacity(90_177_536), "688 Mbit");
     }
 
-    // --- format_size_for_system tests ---
+    // --- game detail size tests ---
 
     #[test]
-    fn format_for_system_megabit() {
-        // SNES ROM: 1 MB should show as 8 Mbit
-        assert_eq!(format_size_for_system(1_048_576, "nintendo_snes"), "8 Mbit");
-    }
-
-    #[test]
-    fn format_for_system_regular() {
-        // PlayStation: 500 MB should show in MB
-        assert_eq!(format_size_for_system(524_288_000, "sony_psx"), "500.0 MB");
+    fn game_size_for_megabit_system_shows_storage_and_capacity() {
+        let size = format_game_size(1_048_576, "nintendo_snes");
+        assert_eq!(size.storage, "1.0 MB");
+        assert_eq!(size.rom_capacity.as_deref(), Some("8 Mbit"));
     }
 
     #[test]
-    fn format_for_system_ds_uses_mb() {
-        // DS uses MB, not Mbit
-        assert_eq!(format_size_for_system(33_554_432, "nintendo_ds"), "32.0 MB");
+    fn game_size_for_disc_system_shows_storage_only() {
+        let size = format_game_size(524_288_000, "sony_psx");
+        assert_eq!(size.storage, "524.3 MB");
+        assert_eq!(size.rom_capacity, None);
     }
 
     #[test]
-    fn format_for_system_arcade_dc_uses_mb() {
-        // arcade_dc uses MB
-        assert_eq!(format_size_for_system(524_288_000, "arcade_dc"), "500.0 MB");
+    fn game_size_for_ds_uses_storage_only() {
+        let size = format_game_size(33_554_432, "nintendo_ds");
+        assert_eq!(size.storage, "33.6 MB");
+        assert_eq!(size.rom_capacity, None);
     }
 
     #[test]
-    fn format_for_system_unknown_uses_mb() {
-        // Unknown system defaults to MB/GB
-        assert_eq!(
-            format_size_for_system(1_048_576, "unknown_system"),
-            "1.0 MB"
-        );
+    fn game_size_for_arcade_dc_uses_storage_only() {
+        let size = format_game_size(524_288_000, "arcade_dc");
+        assert_eq!(size.storage, "524.3 MB");
+        assert_eq!(size.rom_capacity, None);
+    }
+
+    #[test]
+    fn game_size_for_unknown_uses_storage_only() {
+        let size = format_game_size(1_048_576, "unknown_system");
+        assert_eq!(size.storage, "1.0 MB");
+        assert_eq!(size.rom_capacity, None);
     }
 
     // --- format_release_date tests ---

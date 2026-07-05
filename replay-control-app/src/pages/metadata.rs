@@ -9,7 +9,9 @@ use crate::server_fns::{
     MetadataLibraryOverview, MetadataPageSnapshot, PlaytimeAvailability, RebuildProgress,
     SystemCoverage, SystemStatsRefreshState, ThumbnailPhase,
 };
-use crate::util::{format_elapsed_short, format_number, format_size, format_year_range, pct};
+use crate::util::{
+    format_elapsed_short, format_number, format_storage_size, format_year_range, pct,
+};
 use replay_control_core::systems::{
     system_core_supports_retroachievements, system_has_retroachievements,
 };
@@ -342,7 +344,7 @@ pub fn MetadataPage() -> impl IntoView {
                                         t(locale, Key::MetadataThumbnailSnaps),
                                         format_number(image_stats.title_files),
                                         t(locale, Key::MetadataRowTitleScreens).to_lowercase(),
-                                        format_size(image_stats.total_size_bytes),
+                                        format_storage_size(image_stats.total_size_bytes),
                                         t(locale, Key::MetadataThumbnailOnDisk),
                                     )
                                 } else {
@@ -482,13 +484,13 @@ fn ImportProgressDisplay(progress: Memo<Option<server_fns::ImportProgress>>) -> 
                                         Some(total) if total > 0 => format!(
                                             "{} {} / {}",
                                             t(locale, Key::MetadataDownloadingFile),
-                                            format_size(p.download_bytes),
-                                            format_size(total),
+                                            format_storage_size(p.download_bytes),
+                                            format_storage_size(total),
                                         ),
                                         _ => format!(
                                             "{} {}",
                                             t(locale, Key::MetadataDownloadingFile),
-                                            format_size(p.download_bytes),
+                                            format_storage_size(p.download_bytes),
                                         ),
                                     }
                                 } else {
@@ -544,10 +546,12 @@ fn RefreshMetadataProgressDisplay(
                         (0, _) => "Downloading...".to_string(),
                         (bytes, Some(total)) => format!(
                             "Downloading {} / {}",
-                            format_size(bytes),
-                            format_size(total),
+                            format_storage_size(bytes),
+                            format_storage_size(total),
                         ),
-                        (bytes, None) => format!("Downloading {}", format_size(bytes)),
+                        (bytes, None) => {
+                            format!("Downloading {}", format_storage_size(bytes))
+                        }
                     },
                     RefreshMetadataPhase::Parsing => {
                         if p.source_entries > 0 {
@@ -765,7 +769,7 @@ fn DataManagementSection(
         leptos::task::spawn_local(async move {
             match server_fns::cleanup_orphaned_images().await {
                 Ok((metadata_deleted, files_deleted, bytes_freed)) => {
-                    let size = format_size(bytes_freed);
+                    let size = format_storage_size(bytes_freed);
                     orphans_result.set(Some(format!(
                         "Cleaned up {files_deleted} images ({size}), {metadata_deleted} metadata rows"
                     )));
@@ -1188,7 +1192,7 @@ fn SummaryCards(
                 value=year_value
                 label=t(locale, Key::MetadataSummaryYearSpan) />
             <StatCard compact=true
-                value=format_size(s.total_size_bytes)
+                value=format_storage_size(s.total_size_bytes)
                 label=t(locale, Key::MetadataSummaryLibrarySize) />
             <StatCard compact=true
                 value=format_number(s.downloaded_thumbnail_files)
@@ -1312,7 +1316,7 @@ fn SystemRowHeader(cov: StoredValue<SystemCoverage>) -> impl IntoView {
     });
 
     let width = format!("width:{overall}%");
-    let size_text = format_size(size_bytes);
+    let size_text = format_storage_size(size_bytes);
 
     view! {
         <>
@@ -1545,7 +1549,7 @@ fn media_row_view(
             ));
         }
         if c.downloaded_thumbnail_bytes > 0 {
-            parts.push(format_size(c.downloaded_thumbnail_bytes));
+            parts.push(format_storage_size(c.downloaded_thumbnail_bytes));
         }
         (!parts.is_empty()).then(|| {
             format!(

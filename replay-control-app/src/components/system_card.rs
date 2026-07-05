@@ -3,13 +3,13 @@ use leptos_router::components::A;
 
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::SystemSummary;
-use crate::util::format_size;
+use crate::util::format_storage_size;
 
 #[component]
 pub fn SystemCard(system: SystemSummary, href: String) -> impl IntoView {
     let i18n = use_i18n();
     let has_games = system.game_count > 0;
-    let size_display = format_size(system.total_size_bytes);
+    let size_display = format_storage_size(system.total_size_bytes);
     let game_count = system.game_count;
     let icon_src = format!("/static/icons/systems/{}.png", system.folder_name);
 

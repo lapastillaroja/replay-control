@@ -1543,7 +1543,7 @@ fn ResourceVideoRow(
 
 fn document_resource_link(doc: GameDocument, system: String, rom_filename: String) -> ResourceLink {
     let icon = resource_icon(&doc.extension);
-    let size = crate::util::format_size(doc.size_bytes);
+    let size = crate::util::format_storage_size(doc.size_bytes);
     let ext = doc.extension.to_uppercase();
     let encoded_rom = crate::util::base64_encode(rom_filename.as_bytes());
     let encoded_path = urlencoding::encode(&doc.relative_path);
@@ -1557,7 +1557,7 @@ fn document_resource_link(doc: GameDocument, system: String, rom_filename: Strin
 }
 
 fn local_manual_resource_link(manual: LocalManual) -> ResourceLink {
-    let size = crate::util::format_size(manual.size_bytes);
+    let size = crate::util::format_storage_size(manual.size_bytes);
     let kind = manual
         .filename
         .rsplit('.')
@@ -1591,7 +1591,7 @@ fn manual_suggestion_link(rec: ManualRecommendation) -> ResourceLink {
         meta.push(language.clone());
     }
     if let Some(size) = rec.size_bytes {
-        meta.push(crate::util::format_size(size));
+        meta.push(crate::util::format_storage_size(size));
     }
     ResourceLink {
         title: rec.title.clone(),

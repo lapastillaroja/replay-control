@@ -15,7 +15,8 @@ The top of the page shows box art with a screenshots gallery. Tap the box art to
 A summary card displays:
 
 - System and filename
-- File size (Mbit/Kbit for cartridge systems, MB/GB for disc-based)
+- Storage size (KB/MB/GB)
+- ROM capacity (Mbit/Kbit) for cartridge and ROM-chip systems where that historical unit is meaningful
 - Developer, release year, genre
 - Player count and co-op support
 - A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). Compressed disc images (`.chd`) are also affected for now, pending a RePlayOS fix

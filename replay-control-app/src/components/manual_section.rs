@@ -407,7 +407,7 @@ fn DocumentLink(
         _ => "\u{1F4CE}",                              // paperclip
     };
 
-    let size_display = crate::util::format_size(doc.size_bytes);
+    let size_display = crate::util::format_storage_size(doc.size_bytes);
     let label = doc.label.clone();
     let ext_upper = doc.extension.to_uppercase();
 
@@ -450,7 +450,7 @@ where
     F: Fn(String) + Clone + Send + Sync + 'static,
 {
     let i18n = use_i18n();
-    let size_display = crate::util::format_size(manual.size_bytes);
+    let size_display = crate::util::format_storage_size(manual.size_bytes);
     let label = manual_title_with_language(&manual.label, manual.language.as_deref());
     let kind = manual_file_kind(&manual.filename);
     let source = if let Some(source_url) = manual.source_url.as_deref() {
@@ -615,7 +615,10 @@ where
     let meta = {
         let source = manual_source_meta(&rec.url, Some(&rec.source));
         if let Some(size) = rec.size_bytes {
-            format!("{source} \u{00B7} {}", crate::util::format_size(size))
+            format!(
+                "{source} \u{00B7} {}",
+                crate::util::format_storage_size(size)
+            )
         } else {
             source
         }

@@ -10,7 +10,7 @@ use crate::hooks::use_update_state;
 use crate::i18n::{Key, Locale, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::SystemLiveStats;
-use crate::util::{format_elapsed_short, format_size};
+use crate::util::{format_elapsed_short, format_storage_size};
 use replay_control_core::auth::{AuthRole, AuthStatus};
 use replay_control_core::update::{ChangelogEntry, UpdateChannel, UpdateState};
 
@@ -411,9 +411,9 @@ fn SystemStatsGrid(stats: SystemLiveStats) -> impl IntoView {
         <div class="info-grid">
             <InfoRow label_key=Key::MoreStorage value=stats.storage_kind.to_uppercase() />
             <InfoRow label_key=Key::MorePath value=stats.storage_root />
-            <InfoRow label_key=Key::MoreDiskTotal value=format_size(stats.disk_total_bytes) />
-            <InfoRow label_key=Key::MoreDiskUsed value=format_size(stats.disk_used_bytes) />
-            <InfoRow label_key=Key::MoreDiskAvailable value=format_size(stats.disk_available_bytes) />
+            <InfoRow label_key=Key::MoreDiskTotal value=format_storage_size(stats.disk_total_bytes) />
+            <InfoRow label_key=Key::MoreDiskUsed value=format_storage_size(stats.disk_used_bytes) />
+            <InfoRow label_key=Key::MoreDiskAvailable value=format_storage_size(stats.disk_available_bytes) />
             <InfoRow label_key=Key::MoreEthernetIp value=stats.ethernet_ip.unwrap_or_else(|| t(i18n.locale.get_untracked(), Key::MoreNotConnected).to_string()) />
             <InfoRow label_key=Key::MoreWifiIp value=stats.wifi_ip.unwrap_or_else(|| t(i18n.locale.get_untracked(), Key::MoreNotConnected).to_string()) />
             <InfoRow label_key=Key::MoreEthernetMac value=stats.ethernet_mac.unwrap_or_else(|| "—".to_string()) />
