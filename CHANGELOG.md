@@ -8,6 +8,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Fixed
 
+- Improved the Spanish up-to-date update status wording so it reads more naturally when no update is available. (#107)
 - Fixed size displays mixing storage accounting with ROM capacity: storage totals now use decimal KB/MB/GB, while game detail shows a separate ROM capacity row for cartridge and ROM-chip systems. (#106)
 - Fixed ScummVM games from the official RePlayOS ScummVM pack — which ships each game as a standalone `.svm` file with no `.m3u` playlist — not having their game folder removed when deleted. (#104)
 - Fixed the same standalone ScummVM games not counting their real folder size; only the tiny `.svm` marker file was counted, so game and system sizes were understated. (#102)

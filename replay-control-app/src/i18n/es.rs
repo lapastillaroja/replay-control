@@ -755,7 +755,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateChannelStable => "Estable",
         Key::UpdateChannelBeta => "Beta",
         Key::UpdateCurrentVersion => "Versión actual: v{0} ({1})",
-        Key::UpdateUpToDate => "Actualizado",
+        Key::UpdateUpToDate => "En la última versión",
         Key::UpdateDownloading => "Descargando actualización...",
         Key::UpdateRestarting => "Reiniciando Replay Control...",
         Key::UpdateFailed => "Error en la actualización",
