@@ -174,6 +174,14 @@
  },
  {
   "hashes": [
+   "3a920444f83d8c89f9b4b1174f239db4"
+  ],
+  "num_achievements": 125,
+  "ra_id": "27862",
+  "title": "~Hack~ Final Fantasy Tactics: The Lion War of the Lions"
+ },
+ {
+  "hashes": [
    "fdb3524e871a8d10c8a2f3e63d2cd638"
   ],
   "num_achievements": 6,
@@ -5277,7 +5285,7 @@
   "hashes": [
    "f8304352576bb722eaa3dc5896a4b148"
   ],
-  "num_achievements": 210,
+  "num_achievements": 209,
   "ra_id": "16994",
   "title": "Rayman: Brain Games"
  },
