@@ -11,6 +11,7 @@ use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, Event};
 use quick_xml::reader::Reader;
 use replay_control_core::arcade_board::ArcadeBoard;
+use replay_control_core::developer;
 use replay_control_core::genre;
 use replay_control_core::library::resource_kind;
 use replay_control_core::title_utils;
@@ -1739,154 +1740,9 @@ fn is_beta_or_proto(name: &str) -> bool {
 // Developer normalization
 // =============================================================================
 
-fn developer_override(raw: &str) -> Option<&'static str> {
-    match raw {
-        "Strata/Incredible Technologies" => Some("Incredible Technologies"),
-        "Victor / Cave / Capcom" => Some("Cave"),
-        "Capcom / Cave / Victor Interactive Software" => Some("Cave"),
-        "Sony/Capcom" => Some("Capcom"),
-        "SNK Playmore" => Some("SNK"),
-        "Sega Toys" => Some("Sega"),
-        "Lucasfilm Games" => Some("LucasArts"),
-        "Nintendo / Capcom" => Some("Capcom"),
-        "Taito Corporation (licensed from Midway)" => Some("Midway"),
-        "IGS / Cave (Tong Li Animation license)" => Some("Cave"),
-        "IGS / Cave" => Some("Cave"),
-        _ => None,
-    }
-}
-
-const CORPORATE_SUFFIXES: &[&str] = &[
-    " Computer Entertainment Osaka",
-    " Computer Entertainment Kobe",
-    " Computer Entertainment Tokyo",
-    " Digital Entertainment",
-    " Technical Institute",
-    " Interactive Software",
-    " Entertainment",
-    " Enterprises",
-    " Corporation",
-    " Industry",
-    " of America",
-    " of Japan",
-    " Co., Ltd.",
-    " Co., Ltd",
-    " Corp.",
-    " Corp",
-    " LTD.",
-    " Ltd.",
-    " Ltd",
-    " Inc.",
-    " Inc",
-    " Co.",
-    " Co",
-    " USA",
-];
-const REGIONAL_QUALIFIERS: &[&str] = &[" America", " Japan", " Europe", " do Brasil"];
-const DIVISION_SUFFIXES: &[&str] = &[
-    " AM1", " AM2", " AM3", " AM4", " AM5", " CS1", " CS2", " CS3", " R&D 1", " R&D 2", " R&D 3",
-    " R&D 4", " R&D1", " R&D2", " R&D3", " R&D4", " EAD", " SPD",
-];
-
-fn is_noise(s: &str) -> bool {
-    let lower = s.to_ascii_lowercase();
-    lower == "bootleg"
-        || lower == "<unknown>"
-        || lower == "unknown"
-        || lower.starts_with("bootleg ")
-        || lower.starts_with("bootleg(")
-        || lower.starts_with("hack ")
-        || lower.starts_with("hack(")
-        || lower == "hack"
-}
-
-fn strip_suffixes_ci(s: &mut String, suffixes: &[&str]) {
-    loop {
-        let before = s.len();
-        for suffix in suffixes {
-            let s_lower = s.to_ascii_lowercase();
-            if s_lower.ends_with(&suffix.to_ascii_lowercase()) {
-                let new_len = s.len() - suffix.len();
-                s.truncate(new_len);
-                *s = s.trim().to_string();
-            }
-        }
-        if s.len() == before {
-            break;
-        }
-    }
-}
-
-fn normalize_case(s: &str) -> String {
-    if s.len() <= 1 {
-        return s.to_string();
-    }
-    let alpha: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
-    if alpha.is_empty() {
-        return s.to_string();
-    }
-    if alpha.iter().all(|c| c.is_ascii_uppercase()) && alpha.len() > 3 {
-        let mut chars = s.chars();
-        let first = chars.next().unwrap();
-        let mut result = first.to_uppercase().to_string();
-        for c in chars {
-            result.extend(c.to_lowercase());
-        }
-        result
-    } else {
-        s.to_string()
-    }
-}
-
-fn normalize_developer(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    if let Some(canonical) = developer_override(trimmed) {
-        return canonical.to_string();
-    }
-    if is_noise(trimmed) {
-        return String::new();
-    }
-    let mut s = trimmed.to_string();
-    if let Some(paren_idx) = s.find('(')
-        && s[paren_idx..].to_ascii_lowercase().contains("license")
-    {
-        s = s[..paren_idx].trim().to_string();
-    }
-    if s.starts_with('[')
-        && let Some(close) = s.find(']')
-    {
-        let name = s[1..close].trim().to_string();
-        if !name.is_empty() {
-            s = name;
-        }
-    }
-    strip_suffixes_ci(&mut s, CORPORATE_SUFFIXES);
-    strip_suffixes_ci(&mut s, REGIONAL_QUALIFIERS);
-    if let Some(idx) = s.find(" / ") {
-        s = s[..idx].trim().to_string();
-    } else if let Some(idx) = s.find('/') {
-        s = s[..idx].trim().to_string();
-    } else if let Some(idx) = s.find(" + ") {
-        s = s[..idx].trim().to_string();
-    }
-    strip_suffixes_ci(&mut s, CORPORATE_SUFFIXES);
-    strip_suffixes_ci(&mut s, REGIONAL_QUALIFIERS);
-    strip_suffixes_ci(&mut s, DIVISION_SUFFIXES);
-    let s = s.trim_end_matches(|c: char| c == '/' || c == '?' || c.is_whitespace());
-    let s = s.trim();
-    if s.is_empty() {
-        return String::new();
-    }
-    let result = normalize_case(s);
-    if is_noise(&result) {
-        String::new()
-    } else {
-        result
-    }
-}
+// Developer/manufacturer normalization lives in the pure core crate
+// (`replay_control_core::developer`) so the build tool and the runtime
+// share one canonical table — see `developer::normalize_developer`.
 
 fn tgdb_genre_name(id: u32) -> &'static str {
     match id {
@@ -2009,7 +1865,7 @@ fn parse_tgdb_json(path: &Path) -> (HashMap<(String, u32), TgdbEntry>, TgdbRegio
             })
             .unwrap_or_default();
 
-        let normalized = normalize_title_for_tgdb(&title);
+        let normalized = title_utils::normalize_for_wikidata(&title);
         let key = (normalized.clone(), platform);
 
         if year > 0 && !release_date_raw.is_empty() {
@@ -2069,16 +1925,6 @@ fn classify_tgdb_date(raw: &str) -> Option<(String, &'static str)> {
     } else {
         Some((year_str.to_string(), "year"))
     }
-}
-
-fn normalize_title_for_tgdb(title: &str) -> String {
-    let mut result = String::with_capacity(title.len());
-    for ch in title.chars() {
-        if ch.is_alphanumeric() || ch == ' ' {
-            result.push(ch.to_ascii_lowercase());
-        }
-    }
-    result.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 // =============================================================================
@@ -2476,7 +2322,7 @@ struct TgdbMatch {
 /// (first match wins). Shared by the console and Amiga passes; the console pass
 /// additionally collects regional release dates separately.
 fn tgdb_lookup(display_name: &str, platform_ids: &[u32], tgdb: &TgdbData) -> Option<TgdbMatch> {
-    let norm = normalize_title_for_tgdb(display_name);
+    let norm = title_utils::normalize_for_wikidata(display_name);
     for &platform_id in platform_ids {
         if let Some(e) = tgdb.games.get(&(norm.clone(), platform_id)) {
             let genre = if e.genre_ids.is_empty() {
@@ -2491,7 +2337,7 @@ fn tgdb_lookup(display_name: &str, platform_ids: &[u32], tgdb: &TgdbData) -> Opt
                 .developer_ids
                 .first()
                 .and_then(|id| tgdb.developers.get(id))
-                .map(|n| normalize_developer(n))
+                .map(|n| developer::normalize_developer(n))
                 .unwrap_or_default();
             let publisher = e
                 .publisher_ids
@@ -2643,7 +2489,7 @@ fn insert_console_games(
             let mut tgdb_coop: Option<bool> = None;
             let mut tgdb_rating = String::new();
 
-            let tgdb_normalized = normalize_title_for_tgdb(&display_name);
+            let tgdb_normalized = title_utils::normalize_for_wikidata(&display_name);
             let base_title_lc = title_utils::base_title(&display_name);
             let mut region_dates_seen: HashSet<(&'static str, String)> = HashSet::new();
 
@@ -2868,17 +2714,6 @@ struct WikidataSeriesEntryRaw {
     followed_by: Option<String>,
 }
 
-fn normalize_title_for_wikidata(title: &str) -> String {
-    let trimmed = title.trim();
-    let mut result = String::with_capacity(trimmed.len());
-    for ch in trimmed.chars() {
-        if ch.is_alphanumeric() || ch == ' ' {
-            result.push(ch.to_ascii_lowercase());
-        }
-    }
-    result.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
     let series_path = sources_dir.join("wikidata").join("series.json");
     if !series_path.exists() {
@@ -2912,7 +2747,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
         let norm_to_idx: HashMap<String, Vec<usize>> = {
             let mut map: HashMap<String, Vec<usize>> = HashMap::new();
             for (i, entry) in entries.iter().enumerate() {
-                let norm = normalize_title_for_wikidata(&entry.game_title);
+                let norm = title_utils::normalize_for_wikidata(&entry.game_title);
                 if !norm.is_empty() {
                     map.entry(norm).or_default().push(i);
                 }
@@ -2926,7 +2761,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
         for i in 0..entries.len() {
             let entry = &entries[i];
             if let Some(ref followed_by) = entry.followed_by {
-                let target_norm = normalize_title_for_wikidata(followed_by);
+                let target_norm = title_utils::normalize_for_wikidata(followed_by);
                 if let Some(indices) = norm_to_idx.get(&target_norm) {
                     for &j in indices {
                         if entries[j].follows.as_ref().is_none_or(|s| s.is_empty()) {
@@ -2936,7 +2771,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
                 }
             }
             if let Some(ref follows) = entry.follows {
-                let target_norm = normalize_title_for_wikidata(follows);
+                let target_norm = title_utils::normalize_for_wikidata(follows);
                 if let Some(indices) = norm_to_idx.get(&target_norm) {
                     for &j in indices {
                         if entries[j].followed_by.as_ref().is_none_or(|s| s.is_empty()) {
@@ -2949,7 +2784,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
                 && !series.is_empty()
             {
                 for target in [&entry.follows, &entry.followed_by].into_iter().flatten() {
-                    let target_norm = normalize_title_for_wikidata(target);
+                    let target_norm = title_utils::normalize_for_wikidata(target);
                     if let Some(indices) = norm_to_idx.get(&target_norm) {
                         for &j in indices {
                             if entries[j].series_name.as_ref().is_none_or(|s| s.is_empty()) {
@@ -2980,7 +2815,7 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
     let mut count = 0usize;
 
     for entry in &entries {
-        let normalized = normalize_title_for_wikidata(&entry.game_title);
+        let normalized = title_utils::normalize_for_wikidata(&entry.game_title);
         if normalized.is_empty() {
             continue;
         }
