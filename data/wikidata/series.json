@@ -2888,6 +2888,22 @@
     "followed_by": "Beach Head II: The Dictator Strikes Back"
   },
   {
+    "game_title": "Beach Head 2000",
+    "series_name": "Beach Head",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Beach Head 2002",
+    "series_name": "Beach Head",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Bear in the Big Blue House",
     "series_name": "Bear in the Big Blue House",
     "system": "nintendo_gbc",
@@ -4541,6 +4557,14 @@
     "system": "nintendo_ds",
     "series_order": 10,
     "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "CYBER COMMANDO",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "Cyber Sled",
     "followed_by": ""
   },
   {
@@ -6680,6 +6704,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "Cyber Sled",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "CYBER COMMANDO"
+  },
+  {
+    "game_title": "Cyber Sled",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "CYBER COMMANDO"
+  },
+  {
     "game_title": "Cyber Troopers Virtual-On Force",
     "series_name": "Virtual-On",
     "system": "arcade_fbneo",
@@ -6828,16 +6868,16 @@
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Dance Dance Revolution X3",
-    "followed_by": "Dance Dance Revolution A"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Dance Dance Revolution",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "follows": "Dance Dance Revolution X3",
+    "followed_by": "Dance Dance Revolution A"
   },
   {
     "game_title": "Dance Dance Revolution",
@@ -7410,6 +7450,14 @@
   {
     "game_title": "Dead or Alive 6",
     "series_name": "Dead or Alive",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Dead or Alive 6",
+    "series_name": "Dead or Alive 6",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -15128,6 +15176,14 @@
     "followed_by": "Halley Wars"
   },
   {
+    "game_title": "Halo: Fireteam Raven",
+    "series_name": "Halo",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Hammerin’ Harry 2: Dan the Red Strikes Back",
     "series_name": "Hammerin' Harry",
     "system": "nintendo_nes",
@@ -22464,6 +22520,54 @@
     "followed_by": ""
   },
   {
+    "game_title": "Mr. Driller",
+    "series_name": "Mr. Driller",
+    "system": "arcade_fbneo",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Mr. Driller",
+    "series_name": "Mr. Driller",
+    "system": "nintendo_gbc",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Mr. Driller",
+    "series_name": "Mr. Driller",
+    "system": "sega_dc",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Mr. Driller",
+    "series_name": "Mr. Driller",
+    "system": "sony_psx",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Mr. Driller 2",
+    "series_name": "Mr. Driller",
+    "system": "arcade_fbneo",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Mr. Driller 2",
+    "series_name": "Mr. Driller",
+    "system": "nintendo_gba",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Ms. Pac-Man",
     "series_name": "",
     "system": "arcade_fbneo",
@@ -26258,8 +26362,32 @@
   {
     "game_title": "Point Blank",
     "series_name": "Point Blank",
+    "system": "arcade_fbneo",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Point Blank",
+    "series_name": "Point Blank",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Point Blank 2",
+    "series_name": "Point Blank",
+    "system": "arcade_fbneo",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Point Blank 2",
+    "series_name": "Point Blank",
+    "system": "sony_psx",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -28549,7 +28677,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
-    "followed_by": "Rayman Raving Rabbids 2"
+    "followed_by": ""
   },
   {
     "game_title": "Rayman Raving Rabbids",
@@ -28557,7 +28685,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
-    "followed_by": ""
+    "followed_by": "Rayman Raving Rabbids 2"
   },
   {
     "game_title": "Rayman Raving Rabbids",
@@ -29308,6 +29436,14 @@
     "series_name": "Ridge Racer",
     "system": "sony_psx",
     "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Ridge Racer V",
+    "series_name": "Ridge Racer",
+    "system": "arcade_fbneo",
+    "series_order": 8,
     "follows": "",
     "followed_by": ""
   },
@@ -32644,14 +32780,6 @@
     "series_name": "Aero Fighters",
     "system": "sony_psx",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Sonic X Martha Speaks",
-    "series_name": "Ridge Racer",
-    "system": "arcade_fbneo",
-    "series_order": 8,
     "follows": "",
     "followed_by": ""
   },
@@ -37444,16 +37572,16 @@
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "The Black Bass",
-    "followed_by": ""
+    "follows": "",
+    "followed_by": "The Black Bass"
   },
   {
     "game_title": "The Black Bass",
     "series_name": "",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "",
-    "followed_by": "The Black Bass"
+    "follows": "The Black Bass",
+    "followed_by": ""
   },
   {
     "game_title": "The Blue Crystal Rod",
@@ -39573,7 +39701,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Tom Clancy's Splinter Cell: Pandora Tomorrow",
-    "followed_by": "Tom Clancy's Splinter Cell: Double Agent"
+    "followed_by": "Tom Clancy's Splinter Cell: Essentials"
   },
   {
     "game_title": "Tom Clancy's Splinter Cell: Pandora Tomorrow",
