@@ -265,7 +265,7 @@ pub fn resolve_box_art_with_hash<'a>(
 pub fn format_box_art_url(system: &str, relative_path: &str) -> String {
     let encoded_path: String = relative_path
         .split('/')
-        .map(encode_uri_path_segment)
+        .map(super::percent_encode_uri_segment)
         .collect::<Vec<_>>()
         .join("/");
     format!("/media/{system}/{encoded_path}")
@@ -275,23 +275,6 @@ pub fn format_box_art_url(system: &str, relative_path: &str) -> String {
 ///
 /// Matches the behavior of `urlencoding::encode`: preserves only
 /// ALPHA / DIGIT / `-` / `.` / `_` / `~`, encodes everything else.
-fn encode_uri_path_segment(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(b as char);
-            }
-            _ => {
-                out.push('%');
-                out.push(char::from(b"0123456789ABCDEF"[(b >> 4) as usize]));
-                out.push(char::from(b"0123456789ABCDEF"[(b & 0x0F) as usize]));
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

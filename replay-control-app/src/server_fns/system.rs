@@ -344,8 +344,7 @@ pub async fn delete_recent(marker_filename: String) -> Result<(), ServerFnError>
     // recents) so the deletion surfaces on the next `get_recents` instead of
     // reappearing on reload. Mirrors the launch path; the ROM watcher also
     // invalidates on `_recent/` changes but is unreliable on NFS.
-    state.cache.invalidate_recents().await;
-    state.cache.invalidate_recommendations().await;
+    state.cache.invalidate_after_launch().await;
     Ok(())
 }
 

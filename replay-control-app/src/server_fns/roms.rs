@@ -1061,8 +1061,7 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
     if let Err(e) = add_recent(&storage, system, rom_filename, &rom_path) {
         tracing::warn!("Failed to create recents entry: {e}");
     }
-    state.cache.invalidate_recents().await;
-    state.cache.invalidate_recommendations().await;
+    state.cache.invalidate_after_launch().await;
 
     #[cfg(feature = "ssr")]
     redirect_after_progressive_form(&return_to);

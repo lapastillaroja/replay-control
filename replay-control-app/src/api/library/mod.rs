@@ -417,6 +417,14 @@ impl LibraryService {
     pub async fn invalidate_recents(&self) {
         *self.recents.write().await = None;
     }
+
+    /// Invalidate the caches a launch (or recents change) affects: the recents
+    /// list and the recommendations that key off it. One call so every
+    /// launch-ish path drops the same coupled pair rather than re-asserting it.
+    pub async fn invalidate_after_launch(&self) {
+        self.invalidate_recents().await;
+        self.invalidate_recommendations().await;
+    }
 }
 
 #[cfg(test)]

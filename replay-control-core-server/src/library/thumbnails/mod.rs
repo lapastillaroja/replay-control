@@ -13,6 +13,26 @@ use std::path::{Path, PathBuf};
 use super::fs_walk;
 use replay_control_core::error::{Error, Result};
 
+/// Percent-encode one URI path segment, keeping only the RFC-3986 unreserved
+/// set (`A-Za-z0-9-._~`). Shared by the manifest and resolution modules, which
+/// each previously carried a byte-identical copy.
+pub(crate) fn percent_encode_uri_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from(b"0123456789ABCDEF"[(b >> 4) as usize]));
+                out.push(char::from(b"0123456789ABCDEF"[(b & 0x0F) as usize]));
+            }
+        }
+    }
+    out
+}
+
 /// Kind of thumbnail image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbnailKind {

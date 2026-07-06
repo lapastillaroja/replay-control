@@ -16,25 +16,6 @@ use crate::image_matching;
 use crate::thumbnails::{self, ThumbnailKind};
 use replay_control_core::error::{Error, Result};
 
-/// Percent-encode a string for use in a URL path component.
-/// Encodes everything except unreserved characters (RFC 3986).
-fn encode_uri_component(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => {
-                out.push('%');
-                out.push(char::from(b"0123456789ABCDEF"[(b >> 4) as usize]));
-                out.push(char::from(b"0123456789ABCDEF"[(b & 0x0F) as usize]));
-            }
-        }
-    }
-    out
-}
-
 // ── Phase 1: Manifest Generation ────────────────────────────────────────
 
 /// Info about a single libretro-thumbnails repo.
@@ -911,7 +892,7 @@ pub fn find_in_manifest<'a>(
 
 /// Construct the raw.githubusercontent.com URL for a thumbnail.
 pub fn thumbnail_download_url(m: &ManifestMatch, kind: &str) -> String {
-    let encoded = url_encode_path_component(&format!("{}.png", m.filename));
+    let encoded = super::percent_encode_uri_segment(&format!("{}.png", m.filename));
     format!(
         "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/{}/{}",
         m.repo_url_name, m.branch, kind, encoded,
@@ -920,21 +901,6 @@ pub fn thumbnail_download_url(m: &ManifestMatch, kind: &str) -> String {
 
 /// Percent-encode a single path component for a URL.
 /// Encodes everything except unreserved characters (RFC 3986).
-fn url_encode_path_component(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() * 2);
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(b as char);
-            }
-            _ => {
-                result.push_str(&format!("%{:02X}", b));
-            }
-        }
-    }
-    result
-}
-
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// Download a thumbnail image, handling symlink resolution transparently.
@@ -952,7 +918,7 @@ pub async fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>
         // Extract just the filename from the relative path.
         let target_filename = target_path.rsplit('/').next().unwrap_or(target_path);
 
-        let encoded = url_encode_path_component(target_filename);
+        let encoded = super::percent_encode_uri_segment(target_filename);
         let target_url = format!(
             "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/{}/{}",
             m.repo_url_name, m.branch, kind, encoded,
@@ -1177,7 +1143,7 @@ pub fn find_boxart_variants(
                 }
 
                 // Undownloaded variant — preview from GitHub raw.
-                let encoded_name = encode_uri_component(&entry.filename);
+                let encoded_name = super::percent_encode_uri_segment(&entry.filename);
                 let image_url = format!(
                     "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/Named_Boxarts/{encoded_name}.png",
                     url_name, branch
