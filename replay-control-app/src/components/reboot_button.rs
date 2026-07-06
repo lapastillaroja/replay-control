@@ -1,3 +1,4 @@
+use crate::components::status_message::StatusMessage;
 use leptos::prelude::*;
 
 use crate::i18n::{Key, t, use_i18n};
@@ -43,10 +44,7 @@ pub fn RebootButton(
             {disabled.then(|| view! {
                 <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsDeviceOnlyDisabled)}</p>
             })}
-            {move || result.get().map(|(ok, msg)| {
-                let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-                view! { <div class=class>{msg}</div> }
-            })}
+            <StatusMessage status=result />
         </div>
     }
 }

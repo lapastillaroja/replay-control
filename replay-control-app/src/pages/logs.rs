@@ -1,3 +1,4 @@
+use crate::components::status_message::StatusMessage;
 use leptos::either::Either;
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -99,10 +100,7 @@ pub fn LogsPage() -> impl IntoView {
                     {move || t(i18n.locale.get(), Key::LogsCopy)}
                 </button>
             </div>
-            {move || copy_status.get().map(|(ok, msg)| {
-                let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-                view! { <div class=class>{msg}</div> }
-            })}
+            <StatusMessage status=copy_status />
 
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
@@ -291,10 +289,7 @@ fn LogLevelForm(config: server_fns::LogLevelConfig) -> impl IntoView {
                 <p class="form-hint">{move || t(i18n.locale.get(), Key::LogsLevelRestartHint)}</p>
             </div>
 
-            {move || status.get().map(|(ok, msg)| {
-                let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-                view! { <div class=class>{msg}</div> }
-            })}
+            <StatusMessage status=status />
 
             <button
                 class="form-btn"

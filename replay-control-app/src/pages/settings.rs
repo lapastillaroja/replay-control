@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
 use crate::components::confirm_dialog::use_confirm_dialog;
+use crate::components::status_message::StatusMessage;
 use crate::hooks::use_update_state;
 use crate::i18n::{Key, Locale, t, tf, use_i18n};
 use crate::server_fns;
@@ -423,23 +424,6 @@ fn SystemStatsGrid(stats: SystemLiveStats) -> impl IntoView {
             {stats.available_ram_mb.map(|mb| view! { <InfoRow label_key=Key::MoreAvailableRam value=format!("{mb} MB") /> })}
             <InfoRow label_key=Key::MoreUptime value=format_elapsed_short(stats.uptime_seconds) />
         </div>
-    }
-}
-
-// ── Shared helpers ──────────────────────────────────────────────
-
-/// Inline status message (ok/error) used by settings controls after save.
-#[component]
-fn SaveStatus(status: RwSignal<Option<(bool, String)>>) -> impl IntoView {
-    move || {
-        status.get().map(|(ok, msg)| {
-            let class = if ok {
-                "status-msg status-ok"
-            } else {
-                "status-msg status-err"
-            };
-            view! { <div class=class>{msg}</div> }
-        })
     }
 }
 
@@ -1024,7 +1008,7 @@ fn AnalyticsToggle(current: bool) -> impl IntoView {
                 disabled=move || saving.get()
             />
         </div>
-        <SaveStatus status />
+        <StatusMessage status />
     }
 }
 
@@ -1149,7 +1133,7 @@ fn RegionSelector(current: String, current_secondary: String, disabled: bool) ->
                 {secondary_option_views}
             </select>
         </div>
-        <SaveStatus status />
+        <StatusMessage status />
     }
 }
 
@@ -1387,7 +1371,7 @@ fn LanguageSelector(
                 {secondary_option_views}
             </select>
         </div>
-        <SaveStatus status />
+        <StatusMessage status />
     }
 }
 
@@ -1483,6 +1467,6 @@ fn LocaleSelector(current: String) -> impl IntoView {
                 {option_views}
             </select>
         </div>
-        <SaveStatus status />
+        <StatusMessage status />
     }
 }

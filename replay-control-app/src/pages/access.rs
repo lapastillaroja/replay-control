@@ -1,3 +1,4 @@
+use crate::components::status_message::StatusMessage;
 use leptos::prelude::*;
 #[cfg(feature = "hydrate")]
 use leptos_router::NavigateOptions;
@@ -571,10 +572,7 @@ fn CertificateSection(
         // info (a non-admin fetch returns nothing), never leaking paths/SANs.
         {move || certificate.get().map(|info| view! { <CertificateDetails info /> })}
 
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
+        <StatusMessage status=status />
 
         // Always visible; disabled (with a hint) for non-admins.
         <button

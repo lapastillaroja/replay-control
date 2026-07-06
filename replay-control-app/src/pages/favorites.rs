@@ -1,3 +1,4 @@
+use crate::components::status_message::StatusMessage;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
@@ -806,10 +807,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                         />
                     </div>
 
-                    {move || status.get().map(|(ok, msg)| {
-                        let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-                        view! { <div class=class>{msg}</div> }
-                    })}
+                    <StatusMessage status=status />
 
                     <div class="organize-actions">
                         <button

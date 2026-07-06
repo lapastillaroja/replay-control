@@ -4,9 +4,10 @@ use leptos_router::hooks::{use_params_map, use_query_map};
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
+use crate::components::system_filter_chips::{FilterChipSystem, SystemFilterChips};
 use crate::hooks::use_infinite_scroll;
 use crate::i18n::{Key, t, tf, use_i18n};
-use crate::server_fns::{self, DeveloperSystem, PAGE_SIZE, RomListEntry};
+use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 
 /// `/developer/:name` — Game list for a specific developer with system filter chips.
 #[component]
@@ -230,12 +231,20 @@ pub fn DeveloperPage() -> impl IntoView {
                             let total = page.total;
                             let first_page_len = page.roms.len();
                             let developer_name = page.developer.clone();
-                            let systems = page.systems.clone();
+                            let systems = page
+                                .systems
+                                .iter()
+                                .map(|s| FilterChipSystem {
+                                    system: s.system.clone(),
+                                    display: s.system_display.clone(),
+                                    count: s.game_count,
+                                })
+                                .collect::<Vec<_>>();
                             // Build a lookup map from system folder -> display name
                             // so GameListItem can show the correct system name on
                             // client-side navigation (where SSR lookup is unavailable).
                             let system_display_map: std::collections::HashMap<String, String> =
-                                systems.iter().map(|s| (s.system.clone(), s.system_display.clone())).collect();
+                                page.systems.iter().map(|s| (s.system.clone(), s.system_display.clone())).collect();
                             let system_display_map = StoredValue::new(system_display_map);
                             let count_text = move || {
                                 let loaded = first_page_len + extra_roms.read().len();
@@ -338,54 +347,6 @@ pub fn DeveloperPage() -> impl IntoView {
 }
 
 /// System filter chip row for the developer page.
-#[component]
-fn SystemFilterChips(
-    systems: Vec<DeveloperSystem>,
-    system_filter: RwSignal<String>,
-    locale: crate::i18n::Locale,
-) -> impl IntoView {
-    if systems.len() <= 1 {
-        // No point showing filter chips if there's only one system.
-        return view! { <div /> }.into_any();
-    }
-
-    let total_count: usize = systems.iter().map(|s| s.game_count).sum();
-    let all_label = format!("{} ({})", t(locale, Key::DeveloperAllSystems), total_count);
-
-    view! {
-        <div class="system-filter-chips">
-            <button
-                class=move || if system_filter.read().is_empty() {
-                    "system-chip system-chip-active"
-                } else {
-                    "system-chip"
-                }
-                on:click=move |_| system_filter.set(String::new())
-            >
-                {all_label}
-            </button>
-            {systems.into_iter().map(|sys| {
-                let sys_id = sys.system.clone();
-                let label = format!("{} ({})", sys.system_display, sys.game_count);
-                let sys_for_check = sys_id.clone();
-                view! {
-                    <button
-                        class=move || if *system_filter.read() == sys_for_check {
-                            "system-chip system-chip-active"
-                        } else {
-                            "system-chip"
-                        }
-                        on:click=move |_| system_filter.set(sys_id.clone())
-                    >
-                        {label}
-                    </button>
-                }
-            }).collect::<Vec<_>>()}
-        </div>
-    }
-    .into_any()
-}
-
 /// Parameters for updating the developer page URL query string.
 #[cfg(feature = "hydrate")]
 struct DeveloperUrlParams<'a> {

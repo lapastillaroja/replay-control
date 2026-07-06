@@ -1,3 +1,4 @@
+use crate::components::status_message::StatusMessage;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
@@ -145,10 +146,7 @@ fn RetroAchievementsForm(config: server_fns::RetroAchievementsConfig) -> impl In
 
             <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsReplayRestartWarning)}</p>
 
-            {move || status.get().map(|(ok, msg)| {
-                let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-                view! { <div class=class>{msg}</div> }
-            })}
+            <StatusMessage status=status />
 
             <button
                 class="form-btn"

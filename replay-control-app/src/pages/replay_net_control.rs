@@ -13,6 +13,7 @@ use server_fn::ServerFnError;
 
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::device_only_notice::DeviceOnlyNotice;
+use crate::components::status_message::StatusMessage;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, ReplayOsSettings};
 use crate::util::numeric_code;
@@ -301,7 +302,7 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                             {move || t(i18n.locale.get(), Key::ReplayOsMessageClear)}
                         </button>
                     </div>
-                    <ActionResultMessage result=message_result />
+                    <StatusMessage status=message_result />
                 </div>
 
                 <div class="replayos-action-block">
@@ -313,7 +314,7 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                     >
                         {move || t(i18n.locale.get(), Key::ReplayOsRestartGame)}
                     </button>
-                    <ActionResultMessage result=restart_result />
+                    <StatusMessage status=restart_result />
                 </div>
             </section>
 
@@ -338,7 +339,7 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                         {move || t(i18n.locale.get(), Key::ReplayOsPowerOff)}
                     </button>
                 </div>
-                <ActionResultMessage result=device_result />
+                <StatusMessage status=device_result />
             </section>
 
             <section class="apply-section">
@@ -365,25 +366,9 @@ fn NetControlContent(initial: ReplayApiStatus, settings: ReplayOsSettings) -> im
                 >
                     {move || t(i18n.locale.get(), Key::SettingsSave)}
                 </button>
-                <ActionResultMessage result=mode_result />
+                <StatusMessage status=mode_result />
             </section>
         </div>
-    }
-}
-
-#[component]
-fn ActionResultMessage(result: RwSignal<Option<(bool, String)>>) -> impl IntoView {
-    view! {
-        <Show when=move || result.read().is_some() fallback=|| ()>
-            {move || result.get().map(|(ok, msg)| {
-                let class = if ok {
-                    "status-msg status-ok"
-                } else {
-                    "status-msg status-err"
-                };
-                view! { <div class=class>{msg}</div> }
-            })}
-        </Show>
     }
 }
 
