@@ -325,11 +325,24 @@ pub fn ensure_storage_id_at(rc_dir: &Path, kind: &str) -> Result<crate::storage_
                 "Could not determine filesystem id for {}; using random id (will rotate on remount)",
                 storage_root.display()
             );
-            StorageId::generate(kind)
+            generate_storage_id(kind)
         }
     };
     write_marker(rc_dir, &marker, &id)?;
     Ok(id)
+}
+
+/// Random-fallback storage id, used only when no stable filesystem identifier
+/// is obtainable (tmpfs, overlay, exotic mounts). Rotates on remount. The OS
+/// RNG lives here (native-only) rather than in the pure core crate; the id is
+/// built through `StorageId::from_crc`.
+fn generate_storage_id(kind: &str) -> crate::storage_id::StorageId {
+    let mut buf = [0u8; 4];
+    // `getrandom` reads from `getrandom(2)` (Linux), which never blocks after
+    // early boot. A failure means the kernel RNG itself is broken — no useful
+    // local fallback, so panic loudly.
+    getrandom::fill(&mut buf).expect("OS RNG must be available");
+    crate::storage_id::StorageId::from_crc(kind, u32::from_le_bytes(buf))
 }
 
 /// Read the marker. `Ok(Some(id))` when valid; `Ok(None)` when missing or

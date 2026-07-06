@@ -6,6 +6,7 @@ pub mod locale;
 pub mod replay_api;
 pub mod runtime_env;
 pub mod search_scoring;
+pub mod storage_id;
 pub mod update;
 
 mod platform;

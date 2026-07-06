@@ -12,6 +12,12 @@
 //! storage → same id every time; reformatting rotates the id by changing
 //! the underlying FS UUID. Random fallback only when no FS identifier can
 //! be obtained (tmpfs, weird mounts).
+//!
+//! Pure domain logic: the type, its derivation from a filesystem id, and
+//! validation are wasm-safe and live here. The random-fallback constructor
+//! needs an OS RNG, so it stays in `replay-control-core-server` and builds a
+//! `StorageId` through the [`StorageId::from_crc`] primitive exposed here —
+//! keeping this crate free of any target-specific dependency.
 
 use std::path::Path;
 
@@ -28,8 +34,8 @@ pub enum IdError {
 }
 
 /// Validated storage id. The only ways to construct one are
-/// [`Self::parse`], [`Self::from_filesystem_id`], and [`Self::generate`],
-/// so anywhere this type appears the inner string is guaranteed to match
+/// [`Self::parse`], [`Self::from_filesystem_id`], and [`Self::from_crc`], so
+/// anywhere this type appears the inner string is guaranteed to match
 /// `[a-z]+-[0-9a-f]{8}` — safe to use as a path component.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StorageId(String);
@@ -47,19 +53,19 @@ impl StorageId {
     pub fn from_filesystem_id(kind: &str, fs_id: &str) -> Self {
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(fs_id.as_bytes());
-        Self::from_kind_and_crc(kind, hasher.finalize())
+        Self::from_crc(kind, hasher.finalize())
     }
 
-    /// Random-fallback constructor used when no filesystem identifier is
-    /// obtainable (tmpfs, overlay, exotic mounts). Will rotate on remount;
-    /// callers should prefer [`Self::from_filesystem_id`] when possible.
-    pub fn generate(kind: &str) -> Self {
-        let mut buf = [0u8; 4];
-        // `getrandom` reads from `getrandom(2)` (Linux) which never blocks
-        // after early boot. A failure means the kernel RNG itself is broken;
-        // there's no useful local fallback so panic loudly.
-        getrandom::fill(&mut buf).expect("OS RNG must be available");
-        Self::from_kind_and_crc(kind, u32::from_le_bytes(buf))
+    /// Construct an id from a `kind` tag and a precomputed 32-bit value. The
+    /// low-level primitive both the deterministic [`Self::from_filesystem_id`]
+    /// and the native random-fallback constructor (in core-server) build on,
+    /// so the RNG dependency stays out of this pure crate.
+    pub fn from_crc(kind: &str, crc: u32) -> Self {
+        debug_assert!(
+            !kind.is_empty() && kind.chars().all(|c| c.is_ascii_lowercase()),
+            "storage kind must be lowercase ASCII: {kind:?}"
+        );
+        Self(format!("{kind}{SEPARATOR}{crc:08x}"))
     }
 
     /// Parse and validate a string into a `StorageId`.
@@ -71,14 +77,6 @@ impl StorageId {
     /// View as the canonical `<kind>-<hex>` string.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-
-    fn from_kind_and_crc(kind: &str, crc: u32) -> Self {
-        debug_assert!(
-            !kind.is_empty() && kind.chars().all(|c| c.is_ascii_lowercase()),
-            "storage kind must be lowercase ASCII: {kind:?}"
-        );
-        Self(format!("{kind}{SEPARATOR}{crc:08x}"))
     }
 }
 
@@ -146,10 +144,10 @@ mod tests {
     }
 
     #[test]
-    fn generate_is_valid() {
+    fn from_crc_is_valid() {
         for kind in ["usb", "sd", "nvme", "nfs"] {
-            for _ in 0..16 {
-                let id = StorageId::generate(kind);
+            for crc in [0u32, 1, 0xdead_beef, u32::MAX] {
+                let id = StorageId::from_crc(kind, crc);
                 assert!(is_valid(id.as_str()), "{id:?} should validate");
             }
         }
@@ -176,16 +174,6 @@ mod tests {
             "../etc/passwd",
         ] {
             assert!(StorageId::parse(bad).is_err(), "{bad:?} should reject");
-        }
-    }
-
-    #[test]
-    fn generate_collisions_are_rare() {
-        // 32-bit keyspace per kind; 64 draws should never collide unless the
-        // RNG is broken (probability ≈ 5e-7).
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..64 {
-            assert!(seen.insert(StorageId::generate("usb")));
         }
     }
 }

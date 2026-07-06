@@ -16,7 +16,9 @@ pub mod replay_service;
 pub mod security;
 pub mod settings;
 pub mod sqlite;
-pub mod storage_id;
+// Storage-id domain logic lives in the pure core crate; re-exported here so
+// existing `replay_control_core_server::storage_id::…` paths keep resolving.
+pub use replay_control_core::storage_id;
 
 pub use catalog_pool::{CatalogInitError, init_catalog, with_catalog};
 pub use db_pool::{DbError, DbPool};
