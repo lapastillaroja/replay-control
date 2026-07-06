@@ -563,6 +563,50 @@ impl PlayState {
     }
 }
 
+/// What a `get_status` payload means for now-playing, before library
+/// resolution. Pure reduction of a [`StatusResponse`] into a semantic state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Classification {
+    /// Transient degenerate payload — keep the previous state.
+    Hold,
+    /// No game loaded (fresh boot, nothing launched since).
+    Menu,
+    Loaded {
+        system: String,
+        /// The launched entry's filename — primary resolution key.
+        game_name: String,
+        /// Absolute path — fallback resolution key.
+        game_file: String,
+        play_state: PlayState,
+    },
+}
+
+/// Classify a `get_status` payload into a now-playing [`Classification`].
+pub fn classify(status: &StatusResponse) -> Classification {
+    if status.is_degenerate() {
+        return Classification::Hold;
+    }
+    if !status.game_loaded() {
+        return Classification::Menu;
+    }
+    let game_file = status.game_file.clone().unwrap_or_default();
+    let game_name = status
+        .game_name
+        .clone()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| game_file.rsplit('/').next().unwrap_or_default().to_string());
+    Classification::Loaded {
+        system: status.system.clone().unwrap_or_default(),
+        game_name,
+        game_file,
+        play_state: PlayState::from_status(
+            status.view_kind(),
+            status.paused.unwrap_or(false),
+            status.is_halted(),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -835,5 +879,126 @@ mod tests {
             let back: ReplayApiStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(back, status);
         }
+    }
+
+    // ── classify ─────────────────────────────────────────────────────
+
+    fn status(json: &str) -> StatusResponse {
+        serde_json::from_str(json).expect("status json")
+    }
+
+    #[test]
+    fn degenerate_payload_holds_previous_state() {
+        // Observed during UI transitions: 200 with fields missing entirely.
+        assert_eq!(
+            classify(&status(r#"{"game_file":""}"#)),
+            Classification::Hold
+        );
+        assert_eq!(classify(&StatusResponse::default()), Classification::Hold);
+    }
+
+    #[test]
+    fn empty_game_file_is_menu() {
+        // Fresh boot baseline (measured): nothing launched yet.
+        let s = status(
+            r#"{"system":"replay_menu","game_file":"","game_name":"","paused":false,"view":"system_list","view_id":0}"#,
+        );
+        assert_eq!(classify(&s), Classification::Menu);
+    }
+
+    #[test]
+    fn game_play_maps_to_playing() {
+        let s = status(
+            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/00 Clean Romset/Sonic 2.md","game_name":"Sonic 2.md","paused":false,"view":"game_play","view_id":2}"#,
+        );
+        match classify(&s) {
+            Classification::Loaded {
+                system,
+                game_name,
+                play_state,
+                ..
+            } => {
+                assert_eq!(system, "sega_smd");
+                assert_eq!(game_name, "Sonic 2.md");
+                assert_eq!(play_state, PlayState::Playing);
+            }
+            other => panic!("expected Loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn paused_wins_over_view() {
+        // ui_pauses_core on: backgrounded game reports paused=true in menus.
+        let s = status(
+            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/g.md","game_name":"g.md","paused":true,"view":"system_options","view_id":1}"#,
+        );
+        assert!(matches!(
+            classify(&s),
+            Classification::Loaded {
+                play_state: PlayState::Paused,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn halted_wins_over_paused() {
+        let s = status(
+            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/g.md","game_name":"g.md","paused":true,"halted":true,"view":"game_play","view_id":2}"#,
+        );
+        assert!(matches!(
+            classify(&s),
+            Classification::Loaded {
+                play_state: PlayState::Halted,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn menu_views_with_loaded_game_are_in_menu() {
+        // Measured: with a loaded game the menu flips between views 0/1/3 —
+        // game_file decides "loaded", the non-game_play view decides InMenu.
+        for view_id in [0, 1, 3] {
+            let s = status(&format!(
+                r#"{{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/g.md","game_name":"g.md","paused":false,"view":"x","view_id":{view_id}}}"#,
+            ));
+            assert!(
+                matches!(
+                    classify(&s),
+                    Classification::Loaded {
+                        play_state: PlayState::InMenu,
+                        ..
+                    }
+                ),
+                "view {view_id} should be InMenu"
+            );
+        }
+    }
+
+    #[test]
+    fn scummvm_resolution_key_is_game_name() {
+        // Measured: ScummVM's game_file is the inner .svm, but game_name is
+        // the launched .m3u — the (system, game_name) key needs no special case.
+        let s = status(
+            r#"{"system":"scummvm","game_file":"/media/nfs/roms/scummvm/3 Skulls (CD Spanish)/3 Skulls (CD Spanish).svm","game_name":"3 Skulls (CD Spanish).m3u","paused":false,"view":"game_play","view_id":2}"#,
+        );
+        match classify(&s) {
+            Classification::Loaded { game_name, .. } => {
+                assert_eq!(game_name, "3 Skulls (CD Spanish).m3u");
+            }
+            other => panic!("expected Loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_game_name_falls_back_to_game_file_basename() {
+        let s = status(
+            r#"{"system":"sega_smd","game_file":"/media/nfs/roms/sega_smd/sub/Game.md","paused":false,"view":"game_play","view_id":2}"#,
+        );
+        assert!(matches!(
+            classify(&s),
+            Classification::Loaded { game_name, .. } if game_name == "Game.md"
+        ));
     }
 }

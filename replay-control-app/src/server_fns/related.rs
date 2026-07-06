@@ -676,7 +676,10 @@ async fn build_arcade_versions(
             }
 
             let is_current = rom_fn == current_filename;
-            let label = arcade_clone_label(&parent_display, &info.display_name);
+            let label = replay_control_core::title_utils::arcade_clone_label(
+                &parent_display,
+                &info.display_name,
+            );
             let href = format!("/games/{}/{}", system, urlencoding::encode(rom_fn));
 
             Some(ArcadeVersion {
@@ -699,97 +702,5 @@ async fn build_arcade_versions(
         versions
     } else {
         Vec::new()
-    }
-}
-
-/// Extract a concise label for an arcade clone relative to its parent.
-///
-/// If the clone has the same base name as the parent (before any parenthesized tag),
-/// show just the parenthesized tag (e.g., "Japan 910214" from
-/// "Street Fighter II: The World Warrior (Japan 910214)").
-///
-/// If the clone has a different base name, show the full display name
-/// (e.g., "Super Street Fighter II X: Grand Master Challenge (Japan 940311)").
-#[cfg(any(feature = "ssr", test))]
-pub(crate) fn arcade_clone_label(parent_display: &str, clone_display: &str) -> String {
-    // Strip all parenthesized content to get base names.
-    let parent_base = parent_display
-        .find(" (")
-        .map(|i| &parent_display[..i])
-        .unwrap_or(parent_display);
-    let clone_base = clone_display
-        .find(" (")
-        .map(|i| &clone_display[..i])
-        .unwrap_or(clone_display);
-
-    // Extract parenthesized tag from clone.
-    let tag = clone_display
-        .rfind('(')
-        .and_then(|start| {
-            clone_display
-                .rfind(')')
-                .map(|end| &clone_display[start + 1..end])
-        })
-        .unwrap_or("");
-
-    if clone_base == parent_base {
-        // Same name, show just the tag (region + date).
-        if tag.is_empty() {
-            clone_display.to_string()
-        } else {
-            tag.to_string()
-        }
-    } else {
-        // Different name, show full clone display name.
-        clone_display.to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::arcade_clone_label;
-
-    #[test]
-    fn same_base_name_extracts_tag() {
-        let label = arcade_clone_label(
-            "Street Fighter II: The World Warrior (World 910522)",
-            "Street Fighter II: The World Warrior (Japan 910214)",
-        );
-        assert_eq!(label, "Japan 910214");
-    }
-
-    #[test]
-    fn different_base_name_shows_full() {
-        let label = arcade_clone_label(
-            "Street Fighter II: The World Warrior (World 910522)",
-            "Street Fighter II: Champion Edition (World 920513)",
-        );
-        assert_eq!(label, "Street Fighter II: Champion Edition (World 920513)");
-    }
-
-    #[test]
-    fn parent_without_tag() {
-        let label = arcade_clone_label("Metal Slug 6", "Metal Slug 6 (Japan)");
-        assert_eq!(label, "Japan");
-    }
-
-    #[test]
-    fn clone_without_tag_same_base() {
-        // Unusual case: clone has no parenthesized tag but same base name.
-        let label = arcade_clone_label("Metal Slug 6 (World)", "Metal Slug 6");
-        assert_eq!(label, "Metal Slug 6");
-    }
-
-    #[test]
-    fn completely_different_name() {
-        let label = arcade_clone_label("Pac-Man (Midway)", "Puck Man (Japan set 1)");
-        assert_eq!(label, "Puck Man (Japan set 1)");
-    }
-
-    #[test]
-    fn nested_parentheses_uses_last() {
-        // Some arcade names have nested parens; rfind should get the outermost last pair.
-        let label = arcade_clone_label("Donkey Kong (US set 1)", "Donkey Kong (US set 2)");
-        assert_eq!(label, "US set 2");
     }
 }

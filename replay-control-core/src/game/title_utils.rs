@@ -545,9 +545,103 @@ pub fn strip_n64dd_prefix(stem: &str) -> &str {
     stem.strip_prefix("N64DD - ").unwrap_or(stem)
 }
 
+/// Label for an arcade clone relative to its parent, for the variant chips.
+///
+/// When the clone shares the parent's base name, show just the parenthesized
+/// tag (e.g. `"Japan 910214"` from
+/// `"Street Fighter II: The World Warrior (Japan 910214)"`). When the clone has
+/// a different base name, show its full display name.
+pub fn arcade_clone_label(parent_display: &str, clone_display: &str) -> String {
+    // Strip all parenthesized content to get base names.
+    let parent_base = parent_display
+        .find(" (")
+        .map(|i| &parent_display[..i])
+        .unwrap_or(parent_display);
+    let clone_base = clone_display
+        .find(" (")
+        .map(|i| &clone_display[..i])
+        .unwrap_or(clone_display);
+
+    // Extract parenthesized tag from clone.
+    let tag = clone_display
+        .rfind('(')
+        .and_then(|start| {
+            clone_display
+                .rfind(')')
+                .map(|end| &clone_display[start + 1..end])
+        })
+        .unwrap_or("");
+
+    if clone_base == parent_base {
+        // Same name, show just the tag (region + date).
+        if tag.is_empty() {
+            clone_display.to_string()
+        } else {
+            tag.to_string()
+        }
+    } else {
+        // Different name, show full clone display name.
+        clone_display.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arcade_clone_label_same_base_name_extracts_tag() {
+        assert_eq!(
+            arcade_clone_label(
+                "Street Fighter II: The World Warrior (World 910522)",
+                "Street Fighter II: The World Warrior (Japan 910214)",
+            ),
+            "Japan 910214"
+        );
+    }
+
+    #[test]
+    fn arcade_clone_label_different_base_name_shows_full() {
+        assert_eq!(
+            arcade_clone_label(
+                "Street Fighter II: The World Warrior (World 910522)",
+                "Street Fighter II: Champion Edition (World 920513)",
+            ),
+            "Street Fighter II: Champion Edition (World 920513)"
+        );
+    }
+
+    #[test]
+    fn arcade_clone_label_parent_without_tag() {
+        assert_eq!(
+            arcade_clone_label("Metal Slug 6", "Metal Slug 6 (Japan)"),
+            "Japan"
+        );
+    }
+
+    #[test]
+    fn arcade_clone_label_clone_without_tag_same_base() {
+        assert_eq!(
+            arcade_clone_label("Metal Slug 6 (World)", "Metal Slug 6"),
+            "Metal Slug 6"
+        );
+    }
+
+    #[test]
+    fn arcade_clone_label_completely_different_name() {
+        assert_eq!(
+            arcade_clone_label("Pac-Man (Midway)", "Puck Man (Japan set 1)"),
+            "Puck Man (Japan set 1)"
+        );
+    }
+
+    #[test]
+    fn arcade_clone_label_nested_parentheses_uses_last() {
+        assert_eq!(
+            arcade_clone_label("Donkey Kong (US set 1)", "Donkey Kong (US set 2)"),
+            "US set 2"
+        );
+    }
 
     // --- base_title ---
 
