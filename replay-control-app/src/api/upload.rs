@@ -1,12 +1,29 @@
+use axum::extract::multipart::Field;
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use replay_control_core_server::roms::{MAX_ROM_UPLOAD_BYTES, RomUploadStaging};
 use replay_control_core_server::user_data_db::{ManualEntry, ManualOrigin, UserDataDb};
 
 use super::AppState;
 
-const MAX_MANUAL_UPLOAD_BYTES: usize = 64 * 1024 * 1024;
+const MAX_MANUAL_UPLOAD_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Read a multipart field into memory, aborting with 413 once it exceeds
+/// `max_bytes`. Unlike `Field::bytes()`, which buffers the whole field before
+/// any size check, this bounds peak memory to `max_bytes` + one chunk — the
+/// difference between a rejected request and an OOM on a 512 MB appliance.
+async fn read_field_capped(mut field: Field<'_>, max_bytes: u64) -> Result<Vec<u8>, StatusCode> {
+    let mut buf = Vec::new();
+    while let Some(chunk) = field.chunk().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+        if buf.len() as u64 + chunk.len() as u64 > max_bytes {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
 
 async fn upload_rom(
     State(state): State<AppState>,
@@ -20,26 +37,44 @@ async fn upload_rom(
     let storage = state.storage();
     let mut uploaded = Vec::new();
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    while let Ok(Some(mut field)) = multipart.next_field().await {
         let filename = field
             .file_name()
             .map(String::from)
             .unwrap_or_else(|| "unknown".to_string());
 
-        // TODO(perf): This loads the entire file into memory. For large ROMs,
-        // stream to a temp file instead (e.g., via tokio::io::copy from the
-        // field stream to a tokio::fs::File). Acceptable for now since uploads
-        // are rare and typically single files.
-        let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
-
-        replay_control_core_server::roms::write_rom(&storage, &system, &filename, &data)
+        // Stage the upload beside its destination and copy chunk-by-chunk with
+        // a running byte cap, so a multi-GB body never lands in memory. The
+        // destination is replaced only by the atomic commit after a full,
+        // in-bounds transfer — a rejected or interrupted upload leaves any
+        // existing ROM of the same name untouched (see `RomUploadStaging`).
+        let mut staging = RomUploadStaging::create(&storage, &system, &filename)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let mut written: u64 = 0;
+        loop {
+            match field.chunk().await {
+                Ok(Some(chunk)) => {
+                    written += chunk.len() as u64;
+                    if written > MAX_ROM_UPLOAD_BYTES {
+                        return Err(StatusCode::PAYLOAD_TOO_LARGE); // staging dropped → temp removed
+                    }
+                    if staging.write_all(&chunk).await.is_err() {
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => return Err(StatusCode::BAD_REQUEST),
+            }
+        }
+        staging
+            .commit()
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        tracing::info!("Uploaded: {} ({} bytes)", filename, data.len());
+        tracing::info!("Uploaded: {} ({} bytes)", filename, written);
         uploaded.push(serde_json::json!({
             "filename": filename,
-            "size_bytes": data.len(),
+            "size_bytes": written,
             "path": format!("/roms/{system}/{filename}"),
         }));
     }
@@ -98,8 +133,8 @@ async fn upload_manual(
                     .file_name()
                     .map(String::from)
                     .unwrap_or_else(|| "manual".to_string());
-                let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
-                upload = Some((filename, data.to_vec()));
+                let data = read_field_capped(field, MAX_MANUAL_UPLOAD_BYTES).await?;
+                upload = Some((filename, data));
             }
             "rom_filename" => {
                 rom_filename = field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -139,9 +174,7 @@ async fn upload_manual(
     if data.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
-    if data.len() > MAX_MANUAL_UPLOAD_BYTES {
-        return Err(StatusCode::PAYLOAD_TOO_LARGE);
-    }
+    // Size is already bounded by read_field_capped above.
     if !is_allowed_manual_filename(&original_filename) {
         return Err(StatusCode::BAD_REQUEST);
     }

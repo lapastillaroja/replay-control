@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
 
 pub use replay_control_core::roms::{RomEntry, SystemSummary};
 
@@ -325,9 +326,23 @@ pub fn rename_rom(
     relative_path: &str,
     new_filename: &str,
 ) -> Result<PathBuf> {
+    // The new name must be a plain filename, and the source must resolve inside
+    // the storage root — guard here so every caller (REST handler and server
+    // function alike) is covered rather than each re-deriving the check.
+    validate_rom_path_component(new_filename, "filename")?;
     let full_path = storage.root.join(relative_path.trim_start_matches('/'));
     if !full_path.exists() {
         return Err(Error::RomNotFound(full_path));
+    }
+    let canonical = full_path
+        .canonicalize()
+        .map_err(|e| Error::io(&full_path, e))?;
+    let root_canonical = storage
+        .root
+        .canonicalize()
+        .map_err(|e| Error::io(&storage.root, e))?;
+    if !canonical.starts_with(&root_canonical) {
+        return Err(Error::Other("Path traversal detected".to_string()));
     }
 
     let new_path = full_path
@@ -347,10 +362,7 @@ pub fn rename_rom(
     if let Some((_, new_dir)) = &companion_move
         && new_dir.exists()
     {
-        return Err(Error::Other(format!(
-            "Cannot rename: {} already exists",
-            new_dir.display()
-        )));
+        return Err(Error::RenameTargetExists(new_dir.clone()));
     }
 
     std::fs::rename(&full_path, &new_path).map_err(|e| Error::io(&full_path, e))?;
@@ -1615,23 +1627,107 @@ fn is_rom_file(path: &Path, system: &System) -> bool {
     true
 }
 
+/// Maximum bytes accepted for a single uploaded ROM. Bounds disk use; the
+/// streaming upload handler enforces it mid-transfer so process memory never
+/// holds the whole file. Generous enough for CD/DVD-sized images.
+pub const MAX_ROM_UPLOAD_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// Reject a path component that isn't a plain name — empty, `.`/`..`, or one
+/// containing a path separator — so a crafted `system` or upload `filename`
+/// can't escape the ROM root via `join`. Substring `..` in an otherwise
+/// separator-free name (e.g. `MASTER VER..iso`) is safe and allowed; only the
+/// exact `..` component and separators traverse.
+pub fn validate_rom_path_component(value: &str, label: &str) -> Result<()> {
+    if value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+    {
+        return Err(Error::Other(format!("Invalid {label}")));
+    }
+    Ok(())
+}
+
+/// Validate an upload's `system` + `filename` and return the destination path
+/// under `<storage>/roms/<system>/`, creating the system directory. The single
+/// place upload destinations are resolved, so streaming and buffered writes
+/// share the same traversal guard.
+pub fn rom_upload_dest(storage: &StorageLocation, system: &str, filename: &str) -> Result<PathBuf> {
+    validate_rom_path_component(system, "system")?;
+    validate_rom_path_component(filename, "filename")?;
+    let system_dir = storage.system_roms_dir(system);
+    if !system_dir.exists() {
+        std::fs::create_dir_all(&system_dir).map_err(|e| Error::io(&system_dir, e))?;
+    }
+    Ok(system_dir.join(filename))
+}
+
 /// Write an uploaded ROM to `<storage>/roms/<system>/<filename>`.
 ///
-/// Creates the system directory if missing. Writes the whole payload at once —
-/// fine for typical ROM sizes; large uploads should use a streaming variant.
+/// Validates the path components and creates the system directory. Writes the
+/// whole payload at once — fine for tests and small ROMs; the HTTP upload path
+/// streams instead (see [`rom_upload_dest`]) so it never buffers a large ROM.
 pub async fn write_rom(
     storage: &StorageLocation,
     system: &str,
     filename: &str,
     bytes: &[u8],
-) -> std::io::Result<PathBuf> {
-    let system_dir = storage.system_roms_dir(system);
-    if !system_dir.exists() {
-        std::fs::create_dir_all(&system_dir)?;
-    }
-    let dest = system_dir.join(filename);
-    tokio::fs::write(&dest, bytes).await?;
+) -> Result<PathBuf> {
+    let dest = rom_upload_dest(storage, system, filename)?;
+    tokio::fs::write(&dest, bytes)
+        .await
+        .map_err(|e| Error::io(&dest, e))?;
     Ok(dest)
+}
+
+/// Crash-safe staging for a streamed ROM upload.
+///
+/// Writes go to a uniquely-named temp file in the **same directory** as the
+/// final destination; only [`commit`](Self::commit) atomically renames it into
+/// place. Until then — and on any early drop (oversized body, client read
+/// error, write error) — an existing file at the destination is left
+/// **untouched**, and the temp file is removed. This is the difference between
+/// a rejected replacement upload and destroying the user's existing ROM.
+pub struct RomUploadStaging {
+    tmp: tempfile::NamedTempFile,
+    file: tokio::fs::File,
+    dest: PathBuf,
+}
+
+impl RomUploadStaging {
+    /// Validate the destination (see [`rom_upload_dest`]) and open a temp file
+    /// beside it. Does not touch any existing file at the destination.
+    pub fn create(storage: &StorageLocation, system: &str, filename: &str) -> Result<Self> {
+        let dest = rom_upload_dest(storage, system, filename)?;
+        let parent = dest
+            .parent()
+            .ok_or_else(|| Error::Other("upload destination has no parent".into()))?;
+        let tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
+        let handle = tmp.reopen().map_err(|e| Error::io(tmp.path(), e))?;
+        let file = tokio::fs::File::from_std(handle);
+        Ok(Self { tmp, file, dest })
+    }
+
+    /// Append a chunk to the staged file.
+    pub async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.file.write_all(buf).await
+    }
+
+    /// Flush and atomically move the staged file over the destination. The
+    /// destination changes only if this returns `Ok`; before that, any existing
+    /// file there is intact.
+    pub async fn commit(self) -> Result<PathBuf> {
+        let Self {
+            tmp,
+            mut file,
+            dest,
+        } = self;
+        file.flush().await.map_err(|e| Error::io(&dest, e))?;
+        drop(file); // close the write handle before renaming
+        tmp.persist(&dest).map_err(|e| Error::io(&dest, e.error))?;
+        Ok(dest)
+    }
 }
 
 #[cfg(test)]
@@ -1659,6 +1755,35 @@ mod tests {
             rating: None,
             players: None,
         }
+    }
+
+    #[test]
+    fn validate_rom_path_component_rejects_traversal() {
+        // Plain names pass — including a substring `..` with no separator,
+        // which can't traverse (e.g. a No-Intro `MASTER VER..` style name).
+        assert!(validate_rom_path_component("game.nes", "filename").is_ok());
+        assert!(validate_rom_path_component("MASTER VER..iso", "filename").is_ok());
+        assert!(validate_rom_path_component("nintendo_nes", "system").is_ok());
+        // Traversal and separators are rejected.
+        assert!(validate_rom_path_component("..", "filename").is_err());
+        assert!(validate_rom_path_component(".", "filename").is_err());
+        assert!(validate_rom_path_component("", "filename").is_err());
+        assert!(validate_rom_path_component("../etc/passwd", "filename").is_err());
+        assert!(validate_rom_path_component("sub/dir", "filename").is_err());
+        assert!(validate_rom_path_component("back\\slash", "filename").is_err());
+    }
+
+    #[test]
+    fn rom_upload_dest_stays_within_system_dir() {
+        let tmp = tempdir();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        // A valid destination lands under roms/<system>/.
+        let dest = rom_upload_dest(&storage, "nintendo_nes", "Game.nes").unwrap();
+        assert!(dest.starts_with(tmp.join("roms/nintendo_nes")));
+        assert_eq!(dest.file_name().unwrap(), "Game.nes");
+        // A traversal attempt in either component is refused before any write.
+        assert!(rom_upload_dest(&storage, "nintendo_nes", "../../evil").is_err());
+        assert!(rom_upload_dest(&storage, "..", "Game.nes").is_err());
     }
 
     #[test]
@@ -3074,5 +3199,60 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fs::read(dest).unwrap(), b"newer payload");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn upload_staging_commit_replaces_atomically() {
+        let tmp = tempdir();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let dest = tmp.join("roms/nintendo_nes/game.nes");
+
+        let mut staging = RomUploadStaging::create(&storage, "nintendo_nes", "game.nes").unwrap();
+        // Before commit, nothing exists at the destination.
+        assert!(!dest.exists());
+        staging.write_all(b"NES\x1a").await.unwrap();
+        staging.write_all(b" payload").await.unwrap();
+        let committed = staging.commit().await.unwrap();
+
+        assert_eq!(committed, dest);
+        assert_eq!(fs::read(&dest).unwrap(), b"NES\x1a payload");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn upload_staging_drop_without_commit_preserves_existing_rom() {
+        // Regression: a failed/oversized/aborted replacement upload must NOT
+        // destroy the user's existing ROM. Staging that is dropped without a
+        // commit leaves the destination untouched and cleans up its temp file.
+        let tmp = tempdir();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let dest = write_rom(&storage, "nintendo_nes", "game.nes", b"ORIGINAL ROM")
+            .await
+            .unwrap();
+        let system_dir = dest.parent().unwrap().to_path_buf();
+
+        {
+            let mut staging =
+                RomUploadStaging::create(&storage, "nintendo_nes", "game.nes").unwrap();
+            // Simulate a partial transfer that then fails: write, never commit.
+            staging
+                .write_all(b"partial junk that should vanish")
+                .await
+                .unwrap();
+            // staging dropped here without commit (as the handler does on error)
+        }
+
+        // The original ROM is intact...
+        assert_eq!(fs::read(&dest).unwrap(), b"ORIGINAL ROM");
+        // ...and no temp file leaked into the system directory.
+        let leftovers: Vec<_> = fs::read_dir(&system_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(
+            leftovers,
+            vec![std::ffi::OsString::from("game.nes")],
+            "only the original ROM should remain, got: {leftovers:?}"
+        );
     }
 }

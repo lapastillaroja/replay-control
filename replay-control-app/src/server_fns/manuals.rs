@@ -9,6 +9,11 @@ pub use replay_control_core::game_docs::GameDocument;
 use replay_control_core::resource_kind;
 pub use replay_control_core::retrokit_manuals::ManualRecommendation;
 
+/// Upper bound on a downloaded manual, matching the upload cap. Bounds memory
+/// and disk against an oversized or hostile (SSRF-redirected) response.
+#[cfg(feature = "ssr")]
+const MAX_MANUAL_DOWNLOAD_BYTES: u64 = 64 * 1024 * 1024;
+
 /// A local manual file found on disk in `<storage>/manuals/<system>/`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalManual {
@@ -295,6 +300,7 @@ pub async fn download_manual(
         &encoded_url,
         &tmp_path,
         std::time::Duration::from_secs(120),
+        MAX_MANUAL_DOWNLOAD_BYTES,
     )
     .await
     {

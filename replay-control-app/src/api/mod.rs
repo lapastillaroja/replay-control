@@ -1617,7 +1617,14 @@ pub fn build_router(
                     )
                     .await
                 }
-            }),
+            })
+            // Server functions read the request body directly (bypassing axum's
+            // extractor-level DefaultBodyLimit), so cap the raw body here. Their
+            // payloads are small serialized args; large binary transfers use the
+            // multipart upload routes, which enforce their own streaming caps.
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(
+                4 * 1024 * 1024,
+            )),
         )
         .route(
             "/static/style.css",

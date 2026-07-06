@@ -70,12 +70,20 @@ pub async fn get_json_with_timeout(
         .map_err(|e| Error::Other(format!("JSON parse error for {url}: {e}")))
 }
 
-/// Download a URL to a file on disk. Returns the number of bytes written.
+/// Download a URL to a file on disk, streaming the body so it never lands in
+/// memory whole, and aborting if it exceeds `max_bytes`. Returns the number of
+/// bytes written. The cap protects the small-RAM appliance from a large (or
+/// hostile, e.g. an SSRF-redirected) response filling memory or the backing
+/// store; a partial file is removed on abort.
 pub async fn download_to_file(
     url: &str,
     dest: &std::path::Path,
     timeout: std::time::Duration,
+    max_bytes: u64,
 ) -> Result<u64> {
+    use tokio::io::AsyncWriteExt;
+    use tokio_stream::StreamExt;
+
     let resp = shared_client()
         .get(url)
         .timeout(timeout)
@@ -85,17 +93,50 @@ pub async fn download_to_file(
         .error_for_status()
         .map_err(|e| Error::Other(format!("HTTP error for {url}: {e}")))?;
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| Error::Other(format!("Failed to read response body from {url}: {e}")))?;
+    // Reject up front when the server advertises an oversized body.
+    if let Some(len) = resp.content_length()
+        && len > max_bytes
+    {
+        return Err(Error::Other(format!(
+            "Download from {url} exceeds size limit ({len} > {max_bytes} bytes)"
+        )));
+    }
 
-    let len = bytes.len() as u64;
-    tokio::fs::write(dest, &bytes)
+    let mut file = tokio::fs::File::create(dest)
         .await
         .map_err(|e| Error::io(dest, e))?;
 
-    Ok(len)
+    // Stream in an inner block so every failure path — read error, cap
+    // exceeded, write error, or a deferred flush error (realistic on NFS:
+    // ENOSPC/EIO can surface only at close) — flows to the single cleanup
+    // below and never leaves a truncated file on disk.
+    let result = async {
+        let mut written: u64 = 0;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| {
+                Error::Other(format!("Failed to read response body from {url}: {e}"))
+            })?;
+            written += chunk.len() as u64;
+            if written > max_bytes {
+                return Err(Error::Other(format!(
+                    "Download from {url} exceeds size limit ({max_bytes} bytes)"
+                )));
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| Error::io(dest, e))?;
+        }
+        file.flush().await.map_err(|e| Error::io(dest, e))?;
+        Ok(written)
+    }
+    .await;
+
+    if result.is_err() {
+        drop(file);
+        let _ = tokio::fs::remove_file(dest).await;
+    }
+    result
 }
 
 /// GET a URL with custom headers and parse as JSON.

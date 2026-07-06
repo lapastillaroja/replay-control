@@ -20,6 +20,9 @@ pub enum Error {
     #[error("favorite already exists: {0}")]
     FavoriteExists(PathBuf),
 
+    #[error("rename target already exists: {0}")]
+    RenameTargetExists(PathBuf),
+
     #[error("storage not found: no valid storage location detected")]
     StorageNotFound,
 

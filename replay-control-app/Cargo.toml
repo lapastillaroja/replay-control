@@ -37,7 +37,7 @@ replay-control-core-server = { path = "../replay-control-core-server", default-f
 axum = { version = "=0.7.9", features = ["multipart"], optional = true }
 axum-server = { version = "0.8.0", features = ["tls-rustls"], optional = true }
 leptos_axum = { version = "=0.7.8", optional = true }
-tower-http = { version = "0.7.0", features = ["fs", "cors", "compression-gzip", "set-header"], optional = true }
+tower-http = { version = "0.7.0", features = ["fs", "cors", "compression-gzip", "set-header", "limit"], optional = true }
 tower = { version = "0.5.3", optional = true }
 http = { version = "1.4.2", optional = true }
 tokio = { workspace = true, optional = true }
