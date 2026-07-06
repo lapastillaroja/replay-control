@@ -20,8 +20,8 @@ use std::collections::HashMap;
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 type OverviewRes = Resource<Result<MetadataLibraryOverview, ServerFnError>>;
 
-/// Client-only play time state, provided via context to the summary card and
-/// the per-system accordion rows. `Disabled` (tracking off on the TV) and the
+/// Client-only play time state, threaded as a prop to the summary card and the
+/// per-system accordion rows. `Disabled` (tracking off on the TV) and the
 /// unavailable cases both collapse to `Placeholder`; `Loading` is the transient
 /// pre-fetch state.
 #[derive(Clone, PartialEq)]
@@ -90,7 +90,11 @@ pub fn MetadataPage() -> impl IntoView {
             _ => PlaytimeUi::Placeholder,
         }
     });
-    provide_context(playtime_ui);
+    // `playtime_ui` is threaded to the cards as a prop rather than via context:
+    // the cards render inside `Suspend`/`Transition`, whose async-resolved
+    // reactive owner doesn't chain back to a page-level `provide_context` on a
+    // client-side navigation, which would panic on `expect_context`. `Memo` is
+    // `Copy`, so passing it down is free.
 
     // App-level activity signal (populated by SseEventsListener at the App
     // root). Shared with banners, the setup checklist, and other consumers
@@ -215,13 +219,13 @@ pub fn MetadataPage() -> impl IntoView {
                             // it's infrastructure info, not derived from games.
                             view! { <StorageOnlyCard storage_kind locale /> }.into_any()
                         } else {
-                            view! { <SummaryCards summary=s storage_kind locale /> }.into_any()
+                            view! { <SummaryCards summary=s storage_kind locale playtime=playtime_ui /> }.into_any()
                         })
                     })}
                 </Transition>
             </section>
 
-            <SystemOverviewSection overview />
+            <SystemOverviewSection overview playtime=playtime_ui />
 
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
@@ -1152,6 +1156,7 @@ fn SummaryCards(
     summary: LibrarySummary,
     storage_kind: String,
     locale: crate::i18n::Locale,
+    playtime: Memo<PlaytimeUi>,
 ) -> impl IntoView {
     let s = summary;
 
@@ -1200,18 +1205,18 @@ fn SummaryCards(
             <StatCard compact=true
                 value=storage_label
                 label=t(locale, Key::MetadataSummaryStorage) />
-            <PlaytimeStatCard />
+            <PlaytimeStatCard playtime />
         </div>
     }
 }
 
-/// Total library play time card. Reads the client-only [`PlaytimeUi`] context,
-/// so it shows the placeholder on standalone builds and on firmware without the
-/// `get_playtime` endpoint, and the formatted total once tracking data loads.
+/// Total library play time card. Receives the client-only [`PlaytimeUi`] as a
+/// prop, so it shows the placeholder on standalone builds and on firmware
+/// without the `get_playtime` endpoint, and the formatted total once tracking
+/// data loads.
 #[component]
-fn PlaytimeStatCard() -> impl IntoView {
+fn PlaytimeStatCard(playtime: Memo<PlaytimeUi>) -> impl IntoView {
     let i18n = use_i18n();
-    let playtime = use_context::<Memo<PlaytimeUi>>().expect("PlaytimeUi context");
     let value = move || playtime.with(|ui| playtime_value(ui, |all, _| all, i18n.locale.get()));
     view! {
         <div class="stat-card compact">
@@ -1226,7 +1231,7 @@ fn PlaytimeStatCard() -> impl IntoView {
 // ── System overview accordion ────────────────────────────────────────────
 
 #[component]
-fn SystemOverviewSection(overview: OverviewRes) -> impl IntoView {
+fn SystemOverviewSection(overview: OverviewRes, playtime: Memo<PlaytimeUi>) -> impl IntoView {
     let i18n = use_i18n();
     let expand_all = RwSignal::new(false);
     let toggle_all = move |_: leptos::ev::MouseEvent| expand_all.update(|v| *v = !*v);
@@ -1253,7 +1258,7 @@ fn SystemOverviewSection(overview: OverviewRes) -> impl IntoView {
                         .into_iter()
                         .filter(|c| c.total_games > 0)
                         .map(|c| view! {
-                            <SystemAccordionRow coverage=c expand_all />
+                            <SystemAccordionRow coverage=c expand_all playtime />
                         })
                         .collect::<Vec<_>>();
                     Ok::<_, ServerFnError>(view! {
@@ -1266,7 +1271,11 @@ fn SystemOverviewSection(overview: OverviewRes) -> impl IntoView {
 }
 
 #[component]
-fn SystemAccordionRow(coverage: SystemCoverage, expand_all: RwSignal<bool>) -> impl IntoView {
+fn SystemAccordionRow(
+    coverage: SystemCoverage,
+    expand_all: RwSignal<bool>,
+    playtime: Memo<PlaytimeUi>,
+) -> impl IntoView {
     let cov = StoredValue::new(coverage);
     let expanded = RwSignal::new(false);
 
@@ -1288,7 +1297,7 @@ fn SystemAccordionRow(coverage: SystemCoverage, expand_all: RwSignal<bool>) -> i
         >
             <SystemRowHeader cov />
             <Show when=move || expanded.get()>
-                <SystemRowDetails cov />
+                <SystemRowDetails cov playtime />
             </Show>
         </div>
     }
@@ -1345,12 +1354,12 @@ fn SystemRowHeader(cov: StoredValue<SystemCoverage>) -> impl IntoView {
 }
 
 #[component]
-fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
+fn SystemRowDetails(cov: StoredValue<SystemCoverage>, playtime: Memo<PlaytimeUi>) -> impl IntoView {
     let i18n = use_i18n();
 
-    // Per-system play time, from the client-only context. Placeholder until the
-    // fetch resolves, or when tracking is off / unavailable.
-    let playtime = use_context::<Memo<PlaytimeUi>>().expect("PlaytimeUi context");
+    // Per-system play time, threaded in as a prop (not context) so it survives
+    // client-side navigation inside the Suspense-rendered accordion. Placeholder
+    // until the fetch resolves, or when tracking is off / unavailable.
     let system_key = StoredValue::new(cov.with_value(|c| c.system.clone()));
     let playtime_line = move || {
         let locale = i18n.locale.get();
