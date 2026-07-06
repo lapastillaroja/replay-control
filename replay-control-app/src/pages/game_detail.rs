@@ -198,6 +198,12 @@ fn GameDetailContent(
 
     let is_favorite = RwSignal::new(detail.is_favorite);
 
+    // Which favorite lists this game belongs to, if any (badges below).
+    let game_collections = Resource::new(
+        move || (system_sv.get_value(), filename_sv.get_value()),
+        move |(s, r)| async move { server_fns::get_game_collections(s, r).await.unwrap_or_default() },
+    );
+
     // Metadata fields
     // Prefer the full ISO `release_date` + `release_precision`;
     // fall back to `year` (derived from legacy sources).
@@ -598,6 +604,36 @@ fn GameDetailContent(
                 </button>
             </div>
         </section>
+
+        // Favorite lists this game belongs to (non-blocking; hidden if none).
+        <Transition>
+            {move || {
+                game_collections.get().map(|cols: Vec<String>| {
+                    if cols.is_empty() {
+                        return ().into_any();
+                    }
+                    let locale = i18n.locale.get();
+                    let chips = cols.into_iter().map(|sub| {
+                        let (label, url) = if sub.is_empty() {
+                            (t(locale, Key::CollectionsGeneral).to_string(), "/favorites?c=~general".to_string())
+                        } else {
+                            let enc = sub.split('/')
+                                .map(|s| urlencoding::encode(s).into_owned())
+                                .collect::<Vec<_>>()
+                                .join("/");
+                            (sub.clone(), format!("/favorites?c={enc}"))
+                        };
+                        view! { <A href=url attr:class="gdc-chip">{label}</A> }
+                    }).collect::<Vec<_>>();
+                    view! {
+                        <section class="section game-detail-collections">
+                            <span class="gdc-label">{t(locale, Key::GameDetailInCollections)}</span>
+                            <div class="gdc-chips">{chips}</div>
+                        </section>
+                    }.into_any()
+                })
+            }}
+        </Transition>
 
         // Game Info Card
         <section class="section">

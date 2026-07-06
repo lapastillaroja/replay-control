@@ -327,6 +327,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Game detail page
         Key::GameDetailInfo => "ゲーム情報",
+        Key::GameDetailInCollections => "リスト",
         Key::GameDetailSystem => "システム",
         Key::GameDetailFilename => "ファイル名",
         Key::GameDetailStorageSize => "ストレージサイズ",

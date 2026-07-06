@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
-use leptos_router::hooks::use_params_map;
+use leptos_router::hooks::{use_navigate, use_params_map, use_query_map};
 use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
@@ -17,6 +17,50 @@ use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 /// Sentinel for the generic system favorites list (loose `.fav` in the
 /// `_favorites/` root — RePlayOS's own ⭐ list). Mirrors collections.rs.
 const ROOT_LIST: &str = "\u{0}general";
+/// URL token for [`ROOT_LIST`] in the `?c=` query (the sentinel isn't URL-safe).
+const ROOT_LIST_URL: &str = "~general";
+
+/// Encode a collection path into the `?c=` query value.
+fn encode_col_path(path: &[String]) -> String {
+    path.iter()
+        .map(|seg| {
+            if seg == ROOT_LIST {
+                ROOT_LIST_URL.to_string()
+            } else {
+                urlencoding::encode(seg).into_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Decode a `?c=` query value back into a collection path.
+fn decode_col_path(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return Vec::new();
+    }
+    s.split('/')
+        .map(|seg| {
+            if seg == ROOT_LIST_URL {
+                ROOT_LIST.to_string()
+            } else {
+                urlencoding::decode(seg)
+                    .map(|c| c.into_owned())
+                    .unwrap_or_else(|_| seg.to_string())
+            }
+        })
+        .collect()
+}
+
+/// Build the `/favorites` URL for a given collection path.
+fn col_url(path: &[String]) -> String {
+    let c = encode_col_path(path);
+    if c.is_empty() {
+        "/favorites".to_string()
+    } else {
+        format!("/favorites?c={c}")
+    }
+}
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -67,8 +111,12 @@ where
 
     // Current collection path: [] = "All"; [ROOT_LIST] = the generic ⭐ system
     // list (loose `.fav`); [a, b, …] = drill into subfolders. Each level is its
-    // own independent list (e.g. Evercade / Capcom Collection).
-    let path = RwSignal::new(Vec::<String>::new());
+    // own independent list (e.g. Evercade / Capcom Collection). Driven by the
+    // `?c=` query param so back/refresh/share all work.
+    let query = use_query_map();
+    let path = Memo::new(move |_| decode_col_path(&query.get().get("c").unwrap_or_default()));
+    // Copy handle so reactive/event closures can capture it freely.
+    let navigate = StoredValue::new(use_navigate());
 
     // Immediate child folders at the current path (+ loose count at the root),
     // for the selector chips.
@@ -227,7 +275,7 @@ where
             // independent list; folders with subfolders (e.g. Evercade) drill in.
             <Show when=move || !path.get().is_empty()>
                 <div class="collections-breadcrumb fav-breadcrumb">
-                    <button class="crumb" on:click=move |_| path.set(Vec::new())>
+                    <button class="crumb" on:click=move |_| navigate.with_value(|n| n("/favorites", Default::default()))>
                         {move || t(i18n.locale.get(), Key::FavoritesTitle)}
                     </button>
                     {move || {
@@ -241,7 +289,7 @@ where
                             let upto = cur[..=i].to_vec();
                             view! {
                                 <span class="crumb-sep">"/"</span>
-                                <button class="crumb" on:click=move |_| path.set(upto.clone())>
+                                <button class="crumb" on:click=move |_| navigate.with_value(|n| n(&col_url(&upto), Default::default()))>
                                     {label}
                                 </button>
                             }
@@ -262,7 +310,7 @@ where
                                 on:click=move |_| {
                                     let mut p = path.get_untracked();
                                     p.push(go.clone());
-                                    path.set(p);
+                                    navigate.with_value(|n| n(&col_url(&p), Default::default()));
                                 }
                             >
                                 <span>{label}</span>

@@ -2119,6 +2119,7 @@ fn is_user_server_function(function: &str) -> bool {
                 | "get_mode"
                 | "get_favorites"
                 | "get_system_favorites"
+                | "get_game_collections"
                 | "add_favorite"
                 | "remove_favorite"
                 | "organize_favorites"

@@ -39,6 +39,19 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     Ok(enrich_favorites(&state, favs).await)
 }
 
+/// Which favorite lists (collections) a single game belongs to, if any.
+#[server(prefix = "/sfn")]
+pub async fn get_game_collections(
+    system: String,
+    rom_filename: String,
+) -> Result<Vec<String>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let marker = format!("{system}@{rom_filename}.fav");
+    replay_control_core_server::favorites::collections_for_marker(&state.storage(), &marker)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Pair each favorite with its DB-backed `box_art_url` and `genre_group`.
 ///
 /// One batch DB read keyed by `(system, rom_filename)`. Keys are built once

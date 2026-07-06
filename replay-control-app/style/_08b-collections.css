@@ -49,3 +49,42 @@
     border-radius: 999px;
     padding: 0.1em 0.55em;
 }
+
+/* Game detail: "in lists" favorite-list badges. */
+.game-detail-collections {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.game-detail-collections .gdc-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.game-detail-collections .gdc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.game-detail-collections .gdc-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--surface-hover);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2em 0.7em;
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.game-detail-collections .gdc-chip:hover {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: transparent;
+}

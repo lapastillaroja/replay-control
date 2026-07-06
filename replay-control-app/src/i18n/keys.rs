@@ -287,6 +287,7 @@ pub enum Key {
 
     // Game detail page
     GameDetailInfo,
+    GameDetailInCollections,
     GameDetailSystem,
     GameDetailFilename,
     GameDetailStorageSize,
