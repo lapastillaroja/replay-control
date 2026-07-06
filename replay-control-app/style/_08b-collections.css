@@ -11,6 +11,14 @@
     margin-bottom: 1.25rem;
 }
 
+.my-games-tab {
+    color: var(--text-secondary);
+}
+
+.my-games-tab:hover {
+    color: var(--text);
+}
+
 .my-games-tab-icon {
     margin-right: 0.4em;
 }
