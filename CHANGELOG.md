@@ -4,6 +4,21 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed a failed or oversized ROM upload deleting the existing game of the same name — an upload now replaces a game only after it finishes successfully, so an interrupted or rejected upload leaves your library untouched.
+- Fixed error messages after a failed ROM delete, rename, or upload occasionally showing internal device file paths; they now show a clear, path-free message.
+- Renaming a game to a name that is already taken now says so clearly instead of showing a generic failure.
+
+### Changed
+
+- ROM uploads and manual downloads are now size-limited and streamed to disk, so a very large or malformed transfer can't exhaust the device's memory.
+- Game detail, delete, and rename actions no longer briefly stall the app when the library is on slow USB or network storage.
+
+---
+
 ## [1.1.1]
 
 > Fixes ScummVM folder cleanup and size displays, refreshes RetroAchievements data, and polishes the Spanish update status.
