@@ -163,7 +163,7 @@ fi
 
 # Download nplayers.ini — player count data for arcade games.
 # This supplements MAME/FBNeo metadata with player counts for entries that lack them.
-# Source: http://nplayers.arcadebelgium.be (CC BY-SA 3.0)
+# Source: https://nplayers.arcadebelgium.be (CC BY-SA 3.0)
 NPLAYERS_VERSION="0278"
 NPLAYERS_ZIP="$DATA_DIR/nplayers${NPLAYERS_VERSION}.zip"
 NPLAYERS_OUTPUT="$DATA_DIR/nplayers.ini"
@@ -174,26 +174,21 @@ if [ -f "$NPLAYERS_OUTPUT" ]; then
     echo
 else
     download \
-        "http://nplayers.arcadebelgium.be/files/nplayers${NPLAYERS_VERSION}.zip" \
+        "https://nplayers.arcadebelgium.be/files/nplayers${NPLAYERS_VERSION}.zip" \
         "$NPLAYERS_ZIP" \
-        "nplayers.ini (player count data, v${NPLAYERS_VERSION})" || {
-        echo "  WARNING: nplayers.ini download failed (host may be down)." >&2
-        echo "  Build will proceed without supplementary player count data." >&2
-        echo
-    }
+        "nplayers.ini (player count data, v${NPLAYERS_VERSION})"
 
-    if [ -f "$NPLAYERS_ZIP" ]; then
-        echo "Extracting nplayers.ini from archive..."
-        unzip -o -j "$NPLAYERS_ZIP" nplayers.ini -d "$DATA_DIR" >/dev/null 2>&1
-        if [ -f "$NPLAYERS_OUTPUT" ]; then
-            NPLAYERS_SIZE=$(stat --printf="%s" "$NPLAYERS_OUTPUT" 2>/dev/null || stat -f "%z" "$NPLAYERS_OUTPUT" 2>/dev/null)
-            echo "  OK: $NPLAYERS_OUTPUT ($NPLAYERS_SIZE bytes)"
-        else
-            echo "  ERROR: nplayers.ini not found in archive" >&2
-        fi
-        rm -f "$NPLAYERS_ZIP"
-        echo
+    echo "Extracting nplayers.ini from archive..."
+    unzip -o -j "$NPLAYERS_ZIP" nplayers.ini -d "$DATA_DIR" >/dev/null 2>&1
+    if [ -f "$NPLAYERS_OUTPUT" ]; then
+        NPLAYERS_SIZE=$(stat --printf="%s" "$NPLAYERS_OUTPUT" 2>/dev/null || stat -f "%z" "$NPLAYERS_OUTPUT" 2>/dev/null)
+        echo "  OK: $NPLAYERS_OUTPUT ($NPLAYERS_SIZE bytes)"
+    else
+        echo "  ERROR: nplayers.ini not found in archive" >&2
+        exit 1
     fi
+    rm -f "$NPLAYERS_ZIP"
+    echo
 fi
 
 echo "All source data downloaded to $DATA_DIR"
