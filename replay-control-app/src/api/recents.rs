@@ -20,7 +20,9 @@ async fn last_played(State(state): State<AppState>) -> Result<Json<serde_json::V
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match entry {
-        Some(e) => Ok(Json(serde_json::to_value(e).unwrap())),
+        Some(e) => serde_json::to_value(e)
+            .map(Json)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR),
         None => Ok(Json(serde_json::json!(null))),
     }
 }

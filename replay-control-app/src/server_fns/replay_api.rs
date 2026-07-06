@@ -281,9 +281,13 @@ pub async fn send_replay_player_command(command: ReplayPlayerCommand) -> Result<
             api.client().load_state(slot).await
         }
         _ => {
-            api.client()
-                .set_cmd(command.set_command().expect("set_cmd command"))
-                .await
+            // Every non-save/load command maps to a `set_cmd` payload. Return
+            // an error rather than panicking the process if a future variant
+            // is added without a mapping.
+            let Some(cmd) = command.set_command() else {
+                return Err(ServerFnError::new("Unsupported player command"));
+            };
+            api.client().set_cmd(cmd).await
         }
     };
 
