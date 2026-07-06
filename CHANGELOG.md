@@ -4,7 +4,13 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [Unreleased]
+## [1.1.1]
+
+> Fixes ScummVM folder cleanup and size displays, refreshes RetroAchievements data, and polishes the Spanish update status.
+
+### Changed
+
+- Updated the bundled RetroAchievements game list snapshots used to resolve achievement set metadata. (#110)
 
 ### Fixed
 
