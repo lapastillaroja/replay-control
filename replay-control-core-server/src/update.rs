@@ -49,6 +49,10 @@ pub struct AssetUrls {
     /// `None` for releases that predate the catalog asset (< v0.4.0-beta.3).
     /// The updater skips the catalog swap entirely in that case.
     pub catalog_url: Option<String>,
+    /// URL of the `checksums.sha256` manifest, when the release publishes one.
+    /// `None` for older releases that predate it — the updater then relies on
+    /// TLS alone (as it always did) instead of failing closed.
+    pub checksums_url: Option<String>,
 }
 
 /// GitHub API base URL. Overridable via `REPLAY_GITHUB_API_URL` for testing.
@@ -438,14 +442,19 @@ pub async fn resolve_asset_urls(
     let mut binary_url = None;
     let mut site_url = None;
     let mut catalog_url = None;
+    let mut checksums_url = None;
 
     for asset in assets {
         let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let download_url = asset.get("browser_download_url").and_then(|v| v.as_str());
+        let Some(url) = download_url else { continue };
+        if name == "checksums.sha256" {
+            checksums_url = Some(url.to_string());
+            continue;
+        }
         if !name.ends_with(".tar.gz") {
             continue;
         }
-        let Some(url) = download_url else { continue };
         match classify_asset(name) {
             Some(AssetKind::Binary) => binary_url = Some(url.to_string()),
             Some(AssetKind::Site) => site_url = Some(url.to_string()),
@@ -458,7 +467,72 @@ pub async fn resolve_asset_urls(
         binary_url: binary_url.ok_or("Binary asset not found in release")?,
         site_url: site_url.ok_or("Site asset not found in release")?,
         catalog_url,
+        checksums_url,
     })
+}
+
+/// Fetch and parse a `checksums.sha256` manifest into a `filename -> lowercase
+/// hex digest` map. The manifest is the standard `sha256sum` format: one
+/// `<hex>␠␠<filename>` per line.
+pub async fn fetch_checksums(
+    url: &str,
+) -> Result<std::collections::HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+    let text = shared_client()
+        .get(url)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    Ok(parse_checksums(&text))
+}
+
+fn parse_checksums(text: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // `<hex>  <filename>` — split on whitespace; the filename may have a
+        // leading `*` (binary-mode marker) which we strip.
+        if let Some((hex, name)) = line.split_once(char::is_whitespace) {
+            let name = name.trim().trim_start_matches('*');
+            if !hex.is_empty() && !name.is_empty() {
+                map.insert(name.to_string(), hex.trim().to_ascii_lowercase());
+            }
+        }
+    }
+    map
+}
+
+/// Verify that the file at `path` hashes to `expected_hex` (SHA-256, lowercase
+/// hex). Reads the file in chunks so a large tarball never lands in memory.
+pub async fn verify_sha256(
+    path: &Path,
+    expected_hex: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = tokio::io::AsyncReadExt::read(&mut file, &mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        ctx.update(&buf[..n]);
+    }
+    let digest = ctx.finish();
+    let actual: String = digest.as_ref().iter().map(|b| format!("{b:02x}")).collect();
+    if actual != expected_hex.to_ascii_lowercase() {
+        return Err(format!(
+            "checksum mismatch for {}: expected {expected_hex}, got {actual}",
+            path.display()
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// Download a file from a URL to a local path, reporting progress via callback.
@@ -501,6 +575,44 @@ mod tests {
     use super::*;
 
     const REPO: &str = "lapastillaroja/replay-control";
+
+    // ── checksums ────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_checksums_reads_sha256sum_format() {
+        let text = "\
+abc123  replay-control-app-aarch64-linux.tar.gz
+DEF456 *replay-catalog.tar.gz
+# a comment
+
+";
+        let map = parse_checksums(text);
+        assert_eq!(map.len(), 2);
+        assert_eq!(
+            map.get("replay-control-app-aarch64-linux.tar.gz")
+                .map(String::as_str),
+            Some("abc123")
+        );
+        // Binary-mode `*` marker stripped; hex lowercased.
+        assert_eq!(
+            map.get("replay-catalog.tar.gz").map(String::as_str),
+            Some("def456")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn verify_sha256_matches_and_rejects() {
+        let dir = std::env::temp_dir().join(format!("replay-checksum-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("payload.bin");
+        std::fs::write(&path, b"hello world").unwrap();
+        // Known SHA-256 of "hello world".
+        let good = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+        assert!(verify_sha256(&path, good).await.is_ok());
+        assert!(verify_sha256(&path, &good.to_uppercase()).await.is_ok());
+        assert!(verify_sha256(&path, "deadbeef").await.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     // ── available.json roundtrip ────────────────────────────────────
 

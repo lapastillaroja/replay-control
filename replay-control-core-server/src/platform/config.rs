@@ -68,6 +68,16 @@ pub(crate) struct KeyValueFile {
     entries: HashMap<String, String>,
 }
 
+/// Remove characters that would break the escape-less `key = "value"` config
+/// format: the quote that delimits values and any control character (newline,
+/// carriage return, NUL, tab, …) that could inject or truncate a line.
+fn sanitize_config_value(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| *c != '"' && !c.is_control())
+        .collect()
+}
+
 impl KeyValueFile {
     pub(crate) fn parse(content: &str) -> Result<Self> {
         let mut entries = HashMap::new();
@@ -109,7 +119,16 @@ impl KeyValueFile {
     }
 
     pub(crate) fn set(&mut self, key: &str, value: &str) {
-        self.entries.insert(key.to_string(), value.to_string());
+        // The `key = "value"` format has no escape syntax, so a value containing
+        // a quote or a control character (newline/CR/NUL) could forge an extra
+        // config line or corrupt the file — which then silently resets to
+        // defaults on the next load. No legitimate config value contains these,
+        // so strip them defensively rather than trust every upstream caller.
+        let sanitized = sanitize_config_value(value);
+        if sanitized != value {
+            tracing::warn!("config key {key:?} value contained disallowed characters; sanitized");
+        }
+        self.entries.insert(key.to_string(), sanitized);
     }
 
     /// Write the config back to a file, preserving comments, blank lines,
@@ -866,5 +885,26 @@ mod tests {
             "existing key preserved"
         );
         assert!(content.contains("skin = \"3\""), "new key added");
+    }
+
+    #[test]
+    fn set_strips_line_and_quote_injection() {
+        let mut kv = KeyValueFile::parse("").unwrap();
+        // A value carrying a newline + a forged key, and one carrying a quote.
+        kv.set("language_primary", "es\"\nanalytics = \"false");
+        kv.set("skipped_version", "1.0\"; danger");
+
+        // The quote and newline are stripped, so no forged line can appear.
+        assert_eq!(kv.get("language_primary"), Some("esanalytics = false"));
+        assert_eq!(kv.get("skipped_version"), Some("1.0; danger"));
+
+        // Two real keys → exactly two rendered lines; the injected value can't
+        // break out into its own `analytics = ...` config line.
+        let rendered = kv.render_preserving("");
+        assert_eq!(
+            rendered.lines().count(),
+            2,
+            "no forged extra line: {rendered:?}"
+        );
     }
 }

@@ -17,6 +17,12 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - ROM uploads and manual downloads are now size-limited and streamed to disk, so a very large or malformed transfer can't exhaust the device's memory.
 - Game detail, delete, and rename actions no longer briefly stall the app when the library is on slow USB or network storage.
 
+### Security
+
+- Manual downloads are now restricted to public web addresses: a request can no longer be pointed at the device's own network or local services.
+- Software updates now verify each downloaded file against the release's published checksums before installing, and reject anything that doesn't match.
+- Configuration values are sanitized before being written, so a stray special character can't corrupt the settings file.
+
 ---
 
 ## [1.1.1]

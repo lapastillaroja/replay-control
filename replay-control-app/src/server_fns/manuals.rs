@@ -296,7 +296,7 @@ pub async fn download_manual(
         tmp_path.display()
     );
 
-    let size = match replay_control_core_server::http::download_to_file(
+    let size = match replay_control_core_server::http::download_to_file_guarded(
         &encoded_url,
         &tmp_path,
         std::time::Duration::from_secs(120),

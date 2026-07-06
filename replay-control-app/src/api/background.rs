@@ -2527,6 +2527,18 @@ exit 1
             update_io::resolve_asset_urls(&base_url, Self::REPO, tag, github_key.as_deref())
                 .await?;
 
+        // Fetch the checksum manifest up front. Present on current releases;
+        // absent on older ones (then we verify via TLS alone, as before).
+        let checksums = match &assets.checksums_url {
+            Some(url) => Some(update_io::fetch_checksums(url).await?),
+            None => {
+                tracing::warn!(
+                    "release {tag} has no checksums.sha256 asset; verifying downloads via TLS only"
+                );
+                None
+            }
+        };
+
         // Use actual sizes from available.json for progress reporting.
         let stored_update = update_io::read_available_update();
         let binary_size = stored_update.as_ref().map(|u| u.binary_size).unwrap_or(0);
@@ -2576,6 +2588,7 @@ exit 1
             })
             .await?;
         }
+        Self::verify_archive(&binary_archive, &assets.binary_url, &checksums).await?;
 
         // Download site archive.
         let site_archive = update_dir.join("site.tar.gz");
@@ -2598,6 +2611,7 @@ exit 1
             })
             .await?;
         }
+        Self::verify_archive(&site_archive, &assets.site_url, &checksums).await?;
 
         let catalog_archive = update_dir.join("catalog.tar.gz");
         if let Some(catalog_url) = &assets.catalog_url {
@@ -2619,6 +2633,8 @@ exit 1
                 let _ = activity_tx.send(activity);
             })
             .await?;
+
+            Self::verify_archive(&catalog_archive, catalog_url, &checksums).await?;
         }
 
         // Extract archives.
@@ -2694,6 +2710,29 @@ exit 1
         // Keep lock_file alive until here.
         drop(lock_file);
 
+        Ok(())
+    }
+
+    /// Verify a downloaded archive against the release checksum manifest.
+    /// Fails closed if the manifest is present but the file's name is missing
+    /// from it or its SHA-256 doesn't match. When no manifest exists (older
+    /// releases), integrity rests on TLS to GitHub, as it always has.
+    async fn verify_archive(
+        path: &std::path::Path,
+        url: &str,
+        checksums: &Option<std::collections::HashMap<String, String>>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let Some(map) = checksums else {
+            return Ok(());
+        };
+        // The manifest lists the release's original asset filenames; each
+        // download URL ends with that name.
+        let name = url.rsplit('/').next().unwrap_or("");
+        let expected = map
+            .get(name)
+            .ok_or_else(|| format!("no checksum listed for update asset {name}"))?;
+        update_io::verify_sha256(path, expected).await?;
+        tracing::info!("verified checksum for update asset {name}");
         Ok(())
     }
 
@@ -3231,8 +3270,7 @@ impl AppState {
                 }
                 if recents_changed {
                     tracing::debug!("ROM watcher: _recent/ changed, invalidating cache");
-                    state.cache.invalidate_recents().await;
-                    state.cache.invalidate_recommendations().await;
+                    state.cache.invalidate_after_launch().await;
                 }
 
                 // Skip the heavier system rescan if any activity is running
