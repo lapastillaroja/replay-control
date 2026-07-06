@@ -25,7 +25,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core_server::favorites::list_favorites(&state.storage())
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Failed to load favorites", e))?;
     Ok(enrich_favorites(&state, favs).await)
 }
 
@@ -35,7 +35,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let favs =
         replay_control_core_server::favorites::list_favorites_for_system(&state.storage(), &system)
             .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            .map_err(|e| super::to_user_error("Failed to load favorites", e))?;
     Ok(enrich_favorites(&state, favs).await)
 }
 
@@ -99,7 +99,7 @@ pub async fn add_favorite(
         grouped,
     )
     .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .map_err(|e| super::to_user_error("Failed to add favorite", e))?;
     state.cache.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)
@@ -118,14 +118,14 @@ pub async fn remove_favorite(
         Some(s) if !s.is_empty() => {
             // Caller knows the subfolder — remove from that specific location.
             replay_control_core_server::favorites::remove_favorite(&storage, &filename, Some(s))
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+                .map_err(|e| super::to_user_error("Failed to remove favorite", e))?;
         }
         _ => {
             // Caller doesn't know the subfolder (e.g., game detail page).
             // Remove from all locations (root + all subfolders) since the
             // same .fav may exist in multiple places after reorganization.
             replay_control_core_server::favorites::remove_favorite_everywhere(&storage, &filename)
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+                .map_err(|e| super::to_user_error("Failed to remove favorite", e))?;
         }
     }
 
@@ -166,7 +166,7 @@ pub async fn organize_favorites(
         ratings.as_ref(),
     )
     .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    .map_err(|e| super::to_user_error("Failed to organize favorites", e))?;
     state.cache.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(OrganizeResult {
@@ -180,7 +180,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "group favorites").await?;
     let result = replay_control_core_server::favorites::group_by_system(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Failed to group favorites", e))?;
     state.cache.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)
@@ -191,7 +191,7 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "flatten favorites").await?;
     let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Failed to flatten favorites", e))?;
     state.cache.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)

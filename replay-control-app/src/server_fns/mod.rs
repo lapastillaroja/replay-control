@@ -348,6 +348,20 @@ pub fn format_error(e: server_fn::ServerFnError) -> String {
         .to_string()
 }
 
+/// Map an internal error to a user-facing [`ServerFnError`], logging the full
+/// detail server-side while returning only `context` to the client.
+///
+/// The core `Error` / `io::Error` `Display` embeds absolute device paths (e.g.
+/// `IO error at /var/lib/replay-control/...`, `ROM not found: /media/...`), so
+/// passing `e.to_string()` straight into a `ServerFnError` leaks the
+/// filesystem layout into a UI toast. Use this instead of
+/// `ServerFnError::new(e.to_string())` for any error that can carry a path.
+#[cfg(feature = "ssr")]
+pub(crate) fn to_user_error(context: &str, e: impl std::fmt::Display) -> ServerFnError {
+    tracing::error!("{context}: {e}");
+    ServerFnError::new(context.to_string())
+}
+
 /// Stable, content-derived id for a saved URL (`urlhash:<sha256-hex>`).
 /// Shared by the manuals and resources server functions.
 #[cfg(feature = "ssr")]

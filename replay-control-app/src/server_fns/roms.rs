@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::error::Error as CoreError;
 use replay_control_core::library_db::LibraryResourceLink;
 #[cfg(feature = "ssr")]
 use replay_control_core::{systems, title_utils};
@@ -525,16 +527,32 @@ pub async fn get_rom_file_group(
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
-    let mut group = list_rom_group(&storage, &system, &relative_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // The group is built entirely from synchronous storage reads (read_dir,
+    // metadata) that can stall on a slow USB/NFS mount, so run them off the
+    // async runtime to avoid tying up a tokio worker.
+    tokio::task::spawn_blocking(move || build_rom_file_group(&storage, &system, &relative_path))
+        .await
+        .map_err(|_| ServerFnError::new("Failed to read ROM files"))?
+        .map_err(|e| super::to_user_error("Failed to read ROM files", e))
+}
+
+/// Assemble a [`RomFileGroup`] via blocking filesystem reads. Runs on the
+/// blocking pool (see [`get_rom_file_group`]).
+#[cfg(feature = "ssr")]
+fn build_rom_file_group(
+    storage: &StorageLocation,
+    system: &str,
+    relative_path: &str,
+) -> Result<RomFileGroup, CoreError> {
+    let mut group = list_rom_group(storage, system, relative_path)?;
 
     // If this ROM is part of a multi-disc set (no M3U), include sibling discs.
-    let rom_filename = std::path::Path::new(&relative_path)
+    let rom_filename = std::path::Path::new(relative_path)
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
-    if let Some(disc_info) = detect_disc_set(&storage, &system, &rom_filename) {
-        let system_dir = storage.system_roms_dir(&system);
+    if let Some(disc_info) = detect_disc_set(storage, system, &rom_filename) {
+        let system_dir = storage.system_roms_dir(system);
         for sibling in &disc_info.siblings {
             if *sibling == rom_filename {
                 continue; // Already in the group as Primary.
@@ -622,7 +640,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
 
     // Delete the primary ROM group.
     let report = delete_rom_group(&storage, &system, &relative_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Failed to delete ROM", e))?;
 
     if !report.errors.is_empty() {
         tracing::warn!("Errors during ROM group delete: {:?}", report.errors);
@@ -670,7 +688,11 @@ pub async fn get_user_captures(
 ) -> Result<Vec<ScreenshotUrl>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    Ok(screenshot_urls_for_rom(&storage, &system, &rom_filename))
+    // Reads the captures directory (read_dir), which can stall on slow storage;
+    // keep it off the async runtime.
+    tokio::task::spawn_blocking(move || screenshot_urls_for_rom(&storage, &system, &rom_filename))
+        .await
+        .map_err(|_| ServerFnError::new("Failed to read captures"))
 }
 
 #[server(prefix = "/sfn")]
@@ -684,7 +706,7 @@ pub async fn delete_user_capture(
     let storage = state.storage();
 
     screenshots::delete_screenshot_for_rom(&storage, &system, &rom_filename, &screenshot_filename)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Failed to delete capture", e))?;
 
     Ok(())
 }
@@ -738,16 +760,24 @@ async fn delete_rom_cleanup(
     system: &str,
     rom_filename: &str,
 ) {
-    // 1. Delete matching favorites (search all subfolders).
-    let fav_filename = format!("{system}@{rom_filename}.fav");
-    let favs_dir = storage.favorites_dir();
-    delete_fav_recursive(&favs_dir, &fav_filename);
+    // 1 & 2. Delete matching favorites (all subfolders) and screenshots. Both
+    // walk storage directories, so run them off the async runtime to avoid
+    // stalling a tokio worker on slow USB/NFS.
+    let _ = tokio::task::spawn_blocking({
+        let storage = storage.clone();
+        let system = system.to_string();
+        let rom_filename = rom_filename.to_string();
+        move || {
+            let fav_filename = format!("{system}@{rom_filename}.fav");
+            delete_fav_recursive(&storage.favorites_dir(), &fav_filename);
 
-    // 2. Delete matching screenshots.
-    let captures_dir = storage.captures_dir().join(system);
-    for (path, _) in find_matching_screenshots(&captures_dir, rom_filename) {
-        let _ = std::fs::remove_file(path);
-    }
+            let captures_dir = storage.captures_dir().join(&system);
+            for (path, _) in find_matching_screenshots(&captures_dir, &rom_filename) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    })
+    .await;
 
     // 3. Delete user_data.db entries (videos, box art overrides).
     if let Err(e) = state
@@ -830,8 +860,17 @@ pub async fn rename_rom(
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let new_path = rename_rom_file(&storage, &system, &relative_path, &new_filename)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let new_path =
+        rename_rom_file(&storage, &system, &relative_path, &new_filename).map_err(|e| {
+            // A name collision is actionable — the user can pick a different name —
+            // so surface it distinctly (without the underlying path) instead of the
+            // generic failure message.
+            if matches!(e, CoreError::RenameTargetExists(_)) {
+                ServerFnError::new("That name is already in use")
+            } else {
+                super::to_user_error("Failed to rename ROM", e)
+            }
+        })?;
 
     // Phase 3: Rename cascade — update all associated data.
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
@@ -861,27 +900,37 @@ async fn rename_rom_cascade(
     old_filename: &str,
     new_filename: &str,
 ) {
-    // 1. Rename favorites (.fav file rename + content update).
-    let old_fav = format!("{system}@{old_filename}.fav");
-    let new_fav = format!("{system}@{new_filename}.fav");
-    rename_fav_recursive(
-        &storage.favorites_dir(),
-        &old_fav,
-        &new_fav,
-        system,
-        new_filename,
-    );
+    // 1 & 2. Rename favorites (.fav rename + content update) and screenshots.
+    // Both walk storage directories, so run them off the async runtime to
+    // avoid stalling a tokio worker on slow USB/NFS.
+    let _ = tokio::task::spawn_blocking({
+        let storage = storage.clone();
+        let system = system.to_string();
+        let old_filename = old_filename.to_string();
+        let new_filename = new_filename.to_string();
+        move || {
+            let old_fav = format!("{system}@{old_filename}.fav");
+            let new_fav = format!("{system}@{new_filename}.fav");
+            rename_fav_recursive(
+                &storage.favorites_dir(),
+                &old_fav,
+                &new_fav,
+                &system,
+                &new_filename,
+            );
 
-    // 2. Rename screenshots.
-    let captures_dir = storage.captures_dir().join(system);
-    for (path, rest) in find_matching_screenshots(&captures_dir, old_filename) {
-        let new_name = format!("{new_filename}{rest}");
-        let new_path = captures_dir.join(&new_name);
-        if let Err(e) = std::fs::rename(&path, &new_path) {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            tracing::warn!("Failed to rename screenshot {name} -> {new_name}: {e}");
+            let captures_dir = storage.captures_dir().join(&system);
+            for (path, rest) in find_matching_screenshots(&captures_dir, &old_filename) {
+                let new_name = format!("{new_filename}{rest}");
+                let new_path = captures_dir.join(&new_name);
+                if let Err(e) = std::fs::rename(&path, &new_path) {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    tracing::warn!("Failed to rename screenshot {name} -> {new_name}: {e}");
+                }
+            }
         }
-    }
+    })
+    .await;
 
     // 3. Update user_data.db (box art overrides, game videos).
     if let Err(e) = state
@@ -985,16 +1034,16 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
 
     replay_control_core_server::launch::validate_rom_exists(&storage, &rom_path)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Game file not found", e))?;
     let (system, game_file) = replay_control_core_server::launch::launch_parts(&rom_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .map_err(|e| super::to_user_error("Invalid ROM path", e))?;
 
     tracing::info!(rom = %rom_path, system, game_file, "launching game via RePlayOS API");
     if let Err(e) = api.client().load_game(system, game_file).await {
         // Feed connection-state failures (401 after a TV-side code reset,
         // frontend down) into the status machine so the UI surfaces them.
         api.report_error(&e);
-        return Err(ServerFnError::new(e.to_string()));
+        return Err(super::to_user_error("Failed to launch game", e));
     }
 
     // Write our own recents marker even though RePlayOS writes one on
