@@ -2867,6 +2867,56 @@ mod tests {
         );
     }
 
+    /// Every discovered `#[server]` function must be registered via
+    /// `register_explicit` in `main.rs`. An unregistered function resolves on
+    /// the initial SSR render (direct call) but 404s when a client-side
+    /// navigation re-runs its resource as an HTTP POST — a silent break on the
+    /// SPA path only. This closes that drift class (two functions had slipped
+    /// through: `get_update_changelog`, `get_replayos_log_level`).
+    #[test]
+    fn every_server_function_is_registered_in_main() {
+        let main_src = include_str!("../main.rs");
+        // Collapse whitespace so registrations split across lines
+        // (`register_explicit::<...,\n>();`) match the same way single-line
+        // ones do, then pull the last `::`-segment from each type argument.
+        let joined: String = main_src.split_whitespace().collect();
+        let needle = "register_explicit::<";
+        let mut registered = std::collections::HashSet::new();
+        let mut rest = joined.as_str();
+        while let Some(pos) = rest.find(needle) {
+            rest = &rest[pos + needle.len()..];
+            if let Some(end) = rest.find('>') {
+                let ty = rest[..end].trim_end_matches(',');
+                let name = ty.rsplit("::").next().unwrap_or(ty);
+                registered.insert(name.to_string());
+            }
+        }
+
+        let to_pascal = |snake: &str| -> String {
+            snake
+                .split('_')
+                .map(|seg| {
+                    let mut chars = seg.chars();
+                    match chars.next() {
+                        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                        None => String::new(),
+                    }
+                })
+                .collect()
+        };
+
+        let missing = discovered_server_function_names()
+            .iter()
+            .map(|name| to_pascal(name))
+            .filter(|struct_name| !registered.contains(struct_name))
+            .collect::<Vec<_>>();
+
+        assert!(
+            missing.is_empty(),
+            "server functions defined but not registered in main.rs (they 404 on client-side nav): {missing:?}"
+        );
+    }
+
     #[test]
     fn auth_guard_inventory_covers_every_server_function_file() {
         let server_fns_dir =

@@ -1025,6 +1025,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLogLevelConfig>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLogLevelConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetReplayosLogLevel>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetProviderGameVideos>(
         );
@@ -1098,6 +1099,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveUpdateChannel>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SkipVersion>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::StartUpdate>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetUpdateChangelog>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAnalyticsPreference>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveAnalyticsPreference>(
