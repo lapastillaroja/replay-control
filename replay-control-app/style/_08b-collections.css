@@ -1,7 +1,85 @@
-/* Collections page — favorites `_favorites/` folder tree.
-   Reuses the My Games idiom: chip row (.my-games-tabs / .my-games-tab) + card
-   grid (.my-games-grid / .my-games-card). Only breadcrumb + chip count are
-   bespoke here. */
+/* Collections page — favorites `_favorites/` folder tree, and the collection
+   selector reused on /favorites. The "My Games" idiom this was designed to
+   share (.my-games-tabs / .my-games-tab / .my-games-grid / .my-games-card)
+   lives in an unmerged sibling PR, so those classes are styled here,
+   self-contained, rather than left to inherit CSS that doesn't exist yet. */
+
+.my-games-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.my-games-tab-icon {
+    margin-right: 0.4em;
+}
+
+.my-games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 1rem;
+}
+
+.my-games-card {
+    display: block;
+    background: var(--surface);
+    border: var(--control-border);
+    border-radius: var(--surface-radius);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color var(--motion-base);
+}
+
+.my-games-card:hover {
+    border-color: var(--accent);
+}
+
+.my-games-card-cover {
+    width: 100%;
+    aspect-ratio: 0.7;
+    background: var(--surface-hover);
+    overflow: hidden;
+}
+
+.my-games-card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.my-games-card-info {
+    padding: 0.6rem 0.7rem;
+}
+
+.my-games-card-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.my-games-card-meta {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.my-games-card-system {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.my-games-card-sep {
+    opacity: 0.6;
+    margin: 0 0.3em;
+}
 
 .collections-breadcrumb {
     display: flex;
