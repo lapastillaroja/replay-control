@@ -1865,9 +1865,7 @@ fn route_required_role(method: &axum::http::Method, path: &str) -> AuthRole {
     {
         return AuthRole::Admin;
     }
-    if (method == Method::DELETE && path == "/api/roms")
-        || (method == Method::PUT && path == "/api/roms/rename")
-    {
+    if method == Method::PUT && path == "/api/roms/rename" {
         return AuthRole::Admin;
     }
     // The library CSV export is surfaced only in the admin Metadata page's

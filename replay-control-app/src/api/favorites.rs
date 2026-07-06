@@ -39,15 +39,16 @@ async fn add_favorite(
         .require_configured_storage_ready_for_mutation("add favorites")
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
-    replay_control_core_server::favorites::add_favorite(
+    let fav = replay_control_core_server::favorites::add_favorite(
         &state.storage(),
         &payload.system,
         &payload.rom_path,
         payload.grouped,
     )
     .await
-    .map(|fav| (StatusCode::CREATED, Json(fav)))
-    .map_err(|_| StatusCode::CONFLICT)
+    .map_err(|_| StatusCode::CONFLICT)?;
+    invalidate_favorites(&state).await;
+    Ok((StatusCode::CREATED, Json(fav)))
 }
 
 async fn remove_favorite(
@@ -58,13 +59,28 @@ async fn remove_favorite(
         .require_configured_storage_ready_for_mutation("remove favorites")
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
-    replay_control_core_server::favorites::remove_favorite(
-        &state.storage(),
-        &payload.filename,
-        payload.subfolder.as_deref(),
-    )
-    .map(|_| StatusCode::NO_CONTENT)
-    .map_err(|_| StatusCode::NOT_FOUND)
+    // Match the server-fn semantics: with no subfolder given, the same `.fav`
+    // may exist in multiple locations after reorganization, so remove it
+    // everywhere rather than only from the root.
+    match payload.subfolder.as_deref() {
+        Some(sub) if !sub.is_empty() => {
+            replay_control_core_server::favorites::remove_favorite(
+                &state.storage(),
+                &payload.filename,
+                Some(sub),
+            )
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        }
+        _ => {
+            replay_control_core_server::favorites::remove_favorite_everywhere(
+                &state.storage(),
+                &payload.filename,
+            )
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        }
+    }
+    invalidate_favorites(&state).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn group_favorites(
@@ -74,9 +90,10 @@ async fn group_favorites(
         .require_configured_storage_ready_for_mutation("group favorites")
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
-    replay_control_core_server::favorites::group_by_system(&state.storage())
-        .map(|count| Json(serde_json::json!({ "moved": count })))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    let count = replay_control_core_server::favorites::group_by_system(&state.storage())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    invalidate_favorites(&state).await;
+    Ok(Json(serde_json::json!({ "moved": count })))
 }
 
 async fn flatten_all_favorites(
@@ -86,9 +103,18 @@ async fn flatten_all_favorites(
         .require_configured_storage_ready_for_mutation("flatten favorites")
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
-    replay_control_core_server::favorites::flatten_favorites(&state.storage())
-        .map(|count| Json(serde_json::json!({ "moved": count })))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    let count = replay_control_core_server::favorites::flatten_favorites(&state.storage())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    invalidate_favorites(&state).await;
+    Ok(Json(serde_json::json!({ "moved": count })))
+}
+
+/// Drop the cached favorites list and per-user caches after a favorites
+/// mutation, matching what the `/sfn` favorites handlers do — otherwise an
+/// API-driven change serves stale favorites/recommendations until TTL.
+async fn invalidate_favorites(state: &AppState) {
+    state.cache.invalidate_favorites().await;
+    state.invalidate_user_caches().await;
 }
 
 async fn check_favorite(

@@ -1,6 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get};
+use axum::routing::get;
 use axum::{Json, Router};
 use replay_control_core_server::launch::launch_parts;
 use serde::{Deserialize, Serialize};
@@ -39,27 +39,6 @@ async fn list_system_roms(
     }
 
     Json(Vec::new())
-}
-
-async fn delete_rom(
-    State(state): State<AppState>,
-    Json(payload): Json<DeleteRomRequest>,
-) -> Result<StatusCode, StatusCode> {
-    state
-        .require_configured_storage_ready_for_mutation("delete ROMs")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
-    replay_control_core_server::roms::delete_rom_group(
-        &state.storage(),
-        &payload.system,
-        &payload.relative_path,
-    )
-    .map_err(|_| StatusCode::NOT_FOUND)?;
-    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
-        tracing::debug!("post-mutation cache.invalidate skipped: {e}");
-    }
-    state.invalidate_user_caches().await;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn rename_rom(
@@ -105,12 +84,6 @@ async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateRes
 }
 
 #[derive(Deserialize)]
-struct DeleteRomRequest {
-    system: String,
-    relative_path: String,
-}
-
-#[derive(Deserialize)]
 struct RenameRomRequest {
     relative_path: String,
     new_filename: String,
@@ -128,7 +101,6 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/systems", get(list_systems))
         .route("/systems/:system/roms", get(list_system_roms))
-        .route("/roms", delete(delete_rom))
         .route("/roms/rename", axum::routing::put(rename_rom))
         .route("/roms/duplicates", get(find_duplicates))
 }
