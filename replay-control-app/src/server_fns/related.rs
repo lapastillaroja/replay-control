@@ -144,6 +144,7 @@ pub async fn get_related_games(
                     &system_cl,
                     &base_title,
                     &region_pref_str_cl,
+                    &region_secondary_cl,
                     20,
                 )
                 .unwrap_or_default();
@@ -159,6 +160,7 @@ pub async fn get_related_games(
                         &series_key,
                         &base_title,
                         &region_pref_str_cl,
+                        &region_secondary_cl,
                         20,
                     )
                     .unwrap_or_default();
@@ -220,9 +222,14 @@ pub async fn get_related_games(
             };
 
             // Sequel/prequel chain info (Wikidata P155/P156).
-            let sequel_chain =
-                LibraryDb::sequel_info(conn, &system_cl, &base_title, &region_pref_str_cl)
-                    .unwrap_or_default();
+            let sequel_chain = LibraryDb::sequel_info(
+                conn,
+                &system_cl,
+                &base_title,
+                &region_pref_str_cl,
+                &region_secondary_cl,
+            )
+            .unwrap_or_default();
 
             // Other games on the same arcade board (excluding this title).
             let same_board_raw = current_entry

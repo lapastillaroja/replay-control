@@ -194,9 +194,10 @@ impl LibraryDb {
         system: &str,
         base_title: &str,
         region_pref: &str,
+        region_secondary: &str,
         limit: usize,
     ) -> Result<Vec<(GameEntry, Option<i32>)>> {
-        let region_rank = region_rank_case("gl.region", 3, None);
+        let region_rank = region_rank_case("gl.region", 3, Some(5));
         let sql = format!(
             "WITH candidates AS (
                 SELECT ?2 AS bt
@@ -248,7 +249,13 @@ impl LibraryDb {
 
         let rows = stmt
             .query_map(
-                params![system, base_title, region_pref, limit as i64],
+                params![
+                    system,
+                    base_title,
+                    region_pref,
+                    limit as i64,
+                    region_secondary
+                ],
                 |row| {
                     let entry = Self::row_to_game_entry(row)?;
                     // By name, not index — robust to GAME_ENTRY_COLUMNS changes.
@@ -326,6 +333,7 @@ impl LibraryDb {
         system: &str,
         base_title: &str,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Result<SequelChainInfo> {
         // Step 1: Get series data for this game (alias-aware).
         let row = conn.query_row(
@@ -383,12 +391,12 @@ impl LibraryDb {
 
         if has_explicit_links {
             // Use explicit P155/P156 sequel links.
-            let follows_entry = follows_title
-                .as_ref()
-                .and_then(|title| Self::find_best_rom(conn, title, system, region_pref));
-            let followed_by_entry = followed_by_title
-                .as_ref()
-                .and_then(|title| Self::find_best_rom(conn, title, system, region_pref));
+            let follows_entry = follows_title.as_ref().and_then(|title| {
+                Self::find_best_rom(conn, title, system, region_pref, region_secondary)
+            });
+            let followed_by_entry = followed_by_title.as_ref().and_then(|title| {
+                Self::find_best_rom(conn, title, system, region_pref, region_secondary)
+            });
 
             Ok(SequelChainInfo {
                 follows_title,
@@ -401,10 +409,22 @@ impl LibraryDb {
         } else if let Some(order) = series_order {
             // Fallback: synthesize prev/next from series_order (N-1, N+1).
             // Search across all systems for the adjacent ordinals.
-            let prev =
-                Self::find_series_neighbor(conn, &series_name, order - 1, system, region_pref);
-            let next =
-                Self::find_series_neighbor(conn, &series_name, order + 1, system, region_pref);
+            let prev = Self::find_series_neighbor(
+                conn,
+                &series_name,
+                order - 1,
+                system,
+                region_pref,
+                region_secondary,
+            );
+            let next = Self::find_series_neighbor(
+                conn,
+                &series_name,
+                order + 1,
+                system,
+                region_pref,
+                region_secondary,
+            );
 
             if prev.is_none() && next.is_none() {
                 return Ok(SequelChainInfo::default());
@@ -442,6 +462,7 @@ impl LibraryDb {
         target_order: i32,
         preferred_system: &str,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Option<(String, Option<GameEntry>)> {
         if target_order < 1 {
             return None;
@@ -458,7 +479,13 @@ impl LibraryDb {
             )
             .ok()?;
 
-        let entry = Self::find_best_rom(conn, &base_title, preferred_system, region_pref);
+        let entry = Self::find_best_rom(
+            conn,
+            &base_title,
+            preferred_system,
+            region_pref,
+            region_secondary,
+        );
         // Use display_name from the entry if available, otherwise the base_title.
         let display = entry
             .as_ref()
@@ -473,11 +500,12 @@ impl LibraryDb {
         base_title: &str,
         preferred_system: &str,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Option<GameEntry> {
         // Try exact base_title match, preferring non-clones.
         // Falls back to clones if no original exists (common for arcade games
         // where the Wikidata title matches a regional clone, not the parent ROM).
-        let region_rank = region_rank_case("region", 3, None);
+        let region_rank = region_rank_case("region", 3, Some(4));
         let sql = format!(
             "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
@@ -495,7 +523,7 @@ impl LibraryDb {
         );
         conn.query_row(
             &sql,
-            params![base_title, preferred_system, region_pref],
+            params![base_title, preferred_system, region_pref, region_secondary],
             Self::row_to_game_entry,
         )
         .ok()
@@ -595,6 +623,7 @@ mod tests {
             "nintendo_snes",
             "hoshi no kirby super deluxe",
             "usa",
+            "",
             20,
         )
         .unwrap();
@@ -690,6 +719,7 @@ mod tests {
             "arcade_fbneo",
             "final fight",
             "usa",
+            "",
             20,
         )
         .unwrap();

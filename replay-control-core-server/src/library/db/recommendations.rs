@@ -302,13 +302,14 @@ impl LibraryDb {
         series_key: &str,
         current_base_title: &str,
         region_pref: &str,
+        region_secondary: &str,
         limit: usize,
     ) -> Result<Vec<GameEntry>> {
         if series_key.is_empty() {
             return Ok(Vec::new());
         }
 
-        let region_rank = region_rank_case("region", 2, None);
+        let region_rank = region_rank_case("region", 2, Some(5));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
@@ -336,7 +337,13 @@ impl LibraryDb {
 
         let rows = stmt
             .query_map(
-                params![series_key, region_pref, current_base_title, limit as i64],
+                params![
+                    series_key,
+                    region_pref,
+                    current_base_title,
+                    limit as i64,
+                    region_secondary
+                ],
                 Self::row_to_game_entry,
             )
             .map_err(|e| Error::Other(format!("Query series_siblings: {e}")))?;

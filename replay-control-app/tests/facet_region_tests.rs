@@ -19,8 +19,11 @@ use server_fn::ServerFn;
 use tower::ServiceExt;
 
 use common::{TestEnv, init_executor, nes_entry, register_server_fns, seed_system, test_router};
-use replay_control_app::server_fns::{GetBoardGames, GetDeveloperGames, SearchByDeveloper};
+use replay_control_app::server_fns::{
+    GetBoardGames, GetDeveloperGames, GetRelatedGames, SearchByDeveloper,
+};
 use replay_control_core::arcade_board::ArcadeBoard;
+use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::library_db::GameEntry;
 
 fn setup() {
@@ -62,6 +65,15 @@ fn region_entry(filename: &str, base_title: &str, developer: &str, region: &str)
     GameEntry {
         region: region.to_string(),
         ..dev_entry(filename, base_title, developer, false)
+    }
+}
+
+/// An NES entry in a named series and region (for the series-siblings path).
+fn series_entry(filename: &str, base_title: &str, series_key: &str, region: &str) -> GameEntry {
+    GameEntry {
+        series_key: series_key.to_string(),
+        region: region.to_string(),
+        ..dev_entry(filename, base_title, "Konami", false)
     }
 }
 
@@ -225,5 +237,49 @@ async fn region_preference_prefers_the_preferred_region_dump() {
     assert_eq!(
         picked, "Contra (preferred).nes",
         "the preferred-region ({pref}) dump should win the dedup"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn series_siblings_honor_secondary_region() {
+    // Regression: series/related surfaces used to ignore the secondary-region
+    // preference (they only ranked primary + world). With primary=Japan (no dump
+    // for the sibling) and secondary=USA, the sibling's USA dump must win over an
+    // other-region (Europe) dump. Europe is seeded first, so a rank that ignores
+    // the secondary would surface Europe by insertion order.
+    setup();
+    let env = TestEnv::new().await;
+    {
+        let mut prefs = env.state.prefs.write().unwrap();
+        prefs.region = RegionPreference::Japan;
+        prefs.region_secondary = Some(RegionPreference::Usa);
+    }
+    seed_system(
+        &env.state,
+        "nintendo_nes",
+        vec![
+            series_entry("Contra.nes", "Contra", "contra-series", "japan"),
+            series_entry("Super C (Europe).nes", "Super C", "contra-series", "europe"),
+            series_entry("Super C (USA).nes", "Super C", "contra-series", "usa"),
+        ],
+    )
+    .await;
+    let app = test_router(env.state.clone());
+
+    let data =
+        post_form::<GetRelatedGames>(app, "system=nintendo_nes&filename=Contra.nes".into()).await;
+
+    let siblings = data["series_siblings"]
+        .as_array()
+        .expect("series_siblings array");
+    let super_c: Vec<_> = siblings
+        .iter()
+        .filter(|g| g["display_name"].as_str() == Some("Super C"))
+        .collect();
+    assert_eq!(super_c.len(), 1, "the sibling dedups to one row");
+    assert_eq!(
+        super_c[0]["rom_filename"].as_str().unwrap_or_default(),
+        "Super C (USA).nes",
+        "the secondary-region (USA) dump should surface, not the other-region (Europe) one"
     );
 }

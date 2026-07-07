@@ -381,6 +381,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                             skey,
                             "", // empty base_title so all series members are returned
                             &region_str,
+                            &region_secondary_str,
                             30,
                         )
                         .unwrap_or_default();
