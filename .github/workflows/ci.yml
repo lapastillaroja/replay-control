@@ -89,6 +89,12 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      # The app crate's SSR test binary is large; compiling it with full debug
+      # info peaks the runner's memory and gets the job OOM-killed (exit 143)
+      # on a cold cache. Debug info isn't needed to run the tests, so drop it.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v7
 
