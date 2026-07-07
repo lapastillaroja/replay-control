@@ -121,7 +121,19 @@ pub fn HomePage() -> impl IntoView {
                 <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let _ = recents.await?;
+                        let entries = recents.await?;
+                        // Populate the shared signal from this block's own await
+                        // rather than relying on the Last Played block above to
+                        // have set it first. The two Suspense blocks resolve in
+                        // an order that isn't guaranteed to match between SSR and
+                        // hydrate; if this reactive closure read an empty signal
+                        // it would render the empty-state <p> where SSR rendered
+                        // the scroll row, a structure mismatch that panics tachys
+                        // during hydration (intermittently). The signal still
+                        // drives the row so per-item deletes update it live.
+                        if recents_signal.read_untracked().is_empty() && !entries.is_empty() {
+                            recents_signal.set(entries);
+                        }
                         Ok::<_, ServerFnError>(move || {
                             let entries = recents_signal.read();
                             let items: Vec<_> = entries.iter().skip(1).take(crate::MAX_PICKS).cloned().collect();
