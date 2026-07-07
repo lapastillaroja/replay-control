@@ -8,6 +8,7 @@ use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::hero_card::GameScrollCard;
+use crate::components::hltb_section::HltbSection;
 use crate::components::resources_section::GameResourcesSection;
 use crate::hooks::confirm_replace_running_game;
 use crate::i18n::{Key, t, tf, use_i18n};
@@ -898,6 +899,14 @@ fn GameDetailContent(
             initial_video_suggestions=video_suggestions_sv
             section_id="manuals"
             focus_on_mount=focus_manuals
+        />
+
+        // HowLongToBeat — completion times.
+        <HltbSection
+            system=system_sv
+            rom_filename=filename_sv
+            base_title=base_title_sv
+            display_name=game_name_sv
         />
 
         // Related Games (lazy-loaded)

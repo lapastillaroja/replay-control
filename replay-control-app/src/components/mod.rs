@@ -10,6 +10,7 @@ pub mod game_list_item;
 pub mod game_section_row;
 pub mod genre_dropdown;
 pub mod hero_card;
+pub mod hltb_section;
 pub mod manual_section;
 pub mod metadata_banner;
 pub mod nav;

@@ -11,6 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::storage::RC_DIR;
 use replay_control_core::error::{Error, Result};
+use replay_control_core::hltb::HltbData;
 
 /// Filename for the SQLite user data database.
 pub const USER_DATA_DB_FILE: &str = "user_data.db";
@@ -69,6 +70,7 @@ impl UserDataDb {
         "game_videos",
         "game_manual_resource",
         "game_resource_link",
+        "hltb_cache",
     ];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
@@ -175,7 +177,16 @@ impl UserDataDb {
                 CREATE INDEX IF NOT EXISTS game_resource_link_idx_base_title
                     ON game_resource_link(system, base_title);
                 CREATE INDEX IF NOT EXISTS game_resource_link_idx_url
-                    ON game_resource_link(system, rom_filename, url);",
+                    ON game_resource_link(system, rom_filename, url);
+
+                CREATE TABLE IF NOT EXISTS hltb_cache (
+                    base_title TEXT NOT NULL PRIMARY KEY,
+                    game_id INTEGER,
+                    main_secs INTEGER,
+                    main_extra_secs INTEGER,
+                    completionist_secs INTEGER,
+                    fetched_at INTEGER NOT NULL
+                );",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Self::migrate_tables(conn)?;
@@ -682,6 +693,90 @@ impl UserDataDb {
     }
 
     /// Delete all user data entries for a ROM (box art overrides, videos, manuals, links).
+    const HLTB_CACHE_TTL_SECS: i64 = 7 * 24 * 3600;
+
+    /// Look up a cached HLTB result. Returns `None` if absent or older than 7 days.
+    pub fn get_hltb_cache(conn: &Connection, base_title: &str) -> Result<Option<HltbData>> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let row = conn
+            .query_row(
+                "SELECT game_id, main_secs, main_extra_secs, completionist_secs, fetched_at
+                 FROM hltb_cache WHERE base_title = ?1",
+                params![base_title],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<i64>>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to query hltb_cache: {e}")))?;
+
+        let Some((game_id, main, plus, comp100, fetched_at)) = row else {
+            return Ok(None);
+        };
+
+        if now - fetched_at > Self::HLTB_CACHE_TTL_SECS {
+            return Ok(None);
+        }
+
+        Ok(Some(HltbData {
+            game_id: game_id.unwrap_or(0) as u64,
+            main_secs: main.map(|v| v as u64),
+            main_extra_secs: plus.map(|v| v as u64),
+            completionist_secs: comp100.map(|v| v as u64),
+        }))
+    }
+
+    /// Store a HLTB result in the cache, overwriting any previous entry.
+    pub fn set_hltb_cache(conn: &Connection, base_title: &str, data: &HltbData) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO hltb_cache
+                 (base_title, game_id, main_secs, main_extra_secs, completionist_secs, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                base_title,
+                data.game_id as i64,
+                data.main_secs.map(|v| v as i64),
+                data.main_extra_secs.map(|v| v as i64),
+                data.completionist_secs.map(|v| v as i64),
+                now,
+            ],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set hltb_cache: {e}")))?;
+        Ok(())
+    }
+
+    /// Store a negative HLTB result (no data found) to prevent re-fetching for 7 days.
+    pub fn set_hltb_cache_empty(conn: &Connection, base_title: &str) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO hltb_cache
+                 (base_title, game_id, main_secs, main_extra_secs, completionist_secs, fetched_at)
+             VALUES (?1, NULL, NULL, NULL, NULL, ?2)",
+            params![base_title, now],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set empty hltb_cache: {e}")))?;
+        Ok(())
+    }
+
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
