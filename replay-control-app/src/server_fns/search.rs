@@ -393,9 +393,10 @@ pub async fn search_by_developer(
     }))
 }
 
-/// A system that a developer has games on, with game count and display name.
+/// A system that a facet (developer or arcade board) has games on, with game
+/// count and display name — the per-system filter chips on a facet page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeveloperSystem {
+pub struct FacetSystem {
     pub system: String,
     pub system_display: String,
     pub game_count: usize,
@@ -408,7 +409,30 @@ pub struct DeveloperPageData {
     pub total: usize,
     pub has_more: bool,
     pub developer: String,
-    pub systems: Vec<DeveloperSystem>,
+    pub systems: Vec<FacetSystem>,
+}
+
+/// Shared body for the developer/board genre-filter dropdowns: the distinct
+/// genre groups a facet's games fall into, optionally scoped to one system.
+#[cfg(feature = "ssr")]
+async fn facet_genres(state: &crate::api::AppState, facet: Facet, system: String) -> Vec<String> {
+    let system_filter: Option<String> = (!system.is_empty()).then_some(system);
+    let (key, is_developer) = match facet {
+        Facet::Developer(name) => (name, true),
+        Facet::Board(board) => (board.as_tag().to_string(), false),
+    };
+    state
+        .library_reader
+        .read(move |conn| {
+            if is_developer {
+                LibraryDb::developer_genre_groups(conn, &key, system_filter.as_deref())
+            } else {
+                LibraryDb::board_genre_groups(conn, &key, system_filter.as_deref())
+            }
+            .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default()
 }
 
 /// Get genres available for a developer's games, optionally filtered by system.
@@ -418,23 +442,131 @@ pub async fn get_developer_genres(
     #[server(default)] system: String,
 ) -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    Ok(facet_genres(&state, Facet::Developer(developer), system).await)
+}
 
-    let system_filter: Option<String> = if system.is_empty() {
-        None
-    } else {
-        Some(system)
+/// Which facet a game-list page is scoped to. The developer name and the
+/// arcade board differ in how they filter (`search_game_library`'s developer
+/// argument vs the `board` field on `SearchFilter`) and in which per-system
+/// count query they use — this enum centralizes that dispatch.
+#[cfg(feature = "ssr")]
+enum Facet {
+    Developer(String),
+    Board(replay_control_core::arcade_board::ArcadeBoard),
+}
+
+/// The content filters shared by every facet page, bundled so the helper
+/// doesn't need a flat parameter list (the `#[server]` entry points still do).
+#[cfg(feature = "ssr")]
+struct FacetFilters {
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    multiplayer_only: bool,
+    genre: String,
+    min_rating: Option<f32>,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
+    has_achievements: bool,
+}
+
+/// The facet-agnostic part of a facet page's response.
+#[cfg(feature = "ssr")]
+struct FacetPage {
+    roms: Vec<RomListEntry>,
+    total: usize,
+    has_more: bool,
+    systems: Vec<FacetSystem>,
+}
+
+/// Shared body for the developer/board facet game-list pages. The two
+/// `#[server]` entry points differ only in their flat parameter list and their
+/// response envelope (the macro forces both to stay separate); everything in
+/// between — filter assembly, the systems + paginated-games DB session,
+/// `has_more`, and enrichment — is identical, so it lives here. Returns `None`
+/// only if the DB session itself failed (mirrors the old empty-page fallback).
+#[cfg(feature = "ssr")]
+async fn facet_games_page(
+    state: &crate::api::AppState,
+    facet: Facet,
+    system: String,
+    offset: usize,
+    limit: usize,
+    filters: FacetFilters,
+) -> Option<FacetPage> {
+    use replay_control_core::systems::system_display_name;
+    use replay_control_core_server::library_db::SearchFilter;
+
+    let limit = limit.clamp(1, 200);
+    let system_filter: Option<String> = (!system.is_empty()).then_some(system);
+    let fetch_limit = limit + 1; // fetch one extra to detect has_more
+
+    // Resolve the facet-specific bits before the DB closure: the developer
+    // search argument, the board filter, and the per-system count key.
+    let (developer_arg, board_filter, systems_key) = match facet {
+        Facet::Developer(name) => (Some(name.clone()), None, name),
+        Facet::Board(board) => (None, Some(board), board.as_tag().to_string()),
     };
+    let is_developer = developer_arg.is_some();
 
-    let genres = state
+    let (systems_raw, mut entries, total) = state
         .library_reader
         .read(move |conn| {
-            LibraryDb::developer_genre_groups(conn, &developer, system_filter.as_deref())
-                .unwrap_or_default()
+            let systems_raw = if is_developer {
+                LibraryDb::developer_systems(conn, &systems_key)
+            } else {
+                LibraryDb::board_systems(conn, &systems_key)
+            }
+            .unwrap_or_default();
+            let search_filter = SearchFilter {
+                hide_hacks: filters.hide_hacks,
+                hide_translations: filters.hide_translations,
+                hide_betas: filters.hide_betas,
+                hide_clones: filters.hide_clones,
+                multiplayer_only: filters.multiplayer_only,
+                coop_only: false,
+                genre: &filters.genre,
+                min_rating: filters.min_rating.map(|r| r as f64),
+                min_year: filters.min_year,
+                max_year: filters.max_year,
+                board: board_filter,
+                has_achievements: filters.has_achievements,
+                only_mature: false,
+            };
+            let (entries, total) = LibraryDb::search_game_library(
+                conn,
+                system_filter.as_deref(),
+                developer_arg.as_deref(),
+                &[],
+                &search_filter,
+                offset,
+                fetch_limit,
+            )
+            .unwrap_or_default();
+            (systems_raw, entries, total)
         })
-        .await
-        .unwrap_or_default();
+        .await?;
 
-    Ok(genres)
+    let has_more = entries.len() > limit;
+    entries.truncate(limit);
+
+    let systems = systems_raw
+        .into_iter()
+        .map(|(sys, count)| FacetSystem {
+            system_display: system_display_name(&sys),
+            system: sys,
+            game_count: count,
+        })
+        .collect();
+
+    let roms = super::enrich_game_entries(state, entries).await;
+    Some(FacetPage {
+        roms,
+        total,
+        has_more,
+        systems,
+    })
 }
 
 /// Get paginated game list for a developer, with optional system and content filters.
@@ -458,92 +590,44 @@ pub async fn get_developer_games(
     #[server(default)] max_year: Option<u16>,
     #[server(default)] has_achievements: bool,
 ) -> Result<DeveloperPageData, ServerFnError> {
-    use replay_control_core::systems as sys_db;
-    use replay_control_core_server::library_db::SearchFilter;
-
     let state = expect_context::<crate::api::AppState>();
-    let limit = limit.clamp(1, 200);
-
-    let system_filter: Option<String> = if system.is_empty() {
-        None
-    } else {
-        Some(system)
+    let filters = FacetFilters {
+        hide_hacks,
+        hide_translations,
+        hide_betas,
+        hide_clones,
+        multiplayer_only,
+        genre,
+        min_rating,
+        min_year,
+        max_year,
+        has_achievements,
     };
+    let page = facet_games_page(
+        &state,
+        Facet::Developer(developer.clone()),
+        system,
+        offset,
+        limit,
+        filters,
+    )
+    .await;
 
-    let min_rating_f64 = min_rating.map(|r| r as f64);
-
-    // Fetch systems and paginated games in one DB session.
-    let developer_owned = developer.clone();
-    let fetch_limit = limit + 1; // fetch one extra to detect has_more
-    let db_result = state
-        .library_reader
-        .read(move |conn| {
-            let systems_raw =
-                LibraryDb::developer_systems(conn, &developer_owned).unwrap_or_default();
-            let filters = SearchFilter {
-                hide_hacks,
-                hide_translations,
-                hide_betas,
-                hide_clones,
-                multiplayer_only,
-                coop_only: false,
-                genre: &genre,
-                min_rating: min_rating_f64,
-                min_year,
-                max_year,
-                board: None,
-                has_achievements,
-                only_mature: false,
-            };
-            let (entries, total) = LibraryDb::search_game_library(
-                conn,
-                system_filter.as_deref(),
-                Some(&developer_owned),
-                &[],
-                &filters,
-                offset,
-                fetch_limit,
-            )
-            .unwrap_or_default();
-            (systems_raw, entries, total)
-        })
-        .await;
-
-    let Some((systems_raw, mut entries, total)) = db_result else {
-        return Ok(DeveloperPageData {
+    Ok(match page {
+        Some(p) => DeveloperPageData {
+            roms: p.roms,
+            total: p.total,
+            has_more: p.has_more,
+            developer,
+            systems: p.systems,
+        },
+        None => DeveloperPageData {
             roms: Vec::new(),
             total: 0,
             has_more: false,
             developer,
             systems: Vec::new(),
-        });
-    };
-
-    let has_more = entries.len() > limit;
-    entries.truncate(limit);
-
-    // Convert system folder names to display names.
-    let systems: Vec<DeveloperSystem> = systems_raw
-        .into_iter()
-        .map(|(sys, count)| {
-            let display = sys_db::system_display_name(&sys);
-            DeveloperSystem {
-                system: sys,
-                system_display: display,
-                game_count: count,
-            }
-        })
-        .collect();
-
-    // Enrich entries: box art, favorites, genre (shared enrichment function).
-    let list_entries = super::enrich_game_entries(&state, entries).await;
-
-    Ok(DeveloperPageData {
-        roms: list_entries,
-        total,
-        has_more,
-        developer,
-        systems,
+        },
     })
 }
 
@@ -647,15 +731,6 @@ pub async fn search_by_board(
     }))
 }
 
-/// A system that has games on a given arcade board, with game count and
-/// display name. Mirrors `DeveloperSystem`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BoardSystem {
-    pub system: String,
-    pub system_display: String,
-    pub game_count: usize,
-}
-
 /// Response for the board game list page. Mirrors `DeveloperPageData`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoardPageData {
@@ -666,7 +741,7 @@ pub struct BoardPageData {
     pub board_tag: String,
     /// `ArcadeBoard::display_label()` — what the title bar shows.
     pub board_display_name: String,
-    pub systems: Vec<BoardSystem>,
+    pub systems: Vec<FacetSystem>,
 }
 
 /// Get genres available for a board's games, optionally filtered by system.
@@ -675,24 +750,13 @@ pub async fn get_board_genres(
     board_tag: String,
     #[server(default)] system: String,
 ) -> Result<Vec<String>, ServerFnError> {
+    use replay_control_core::arcade_board::ArcadeBoard;
     let state = expect_context::<crate::api::AppState>();
-
-    let system_filter: Option<String> = if system.is_empty() {
-        None
-    } else {
-        Some(system)
-    };
-
-    let genres = state
-        .library_reader
-        .read(move |conn| {
-            LibraryDb::board_genre_groups(conn, &board_tag, system_filter.as_deref())
-                .unwrap_or_default()
-        })
-        .await
-        .unwrap_or_default();
-
-    Ok(genres)
+    // Unknown tag → no genres (an unresolvable board has no games either).
+    match ArcadeBoard::from_tag(&board_tag) {
+        Some(board) => Ok(facet_genres(&state, Facet::Board(board), system).await),
+        None => Ok(Vec::new()),
+    }
 }
 
 /// Get paginated game list for a board, with optional system and content filters.
@@ -717,11 +781,8 @@ pub async fn get_board_games(
     #[server(default)] has_achievements: bool,
 ) -> Result<BoardPageData, ServerFnError> {
     use replay_control_core::arcade_board::ArcadeBoard;
-    use replay_control_core::systems as sys_db;
-    use replay_control_core_server::library_db::SearchFilter;
 
     let state = expect_context::<crate::api::AppState>();
-    let limit = limit.clamp(1, 200);
 
     // Resolve tag → enum once, up front. Unknown tag → empty page (the UI
     // shows the "no games" empty state with the raw tag as the title).
@@ -730,61 +791,7 @@ pub async fn get_board_games(
         .map(|b| b.display_label())
         .unwrap_or_else(|| board_tag.clone());
 
-    if board_enum.is_none() {
-        return Ok(BoardPageData {
-            roms: Vec::new(),
-            total: 0,
-            has_more: false,
-            board_tag,
-            board_display_name,
-            systems: Vec::new(),
-        });
-    }
-
-    let system_filter: Option<String> = if system.is_empty() {
-        None
-    } else {
-        Some(system)
-    };
-
-    let min_rating_f64 = min_rating.map(|r| r as f64);
-
-    let tag_for_db = board_tag.clone();
-    let fetch_limit = limit + 1;
-    let db_result = state
-        .library_reader
-        .read(move |conn| {
-            let systems_raw = LibraryDb::board_systems(conn, &tag_for_db).unwrap_or_default();
-            let filters = SearchFilter {
-                hide_hacks,
-                hide_translations,
-                hide_betas,
-                hide_clones,
-                multiplayer_only,
-                coop_only: false,
-                genre: &genre,
-                min_rating: min_rating_f64,
-                min_year,
-                max_year,
-                board: board_enum,
-                has_achievements,
-                only_mature: false,
-            };
-            let (entries, total) = LibraryDb::search_game_library(
-                conn,
-                system_filter.as_deref(),
-                None,
-                &[],
-                &filters,
-                offset,
-                fetch_limit,
-            )
-            .unwrap_or_default();
-            (systems_raw, entries, total)
-        })
-        .await;
-
-    let Some((systems_raw, mut entries, total)) = db_result else {
+    let Some(board_enum) = board_enum else {
         return Ok(BoardPageData {
             roms: Vec::new(),
             total: 0,
@@ -795,30 +802,45 @@ pub async fn get_board_games(
         });
     };
 
-    let has_more = entries.len() > limit;
-    entries.truncate(limit);
+    let filters = FacetFilters {
+        hide_hacks,
+        hide_translations,
+        hide_betas,
+        hide_clones,
+        multiplayer_only,
+        genre,
+        min_rating,
+        min_year,
+        max_year,
+        has_achievements,
+    };
+    let page = facet_games_page(
+        &state,
+        Facet::Board(board_enum),
+        system,
+        offset,
+        limit,
+        filters,
+    )
+    .await;
 
-    let systems: Vec<BoardSystem> = systems_raw
-        .into_iter()
-        .map(|(sys, count)| {
-            let display = sys_db::system_display_name(&sys);
-            BoardSystem {
-                system: sys,
-                system_display: display,
-                game_count: count,
-            }
-        })
-        .collect();
-
-    let list_entries = super::enrich_game_entries(&state, entries).await;
-
-    Ok(BoardPageData {
-        roms: list_entries,
-        total,
-        has_more,
-        board_tag,
-        board_display_name,
-        systems,
+    Ok(match page {
+        Some(p) => BoardPageData {
+            roms: p.roms,
+            total: p.total,
+            has_more: p.has_more,
+            board_tag,
+            board_display_name,
+            systems: p.systems,
+        },
+        None => BoardPageData {
+            roms: Vec::new(),
+            total: 0,
+            has_more: false,
+            board_tag,
+            board_display_name,
+            systems: Vec::new(),
+        },
     })
 }
 
