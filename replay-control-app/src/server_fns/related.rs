@@ -10,16 +10,16 @@ pub struct RelatedGamesData {
     /// Other regions of the same game. Empty if only one region exists.
     pub regional_variants: Vec<RegionalVariant>,
     /// Translations of the same game. Empty if no translations exist.
-    pub translations: Vec<TranslationVariant>,
+    pub translations: Vec<VariantChip>,
     /// Hacks of the same game. Empty if no hacks exist.
-    pub hacks: Vec<HackVariant>,
+    pub hacks: Vec<VariantChip>,
     /// Special versions of the same game (FastROM, 60Hz, unlicensed, etc.).
-    pub specials: Vec<SpecialVariant>,
+    pub specials: Vec<VariantChip>,
     /// Alternate dumps/versions of the same game (same system, is_clone=1, not hacks).
     /// Empty for arcade systems (they use arcade_versions instead).
-    pub alternate_versions: Vec<AlternateVersion>,
+    pub alternate_versions: Vec<VariantChip>,
     /// Arcade clone siblings sharing the same parent ROM. Empty for non-arcade systems.
-    pub arcade_versions: Vec<ArcadeVersion>,
+    pub arcade_versions: Vec<VariantChip>,
     /// Cross-name variants of the same game (e.g., "Bare Knuckle" / "Streets of Rage").
     pub alias_variants: Vec<RecommendedGame>,
     /// Same game on other systems (cross-system base_title match).
@@ -66,56 +66,13 @@ pub struct RegionalVariant {
     pub is_current: bool,
 }
 
-/// A translation variant chip linking to a translated version of the same game.
+/// A variant chip linking to another version of the same game — a translation,
+/// hack, special (FastROM/60Hz/unlicensed/…), alternate dump, or arcade clone.
+/// Which list a chip belongs to is carried by its field on `RelatedGamesData`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TranslationVariant {
+pub struct VariantChip {
     pub rom_filename: String,
-    /// Short label extracted from the filename tags, e.g., "ES Translation".
-    pub label: String,
-    pub href: String,
-    /// True if this is the current game (for active chip styling).
-    pub is_current: bool,
-}
-
-/// A hack variant chip linking to a hacked version of the same game.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HackVariant {
-    pub rom_filename: String,
-    /// Short label extracted from the filename tags, e.g., "Hack".
-    pub label: String,
-    pub href: String,
-    /// True if this is the current game (for active chip styling).
-    pub is_current: bool,
-}
-
-/// A special variant chip (FastROM, 60Hz, unlicensed, homebrew, pre-release, pirate).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpecialVariant {
-    pub rom_filename: String,
-    /// Short label extracted from the filename tags, e.g., "FastROM", "60Hz".
-    pub label: String,
-    pub href: String,
-    /// True if this is the current game (for active chip styling).
-    pub is_current: bool,
-}
-
-/// An alternate version chip (alternate dump, trained, cracked — is_clone=1, not hacks).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlternateVersion {
-    pub rom_filename: String,
-    /// Short label extracted from the filename tags, e.g., "Alternate", "Alternate 2".
-    pub label: String,
-    pub href: String,
-    /// True if this is the current game (for active chip styling).
-    pub is_current: bool,
-}
-
-/// An arcade clone/version chip linking to another version of the same arcade game.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArcadeVersion {
-    pub rom_filename: String,
-    /// Concise label: just the parenthesized tag if the base name matches the parent,
-    /// or the full display name if it differs.
+    /// Short label shown on the chip (e.g. "ES Translation", "Hack", "60Hz").
     pub label: String,
     pub href: String,
     /// True if this is the current game (for active chip styling).
@@ -370,7 +327,7 @@ pub async fn get_related_games(
     };
 
     // Build translations list.
-    let translations: Vec<TranslationVariant> = translations_raw
+    let translations: Vec<VariantChip> = translations_raw
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
@@ -387,7 +344,7 @@ pub async fn get_related_games(
             } else {
                 label
             };
-            TranslationVariant {
+            VariantChip {
                 rom_filename: rom_fn,
                 label,
                 href,
@@ -397,7 +354,7 @@ pub async fn get_related_games(
         .collect();
 
     // Build hacks list.
-    let hacks: Vec<HackVariant> = hacks_raw
+    let hacks: Vec<VariantChip> = hacks_raw
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
@@ -414,7 +371,7 @@ pub async fn get_related_games(
             } else {
                 label
             };
-            HackVariant {
+            VariantChip {
                 rom_filename: rom_fn,
                 label,
                 href,
@@ -424,7 +381,7 @@ pub async fn get_related_games(
         .collect();
 
     // Build alternate versions list (clones that are not hacks).
-    let alternate_versions: Vec<AlternateVersion> = alternates_raw
+    let alternate_versions: Vec<VariantChip> = alternates_raw
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
@@ -435,7 +392,7 @@ pub async fn get_related_games(
             } else {
                 tags
             };
-            AlternateVersion {
+            VariantChip {
                 rom_filename: rom_fn,
                 label,
                 href,
@@ -445,7 +402,7 @@ pub async fn get_related_games(
         .collect();
 
     // Build specials list.
-    let specials: Vec<SpecialVariant> = specials_raw
+    let specials: Vec<VariantChip> = specials_raw
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
@@ -456,7 +413,7 @@ pub async fn get_related_games(
             } else {
                 tags
             };
-            SpecialVariant {
+            VariantChip {
                 rom_filename: rom_fn,
                 label,
                 href,
@@ -608,7 +565,7 @@ async fn build_arcade_versions(
     system: &str,
     current_filename: &str,
     all_system_roms: &[String],
-) -> Vec<ArcadeVersion> {
+) -> Vec<VariantChip> {
     use replay_control_core_server::arcade_db;
 
     let current_stem = replay_control_core::title_utils::filename_stem(current_filename);
@@ -644,7 +601,7 @@ async fn build_arcade_versions(
     };
 
     // Find all ROMs in this system that share the same parent via arcade_db.
-    let mut versions: Vec<ArcadeVersion> = all_system_roms
+    let mut versions: Vec<VariantChip> = all_system_roms
         .iter()
         .filter_map(|rom_fn| {
             let stem = replay_control_core::title_utils::filename_stem(rom_fn);
@@ -682,7 +639,7 @@ async fn build_arcade_versions(
             );
             let href = format!("/games/{}/{}", system, urlencoding::encode(rom_fn));
 
-            Some(ArcadeVersion {
+            Some(VariantChip {
                 rom_filename: rom_fn.clone(),
                 label,
                 href,

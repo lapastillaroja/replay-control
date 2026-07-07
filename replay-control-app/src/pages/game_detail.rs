@@ -13,7 +13,7 @@ use crate::hooks::confirm_replace_running_game;
 use crate::i18n::{Key, t, tf, use_i18n};
 #[cfg(feature = "hydrate")]
 use crate::server_fns::PlaytimeAvailability;
-use crate::server_fns::{self, RecommendedGame, RomDetail};
+use crate::server_fns::{self, RecommendedGame, RomDetail, VariantChip};
 use crate::types::NowPlayingState;
 #[cfg(feature = "hydrate")]
 use crate::util::format_elapsed_short;
@@ -1306,21 +1306,11 @@ fn RelatedGamesSection(
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
                                 ChipItem { label: v.region.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
-                            let translation_chips: Vec<ChipItem> = data.translations.iter().map(|v| {
-                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
-                            }).collect();
-                            let hack_chips: Vec<ChipItem> = data.hacks.iter().map(|v| {
-                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
-                            }).collect();
-                            let alternate_chips: Vec<ChipItem> = data.alternate_versions.iter().map(|v| {
-                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
-                            }).collect();
-                            let special_chips: Vec<ChipItem> = data.specials.iter().map(|v| {
-                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
-                            }).collect();
-                            let arcade_version_chips: Vec<ChipItem> = data.arcade_versions.iter().map(|v| {
-                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
-                            }).collect();
+                            let translation_chips: Vec<ChipItem> = data.translations.iter().map(ChipItem::from).collect();
+                            let hack_chips: Vec<ChipItem> = data.hacks.iter().map(ChipItem::from).collect();
+                            let alternate_chips: Vec<ChipItem> = data.alternate_versions.iter().map(ChipItem::from).collect();
+                            let special_chips: Vec<ChipItem> = data.specials.iter().map(ChipItem::from).collect();
+                            let arcade_version_chips: Vec<ChipItem> = data.arcade_versions.iter().map(ChipItem::from).collect();
                             view! {
                                 <section class="section recommendations-section">
                                     <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailRecommendations)}</h2>
@@ -1416,6 +1406,16 @@ struct ChipItem {
     label: String,
     href: String,
     is_current: bool,
+}
+
+impl From<&VariantChip> for ChipItem {
+    fn from(v: &VariantChip) -> Self {
+        ChipItem {
+            label: v.label.clone(),
+            href: v.href.clone(),
+            is_current: v.is_current,
+        }
+    }
 }
 
 /// Generic horizontal chip row showing clickable links with a section title.
