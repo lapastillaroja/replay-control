@@ -16,6 +16,7 @@ pub mod roms;
 pub mod system_info;
 pub mod thumbnail_orchestrator;
 pub mod thumbnail_pipeline;
+pub mod updates;
 pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
