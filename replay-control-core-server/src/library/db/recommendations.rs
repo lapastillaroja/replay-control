@@ -14,6 +14,7 @@ use super::{GameEntry, LibraryDb};
 // `{GAME_ENTRY_COLS}` call sites unchanged.
 use super::game_library::GAME_ENTRY_COLUMNS as GAME_ENTRY_COLS;
 use super::game_library::ORIGINALS_ONLY;
+use super::game_library::region_rank_case;
 
 impl LibraryDb {
     /// Get random cached ROMs with box art from all systems.
@@ -27,16 +28,12 @@ impl LibraryDb {
         region_pref: &str,
         region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = ?3 THEN 1
-                        WHEN region = 'world' THEN 2
-                        ELSE 3
-                    END
+                    ORDER BY {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE {ORIGINALS_ONLY}
@@ -102,16 +99,12 @@ impl LibraryDb {
         region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
         let pool_size = (count * 4).max(40) as i64;
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = ?3 THEN 1
-                        WHEN region = 'world' THEN 2
-                        ELSE 3
-                    END
+                    ORDER BY {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE {ORIGINALS_ONLY} AND rating IS NOT NULL AND rating >= 3.5
@@ -183,16 +176,12 @@ impl LibraryDb {
         let limit = ((count + exclude_filenames.len()) * 4).max(40) as i64;
 
         let roms = if let Some(genre) = genre_filter {
+            let region_rank = region_rank_case("region", 4, Some(5));
             let sql = format!(
                 "WITH deduped AS (
                     SELECT *, ROW_NUMBER() OVER (
                         PARTITION BY system, base_title
-                        ORDER BY CASE
-                            WHEN region = ?4 THEN 0
-                            WHEN region = ?5 THEN 1
-                            WHEN region = 'world' THEN 2
-                            ELSE 3
-                        END
+                        ORDER BY {region_rank}
                     ) AS rn
                     FROM game_library
                     WHERE system = ?1 AND genre_group = ?2 AND {ORIGINALS_ONLY}
@@ -217,16 +206,12 @@ impl LibraryDb {
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
         } else {
+            let region_rank = region_rank_case("region", 3, Some(4));
             let sql = format!(
                 "WITH deduped AS (
                     SELECT *, ROW_NUMBER() OVER (
                         PARTITION BY system, base_title
-                        ORDER BY CASE
-                            WHEN region = ?3 THEN 0
-                            WHEN region = ?4 THEN 1
-                            WHEN region = 'world' THEN 2
-                            ELSE 3
-                        END
+                        ORDER BY {region_rank}
                     ) AS rn
                     FROM game_library
                     WHERE system = ?1 AND {ORIGINALS_ONLY}
@@ -323,15 +308,12 @@ impl LibraryDb {
             return Ok(Vec::new());
         }
 
+        let region_rank = region_rank_case("region", 2, None);
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = 'world' THEN 1
-                        ELSE 2
-                    END
+                    ORDER BY {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE series_key = ?1
@@ -406,16 +388,12 @@ impl LibraryDb {
             let _ = param_idx; // suppress unused warning
         }
 
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = ?3 THEN 1
-                        WHEN region = 'world' THEN 2
-                        ELSE 3
-                    END
+                    ORDER BY {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE {ORIGINALS_ONLY} AND rating IS NOT NULL AND rating >= 3.5{extra_where}
@@ -454,16 +432,12 @@ impl LibraryDb {
         region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
         let pool_size = (count * 4).max(40) as i64;
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = ?3 THEN 1
-                        WHEN region = 'world' THEN 2
-                        ELSE 3
-                    END
+                    ORDER BY {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE {ORIGINALS_ONLY}

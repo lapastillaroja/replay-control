@@ -37,6 +37,42 @@ pub(crate) const GAME_ENTRY_COLUMNS: &str = "\
 pub(crate) const ORIGINALS_ONLY: &str =
     "is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0";
 
+/// Build the region-preference ranking `CASE` used to pick the best regional
+/// dump when deduping rows by `base_title` (lower value = more preferred).
+///
+/// `column` is the region column expression (`"region"`, or a table-qualified
+/// `"gl.region"` inside a join). `pref_param` / `secondary_param` are the
+/// 1-based bound-parameter positions (`?N`) holding the primary and optional
+/// secondary region strings — they vary by query, which is why this is a
+/// builder rather than a constant.
+///
+/// - With a secondary: primary → secondary → `world` → other.
+/// - Without: primary → `world` → other. A few call sites (series-based
+///   recommendations, alias resolution) deliberately rank by primary + world
+///   only; passing `None` reproduces that exactly and makes the omission
+///   explicit at the call site instead of hiding in copy-pasted SQL.
+pub(crate) fn region_rank_case(
+    column: &str,
+    pref_param: u8,
+    secondary_param: Option<u8>,
+) -> String {
+    match secondary_param {
+        Some(secondary_param) => format!(
+            "CASE \
+             WHEN {column} = ?{pref_param} THEN 0 \
+             WHEN {column} = ?{secondary_param} THEN 1 \
+             WHEN {column} = 'world' THEN 2 \
+             ELSE 3 END"
+        ),
+        None => format!(
+            "CASE \
+             WHEN {column} = ?{pref_param} THEN 0 \
+             WHEN {column} = 'world' THEN 1 \
+             ELSE 2 END"
+        ),
+    }
+}
+
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
 #[derive(Debug, Clone, Copy)]
@@ -2419,18 +2455,14 @@ impl LibraryDb {
         region_pref: &str,
         region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY base_title
                     ORDER BY
                         box_art_url IS NULL,
-                        CASE
-                            WHEN region = ?2 THEN 0
-                            WHEN region = ?3 THEN 1
-                            WHEN region = 'world' THEN 2
-                            ELSE 3
-                        END
+                        {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE developer = ?1
@@ -2560,18 +2592,14 @@ impl LibraryDb {
         if board_tag.is_empty() {
             return Ok(Vec::new());
         }
+        let region_rank = region_rank_case("region", 2, Some(3));
         let sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY base_title
                     ORDER BY
                         box_art_url IS NULL,
-                        CASE
-                            WHEN region = ?2 THEN 0
-                            WHEN region = ?3 THEN 1
-                            WHEN region = 'world' THEN 2
-                            ELSE 3
-                        END
+                        {region_rank}
                 ) AS rn
                 FROM game_library
                 WHERE board = ?1
@@ -3160,6 +3188,30 @@ mod tests {
     use replay_control_core::arcade_board::ArcadeBoard;
     use replay_control_core::resource_kind;
     use replay_control_core::rom_tags::RegionPreference;
+
+    #[test]
+    fn region_rank_case_shapes() {
+        // With a secondary tier: primary(0) > secondary(1) > world(2) > other(3).
+        assert_eq!(
+            super::region_rank_case("region", 2, Some(3)),
+            "CASE WHEN region = ?2 THEN 0 WHEN region = ?3 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
+        );
+        // Parameter positions are honored (some queries bind pref/secondary at ?3/?4).
+        assert_eq!(
+            super::region_rank_case("region", 3, Some(4)),
+            "CASE WHEN region = ?3 THEN 0 WHEN region = ?4 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
+        );
+        // Without a secondary: primary(0) > world(1) > other(2).
+        assert_eq!(
+            super::region_rank_case("region", 2, None),
+            "CASE WHEN region = ?2 THEN 0 WHEN region = 'world' THEN 1 ELSE 2 END"
+        );
+        // A table-qualified column (join context, e.g. series/alias resolution).
+        assert_eq!(
+            super::region_rank_case("gl.region", 3, None),
+            "CASE WHEN gl.region = ?3 THEN 0 WHEN gl.region = 'world' THEN 1 ELSE 2 END"
+        );
+    }
 
     // Removed: `genre_enrichment_fills_empty_genre_from_launchbox` — exercised
     // LibraryDb::bulk_upsert + the legacy game_metadata table. The

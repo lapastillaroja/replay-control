@@ -5,6 +5,7 @@ use rusqlite::{Connection, params};
 use replay_control_core::error::{Error, Result};
 
 use super::game_library::GAME_ENTRY_COLUMNS as GAME_ENTRY_COLS;
+use super::game_library::region_rank_case;
 use super::{AliasInsert, GameEntry, LibraryDb, SeriesInsert};
 
 impl LibraryDb {
@@ -195,6 +196,7 @@ impl LibraryDb {
         region_pref: &str,
         limit: usize,
     ) -> Result<Vec<(GameEntry, Option<i32>)>> {
+        let region_rank = region_rank_case("gl.region", 3, None);
         let sql = format!(
             "WITH candidates AS (
                 SELECT ?2 AS bt
@@ -221,11 +223,7 @@ impl LibraryDb {
                 SELECT gl.*, sg.series_order,
                     ROW_NUMBER() OVER (
                         PARTITION BY gl.system, gl.base_title
-                        ORDER BY CASE
-                            WHEN gl.region = ?3 THEN 0
-                            WHEN gl.region = 'world' THEN 1
-                            ELSE 2
-                        END
+                        ORDER BY {region_rank}
                     ) AS rn
                 FROM series_games sg
                 JOIN game_library gl ON gl.base_title = sg.base_title COLLATE NOCASE
@@ -479,7 +477,8 @@ impl LibraryDb {
         // Try exact base_title match, preferring non-clones.
         // Falls back to clones if no original exists (common for arcade games
         // where the Wikidata title matches a regional clone, not the parent ROM).
-        conn.query_row(
+        let region_rank = region_rank_case("region", 3, None);
+        let sql = format!(
             "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
@@ -491,8 +490,11 @@ impl LibraryDb {
                  ORDER BY
                      is_clone ASC,
                      CASE WHEN system = ?2 THEN 0 ELSE 1 END,
-                     CASE WHEN region = ?3 THEN 0 WHEN region = 'world' THEN 1 ELSE 2 END
-                 LIMIT 1",
+                     {region_rank}
+                 LIMIT 1"
+        );
+        conn.query_row(
+            &sql,
             params![base_title, preferred_system, region_pref],
             Self::row_to_game_entry,
         )
