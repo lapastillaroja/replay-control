@@ -13,6 +13,7 @@ use super::{GameEntry, LibraryDb};
 // those decoded as defaults here; sharing fixes that. The alias keeps the
 // `{GAME_ENTRY_COLS}` call sites unchanged.
 use super::game_library::GAME_ENTRY_COLUMNS as GAME_ENTRY_COLS;
+use super::game_library::ORIGINALS_ONLY;
 
 impl LibraryDb {
     /// Get random cached ROMs with box art from all systems.
@@ -38,7 +39,7 @@ impl LibraryDb {
                     END
                 ) AS rn
                 FROM game_library
-                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                WHERE {ORIGINALS_ONLY}
             )
             SELECT {GAME_ENTRY_COLS}
             FROM deduped WHERE rn = 1
@@ -113,7 +114,7 @@ impl LibraryDb {
                     END
                 ) AS rn
                 FROM game_library
-                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating >= 3.5
+                WHERE {ORIGINALS_ONLY} AND rating IS NOT NULL AND rating >= 3.5
             )
             SELECT {GAME_ENTRY_COLS}
             FROM (
@@ -194,7 +195,7 @@ impl LibraryDb {
                         END
                     ) AS rn
                     FROM game_library
-                    WHERE system = ?1 AND genre_group = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                    WHERE system = ?1 AND genre_group = ?2 AND {ORIGINALS_ONLY}
                 )
                 SELECT {GAME_ENTRY_COLS}
                 FROM (
@@ -228,7 +229,7 @@ impl LibraryDb {
                         END
                     ) AS rn
                     FROM game_library
-                    WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                    WHERE system = ?1 AND {ORIGINALS_ONLY}
                 )
                 SELECT {GAME_ENTRY_COLS}
                 FROM (
@@ -417,7 +418,7 @@ impl LibraryDb {
                     END
                 ) AS rn
                 FROM game_library
-                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating >= 3.5{extra_where}
+                WHERE {ORIGINALS_ONLY} AND rating IS NOT NULL AND rating >= 3.5{extra_where}
             )
             SELECT {GAME_ENTRY_COLS}
             FROM (
@@ -465,7 +466,7 @@ impl LibraryDb {
                     END
                 ) AS rn
                 FROM game_library
-                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                WHERE {ORIGINALS_ONLY}
                   AND cooperative = 1
             )
             SELECT {GAME_ENTRY_COLS}

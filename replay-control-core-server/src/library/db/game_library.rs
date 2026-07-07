@@ -29,6 +29,14 @@ pub(crate) const GAME_ENTRY_COLUMNS: &str = "\
     identity_state, release_date, release_precision, release_region_used, cooperative, \
     normalized_title, normalized_title_alt, board, ra_id, rc_hash, is_mature";
 
+/// SQL predicate selecting only "original" releases — no clones, translations,
+/// hacks, or special versions. The candidate filter for recommendation and
+/// facet queries; kept in one place so a schema change (a renamed flag, a new
+/// exclusion) touches one string instead of a dozen hand-copied WHERE clauses.
+/// Interpolate via `{ORIGINALS_ONLY}` in a `format!` SQL string.
+pub(crate) const ORIGINALS_ONLY: &str =
+    "is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0";
+
 pub const DISCOVERY_SAVE_CHUNK_ROWS: usize = 200;
 
 #[derive(Debug, Clone, Copy)]
@@ -2426,10 +2434,7 @@ impl LibraryDb {
                 ) AS rn
                 FROM game_library
                 WHERE developer = ?1
-                  AND is_clone = 0
-                  AND is_translation = 0
-                  AND is_hack = 0
-                  AND is_special = 0
+                  AND {ORIGINALS_ONLY}
                   AND base_title != ''
             )
             SELECT {GAME_ENTRY_COLUMNS}
@@ -2492,10 +2497,7 @@ impl LibraryDb {
         let sql = format!(
             "SELECT board, COUNT(DISTINCT base_title) FROM game_library \
              WHERE board IN ({placeholders}) \
-               AND is_clone = 0 \
-               AND is_translation = 0 \
-               AND is_hack = 0 \
-               AND is_special = 0 \
+               AND {ORIGINALS_ONLY} \
              GROUP BY board"
         );
         let mut stmt = conn
@@ -2573,10 +2575,7 @@ impl LibraryDb {
                 ) AS rn
                 FROM game_library
                 WHERE board = ?1
-                  AND is_clone = 0
-                  AND is_translation = 0
-                  AND is_hack = 0
-                  AND is_special = 0
+                  AND {ORIGINALS_ONLY}
                   AND base_title != ''
             )
             SELECT {GAME_ENTRY_COLUMNS}
