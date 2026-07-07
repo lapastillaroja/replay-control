@@ -7,6 +7,7 @@ use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::confirm_dialog::use_confirm_dialog;
+use crate::components::game_notes_section::GameNotesSection;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
 use crate::hooks::confirm_replace_running_game;
@@ -902,6 +903,11 @@ fn GameDetailContent(
 
         // Related Games (lazy-loaded)
         <RelatedGamesSection
+            system=system_sv
+            rom_filename=filename_sv
+        />
+
+        <GameNotesSection
             system=system_sv
             rom_filename=filename_sv
         />

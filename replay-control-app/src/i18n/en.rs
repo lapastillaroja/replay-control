@@ -859,5 +859,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
         Key::SaveStatesLoadTitle => "Load save state?",
         Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
+        // Game notes
+        Key::GameNotesTitle => "Notes",
+        Key::GameNotesPlaceholder => "Add notes about this game...",
+        Key::GameNotesSave => "Save",
+        Key::GameNotesSaving => "Saving...",
+        Key::GameNotesSaved => "Saved",
+        Key::GameNotesError => "Failed to save note.",
     }
 }

@@ -1,0 +1,61 @@
+/* Game Notes Section */
+
+.game-notes-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.game-notes-textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 4.5rem;
+}
+
+.game-notes-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.game-notes-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.game-notes-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.game-notes-btn:hover {
+    background: var(--surface-hover);
+}
+
+.game-notes-btn.game-notes-save {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: var(--accent);
+}
+
+.game-notes-btn.game-notes-save:hover {
+    background: var(--accent-hover);
+}
+
+.game-notes-btn.game-notes-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -279,6 +279,9 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetGameManualSuggestions>();
     server_fn::axum::register_explicit::<server_fns::DownloadManual>();
     server_fn::axum::register_explicit::<server_fns::DeleteManual>();
+    server_fn::axum::register_explicit::<server_fns::GetGameNote>();
+    server_fn::axum::register_explicit::<server_fns::SetGameNote>();
+    server_fn::axum::register_explicit::<server_fns::ClearGameNote>();
     server_fn::axum::register_explicit::<server_fns::GetLanguagePreference>();
     server_fn::axum::register_explicit::<server_fns::SaveLanguagePreference>();
     server_fn::axum::register_explicit::<server_fns::GetPreferredLanguages>();
