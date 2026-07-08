@@ -12,6 +12,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Fixed error messages after a failed ROM delete, rename, or upload occasionally showing internal device file paths; they now show a clear, path-free message.
 - Renaming a game to a name that is already taken now says so clearly instead of showing a generic failure.
 - Fixed deleted games leaving downloaded box art, screenshots, and title images behind; cleanup now removes orphaned files from all thumbnail folders while preserving artwork still shared by another game variant. (#109)
+- Fixed the metadata CSV export ignoring the selected system and exporting the whole library. (#116)
 
 ### Changed
 

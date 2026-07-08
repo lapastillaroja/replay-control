@@ -949,7 +949,8 @@ fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
         |_| async move { server_fns::get_systems().await.unwrap_or_default() },
     );
     let exporting = RwSignal::new(false);
-    let controls_disabled = Memo::new(move |_| disabled.get() || exporting.get());
+    let select_disabled = Memo::new(move |_| disabled.get());
+    let button_disabled = Memo::new(move |_| disabled.get() || exporting.get());
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         if disabled.get_untracked() || exporting.get_untracked() {
@@ -984,7 +985,7 @@ fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
                         <select
                             name="system"
                             class="form-input export-coverage-select"
-                            disabled=controls_disabled
+                            disabled=select_disabled
                         >
                             {all_systems_option()}
                         </select>
@@ -998,7 +999,7 @@ fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
                             <select
                                 name="system"
                                 class="form-input export-coverage-select"
-                                disabled=controls_disabled
+                                disabled=select_disabled
                             >
                                 {all_systems_option()}
                                 {list
@@ -1009,7 +1010,7 @@ fn ExportCoverageCard(disabled: Memo<bool>) -> impl IntoView {
                         }
                     })}
                 </Suspense>
-                <button type="submit" class="form-btn" disabled=controls_disabled>
+                <button type="submit" class="form-btn" disabled=button_disabled>
                     {move || {
                         if exporting.get() {
                             t(i18n.locale.get(), Key::MetadataExportCsvPreparing)
