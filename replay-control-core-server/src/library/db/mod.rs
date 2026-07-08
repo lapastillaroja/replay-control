@@ -15,6 +15,7 @@ pub mod library_meta;
 mod recommendations;
 mod relationships;
 pub mod release_dates;
+pub mod stats;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_description::GameDescription;
