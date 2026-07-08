@@ -438,6 +438,20 @@ pub fn write_github_api_key(store: &SettingsStore, key: &str) -> Result<()> {
     store.save(&settings)
 }
 
+/// Read the RetroAchievements Web API key from settings.
+/// Returns `None` if the file doesn't exist or the key is empty.
+pub fn read_ra_api_key(store: &SettingsStore) -> Option<String> {
+    store.load().ra_api_key().map(|s| s.to_string())
+}
+
+/// Write the RetroAchievements Web API key to settings.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_ra_api_key(store: &SettingsStore, key: &str) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_ra_api_key(key);
+    store.save(&settings)
+}
+
 /// Read the stored RePlayOS Net Control code (the API token).
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_replay_api_token(store: &SettingsStore) -> Option<String> {

@@ -803,6 +803,24 @@ pub async fn save_github_api_key(key: String) -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
+/// Get the RetroAchievements Web API key from `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn get_ra_api_key() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(
+        replay_control_core_server::settings::read_ra_api_key(&state.settings)
+            .unwrap_or_default(),
+    )
+}
+
+/// Save the RetroAchievements Web API key to `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn save_ra_api_key(key: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core_server::settings::write_ra_api_key(&state.settings, key.trim())
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Get the current region preference from `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn get_region_preference() -> Result<String, ServerFnError> {

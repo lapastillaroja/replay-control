@@ -12,7 +12,7 @@ mod platform;
 pub use platform::arcade_board;
 pub use platform::systems;
 
-mod game;
+pub mod game;
 pub use game::date_precision;
 pub use game::date_precision::DatePrecision;
 pub use game::developer;

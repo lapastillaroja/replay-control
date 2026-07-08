@@ -11,6 +11,7 @@ pub mod hostname;
 pub mod login;
 pub mod logs;
 pub mod metadata;
+pub mod my_games;
 pub mod nfs;
 pub mod password;
 pub mod replay_net_control;

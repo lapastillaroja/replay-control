@@ -421,6 +421,13 @@ impl AppSettings {
         self.inner.get_non_empty("github_api_key")
     }
 
+    /// RetroAchievements Web API key (read-only API, used for the per-game
+    /// achievements gallery). Distinct from the rcheevos password used by the
+    /// emulator for hardcore login.
+    pub fn ra_api_key(&self) -> Option<&str> {
+        self.inner.get_non_empty("ra_web_api_key")
+    }
+
     /// RePlayOS Net Control code, stored app-side after onboarding (manual
     /// entry or the assisted post-restart read). Never re-read from replay.cfg
     /// at runtime: TV-side code resets surface as 401 → re-onboard.
@@ -498,6 +505,10 @@ impl AppSettings {
 
     pub fn set_github_api_key(&mut self, key: &str) {
         self.inner.set("github_api_key", key);
+    }
+
+    pub fn set_ra_api_key(&mut self, key: &str) {
+        self.inner.set("ra_web_api_key", key);
     }
 
     pub fn set_replay_api_token(&mut self, token: &str) {

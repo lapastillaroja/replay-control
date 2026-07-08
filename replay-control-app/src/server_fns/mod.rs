@@ -6,9 +6,11 @@ use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
+mod achievements;
 mod auth;
 mod boxart;
 mod favorites;
+mod game_status;
 mod images;
 mod manuals;
 mod metadata;
@@ -24,9 +26,11 @@ mod system;
 mod thumbnails;
 mod videos;
 
+pub use achievements::*;
 pub use auth::*;
 pub use boxart::*;
 pub use favorites::*;
+pub use game_status::*;
 pub use images::*;
 pub use manuals::*;
 pub use metadata::*;

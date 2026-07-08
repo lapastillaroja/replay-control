@@ -869,5 +869,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} ya tiene un estado. Guardar ahora lo reemplazará.",
         Key::SaveStatesLoadTitle => "¿Cargar estado?",
         Key::SaveStatesLoadBody => "Cargar {0} reemplazará el estado actual del juego.",
+        // Game status / My Games
+        Key::NavMyGames => "Mis Juegos",
+        Key::GameStatusTitle => "Mi Progreso",
+        Key::GameStatusWantToPlay => "Quiero Jugar",
+        Key::GameStatusInProgress => "En Progreso",
+        Key::GameStatusCompleted => "Completado",
+        Key::GameStatusPlatinum => "Platino",
+        Key::MyGamesTitle => "Mis Juegos",
+        Key::MyGamesAll => "Todos",
+        Key::MyGamesWantToPlay => "Quiero Jugar",
+        Key::MyGamesInProgress => "En Progreso",
+        Key::MyGamesCompleted => "Completados",
+        Key::MyGamesPlatinum => "Platino",
+        Key::MyGamesEmpty => "Aún no hay juegos con este estado",
+        // Achievements gallery + RA Web API key
+        Key::AchievementsTitle => "Logros",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Mostrar todos los logros",
+        Key::RaApiKeyLabel => "Clave de API Web",
+        Key::RaApiKeyHint => "Tu clave de API Web de RetroAchievements (solo lectura). La encontrarás en retroachievements.org/settings. Sirve para mostrar tus logros conseguidos.",
     }
 }

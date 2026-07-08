@@ -1,0 +1,215 @@
+/* Game Status Section */
+
+.game-status-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.game-status-current {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.game-status-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.game-status-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.game-status-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.game-status-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.game-status-btn:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.game-status-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.game-status-btn.game-status-clear {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border);
+    font-size: 0.8rem;
+}
+
+.game-status-btn.game-status-clear:hover {
+    color: var(--error);
+    border-color: var(--error);
+}
+
+/* My Games Page */
+
+.my-games-page {
+    padding-bottom: 5rem;
+}
+
+.my-games-tabs {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+    scrollbar-width: none;
+}
+
+.my-games-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.my-games-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    color: var(--text);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.my-games-tab:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent);
+}
+
+.my-games-tab.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.my-games-tab-icon {
+    font-size: 1rem;
+}
+
+.my-games-loading {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+.my-games-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.my-games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.my-games-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--surface);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.15s ease;
+    position: relative;
+}
+
+.my-games-card:hover {
+    transform: scale(1.02);
+}
+
+.my-games-card-cover {
+    aspect-ratio: 3 / 4;
+    overflow: hidden;
+    background: var(--border);
+}
+
+.my-games-card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.my-games-card-info {
+    padding: 0.5rem;
+}
+
+.my-games-card-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 0.25rem;
+}
+
+.my-games-card-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.my-games-card-system {
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+}
+
+.my-games-card-genre {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.my-games-card-status-icon {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: 1.25rem;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
