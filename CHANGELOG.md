@@ -4,6 +4,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.1.2-beta.2]
+
+> Fixes orphaned-thumbnail cleanup wrongly deleting box art that was still in use.
+
+### Fixed
+
+- Fixed orphaned-thumbnail cleanup deleting box art that was still in use when the image's file name didn't match the game's name — most visibly arcade games, whose stored art is often named after a different version of the game. Cleanup now correctly keeps any image a game still references.
+
+---
+
 ## [1.1.2-beta.1]
 
 > Beta preview with safer uploads and manual downloads, checksum-verified updates, more responsive library actions, and fixes for thumbnail cleanup and metadata CSV exports.

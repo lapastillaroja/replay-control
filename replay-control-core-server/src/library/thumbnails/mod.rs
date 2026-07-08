@@ -34,6 +34,32 @@ pub(crate) fn percent_encode_uri_segment(s: &str) -> String {
     out
 }
 
+/// Inverse of [`percent_encode_uri_segment`]: decode `%XX` escapes back to the
+/// original bytes, then interpret as UTF-8. A `%` not followed by two hex
+/// digits is left literal. Used to match a stored (percent-encoded)
+/// `box_art_url` filename against the decoded names on disk.
+pub(crate) fn percent_decode_uri_segment(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(hi), Some(lo)) = (
+                (bytes[i + 1] as char).to_digit(16),
+                (bytes[i + 2] as char).to_digit(16),
+            )
+        {
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Kind of thumbnail image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbnailKind {
@@ -513,7 +539,12 @@ fn thumbnail_relative_from_media_url(system: &str, url: &str) -> Option<String> 
     let prefix = format!("/media/{system}/");
     let relative = url.strip_prefix(&prefix)?;
     let (kind, filename) = relative.split_once('/')?;
-    if filename.contains('/') || strip_image_ext(filename).is_none() {
+    // box_art_url is percent-encoded per segment (format_box_art_url); decode so
+    // the filename matches the decoded names on disk (thumbnail_files). Without
+    // this, any box art whose filename has spaces/apostrophes/parens (i.e. most
+    // arcade names) never matched its URL reference and was deleted as orphan.
+    let filename = percent_decode_uri_segment(filename);
+    if filename.contains('/') || strip_image_ext(&filename).is_none() {
         return None;
     }
     if ALL_THUMBNAIL_KINDS
@@ -1058,6 +1089,67 @@ mod tests {
                 .iter()
                 .all(|(_, p)| p.file_name().unwrap() == "Unrelated.png")
         );
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_keeps_special_char_box_art_url_target() {
+        // Regression: a game whose stored box_art_url is percent-encoded and
+        // points at a special-char filename that does NOT match its own
+        // base_title (arcade art named after another system's display name)
+        // must be retained via the URL — the URL was compared encoded against
+        // decoded on-disk names, so it was wrongly deleted.
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let mut conn = LibraryDb::open(db_dir.path()).unwrap();
+        write_test_image(&media_file(
+            storage.path(),
+            "arcade_mame_2k3p",
+            ThumbnailKind::Boxart,
+            "Fighters' Impact A (Ver 2.00J).png",
+        ));
+        write_test_image(&media_file(
+            storage.path(),
+            "arcade_mame_2k3p",
+            ThumbnailKind::Boxart,
+            "Unrelated.png",
+        ));
+
+        let mut entry = test_entry("arcade_mame_2k3p", "ftimpcta.zip");
+        entry.display_name = Some("Fighter's Impact Ace (JAPAN)".to_string());
+        entry.box_art_url = Some(
+            "/media/arcade_mame_2k3p/boxart/Fighters%27%20Impact%20A%20%28Ver%202.00J%29.png"
+                .to_string(),
+        );
+        LibraryDb::save_system_entries(&mut conn, "arcade_mame_2k3p", &[entry], None).unwrap();
+
+        let orphans = find_orphaned_thumbnails(storage.path(), &conn).unwrap();
+
+        // The box_art_url target is retained; only Unrelated.png is orphaned.
+        assert!(
+            orphans
+                .iter()
+                .all(|(_, p)| p.file_name().unwrap() == "Unrelated.png"),
+            "box_art_url target should be retained, got {orphans:?}"
+        );
+    }
+
+    #[test]
+    fn percent_decode_round_trips_encode() {
+        for s in [
+            "Fighters' Impact A (Ver 2.00J)",
+            "Simple",
+            "A & B / C",
+            "50% Off",
+            "Pokémon (日本)",
+        ] {
+            assert_eq!(
+                percent_decode_uri_segment(&percent_encode_uri_segment(s)),
+                s
+            );
+        }
+        // A lone or truncated `%` is left literal.
+        assert_eq!(percent_decode_uri_segment("100%"), "100%");
+        assert_eq!(percent_decode_uri_segment("ab%2"), "ab%2");
     }
 
     #[test]
