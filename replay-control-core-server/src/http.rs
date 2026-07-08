@@ -2,7 +2,7 @@
 //!
 //! Gated behind the `http` feature flag — only available on SSR builds.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::OnceLock;
 
 use replay_control_core::error::{Error, Result};
@@ -86,6 +86,39 @@ pub async fn assert_safe_download_url(url: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reason a redirect hop must be blocked, or `None` if the host is safe to
+/// follow. Mirrors [`assert_safe_download_url`] for a single hop but is sync
+/// (the redirect policy closure is not async): an IP literal is checked
+/// directly, an obvious internal name is rejected, and any other name is
+/// **resolved** so a public hostname that maps to a private/link-local address
+/// (DNS rebinding) can't slip a redirect past the guard.
+///
+/// Resolution is a blocking `getaddrinfo`; that's acceptable here (redirects
+/// are rare, the connect timeout bounds it). A residual TOCTOU remains — the
+/// name could resolve differently when reqwest connects — the same limitation
+/// `assert_safe_download_url` has; this closes the "no check at all" gap.
+fn redirect_host_rejection(host: &str, port: u16) -> Option<&'static str> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return is_private_or_local_ip(ip).then_some("redirect to a private/internal IP blocked");
+    }
+    if is_local_hostname(host) {
+        return Some("redirect to an internal host blocked");
+    }
+    match (host, port).to_socket_addrs() {
+        Ok(addrs) => {
+            let mut resolved = false;
+            for addr in addrs {
+                resolved = true;
+                if is_private_or_local_ip(addr.ip()) {
+                    return Some("redirect resolves to a private/internal address");
+                }
+            }
+            (!resolved).then_some("redirect host did not resolve")
+        }
+        Err(_) => Some("redirect host could not be resolved"),
+    }
+}
+
 /// HTTP client for user-supplied download URLs. Its redirect policy re-checks
 /// each hop and refuses a redirect into a private/loopback host, so an allowed
 /// host can't 302 the request onto an internal target.
@@ -95,11 +128,11 @@ fn ssrf_guarded_client() -> &'static reqwest::Client {
             if attempt.previous().len() >= 10 {
                 return attempt.error("too many redirects");
             }
-            if let Some(host) = attempt.url().host_str()
-                && (host.parse::<IpAddr>().is_ok_and(is_private_or_local_ip)
-                    || is_local_hostname(host))
-            {
-                return attempt.error("redirect to private/internal host blocked");
+            if let Some(host) = attempt.url().host_str() {
+                let port = attempt.url().port_or_known_default().unwrap_or(80);
+                if let Some(reason) = redirect_host_rejection(host, port) {
+                    return attempt.error(reason);
+                }
             }
             attempt.follow()
         });
@@ -403,5 +436,19 @@ mod tests {
                 .is_err()
         );
         assert!(assert_safe_download_url("not a url").await.is_err());
+    }
+
+    #[test]
+    fn redirect_host_rejection_blocks_local_targets() {
+        // IP literals and internal names are rejected without any DNS lookup.
+        assert!(redirect_host_rejection("127.0.0.1", 80).is_some());
+        assert!(redirect_host_rejection("10.0.0.1", 80).is_some());
+        assert!(redirect_host_rejection("192.168.1.4", 443).is_some());
+        assert!(redirect_host_rejection("169.254.169.254", 80).is_some());
+        assert!(redirect_host_rejection("localhost", 80).is_some());
+        assert!(redirect_host_rejection("foo.local", 80).is_some());
+        assert!(redirect_host_rejection("svc.internal", 80).is_some());
+        // A public IP literal is allowed (no lookup needed).
+        assert!(redirect_host_rejection("1.1.1.1", 443).is_none());
     }
 }
