@@ -4,7 +4,9 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [Unreleased]
+## [1.1.2-beta.1]
+
+> Beta preview with safer uploads and manual downloads, checksum-verified updates, more responsive library actions, and fixes for thumbnail cleanup and metadata CSV exports.
 
 ### Fixed
 
@@ -18,6 +20,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - ROM uploads and manual downloads are now size-limited and streamed to disk, so a very large or malformed transfer can't exhaust the device's memory.
 - Game detail, delete, and rename actions no longer briefly stall the app when the library is on slow USB or network storage.
+- Library maintenance, ROM actions, uploads, downloads, and update checks were refactored around shorter database work and clearer validation paths, reducing lock contention and making failure cases easier to recover from.
 
 ### Security
 
