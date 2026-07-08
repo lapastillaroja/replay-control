@@ -579,6 +579,12 @@ pub struct ManifestMatch {
 }
 
 /// In-memory fuzzy index built from `thumbnail_index` DB entries.
+///
+/// The upstream-repo counterpart of [`matching::DirIndex`](super::matching::DirIndex),
+/// kept separate on purpose: it carries a richer `ManifestMatch` value and two
+/// extra aggressive-normalization fallback tiers for the messier filenames that
+/// upstream repos produce. Shared key-extraction primitives live in the
+/// `thumbnails` module and are reused by both.
 pub struct ManifestFuzzyIndex {
     /// exact thumbnail_filename stem -> ManifestMatch
     pub exact: HashMap<String, ManifestMatch>,

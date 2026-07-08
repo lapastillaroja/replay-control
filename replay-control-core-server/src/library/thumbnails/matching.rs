@@ -17,6 +17,14 @@ use replay_control_core::title_utils::{
 ///
 /// Built from a single readdir scan, provides O(1) lookups at multiple
 /// fuzziness tiers: exact, case-insensitive, base_title, and version-stripped.
+///
+/// Deliberately kept separate from [`manifest::ManifestFuzzyIndex`](super::manifest::ManifestFuzzyIndex),
+/// the upstream-repo matcher: the two index different value types (a path
+/// string here vs a `ManifestMatch` there) with tier strategies tuned to their
+/// own data. The reusable pieces — the key-extraction primitives (`base_title`,
+/// `strip_tags`, `strip_version`, `normalize_aggressive*`) — already live in
+/// the shared `thumbnails` module and are used by both, so merging the index
+/// structs would trade real per-source tuning for little gain.
 #[derive(Default)]
 pub struct DirIndex {
     /// Exact thumbnail_filename stem → relative path (e.g., "boxart/Name.png")
