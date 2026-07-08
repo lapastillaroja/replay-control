@@ -46,7 +46,10 @@ pub(crate) const ORIGINALS_ONLY: &str =
 /// secondary region strings — they vary by query, which is why this is a
 /// builder rather than a constant.
 ///
-/// - With a secondary: primary → secondary → `world` → other.
+/// - With a secondary: primary → secondary → `world` → other. The secondary
+///   tier is guarded by `?secondary != ''` so an *unset* secondary (callers
+///   bind it as the empty string) does not spuriously match unknown-region
+///   rows (which store `region = ''`, not NULL) and rank them above `world`.
 /// - Without: primary → `world` → other. A few call sites (series-based
 ///   recommendations, alias resolution) deliberately rank by primary + world
 ///   only; passing `None` reproduces that exactly and makes the omission
@@ -60,7 +63,7 @@ pub(crate) fn region_rank_case(
         Some(secondary_param) => format!(
             "CASE \
              WHEN {column} = ?{pref_param} THEN 0 \
-             WHEN {column} = ?{secondary_param} THEN 1 \
+             WHEN ?{secondary_param} != '' AND {column} = ?{secondary_param} THEN 1 \
              WHEN {column} = 'world' THEN 2 \
              ELSE 3 END"
         ),
@@ -3194,12 +3197,12 @@ mod tests {
         // With a secondary tier: primary(0) > secondary(1) > world(2) > other(3).
         assert_eq!(
             super::region_rank_case("region", 2, Some(3)),
-            "CASE WHEN region = ?2 THEN 0 WHEN region = ?3 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
+            "CASE WHEN region = ?2 THEN 0 WHEN ?3 != '' AND region = ?3 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
         );
         // Parameter positions are honored (some queries bind pref/secondary at ?3/?4).
         assert_eq!(
             super::region_rank_case("region", 3, Some(4)),
-            "CASE WHEN region = ?3 THEN 0 WHEN region = ?4 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
+            "CASE WHEN region = ?3 THEN 0 WHEN ?4 != '' AND region = ?4 THEN 1 WHEN region = 'world' THEN 2 ELSE 3 END"
         );
         // Without a secondary: primary(0) > world(1) > other(2).
         assert_eq!(

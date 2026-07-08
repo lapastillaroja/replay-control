@@ -283,3 +283,46 @@ async fn series_siblings_honor_secondary_region() {
         "the secondary-region (USA) dump should surface, not the other-region (Europe) one"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_secondary_does_not_rank_unknown_region_above_world() {
+    // Regression: with no secondary preference (bound as ""), an unknown-region
+    // dump (region = "") must NOT outrank a 'world' release. The secondary tier
+    // matched region="" spuriously (`region = ''`), ranking unknown above world.
+    setup();
+    let env = TestEnv::new().await;
+    {
+        let mut prefs = env.state.prefs.write().unwrap();
+        prefs.region = RegionPreference::Japan; // no Japan dump for the sibling
+        prefs.region_secondary = None; // unset -> bound as ""
+    }
+    seed_system(
+        &env.state,
+        "nintendo_nes",
+        vec![
+            series_entry("Contra.nes", "Contra", "contra-series", "japan"),
+            // Unknown-region dump seeded first; must still lose to 'world'.
+            series_entry("Super C (Unknown).nes", "Super C", "contra-series", ""),
+            series_entry("Super C (World).nes", "Super C", "contra-series", "world"),
+        ],
+    )
+    .await;
+    let app = test_router(env.state.clone());
+
+    let data =
+        post_form::<GetRelatedGames>(app, "system=nintendo_nes&filename=Contra.nes".into()).await;
+
+    let siblings = data["series_siblings"]
+        .as_array()
+        .expect("series_siblings array");
+    let super_c: Vec<_> = siblings
+        .iter()
+        .filter(|g| g["display_name"].as_str() == Some("Super C"))
+        .collect();
+    assert_eq!(super_c.len(), 1, "the sibling dedups to one row");
+    assert_eq!(
+        super_c[0]["rom_filename"].as_str().unwrap_or_default(),
+        "Super C (World).nes",
+        "a 'world' release should outrank an unknown-region dump when no secondary is set"
+    );
+}
