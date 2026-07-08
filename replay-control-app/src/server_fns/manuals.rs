@@ -1,6 +1,16 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::game_docs::scan_game_documents;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::http::{download_to_file, download_to_file_guarded};
+#[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::retrokit_manuals::manual_folder_name;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::settings::{
+    language_match_score, preferred_languages, read_language_primary, read_language_secondary,
+};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::{ManualEntry, ManualOrigin, UserDataDb};
 
@@ -67,7 +77,7 @@ pub async fn get_game_documents(
         };
 
         match game_dir {
-            Some(d) => replay_control_core_server::game_docs::scan_game_documents(&d),
+            Some(d) => scan_game_documents(&d),
             None => Vec::new(),
         }
     })
@@ -118,8 +128,7 @@ pub async fn get_local_manuals(
         .filter_map(|entry| local_manual_from_user_entry(&owned_root, entry))
         .collect();
 
-    let folder =
-        replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
+    let folder = manual_folder_name(&system).to_string();
     let manuals_dir = state.storage().manuals_dir().join(&folder);
 
     // Run all blocking filesystem I/O off the async runtime to avoid stalling
@@ -208,15 +217,10 @@ async fn library_manual_recommendations(
     base_title: &str,
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
     let preferred_langs = {
-        let primary = replay_control_core_server::settings::read_language_primary(&state.settings);
-        let secondary =
-            replay_control_core_server::settings::read_language_secondary(&state.settings);
+        let primary = read_language_primary(&state.settings);
+        let secondary = read_language_secondary(&state.settings);
         let region = state.region_preference();
-        replay_control_core_server::settings::preferred_languages(
-            primary.as_deref(),
-            secondary.as_deref(),
-            region,
-        )
+        preferred_languages(primary.as_deref(), secondary.as_deref(), region)
     };
 
     let saved_keys = saved_manual_resource_keys(state, system, base_title).await;
@@ -245,10 +249,7 @@ async fn library_manual_recommendations(
         .collect();
 
     results.sort_by_key(|r| {
-        replay_control_core_server::settings::language_match_score(
-            r.language.as_deref().unwrap_or(""),
-            &preferred_langs,
-        )
+        language_match_score(r.language.as_deref().unwrap_or(""), &preferred_langs)
     });
     Ok(results)
 }
@@ -296,14 +297,28 @@ pub async fn download_manual(
         tmp_path.display()
     );
 
-    let size = match replay_control_core_server::http::download_to_file_guarded(
-        &encoded_url,
-        &tmp_path,
-        std::time::Duration::from_secs(120),
-        MAX_MANUAL_DOWNLOAD_BYTES,
-    )
-    .await
-    {
+    let download_result = if state.mode.is_device() {
+        download_to_file_guarded(
+            &encoded_url,
+            &tmp_path,
+            std::time::Duration::from_secs(120),
+            MAX_MANUAL_DOWNLOAD_BYTES,
+        )
+        .await
+    } else {
+        // Standalone mode is an off-device ROM manager. Allow local/private
+        // manual sources there so developers and local library tools can serve
+        // manuals from the same machine or LAN; device mode remains SSRF-guarded.
+        download_to_file(
+            &encoded_url,
+            &tmp_path,
+            std::time::Duration::from_secs(120),
+            MAX_MANUAL_DOWNLOAD_BYTES,
+        )
+        .await
+    };
+
+    let size = match download_result {
         Ok(size) => size,
         Err(e) => {
             let _ = tokio::fs::remove_file(&tmp_path).await;

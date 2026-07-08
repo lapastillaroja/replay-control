@@ -11,6 +11,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Fixed
 
 - Fixed orphaned-thumbnail cleanup deleting box art that was still in use when the image's file name didn't match the game's name — most visibly arcade games, whose stored art is often named after a different version of the game. Cleanup now correctly keeps any image a game still references.
+- Fixed standalone manual downloads rejecting local or LAN-hosted manual files; device-mode downloads still reject private/internal addresses.
 
 ---
 
