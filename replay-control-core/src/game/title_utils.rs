@@ -568,6 +568,9 @@ pub fn arcade_clone_label(parent_display: &str, clone_display: &str) -> String {
         .and_then(|start| {
             clone_display
                 .rfind(')')
+                // Guard against unbalanced parens (last '(' after last ')'),
+                // which would make `start + 1 > end` and panic the slice.
+                .filter(|&end| start < end)
                 .map(|end| &clone_display[start + 1..end])
         })
         .unwrap_or("");
@@ -588,6 +591,13 @@ pub fn arcade_clone_label(parent_display: &str, clone_display: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arcade_clone_label_unbalanced_parens_does_not_panic() {
+        // Last '(' falls after the last ')', so the tag slice would be
+        // `[start + 1..end]` with start + 1 > end — a panic without the guard.
+        assert_eq!(arcade_clone_label("Foo", "Foo) (Bar"), "Foo) (Bar");
+    }
 
     #[test]
     fn arcade_clone_label_same_base_name_extracts_tag() {
