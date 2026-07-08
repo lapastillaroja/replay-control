@@ -32,6 +32,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GamesBack => "\u{2190} 戻る",
         Key::GamesNoGames => "ゲームなし",
         Key::GamesLoadingRoms => "ROM読み込み中...",
+        Key::GamesLoadError => "ゲームを読み込めませんでした",
         Key::GamesLoadMore => "もっと読み込む",
 
         // Favorites page

@@ -79,3 +79,13 @@ On the game detail page, you can pick alternate region-variant cover art. The fe
 
 The metadata page shows per-system thumbnail counts, reflecting both matched
 box-art coverage and downloaded artwork already present on disk.
+
+## Cleanup
+
+Deleting a game also removes downloaded box art, screenshots, and title-screen
+images that are unique to that game. Shared images stay in place when another
+variant, clone, or translation still uses the same artwork.
+
+The orphan cleanup action checks all three thumbnail folders (`boxart`, `snap`,
+and `title`) and removes downloaded images that no remaining library entry can
+use.

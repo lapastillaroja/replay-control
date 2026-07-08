@@ -452,7 +452,7 @@ pub fn RomList(system: String) -> impl IntoView {
                         }.into_any()
                     }
                     Err(e) => {
-                        view! { <p class="error">{format!("{}: {e}", t(locale, Key::CommonError))}</p> }.into_any()
+                        view! { <p class="error">{format!("{}: {e}", t(locale, Key::GamesLoadError))}</p> }.into_any()
                     }
                 }
             })}

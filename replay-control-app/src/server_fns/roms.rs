@@ -7,7 +7,7 @@ use replay_control_core::{systems, title_utils};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::favorites;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::{LibraryDb, LibraryGameResource};
+use replay_control_core_server::library_db::{GameEntry, LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::recents::add_recent;
 #[cfg(feature = "ssr")]
@@ -16,9 +16,11 @@ use replay_control_core_server::roms::{
     list_data_dir_contents, list_rom_group, rename_rom as rename_rom_file,
 };
 #[cfg(feature = "ssr")]
-use replay_control_core_server::screenshots;
-#[cfg(feature = "ssr")]
 use replay_control_core_server::storage::StorageLocation;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::user_data_db::UserDataDb;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::{screenshots, thumbnails};
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,7 +207,7 @@ pub async fn get_roms_page(
 
     let db_result = state
         .library_reader
-        .read(move |conn| {
+        .try_read(move |conn| {
             let filter = SearchFilter {
                 hide_hacks,
                 hide_translations,
@@ -234,7 +236,15 @@ pub async fn get_roms_page(
         })
         .await;
 
-    let (page_entries, total) = db_result.and_then(|r| r.ok()).unwrap_or((Vec::new(), 0));
+    let (page_entries, total) = match db_result {
+        Ok(Ok(page)) => page,
+        Ok(Err(e)) => {
+            return Err(ServerFnError::new(e.to_string()));
+        }
+        Err(e) => {
+            return Err(ServerFnError::new(e.to_string()));
+        }
+    };
     let has_more = offset + page_entries.len() < total;
 
     // Enrich page entries: box art, favorites, genre (shared with developer page).
@@ -756,7 +766,7 @@ fn find_matching_screenshots(
 #[cfg(feature = "ssr")]
 async fn delete_rom_cleanup(
     state: &crate::api::AppState,
-    storage: &replay_control_core_server::storage::StorageLocation,
+    storage: &StorageLocation,
     system: &str,
     rom_filename: &str,
 ) {
@@ -786,11 +796,7 @@ async fn delete_rom_cleanup(
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                replay_control_core_server::user_data_db::UserDataDb::delete_for_rom(
-                    conn,
-                    &system,
-                    &rom_filename,
-                );
+                UserDataDb::delete_for_rom(conn, &system, &rom_filename);
             }
         })
         .await
@@ -799,23 +805,69 @@ async fn delete_rom_cleanup(
     }
 
     // 4. Delete library.db game_library entry.
-    if let Err(e) = state
+    let deleted_entry = match state
         .library_writer
         .try_write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                replay_control_core_server::library_db::LibraryDb::delete_for_rom(
+                let mut matches = LibraryDb::lookup_game_entries(
                     conn,
-                    &system,
-                    &rom_filename,
-                );
+                    &[(system.as_str(), rom_filename.as_str())],
+                )?;
+                let deleted_entry = matches.remove(&(system.clone(), rom_filename.clone()));
+                LibraryDb::delete_for_rom(conn, &system, &rom_filename);
+                Ok::<Option<GameEntry>, CoreError>(deleted_entry)
             }
         })
         .await
     {
-        tracing::warn!("ROM delete library cascade failed: {e}");
+        Ok(Ok(entry)) => entry,
+        Ok(Err(e)) => {
+            tracing::warn!("ROM delete library cascade failed: {e}");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("ROM delete library cascade failed: {e}");
+            return;
+        }
+    };
+
+    let active_entries = match state
+        .library_reader
+        .try_read({
+            let system = system.to_string();
+            move |conn| LibraryDb::load_system_entries(conn, &system)
+        })
+        .await
+    {
+        Ok(Ok(entries)) => entries,
+        Ok(Err(e)) => {
+            tracing::warn!("ROM delete thumbnail cleanup skipped: {e}");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("ROM delete thumbnail cleanup skipped: {e}");
+            return;
+        }
+    };
+
+    let (display_name, box_art_url) = deleted_entry
+        .as_ref()
+        .map(|entry| (entry.display_name.as_deref(), entry.box_art_url.as_deref()))
+        .unwrap_or((None, None));
+    let orphans = thumbnails::orphaned_thumbnail_files_for_deleted_rom(
+        &storage.root,
+        system,
+        rom_filename,
+        display_name,
+        box_art_url,
+        &active_entries,
+    );
+    if orphans.is_empty() {
+        return;
     }
+    let _ = tokio::task::spawn_blocking(move || thumbnails::delete_thumbnail_files(&orphans)).await;
 }
 
 /// Recursively search for and delete a .fav file in the favorites directory tree.
@@ -895,7 +947,7 @@ pub async fn rename_rom(
 #[cfg(feature = "ssr")]
 async fn rename_rom_cascade(
     state: &crate::api::AppState,
-    storage: &replay_control_core_server::storage::StorageLocation,
+    storage: &StorageLocation,
     system: &str,
     old_filename: &str,
     new_filename: &str,
@@ -940,12 +992,7 @@ async fn rename_rom_cascade(
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
             move |conn| {
-                replay_control_core_server::user_data_db::UserDataDb::rename_for_rom(
-                    conn,
-                    &system,
-                    &old_filename,
-                    &new_filename,
-                );
+                UserDataDb::rename_for_rom(conn, &system, &old_filename, &new_filename);
             }
         })
         .await
@@ -961,12 +1008,7 @@ async fn rename_rom_cascade(
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
             move |conn| {
-                replay_control_core_server::library_db::LibraryDb::rename_for_rom(
-                    conn,
-                    &system,
-                    &old_filename,
-                    &new_filename,
-                );
+                LibraryDb::rename_for_rom(conn, &system, &old_filename, &new_filename);
             }
         })
         .await

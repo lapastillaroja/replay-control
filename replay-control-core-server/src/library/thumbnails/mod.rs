@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::fs_walk;
+use crate::library_db::{GameEntry, LibraryDb};
 use replay_control_core::error::{Error, Result};
 
 /// Percent-encode one URI path segment, keeping only the RFC-3986 unreserved
@@ -166,7 +167,9 @@ pub fn thumbnail_filename(rom_stem: &str) -> String {
 
 // Re-export title utilities from their canonical home in `title_utils`.
 // These were originally defined here but moved to `title_utils` for broader reuse.
-pub use replay_control_core::title_utils::{base_title, strip_tags, strip_version};
+pub use replay_control_core::title_utils::{
+    base_title, filename_stem, strip_n64dd_prefix, strip_tags, strip_version,
+};
 
 /// Strip a `.png` or `.jpg` extension from a filename, returning the stem.
 pub fn strip_image_ext(name: &str) -> Option<&str> {
@@ -197,6 +200,53 @@ pub(crate) fn try_resolve_fake_symlink_sync(path: &Path, parent_dir: &Path) -> O
     }
 }
 
+/// The tiers a `thumbnail_filename`-normalized ROM name matches an image by, in
+/// priority order: exact stem, case-insensitive, base-title (tags stripped),
+/// version-stripped, and slash-split dual-title parts.
+///
+/// Single source of truth for those tiers, shared by the per-request resolver
+/// [`find_image_on_disk`] (walks tiers in priority order over one directory) and
+/// the bulk orphan-detection key-set (`ThumbnailKeys`, which unions the tiers
+/// across many ROMs and scans once). One definition keeps the two from drifting.
+struct ThumbMatchKeys {
+    exact: String,
+    lower: String,
+    base: String,
+    version: Option<String>,
+    slash_parts: Vec<String>,
+}
+
+fn thumb_match_keys(thumb_name: &str) -> ThumbMatchKeys {
+    let base = base_title(thumb_name);
+    let stripped = strip_version(&base);
+    let version = (stripped.len() < base.len()).then(|| stripped.to_string());
+    let search_base = version.as_deref().unwrap_or(&base);
+    let sep = if search_base.contains(" / ") {
+        Some(" / ")
+    } else if search_base.contains(" _ ") {
+        Some(" _ ")
+    } else {
+        None
+    };
+    let slash_parts = sep
+        .map(|sep| {
+            search_base
+                .split(sep)
+                .map(str::trim)
+                .filter(|p| p.len() >= 5)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    ThumbMatchKeys {
+        lower: thumb_name.to_lowercase(),
+        exact: thumb_name.to_string(),
+        base,
+        version,
+        slash_parts,
+    }
+}
+
 /// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
 ///
 /// `media_base` is the system media directory (e.g., `.replay-control/media/sega_smd`).
@@ -209,8 +259,8 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
         return None;
     }
 
-    let stem = replay_control_core::title_utils::filename_stem(rom_filename);
-    let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
+    let stem = filename_stem(rom_filename);
+    let stem = strip_n64dd_prefix(stem);
     let thumb_name = thumbnail_filename(stem);
 
     // 1. Exact match
@@ -224,31 +274,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
         }
     }
 
-    let rom_base = base_title(&thumb_name);
-    let rom_base_no_version = strip_version(&rom_base);
-    let has_version = rom_base_no_version.len() < rom_base.len();
-    let thumb_lower = thumb_name.to_lowercase();
-
-    // Pre-compute slash parts for tier 4 matching.
-    let search_base = if has_version {
-        rom_base_no_version
-    } else {
-        &rom_base
-    };
-    let slash_parts: Vec<&str> = if search_base.contains(" / ") || search_base.contains(" _ ") {
-        let sep = if search_base.contains(" / ") {
-            " / "
-        } else {
-            " _ "
-        };
-        search_base
-            .split(sep)
-            .map(|p| p.trim())
-            .filter(|p| p.len() >= 5)
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let keys = thumb_match_keys(&thumb_name);
 
     if let Ok(entries) = std::fs::read_dir(&kind_dir) {
         let mut fuzzy_result: Option<String> = None;
@@ -260,7 +286,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
             let name = name.to_string_lossy();
             if let Some(img_stem) = strip_image_ext(&name) {
                 // 1b. Case-insensitive exact match (preserves region tags)
-                if img_stem.to_lowercase() == thumb_lower {
+                if img_stem.to_lowercase() == keys.lower {
                     let path = entry.path();
                     if is_valid_image_sync(&path) {
                         return Some(format!("{kind}/{name}"));
@@ -272,7 +298,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
 
                 let img_base = base_title(img_stem);
                 // 2. Fuzzy match (strip tags)
-                if img_base == rom_base && fuzzy_result.is_none() {
+                if img_base == keys.base && fuzzy_result.is_none() {
                     let path = entry.path();
                     if is_valid_image_sync(&path) {
                         fuzzy_result = Some(format!("{kind}/{name}"));
@@ -281,7 +307,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
                     }
                 }
                 // 3. Version-stripped match
-                if has_version && img_base == rom_base_no_version && version_result.is_none() {
+                if version_result.is_none() && keys.version.as_deref() == Some(img_base.as_str()) {
                     let path = entry.path();
                     if is_valid_image_sync(&path) {
                         version_result = Some(format!("{kind}/{name}"));
@@ -290,7 +316,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
                     }
                 }
                 // 4. Slash dual-name match
-                if slash_result.is_none() && slash_parts.iter().any(|part| *part == img_base) {
+                if slash_result.is_none() && keys.slash_parts.contains(&img_base) {
                     let path = entry.path();
                     if is_valid_image_sync(&path) {
                         slash_result = Some(format!("{kind}/{name}"));
@@ -483,92 +509,308 @@ pub fn clear_media(storage_root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn thumbnail_relative_from_media_url(system: &str, url: &str) -> Option<String> {
+    let prefix = format!("/media/{system}/");
+    let relative = url.strip_prefix(&prefix)?;
+    let (kind, filename) = relative.split_once('/')?;
+    if filename.contains('/') || strip_image_ext(filename).is_none() {
+        return None;
+    }
+    if ALL_THUMBNAIL_KINDS
+        .iter()
+        .any(|thumbnail_kind| thumbnail_kind.media_dir() == kind)
+    {
+        Some(format!("{kind}/{filename}"))
+    } else {
+        None
+    }
+}
+
+fn thumbnail_path_from_relative(media_base: &Path, relative: &str) -> Option<PathBuf> {
+    let (kind, filename) = relative.split_once('/')?;
+    if filename.contains('/') || strip_image_ext(filename).is_none() {
+        return None;
+    }
+    if ALL_THUMBNAIL_KINDS
+        .iter()
+        .any(|thumbnail_kind| thumbnail_kind.media_dir() == kind)
+    {
+        Some(media_base.join(kind).join(filename))
+    } else {
+        None
+    }
+}
+
+/// The lookup keys a set of ROMs can match a cached thumbnail by — the same
+/// tiers [`find_image_on_disk`] resolves through (exact stem, case-insensitive,
+/// base-title, version-stripped, slash-split dual titles), collected across many
+/// ROMs at once.
+///
+/// This is the inverse of resolving each ROM to a file: instead of scanning the
+/// media directory once *per ROM* (which is O(roms × files) — it pinned the CPU
+/// and starved the read pool on large libraries), we gather every ROM's keys
+/// once, then scan the directory once and keep any file whose stem matches a
+/// key. That is O(roms + files). A file is retained if it *could* be matched by
+/// any ROM via any tier — a conservative superset of what per-ROM resolution
+/// returns, so cleanup never deletes a thumbnail the runtime would still serve
+/// (it may keep a few extra same-base-title files, which is the safe direction).
+#[derive(Default)]
+struct ThumbnailKeys {
+    exact: HashSet<String>,
+    ci: HashSet<String>,
+    fuzzy: HashSet<String>,
+}
+
+impl ThumbnailKeys {
+    /// Add the keys for one already-`thumbnail_filename`-normalized name, using
+    /// the same tier definition the per-request resolver walks.
+    fn add_thumb(&mut self, thumb_name: &str) {
+        let keys = thumb_match_keys(thumb_name);
+        self.exact.insert(keys.exact);
+        self.ci.insert(keys.lower);
+        self.fuzzy.insert(keys.base);
+        if let Some(version) = keys.version {
+            self.fuzzy.insert(version);
+        }
+        self.fuzzy.extend(keys.slash_parts);
+    }
+
+    /// Add the two lookups [`resolve_image_on_disk_sync`] makes for one ROM: the
+    /// arcade display name (if any) and the ROM filename.
+    fn add_entry(&mut self, rom_filename: &str, display_name: Option<&str>) {
+        if let Some(display) = display_name {
+            self.add_thumb(&thumbnail_filename(display));
+        }
+        let stem = strip_n64dd_prefix(filename_stem(rom_filename));
+        self.add_thumb(&thumbnail_filename(stem));
+    }
+
+    /// Whether a file with this stem matches any collected key.
+    fn matches(&self, stem: &str) -> bool {
+        self.exact.contains(stem)
+            || self.ci.contains(&stem.to_lowercase())
+            || self.fuzzy.contains(base_title(stem).as_str())
+    }
+}
+
+/// Scan each media kind directory once and return the relative paths of files
+/// matching any of `keys`. Fake-symlink stubs that match resolve to their target
+/// (mirrors [`find_image_on_disk`]).
+fn referenced_files_matching(media_base: &Path, keys: &ThumbnailKeys) -> HashSet<String> {
+    let mut referenced = HashSet::new();
+    for kind in ALL_THUMBNAIL_KINDS {
+        let kind_name = kind.media_dir();
+        let kind_dir = media_base.join(kind_name);
+        let Ok(entries) = std::fs::read_dir(&kind_dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let filename = entry.file_name();
+            let filename = filename.to_string_lossy();
+            let Some(stem) = strip_image_ext(&filename) else {
+                continue;
+            };
+            if !keys.matches(stem) {
+                continue;
+            }
+            if is_valid_image_sync(&path) {
+                referenced.insert(format!("{kind_name}/{filename}"));
+            } else if let Some(target) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
+                referenced.insert(format!("{kind_name}/{target}"));
+            }
+        }
+    }
+    referenced
+}
+
+fn referenced_thumbnail_paths_for_rom(
+    media_base: &Path,
+    system: &str,
+    rom_filename: &str,
+    display_name: Option<&str>,
+    box_art_url: Option<&str>,
+) -> HashSet<String> {
+    let mut keys = ThumbnailKeys::default();
+    keys.add_entry(rom_filename, display_name);
+    let mut referenced = referenced_files_matching(media_base, &keys);
+
+    if let Some(url) = box_art_url
+        && let Some(relative) = thumbnail_relative_from_media_url(system, url)
+    {
+        referenced.insert(relative);
+    }
+
+    referenced
+}
+
+fn referenced_thumbnail_paths(
+    media_base: &Path,
+    system: &str,
+    entries: &[GameEntry],
+) -> HashSet<String> {
+    let mut keys = ThumbnailKeys::default();
+    let mut referenced = HashSet::new();
+    for entry in entries {
+        keys.add_entry(&entry.rom_filename, entry.display_name.as_deref());
+        if let Some(url) = &entry.box_art_url
+            && let Some(relative) = thumbnail_relative_from_media_url(system, url)
+        {
+            referenced.insert(relative);
+        }
+    }
+    referenced.extend(referenced_files_matching(media_base, &keys));
+    referenced
+}
+
+fn media_system_dirs(media_dir: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(systems) = std::fs::read_dir(media_dir) else {
+        return Vec::new();
+    };
+
+    let mut result: Vec<(String, PathBuf)> = systems
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            Some((entry.file_name().to_string_lossy().into_owned(), path))
+        })
+        .collect();
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    result
+}
+
+/// Return systems that have downloaded thumbnail media on disk.
+pub fn media_system_names(storage_root: &Path) -> Vec<String> {
+    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    media_system_dirs(&media_dir)
+        .into_iter()
+        .map(|(system, _)| system)
+        .collect()
+}
+
+fn thumbnail_files(system_media: &Path) -> Vec<(String, PathBuf)> {
+    let mut files = Vec::new();
+    for kind in ALL_THUMBNAIL_KINDS {
+        let kind_name = kind.media_dir();
+        let kind_dir = system_media.join(kind_name);
+        let Ok(entries) = std::fs::read_dir(&kind_dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || !is_valid_image_sync(&path) {
+                continue;
+            }
+            let filename = entry.file_name();
+            let filename = filename.to_string_lossy();
+            if strip_image_ext(&filename).is_none() {
+                continue;
+            }
+            files.push((format!("{kind_name}/{filename}"), path));
+        }
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+/// Return cached thumbnail files for a deleted ROM that are no longer used by
+/// any remaining ROM in the same system.
+pub fn orphaned_thumbnail_files_for_deleted_rom(
+    storage_root: &Path,
+    system: &str,
+    rom_filename: &str,
+    display_name: Option<&str>,
+    box_art_url: Option<&str>,
+    active_entries: &[GameEntry],
+) -> Vec<(String, PathBuf)> {
+    let media_base = storage_root
+        .join(crate::storage::RC_DIR)
+        .join("media")
+        .join(system);
+    let candidates = referenced_thumbnail_paths_for_rom(
+        &media_base,
+        system,
+        rom_filename,
+        display_name,
+        box_art_url,
+    );
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let retained = referenced_thumbnail_paths(&media_base, system, active_entries);
+    let mut orphans: Vec<(String, PathBuf)> = candidates
+        .into_iter()
+        .filter(|relative| !retained.contains(relative))
+        .filter_map(|relative| {
+            thumbnail_path_from_relative(&media_base, &relative)
+                .filter(|path| path.is_file())
+                .map(|path| (system.to_string(), path))
+        })
+        .collect();
+    orphans.sort_by(|a, b| a.1.cmp(&b.1));
+    orphans
+}
+
 /// Find orphaned thumbnail files that are not referenced by any active ROM.
 ///
-/// An image file is considered orphaned if no entry in `game_library` for its system
-/// has a `box_art_url` pointing to that file. This approach is simpler and more
-/// reliable than trying to replicate the fuzzy matching pipeline.
+/// A cached thumbnail is considered active when it is the `box_art_url` for a
+/// library row or when the normal thumbnail resolver would choose it for that
+/// ROM as box art, screenshot, or title image. This mirrors the UI lookup
+/// behavior instead of relying on the box-art URL column alone.
 ///
 /// Returns a list of `(system, file_path)` pairs for each orphaned image.
+pub fn find_orphaned_thumbnails_from_entries(
+    storage_root: &Path,
+    entries_by_system: &[(String, Vec<GameEntry>)],
+) -> Vec<(String, PathBuf)> {
+    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    if !media_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut orphans = Vec::new();
+
+    for (system, entries) in entries_by_system {
+        let system_media = media_dir.join(system);
+        if !system_media.is_dir() {
+            continue;
+        }
+        let referenced = referenced_thumbnail_paths(&system_media, system, entries);
+        orphans.extend(
+            thumbnail_files(&system_media)
+                .into_iter()
+                .filter(|(relative, _)| !referenced.contains(relative))
+                .map(|(_, path)| (system.clone(), path)),
+        );
+    }
+
+    orphans
+}
+
+/// Find orphaned thumbnail files that are not referenced by any active ROM.
 pub fn find_orphaned_thumbnails(
     storage_root: &Path,
     conn: &rusqlite::Connection,
 ) -> Result<Vec<(String, PathBuf)>> {
-    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
-    if !media_dir.exists() {
-        return Ok(Vec::new());
-    }
+    let entries_by_system = media_system_names(storage_root)
+        .into_iter()
+        .map(|system| {
+            let entries = LibraryDb::load_system_entries(conn, &system)?;
+            Ok((system, entries))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    let active_systems = crate::library_db::LibraryDb::active_systems(conn)?;
-    let mut orphans = Vec::new();
-
-    // Only check systems that have entries in game_library.
-    // Systems without game_library entries may have images from a previous scan
-    // that haven't been warmed yet — we don't want to delete those.
-    for system in &active_systems {
-        let system_media = media_dir.join(system);
-        if !system_media.exists() {
-            continue;
-        }
-
-        // Get all box_art_url values for this system and extract the filesystem-relative
-        // image paths. URLs look like `/media/sega_smd/boxart/Sonic.png`, so we strip
-        // the `/media/<system>/` prefix to get `boxart/Sonic.png`.
-        let prefix = format!("/media/{system}/");
-        let referenced: HashSet<String> =
-            crate::library_db::LibraryDb::active_box_art_urls(conn, system)?
-                .into_iter()
-                .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
-                .collect();
-
-        // Safety: skip systems where enrichment hasn't run yet.
-        // If game_library has entries but no box_art_url is set, enrichment is still
-        // in progress — deleting now would wipe all images.
-        if referenced.is_empty() {
-            continue;
-        }
-
-        // Only scan boxart/ — snap images have no corresponding URL column in
-        // game_library, so we can't determine which are orphaned.
-        let kind = ThumbnailKind::Boxart.media_dir();
-        let kind_dir = system_media.join(kind);
-        if kind_dir.exists() {
-            let entries = match std::fs::read_dir(&kind_dir) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            let mut system_orphans = Vec::new();
-            let mut total_files = 0usize;
-
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                let filename = entry.file_name();
-                let filename = filename.to_string_lossy();
-                if !filename.ends_with(".png") {
-                    continue;
-                }
-                total_files += 1;
-                let relative = format!("{kind}/{filename}");
-                if !referenced.contains(&relative) {
-                    system_orphans.push((system.clone(), path));
-                }
-            }
-
-            // Safety net: if >80% of images would be deleted, something is wrong
-            // (likely stale game_library). Skip this system entirely.
-            if total_files > 0 && system_orphans.len() * 100 / total_files > 80 {
-                continue;
-            }
-
-            orphans.extend(system_orphans);
-        }
-    }
-
-    Ok(orphans)
+    Ok(find_orphaned_thumbnails_from_entries(
+        storage_root,
+        &entries_by_system,
+    ))
 }
 
 /// Delete orphaned thumbnail files and return `(count_deleted, bytes_freed)`.
@@ -676,6 +918,203 @@ mod tests {
         assert_eq!(stats[0].snap_file_count, 1);
         assert_eq!(stats[0].title_file_count, 0);
         assert_eq!(stats[0].total_size_bytes, 451);
+    }
+
+    fn media_file(
+        storage_root: &Path,
+        system: &str,
+        kind: ThumbnailKind,
+        filename: &str,
+    ) -> PathBuf {
+        storage_root
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join(system)
+            .join(kind.media_dir())
+            .join(filename)
+    }
+
+    fn write_test_image(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, vec![1u8; 201]).unwrap();
+    }
+
+    fn test_entry(system: &str, filename: &str) -> GameEntry {
+        GameEntry {
+            system: system.to_string(),
+            rom_filename: filename.to_string(),
+            rom_path: format!("/roms/{system}/{filename}"),
+            ..GameEntry::default()
+        }
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_scans_boxart_snap_and_title() {
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let mut conn = LibraryDb::open(db_dir.path()).unwrap();
+
+        for kind in ALL_THUMBNAIL_KINDS {
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Kept.png"));
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Orphan.png"));
+        }
+
+        let mut kept = test_entry("snes", "Kept.sfc");
+        kept.box_art_url = Some("/media/snes/boxart/Kept.png".to_string());
+        LibraryDb::save_system_entries(&mut conn, "snes", &[kept], None).unwrap();
+
+        let mut orphan_paths: Vec<String> = find_orphaned_thumbnails(storage.path(), &conn)
+            .unwrap()
+            .into_iter()
+            .map(|(_, path)| {
+                path.strip_prefix(storage.path())
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        orphan_paths.sort();
+
+        assert_eq!(
+            orphan_paths,
+            vec![
+                ".replay-control/media/snes/boxart/Orphan.png",
+                ".replay-control/media/snes/snap/Orphan.png",
+                ".replay-control/media/snes/title/Orphan.png",
+            ]
+        );
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_includes_system_media_with_no_rows() {
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let conn = LibraryDb::open(db_dir.path()).unwrap();
+
+        for kind in ALL_THUMBNAIL_KINDS {
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Removed.png"));
+        }
+
+        let orphans = find_orphaned_thumbnails(storage.path(), &conn).unwrap();
+        assert_eq!(orphans.len(), 3);
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_keeps_fake_symlink_targets_used_by_active_roms() {
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let mut conn = LibraryDb::open(db_dir.path()).unwrap();
+        let boxart_dir = storage
+            .path()
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join("snes")
+            .join(ThumbnailKind::Boxart.media_dir());
+        std::fs::create_dir_all(&boxart_dir).unwrap();
+        std::fs::write(boxart_dir.join("Kept.png"), b"Shared.png").unwrap();
+        write_test_image(&boxart_dir.join("Shared.png"));
+        write_test_image(&boxart_dir.join("Orphan.png"));
+
+        let kept = test_entry("snes", "Kept.sfc");
+        LibraryDb::save_system_entries(&mut conn, "snes", &[kept], None).unwrap();
+
+        let orphans = find_orphaned_thumbnails(storage.path(), &conn).unwrap();
+
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].1.file_name().unwrap(), "Orphan.png");
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_keeps_base_title_match_for_tagged_rom() {
+        // A region-tagged ROM ("Sonic (USA).md") must retain the base-named
+        // thumbnail ("Sonic.png") it resolves to via the base_title tier — the
+        // O(roms+files) key-set has to cover the fuzzy tiers, not just exact.
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let mut conn = LibraryDb::open(db_dir.path()).unwrap();
+        for kind in ALL_THUMBNAIL_KINDS {
+            write_test_image(&media_file(storage.path(), "sega_smd", *kind, "Sonic.png"));
+            write_test_image(&media_file(
+                storage.path(),
+                "sega_smd",
+                *kind,
+                "Unrelated.png",
+            ));
+        }
+        LibraryDb::save_system_entries(
+            &mut conn,
+            "sega_smd",
+            &[test_entry("sega_smd", "Sonic (USA).md")],
+            None,
+        )
+        .unwrap();
+
+        let orphans = find_orphaned_thumbnails(storage.path(), &conn).unwrap();
+
+        // Sonic.png retained via base_title; only Unrelated.png (×3 kinds) orphaned.
+        assert_eq!(orphans.len(), 3);
+        assert!(
+            orphans
+                .iter()
+                .all(|(_, p)| p.file_name().unwrap() == "Unrelated.png")
+        );
+    }
+
+    #[test]
+    fn deleted_rom_thumbnail_cleanup_keeps_shared_variant_media() {
+        let storage = tempfile::tempdir().unwrap();
+        for kind in ALL_THUMBNAIL_KINDS {
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Game.png"));
+        }
+
+        let active_entries = vec![test_entry("snes", "Game (Europe).sfc")];
+        let orphans = orphaned_thumbnail_files_for_deleted_rom(
+            storage.path(),
+            "snes",
+            "Game (USA).sfc",
+            None,
+            None,
+            &active_entries,
+        );
+
+        assert!(orphans.is_empty());
+    }
+
+    #[test]
+    fn deleted_rom_thumbnail_cleanup_returns_unique_media() {
+        let storage = tempfile::tempdir().unwrap();
+        for kind in ALL_THUMBNAIL_KINDS {
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Deleted.png"));
+            write_test_image(&media_file(storage.path(), "snes", *kind, "Other.png"));
+        }
+
+        let active_entries = vec![test_entry("snes", "Other.sfc")];
+        let mut orphan_paths: Vec<String> = orphaned_thumbnail_files_for_deleted_rom(
+            storage.path(),
+            "snes",
+            "Deleted.sfc",
+            None,
+            None,
+            &active_entries,
+        )
+        .into_iter()
+        .map(|(_, path)| {
+            path.strip_prefix(storage.path())
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+        orphan_paths.sort();
+
+        assert_eq!(
+            orphan_paths,
+            vec![
+                ".replay-control/media/snes/boxart/Deleted.png",
+                ".replay-control/media/snes/snap/Deleted.png",
+                ".replay-control/media/snes/title/Deleted.png",
+            ]
+        );
     }
 
     // --- strip_tags ---
@@ -837,7 +1276,7 @@ mod tests {
     /// Helper: simulate the full matching pipeline used by resolve_box_art_with_hash.
     /// Returns (thumb_name, base_title) for a given ROM filename + system.
     async fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
-        let stem = replay_control_core::title_utils::filename_stem(rom_filename);
+        let stem = filename_stem(rom_filename);
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
         let display_name = if is_arcade {
             crate::arcade_db::lookup_arcade_game(system, stem)
@@ -973,7 +1412,7 @@ mod tests {
         // N64DD ROMs have a "N64DD - " prefix that should be stripped
         let stem = "N64DD - Mario Artist Paint Studio (Japan).n64";
         let stem = stem.rfind('.').map(|i| &stem[..i]).unwrap_or(stem);
-        let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
+        let stem = strip_n64dd_prefix(stem);
         assert_eq!(stem, "Mario Artist Paint Studio (Japan)");
         let thumb = thumbnail_filename(stem);
         assert_eq!(thumb, "Mario Artist Paint Studio (Japan)");

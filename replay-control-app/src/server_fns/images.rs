@@ -1,6 +1,10 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core::error::Error as CoreError;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::library_db::{GameEntry, LibraryDb};
+#[cfg(feature = "ssr")]
+use replay_control_core_server::thumbnails;
 
 /// Clear all images.
 #[server(prefix = "/sfn")]
@@ -15,8 +19,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let storage = state.storage();
-    replay_control_core_server::thumbnails::clear_media(&storage.root)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    thumbnails::clear_media(&storage.root).map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
     match state
@@ -55,14 +58,28 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let storage_root = state.storage().root.clone();
-    let orphan_result = state
+    let media_systems = tokio::task::spawn_blocking({
+        let storage_root = storage_root.clone();
+        move || thumbnails::media_system_names(&storage_root)
+    })
+    .await
+    .unwrap_or_default();
+
+    let entries_result = state
         .library_reader
-        .try_read(move |conn| {
-            replay_control_core_server::thumbnails::find_orphaned_thumbnails(&storage_root, conn)
-        })
+        .try_read(
+            move |conn| -> Result<Vec<(String, Vec<GameEntry>)>, CoreError> {
+                let mut entries_by_system = Vec::with_capacity(media_systems.len());
+                for system in media_systems {
+                    let entries = LibraryDb::load_system_entries(conn, &system)?;
+                    entries_by_system.push((system, entries));
+                }
+                Ok(entries_by_system)
+            },
+        )
         .await;
-    let orphans = match orphan_result {
-        Ok(Ok(orphans)) => orphans,
+    let entries_by_system = match entries_result {
+        Ok(Ok(entries_by_system)) => entries_by_system,
         Ok(Err(e)) => {
             tracing::warn!("Cleanup orphaned images skipped: {e}");
             Vec::new()
@@ -72,8 +89,17 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
             Vec::new()
         }
     };
+    let orphans = tokio::task::spawn_blocking({
+        let storage_root = storage_root.clone();
+        move || thumbnails::find_orphaned_thumbnails_from_entries(&storage_root, &entries_by_system)
+    })
+    .await
+    .unwrap_or_default();
+
     let (files_deleted, bytes_freed) =
-        replay_control_core_server::thumbnails::delete_thumbnail_files(&orphans);
+        tokio::task::spawn_blocking(move || thumbnails::delete_thumbnail_files(&orphans))
+            .await
+            .unwrap_or((0, 0));
 
     Ok((0, files_deleted, bytes_freed))
 }

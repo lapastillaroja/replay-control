@@ -32,6 +32,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GamesBack => "\u{2190} Volver",
         Key::GamesNoGames => "Sin juegos",
         Key::GamesLoadingRoms => "Cargando ROMs...",
+        Key::GamesLoadError => "No se pudieron cargar los juegos",
         Key::GamesLoadMore => "Cargar más",
 
         // Favorites page

@@ -34,6 +34,7 @@ pub enum Key {
     GamesBack,
     GamesNoGames,
     GamesLoadingRoms,
+    GamesLoadError,
     GamesLoadMore,
 
     // Favorites page
