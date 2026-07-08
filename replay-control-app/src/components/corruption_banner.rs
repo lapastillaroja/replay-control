@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{self, CorruptionStatus};
 
 /// Banner shown on every page when a database is flagged as corrupt.
@@ -14,6 +15,7 @@ use crate::server_fns::{self, CorruptionStatus};
 /// - user_data.db without backup: [Reset (lose data)]
 #[component]
 pub fn CorruptionBanner() -> impl IntoView {
+    let i18n = use_i18n();
     let status = expect_context::<RwSignal<CorruptionStatus>>();
     let hydrated = RwSignal::new(false);
 
@@ -47,31 +49,40 @@ pub fn CorruptionBanner() -> impl IntoView {
             }>
                 <Show when=move || library_corrupt() fallback=|| ()>
                     <div class="corruption-banner-row">
-                        <span>"Library database is corrupt."</span>
+                        <span>{move || t(i18n.locale.get(), Key::CorruptionLibraryCorrupt)}</span>
                         <button
                             class="corruption-banner-btn"
                             on:click=move |_| { rebuild_action.dispatch(()); }
                         >
-                            "Rebuild"
+                            {move || t(i18n.locale.get(), Key::CorruptionRebuild)}
                         </button>
                     </div>
                 </Show>
                 <Show when=move || user_data_corrupt() fallback=|| ()>
                     <div class="corruption-banner-row">
-                        <span>"User data is corrupt. Some data may be lost."</span>
+                        <span>{move || t(i18n.locale.get(), Key::CorruptionUserDataCorrupt)}</span>
                         <Show when=move || backup_exists() fallback=|| ()>
                             <button
                                 class="corruption-banner-btn"
                                 on:click=move |_| { restore_action.dispatch(()); }
                             >
-                                "Restore from backup"
+                                {move || t(i18n.locale.get(), Key::CorruptionRestoreBackup)}
                             </button>
                         </Show>
                         <button
                             class="corruption-banner-btn corruption-banner-btn-danger"
                             on:click=move |_| { repair_action.dispatch(()); }
                         >
-                            {move || if backup_exists() { "Reset" } else { "Reset (lose data)" }}
+                            {move || {
+                                t(
+                                    i18n.locale.get(),
+                                    if backup_exists() {
+                                        Key::CorruptionReset
+                                    } else {
+                                        Key::CorruptionResetLoseData
+                                    },
+                                )
+                            }}
                         </button>
                     </div>
                 </Show>

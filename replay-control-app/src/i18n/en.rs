@@ -859,5 +859,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} already has a save. Saving now will replace it.",
         Key::SaveStatesLoadTitle => "Load save state?",
         Key::SaveStatesLoadBody => "Loading {0} will replace the current game state.",
+
+        // Status banners
+        Key::CorruptionLibraryCorrupt => "Library database is corrupt.",
+        Key::CorruptionRebuild => "Rebuild",
+        Key::CorruptionUserDataCorrupt => "User data is corrupt. Some data may be lost.",
+        Key::CorruptionRestoreBackup => "Restore from backup",
+        Key::CorruptionReset => "Reset",
+        Key::CorruptionResetLoseData => "Reset (lose data)",
+        Key::AssetHealthCatalogOutOfDate => {
+            "Catalog out of date. Reinstall Replay Control to refresh game metadata."
+        }
+        Key::RomWatcherStopped => {
+            "ROM auto-detection is not running. Use manual rescan or restart Replay Control to detect newly added ROMs."
+        }
+        Key::StorageUnavailable => {
+            "Configured storage {0} is not available.{1} Insert the device or change the storage selection in RePlayOS settings."
+        }
+        Key::StorageFallback => " Using {0} as fallback.",
+        Key::StorageProblem => {
+            "Storage problem: {0}. Replay Control is still using the last active storage if one is available."
+        }
     }
 }

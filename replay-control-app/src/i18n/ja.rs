@@ -855,5 +855,28 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::SaveStatesLoadTitle => "ステートを読み込みますか？",
         Key::SaveStatesLoadBody => "{0} を読み込むと、現在のゲーム状態が置き換わります。",
+
+        // Status banners
+        Key::CorruptionLibraryCorrupt => "ライブラリのデータベースが破損しています。",
+        Key::CorruptionRebuild => "再構築",
+        Key::CorruptionUserDataCorrupt => {
+            "ユーザーデータが破損しています。一部のデータが失われる可能性があります。"
+        }
+        Key::CorruptionRestoreBackup => "バックアップから復元",
+        Key::CorruptionReset => "リセット",
+        Key::CorruptionResetLoseData => "リセット（データを失う）",
+        Key::AssetHealthCatalogOutOfDate => {
+            "カタログが古くなっています。ゲームのメタデータを更新するには Replay Control を再インストールしてください。"
+        }
+        Key::RomWatcherStopped => {
+            "ROM の自動検出が実行されていません。新しく追加した ROM を検出するには、手動で再スキャンするか Replay Control を再起動してください。"
+        }
+        Key::StorageUnavailable => {
+            "設定されたストレージ {0} は利用できません。{1} デバイスを挿入するか、RePlayOS の設定でストレージの選択を変更してください。"
+        }
+        Key::StorageFallback => " 代わりに {0} を使用しています。",
+        Key::StorageProblem => {
+            "ストレージの問題: {0}。利用可能な場合、Replay Control は引き続き最後にアクティブだったストレージを使用します。"
+        }
     }
 }

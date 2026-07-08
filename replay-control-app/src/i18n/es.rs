@@ -869,5 +869,28 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesOverwriteBody => "{0} ya tiene un estado. Guardar ahora lo reemplazará.",
         Key::SaveStatesLoadTitle => "¿Cargar estado?",
         Key::SaveStatesLoadBody => "Cargar {0} reemplazará el estado actual del juego.",
+
+        // Status banners
+        Key::CorruptionLibraryCorrupt => "La base de datos de la biblioteca está dañada.",
+        Key::CorruptionRebuild => "Reconstruir",
+        Key::CorruptionUserDataCorrupt => {
+            "Los datos del usuario están dañados. Es posible que se pierdan algunos datos."
+        }
+        Key::CorruptionRestoreBackup => "Restaurar desde copia de seguridad",
+        Key::CorruptionReset => "Restablecer",
+        Key::CorruptionResetLoseData => "Restablecer (perder datos)",
+        Key::AssetHealthCatalogOutOfDate => {
+            "Catálogo desactualizado. Reinstala Replay Control para actualizar los metadatos de los juegos."
+        }
+        Key::RomWatcherStopped => {
+            "La detección automática de ROMs no está activa. Usa el reescaneo manual o reinicia Replay Control para detectar ROMs nuevas."
+        }
+        Key::StorageUnavailable => {
+            "El almacenamiento configurado {0} no está disponible.{1} Inserta el dispositivo o cambia la selección de almacenamiento en los ajustes de RePlayOS."
+        }
+        Key::StorageFallback => " Usando {0} como alternativa.",
+        Key::StorageProblem => {
+            "Problema de almacenamiento: {0}. Replay Control sigue usando el último almacenamiento activo si hay alguno disponible."
+        }
     }
 }

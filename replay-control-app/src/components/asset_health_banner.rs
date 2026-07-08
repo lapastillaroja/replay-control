@@ -2,6 +2,8 @@ use leptos::prelude::*;
 
 use replay_control_core::asset_health::AssetHealthIssue;
 
+use crate::i18n::{Key, Locale, t, use_i18n};
+
 /// Banner shown on every page when a shipped data asset (catalog, future
 /// fonts/themes/etc.) is incompatible with the running binary.
 ///
@@ -18,18 +20,20 @@ use replay_control_core::asset_health::AssetHealthIssue;
 /// fallback.
 #[component]
 pub fn AssetHealthBanner() -> impl IntoView {
+    let i18n = use_i18n();
     let issues = expect_context::<RwSignal<Vec<AssetHealthIssue>>>();
     view! {
         <Show when=move || !issues.read().is_empty() fallback=|| ()>
             <div class="asset-health-banner">
                 {move || {
+                    let locale = i18n.locale.get();
                     issues
                         .read()
                         .iter()
                         .map(|issue| {
                             view! {
                                 <div class="asset-health-banner-row">
-                                    <span>{copy_for(issue)}</span>
+                                    <span>{copy_for(locale, issue)}</span>
                                 </div>
                             }
                         })
@@ -42,11 +46,9 @@ pub fn AssetHealthBanner() -> impl IntoView {
 
 /// Banner copy keyed by `kind`; falls back to the issue's `message` for
 /// any kind not yet localised.
-fn copy_for(issue: &AssetHealthIssue) -> String {
+fn copy_for(locale: Locale, issue: &AssetHealthIssue) -> String {
     match issue.kind.as_str() {
-        "schema_too_old" => {
-            "Catalog out of date. Reinstall Replay Control to refresh game metadata.".to_string()
-        }
+        "schema_too_old" => t(locale, Key::AssetHealthCatalogOutOfDate).to_string(),
         _ => issue.message.clone(),
     }
 }

@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 
 use crate::components::system_status_banner::SystemStatusBanner;
+use crate::i18n::{Key, Locale, tf, use_i18n};
 use crate::types::{StorageStatus, storage_kind_label};
 
 /// App-shell banner for storage states where the gate is still open but the
@@ -8,14 +9,15 @@ use crate::types::{StorageStatus, storage_kind_label};
 /// the shared [`SystemStatusBanner`] shell.
 #[component]
 pub fn StorageStatusBanner() -> impl IntoView {
+    let i18n = use_i18n();
     let status = expect_context::<RwSignal<StorageStatus>>();
-    let message = Signal::derive(move || banner_message(&status.read()));
+    let message = Signal::derive(move || banner_message(i18n.locale.get(), &status.read()));
     let detail = Signal::derive(move || banner_reason(&status.read()));
 
     view! { <SystemStatusBanner message detail /> }
 }
 
-fn banner_message(status: &StorageStatus) -> Option<String> {
+fn banner_message(locale: Locale, status: &StorageStatus) -> Option<String> {
     match status {
         StorageStatus::Misconfigured {
             wanted,
@@ -26,15 +28,17 @@ fn banner_message(status: &StorageStatus) -> Option<String> {
             let fallback = current_kind
                 .as_deref()
                 .filter(|kind| *kind != wanted.as_str())
-                .map(|kind| format!(" Using {} as fallback.", storage_kind_label(kind)))
+                .map(|kind| tf(locale, Key::StorageFallback, &[storage_kind_label(kind)]))
                 .unwrap_or_default();
-            Some(format!(
-                "Configured storage {wanted_label} is not available.{fallback} Insert the device or change the storage selection in RePlayOS settings."
+            Some(tf(
+                locale,
+                Key::StorageUnavailable,
+                &[wanted_label, fallback.as_str()],
             ))
         }
-        StorageStatus::Error { message } => Some(format!(
-            "Storage problem: {message}. Replay Control is still using the last active storage if one is available."
-        )),
+        StorageStatus::Error { message } => {
+            Some(tf(locale, Key::StorageProblem, &[message.as_str()]))
+        }
         // ConfigUnavailable is handled by the storage guard redirecting to
         // `/waiting` before any normal page (and thus this banner) mounts —
         // the banner branch is unreachable, so we don't render one here.

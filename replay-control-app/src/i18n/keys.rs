@@ -763,4 +763,17 @@ pub enum Key {
     SaveStatesOverwriteBody,
     SaveStatesLoadTitle,
     SaveStatesLoadBody,
+
+    // Status banners (corruption / asset health / ROM watcher / storage)
+    CorruptionLibraryCorrupt,
+    CorruptionRebuild,
+    CorruptionUserDataCorrupt,
+    CorruptionRestoreBackup,
+    CorruptionReset,
+    CorruptionResetLoseData,
+    AssetHealthCatalogOutOfDate,
+    RomWatcherStopped,
+    StorageUnavailable,
+    StorageFallback,
+    StorageProblem,
 }
