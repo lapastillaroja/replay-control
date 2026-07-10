@@ -190,6 +190,39 @@ For pure metadata contributions (descriptions, box art links, manuals for games 
   ```
 - See [AI_POLICY.md](AI_POLICY.md) for guidelines on AI-assisted contributions
 
+### Integration checklist (adapting a feature from elsewhere)
+
+CI does not run automatically on PRs from forks (GitHub requires a maintainer
+to approve the workflow run first), so none of this is caught by a green
+check — it only surfaces in manual review or on a real device. If you're
+porting a feature from another branch/fork/codebase, verify before opening
+the PR:
+
+- **Server functions are registered.** This repo calls
+  `server_fn::axum::register_explicit::<...>()` for every `#[server]` fn in
+  `main.rs` — inventory auto-registration doesn't work when the functions
+  live in a library crate. A new fn that's only defined but never listed
+  there 404s at runtime even though it compiles clean.
+- **Auth role is set.** `is_user_server_function` in `api/mod.rs` is an
+  allowlist — anything not listed defaults to Admin-only. If the feature is
+  meant for a normal Net Control user, add its fn names there or it 403s.
+- **CSS uses this repo's design tokens**, not a source repo's. Check
+  `style/*.css` for the actual custom properties (`--surface`, `--text`,
+  `--border`, `--error`, `--accent`, ...) before writing new rules — a
+  `var(--card-bg)` or `--accent-color` copied from elsewhere resolves to
+  nothing and silently renders unstyled, especially visible on dark skins.
+- **DB naming matches convention**: singular table names
+  (`game_manual_resource`, `game_resource_link`, not `game_notes`), and no
+  `updated_at`/timestamp columns unless something actually reads them.
+- **Errors are surfaced, not swallowed.** Avoid `let _ = fallible_call()` on
+  save/mutate paths — show the same error state the other detail-page
+  sections use.
+- **Tests + CHANGELOG** — a round-trip test following the existing
+  `server_fn_tests.rs` pattern, and an entry under Unreleased.
+
+This list grew out of real review rounds where a ported PR looked complete
+but didn't work at all on a real device. Going through it before requesting
+review saves a round trip for both sides.
 
 ### Faster builds (optional)
 
