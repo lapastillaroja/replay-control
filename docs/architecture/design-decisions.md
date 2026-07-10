@@ -163,7 +163,7 @@ For arcade ROMs the catalog stores **one row per (rom_name, source)** in `arcade
 
 The background startup pipeline in `BackgroundManager` runs sequentially:
 1. Auto-import LaunchBox XML (if present and DB is empty)
-2. Cache verification: scan all systems, write to `game_library` table, enrich box art + ratings
+2. Library verification: scan all systems, write to `game_library` table, enrich box art + ratings
 3. Auto-rebuild thumbnail index (if data sources exist but index is empty)
 
 After this, the DB is the source of truth. All request-time data comes from SQLite queries -- no filesystem access needed to serve pages.
@@ -171,10 +171,10 @@ After this, the DB is the source of truth. All request-time data comes from SQLi
 ```rust
 // replay-control-app/src/api/background.rs
 pub struct BackgroundManager;
-// Pipeline phases: auto-import -> cache verification -> thumbnail rebuild
+// Pipeline phases: auto-import -> library verification -> thumbnail rebuild
 ```
 
-ROM directory watchers (inotify for local, 30-minute TTL for NFS) detect external changes and trigger re-scans for affected systems.
+ROM directory watchers use inotify on local storage (SD, USB, NVMe) to detect external changes and trigger re-scans for affected systems. NFS is intentionally excluded: inotify does not reliably report changes made by other clients, and periodic probing of hard-mounted NFS paths can block. NFS ROM-set changes are reconciled by startup scans or explicit manual rescans.
 
 **File**: `replay-control-app/src/api/background.rs`
 
@@ -232,7 +232,7 @@ WASM bundle and icons are served from disk (`target/site/pkg/`, `target/site/ico
 /var/lib/replay-control/storages/<storage-id>/library.db
 ```
 
-`library.db` is a rebuildable cache (ROM index, metadata, thumbnail index). It used to live at `<storage>/.replay-control/library.db` — once per ROM storage. After moving it to a host-side path keyed by a stable storage id:
+`library.db` is a rebuildable library index (ROM index, metadata, thumbnail index). It used to live at `<storage>/.replay-control/library.db` — once per ROM storage. After moving it to a host-side path keyed by a stable storage id:
 
 - WAL is unconditional for the library pool (always ext4 SD), so concurrent reads parallelise (see decision #4).
 - Re-plugging a USB after a reboot keeps the library state — the storage id is derived deterministically from the filesystem identifier (volume UUID for block devices, `server:/share` for NFS), so the same storage maps back to the same `<storage-id>/` folder.
@@ -269,6 +269,6 @@ The split replaces that workaround with a crate-level firewall:
 | **Multiple DB reader connections** | No measurable benefit on USB/DELETE mode with single-user access |
 | **FTS5 for search** | Larger schema change; current `search_text LIKE '%word%'` with indexed columns is fast enough (~51ms cross-system) |
 | **Keep-alive routes in Leptos** | Not supported in Leptos 0.7; response cache (10s TTL) solves the main use case (back-navigation) |
-| **L1 ROM cache** | Removed after search unification -- all game list queries go through the DB |
+| **in-memory ROM cache** | Removed after search unification -- all game list queries go through the DB |
 | **In-memory ImageIndex cache with filesystem change detection** | A per-system `ImageIndex` was cached in memory with mtime-based freshness detection. Every request that needed box art called `is_fresh()`, which did `read_dir` on the boxart folder — ~100ms per system on USB. With ~10 systems in recents, the home page cost 931ms cold, 248ms warm just for box art. The `ImageIndex` also consumed ~6-10MB of memory across all systems. Replaced with DB `box_art_url` field populated during enrichment — zero filesystem access at request time. Savings: ~360ms warm per request, ~10MB memory. |
 | **mmap_size for SQLite** | Causes stale reads when heavy writes happen on a separate connection (thumbnail index rebuild writes 46K rows, read connections see corrupted mmap'd pages) |

@@ -35,13 +35,6 @@ Newer RePlayOS builds can report the system halt state. Replay Control treats ha
 
 The browser receives the current state as part of the first page load, so the player bar can appear immediately after refresh. Live updates then keep the page current without browser polling.
 
-## Robustness defenses
-
-- **API status gate.** Now Playing only runs when RePlayOS Net Control is connected and authorized.
-- **Menu fallback.** If RePlayOS is reachable but no game is loaded, the UI treats it as the menu instead of showing a stale game.
-- **In-core game switches.** Switching from one game to another without leaving the emulator is detected and updates the UI.
-- **Service restart handling.** If RePlayOS restarts, the elapsed timer resets on the next confirmed game session.
-
 ## Performance notes
 
 Polling the RePlayOS API is lightweight enough to run continuously on a Raspberry Pi. The app avoids sending updates when the active state has not changed, and each browser computes the elapsed timer locally.

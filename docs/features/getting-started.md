@@ -68,7 +68,7 @@ roms/
     ...
 ```
 
-On local storage (SD, USB, NVMe), new ROMs are detected automatically. On NFS, use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes.
+On local storage (SD, USB, NVMe), new ROMs are detected automatically. On NFS, use **Library Management and Metadata > Rescan Library** to reconcile the library after external changes.
 
 ## Browse Your Library
 
@@ -78,7 +78,7 @@ You can install the app as a PWA (home screen app) on your phone for quick acces
 
 ## Enrich Your Library
 
-The app includes built-in data for game names, genres, and player counts. For richer metadata (descriptions, ratings, box art), go to **Settings > Game Data**:
+The app includes built-in data for game names, genres, and player counts. For richer metadata (descriptions, ratings, box art), go to **Settings > Library & Games > Game Library**. The full maintenance page is documented in [Library Management and Metadata](library-management.md).
 
 - **Download Metadata** -- imports game descriptions, ratings, and genres from LaunchBox
 - **Download Images** -- fetches box art and screenshots from libretro-thumbnails
@@ -87,7 +87,9 @@ Both are optional and require an internet connection on the Pi.
 
 ## Next Steps
 
-- [Game Library](game-library.md) -- browsing, favorites, multi-disc handling
+- [Game Library](game-library.md) -- browsing systems, game lists, ROM actions, multi-disc handling
+- [Favorites](favorites.md) -- your personal shortlist
+- [Recently Played](recents.md) -- resume games from the home page
 - [Search](search.md) -- cross-system search and developer pages
 - [Settings](settings.md) -- region, skins, font size
 - [WiFi, NFS & Pi Setup](configuration.md) -- Wi-Fi, hostname, NFS shares, password

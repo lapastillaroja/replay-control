@@ -1,119 +1,84 @@
 # Game Library
 
-How the game library works from a user perspective: browsing systems, managing ROMs, and keeping your library up to date.
+Browse the systems and games on your RePlayOS storage.
 
-{{< screenshot "system-megadrive-mobile.png" "System browser" >}}
+{{< screenshot "game-library-systems-mobile.png" "Game library systems grid" >}}
+
+The game library is the main collection view. It answers two questions:
+
+- What systems are available on this storage?
+- What games are available inside each system?
+
+It is the console-by-console and arcade-system browsing path, with quick access to game detail pages and launch actions. Cross-system discovery lives in [Search](search.md), [Recommendations](recommendations.md), [Favorites](favorites.md), and [Recently Played](recents.md).
+
+{{< screenshot "game-library-systems.png" "Desktop systems grid with populated and empty systems" >}}
 
 ## Systems Grid
 
-The main library view shows all known systems as cards, each with the system display name, manufacturer, game count, and total size. Systems with no ROMs appear dimmed.
+The library home shows every known system as a card with its display name, manufacturer, game count, and total storage size. Systems with no games are dimmed so you can still see what Replay Control understands without mistaking those systems for active libraries.
 
-Tap a system to view its games.
+Tap a system to open its game list.
 
-## Game List
+## System Game List
 
-Each system page shows its ROMs with:
+{{< screenshot "system-megadrive-mobile.png" "System game list" >}}
 
-- **Box art thumbnails** for every game that has images available
-- **Search** within the system (debounced so it doesn't lag while typing)
-- **Random Game** within the current system
-- **Infinite scroll** with fast pagination (100 games per page)
-- **ROM details** -- filename, storage size (KB/MB/GB), file format badge
-- **Consistent game cards** -- the same card layout (box art, badges, favorite toggle) is used across all views: ROM lists, search results, developer pages, series siblings, and recommendations
+Each system page is built for scanning a large ROM set quickly:
 
-## Per-Game Actions
+- Box art thumbnails when artwork is available
+- Search within the current system
+- Random game within the current system
+- Fast pagination with infinite scroll
+- Filename, storage size, and file format badges
+- Favorite and detail-page actions from the game card
 
-Each game supports:
+{{< screenshot "system-megadrive.png" "System page with search, filters, and game cards" >}}
 
-- **Favorite toggle** -- add or remove from favorites
-- **Inline rename** -- rename the ROM file (with extension protection to prevent breaking file associations)
-- **Delete with confirmation** -- shows file count and total size before deleting
+## Game Cards
 
-**Smart multi-file management:** Delete handles related files together -- M3U + disc files, CUE + BIN, ScummVM data directories, SBI companions. Rename is restricted for formats where renaming would break the game (CUE sheets, ScummVM, binary-referenced M3U playlists).
+Game cards use the same basic layout across library lists, search results, developer pages, series pages, recommendations, and favorites. That keeps the important actions predictable:
 
-## Multi-Disc Handling (M3U)
+- Tap the card to open the [Game Detail](game-detail.md) page
+- Use the star to add or remove a [Favorite](favorites.md)
+- Launch the game from the detail page or supported quick-action surfaces
+- Rename or delete ROM files from the game detail page when you are signed in as an admin
 
-Games that span multiple discs (common for PlayStation, Sega CD, etc.) are handled automatically:
+## Per-Game File Actions
 
-- When an M3U playlist exists, individual disc files are hidden from the game list
-- Playlist references are resolved before game rows are built, so referenced discs are not treated as separate games for identification
-- Sizes from all disc files are aggregated into the playlist entry
-- M3U playlists are auto-generated at scan time for multi-part games (Side A/B, Disk 1 of N)
-- ScummVM M3U launchers are treated as folder launchers: the playlist is the visible game entry, and the referenced game folder is hidden
+Admin-only file management lives on the [Game Detail](game-detail.md) page:
 
-From a user perspective, a 3-disc game appears as a single entry with the combined size.
+- **Rename** -- rename a ROM while keeping the file extension safe
+- **Delete** -- show a confirmation with the affected files and total size before removing anything
 
-## Arcade Display Names
+Replay Control handles related files together where possible. Multi-disc playlists, CUE/BIN sets, ScummVM folders, SBI companions, save-friendly launchers, and generated M3U files are treated as part of the same playable game instead of isolated files.
 
-Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically shows human-readable titles ("Street Fighter II") for arcade entries across [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave). Entries from the source metadata are retained, including gambling, slot machine, computer, handheld, and electromechanical categories, so ROMs from full MAME sets can still be identified.
+## Multi-Disc Games
 
-## Favorites
+Games that span multiple discs appear as one playable entry when a playlist is present or can be generated safely:
 
-Favorites let you build a personal shortlist of the games you care about most. Star any game from its card or detail page and it appears in a dedicated Favorites section — a curated view of your collection that cuts through the noise of thousands of ROMs.
+- M3U playlists hide the individual disc files from the main list
+- Disc sizes are added together on the visible playlist entry
+- The first referenced disc supplies identity data when a system supports hash matching
+- ScummVM launchers are shown as the game, while the referenced folder stays hidden
 
-{{< screenshot "favorites-mobile.png" "Favorites page" >}}
+From a user perspective, a three-disc game appears as one game with the combined size.
 
-The favorites page shows a **featured card** for your most recent favorite, a **recently added** horizontal scroll, and **per-system cards** summarizing your favorites across systems. You can switch between a flat list and grouped views at any time. Games are sorted by date added (newest first) across all views.
+## Arcade Names
 
-{{< screenshot "favorites-grouped-mobile.png" "Favorites organized by system" >}}
+Arcade ROMs often use short internal filenames such as `sf2.zip`. Replay Control shows readable game titles for MAME, FBNeo, and Flycast arcade systems, while still preserving clone/parent relationships and source categories used elsewhere in the app.
 
-### Organizing Favorites
+Arcade board pages, board search, and board recommendations are covered separately in [Arcade Boards](arcade-boards.md).
 
-As your favorites grow, the organize feature helps you make sense of them. Choose one or two grouping criteria — developer, genre, system, player count, rating, or alphabetical — and your favorites are sorted into subfolders automatically. For example, grouping by genre and then by system creates folders like "Action > Mega Drive" and "RPG > PlayStation".
+## Keeping The Library Fresh
 
-{{< screenshot "favorites-organize-ui-mobile.png" "Organize favorites by developer" >}}
+On local storage such as SD, USB, and NVMe, Replay Control watches the `roms/` directory and refreshes changed systems automatically. Bulk copies are debounced so the library updates after the file operation settles.
 
-Before applying, a **preview** shows exactly how your favorites will be grouped so you can adjust criteria without committing. Organized views are persistent — they stay until you change or clear them.
+On NFS, live filesystem watching is not reliable and periodic probing is avoided so a stale network mount cannot stall the app. Startup scans reconcile the library with the files currently on the share. If you add, rename, or delete ROMs externally while Replay Control is already running, use **Library Management and Metadata > Rescan Library** when the file operation is done.
 
-### Managing Favorites
-
-- **Add/remove** from any game card or the game detail page
-- **Remove confirmation** -- tapping the star asks before acting, so you don't accidentally lose a favorite
-- **Recursive unfavorite** -- removing a favorite from within an organized subfolder unfavorites the game and removes it from the view immediately
-
-### Favorites-Based Recommendations
-
-The favorites page includes personalized recommendations based on what you've favorited:
-
-- **"Because You Love [Game]"** -- discovers similar games by matching genre and developer
-- **"More from [Series]"** -- surfaces unfavorited series siblings across all your favorites
-
-## Recents
-
-Recently played games are tracked automatically when you launch a game from the app. The home page shows:
-
-- **Last Played** hero card with the most recently launched game
-- **Recently Played** horizontal scroll of recent games
-
-## Region Preference
-
-Set your preferred ROM region (USA, Europe, Japan, World) in Settings. This affects:
-
-- **Sort order** -- preferred region variants appear first in game lists
-- **Search scoring** -- preferred region gets a boost in search results
-- **Recommendation dedup** -- when multiple region variants exist, the preferred one is shown
-
-A secondary region preference is also supported for a two-tier sort: Primary > Secondary > World > others.
-
-## Automatic Library Updates
-
-On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly. Removing an entire system folder also propagates: cached rows for that system are dropped to match disk.
-
-On NFS storage, automatic live detection is not possible (inotify does not work across network mounts). Startup and manual rescans reconcile every visible system, including ROMs stored in subfolders, so ROMs added while the device was off are picked up on the next boot. Use the "Rescan Game Library" button in the metadata page when you want to refresh immediately. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
-
-For systems with hash-based identity, normal startup scans, manual rescans, and local watcher rescans reuse cached identity when the underlying file still has the same recorded size. Cartridge systems use No-Intro CRC data. Supported disc systems use RetroAchievements disc hashes; for M3U playlists, the playlist remains the visible game while the first referenced disc supplies the hash identity. Manual "Rebuild Game Library" is the full verification path: it ignores the cache and recomputes hashes for eligible ROM files.
-
-When ROM matching continues after a scan or rebuild, Replay Control shows a "Matching ROMs" progress banner. Library browsing stays available, but starting another rescan or rebuild is blocked until matching finishes. If you add, rename, or delete ROMs while a scan, rebuild, or matching pass is running, run Rescan again afterwards so the library reflects the final files on disk.
+For systems with hash-based identity, ordinary startup scans and rescans reuse valid stored identity data for unchanged files. **Rebuild Game Library** is the full verification path and recomputes eligible hashes. See [Library Management and Metadata](library-management.md) for when to choose each action.
 
 ## Startup Behavior
 
-On first launch, normal startup, or after a rebuild, the app scans all visible system directories to index your ROMs and catch offline changes. During this process:
+On first launch, after a storage change, or after a rebuild, Replay Control scans visible systems in the background. You can keep browsing while this happens. A banner shows active work such as scanning the library, enriching game data, rebuilding the thumbnail index, or matching ROMs.
 
-- The server responds immediately with a banner showing the active phase, such as scanning the library, enriching metadata, rebuilding the thumbnail index, or matching ROMs
-- Pages are fully usable while scanning runs in the background
-- Startup still checks subfolders, but systems that have not changed since the last complete scan are skipped after the file check, so restarts are faster on stable libraries
-- If no storage is connected, a waiting page is shown until storage becomes available
-- Interrupted scans are repaired automatically by the next startup scan
-- If the configured storage changes or becomes unavailable during a long scan, the in-flight scan is cancelled before the next system write so stale results are not saved to the wrong storage database
-
-For architecture details on the cache tiers, scan pipeline, and enrichment process, see the [Architecture](../architecture/index.md) section.
+If ROM files change while a scan, rebuild, or matching pass is already running, wait for it to finish and run **Rescan Library** again so the final disk state is reflected.

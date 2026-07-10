@@ -17,9 +17,9 @@ The storage mode can be changed in the RePlayOS configuration. When the mode cha
 
 ## Automatic Library Updates
 
-On local storage (SD, USB, NVMe), the app monitors the `roms/` directory for changes. New, modified, or deleted ROMs trigger an automatic library update for the affected system.
+On local storage (SD, USB, NVMe), the app monitors the `roms/` directory for changes. New, modified, or deleted ROMs trigger an automatic library update for the affected system after a short debounce window.
 
-On NFS, automatic detection is not available (filesystem notifications do not work across network mounts). Use the "Rescan Game Library" button to reconcile the library to current disk state after external changes.
+On NFS, live ROM-change detection is intentionally disabled because filesystem notifications do not reliably report changes made by other NFS clients, and periodic probing of a stale hard-mounted share can block. Startup scans still reconcile the library with the current share contents, but changes made while Replay Control is already running should be followed by **Rescan Library** from **Settings > Library & Games > Game Library**.
 
 ## Storage Change Detection
 

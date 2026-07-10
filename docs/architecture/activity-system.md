@@ -25,7 +25,7 @@ enum Activity {
 ### Variants
 
 - **Idle**: No operation running. All UI buttons enabled.
-- **Startup**: First-run source fetch, cache verification, and thumbnail index rebuild. LaunchBox XML parsing uses `RefreshExternalMetadata` instead. Contains `StartupPhase::FetchingMetadata`, `StartupPhase::Scanning`, or `StartupPhase::RebuildingIndex` and the current system name.
+- **Startup**: First-run source fetch, library verification, and thumbnail index rebuild. LaunchBox XML parsing uses `RefreshExternalMetadata` instead. Contains `StartupPhase::FetchingMetadata`, `StartupPhase::Scanning`, or `StartupPhase::RebuildingIndex` and the current system name.
 - **Import**: LaunchBox metadata parse (local XML or download + parse). Carries `ImportProgress` with state machine (Downloading -> BuildingIndex -> Parsing -> Complete/Failed), processed/matched/inserted counts, and download bytes.
 - **ThumbnailUpdate**: Index refresh + image download from libretro-thumbnails. Two phases: `Indexing` (GitHub API) then `Downloading` (raw.githubusercontent.com). Only variant with a `cancel` token (`Arc<AtomicBool>`) for cooperative cancellation.
 - **Rebuild**: Game library rebuild or rescan (per-system strict reconcile + inline enrichment). Phases: `Scanning` -> `Enriching` -> `Complete`/`Failed`. The `RebuildProgress.is_rescan` flag distinguishes rescan ("Rescanning ...") from rebuild ("Rebuilding ...") in the banner copy.

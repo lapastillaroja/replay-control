@@ -13,13 +13,28 @@ echo "Syncing docs from $REPO_ROOT/docs/ ..."
 # Feature docs
 FEATURES_DIR="$CONTENT/features"
 mkdir -p "$FEATURES_DIR"
+find "$FEATURES_DIR" -maxdepth 1 -type f -name '*.md' ! -name '_index.md' -delete
+
+cat > "$FEATURES_DIR/_index.md" << EOF
+---
+title: "Features"
+description: "Replay Control feature documentation."
+weight: 10
+toc: true
+layout: single
+---
+
+EOF
+tail -n +2 "$REPO_ROOT/docs/features/index.md" >> "$FEATURES_DIR/_index.md"
+echo "  features/_index.md"
 
 declare -A FEATURE_WEIGHTS=(
-    ["getting-started"]=1 ["install"]=2 ["game-library"]=3 ["search"]=4
-    ["game-detail"]=5 ["arcade-boards"]=6 ["game-series"]=7 ["recommendations"]=8
-    ["metadata"]=9 ["thumbnails"]=10
-    ["configuration"]=11 ["settings"]=12 ["updates"]=13 ["storage"]=14 ["benchmarks"]=15
-    ["libretro-core"]=16
+    ["getting-started"]=1 ["install"]=2 ["game-library"]=3 ["favorites"]=4
+    ["recents"]=5 ["now-playing"]=6 ["search"]=7 ["game-detail"]=8
+    ["arcade-boards"]=9 ["game-series"]=10 ["recommendations"]=11
+    ["library-management"]=12 ["thumbnails"]=13 ["configuration"]=14
+    ["settings"]=15 ["updates"]=16 ["storage"]=17 ["benchmarks"]=18
+    ["libretro-core"]=19
 )
 
 for f in "$REPO_ROOT/docs/features/"*.md; do
@@ -29,6 +44,10 @@ for f in "$REPO_ROOT/docs/features/"*.md; do
     title=$(head -1 "$f" | sed 's/^# //')
     
     target="$FEATURES_DIR/$base.md"
+    slug_line=""
+    if [[ "$base" == "library-management" ]]; then
+        slug_line='slug: "library-management"'
+    fi
     cat > "$target" << EOF
 ---
 title: "$title"
@@ -37,6 +56,7 @@ lastmod: 2025-01-01T00:00:00+00:00
 draft: false
 weight: $weight
 toc: true
+$slug_line
 ---
 
 EOF

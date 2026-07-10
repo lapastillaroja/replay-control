@@ -6,6 +6,7 @@ toc: true
 layout: single
 ---
 
+
 Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.com/) — a browser UI for managing your game library, launching games, and configuring your retro gaming Pi from any device.
 
 **Offline-first by design.** Metadata for ~34K console ROMs and ~15K arcade games works out of the box. Online sources (LaunchBox, libretro-thumbnails, Wikidata) optionally add descriptions, ratings, series data, and box art.
@@ -19,15 +20,19 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 ## Browse & Play
 
-- [Game Library](game-library.md) — Browse systems, manage ROMs with favorites, rename, delete, and automatic library updates
+- [Game Library](game-library.md) — Browse systems, open game lists, manage ROM files, and understand automatic library refresh
+- [Favorites](favorites.md) — Build a personal shortlist, organize it by system/genre/developer, and power favorite-based discovery
+- [Recently Played](recents.md) — Resume games from the home page through Last Played and Recently Played sections
+- [Now Playing](now-playing.md) — Live indicator showing the active game on the appliance, with elapsed time and quick actions
 - [Search](search.md) — Fast cross-system search with filters, developer pages, and random game
 - [Game Detail](game-detail.md) — Box art, screenshots, game info, launch on TV, videos, manuals, series navigation, and variant management
+- [Arcade Boards](arcade-boards.md) — Browse, search, and get recommendations by arcade hardware board (CPS-2, Neo Geo MVS, …)
 - [Game Series](game-series.md) — Wikidata-powered series data with sequel/prequel navigation across systems
 - [Recommendations](recommendations.md) — Genre-diverse picks, top rated, multiplayer, curated spotlights, and discover pills
 
 ## Data & Media
 
-- [Metadata](metadata.md) — LaunchBox import for descriptions and ratings, embedded Wikidata series data
+- [Library Management and Metadata](library-management.md) — Rescan/rebuild the library, refresh metadata, inspect coverage, export CSV reports, and clean up media
 - [Thumbnails](thumbnails.md) — Box art, screenshots, and title screens from libretro-thumbnails
 
 ## Settings & System
@@ -44,6 +49,6 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 ---
 
-For implementation details and design decisions, see the [Architecture](../architecture/) section.
+For implementation details and design decisions, see the [Architecture](../architecture/index.md) section.
 
-For third-party attribution, see [NOTICES.md]({{< relref "/" >}}/../NOTICES.md).
+For third-party attribution, see [NOTICES.md](../../NOTICES.md).

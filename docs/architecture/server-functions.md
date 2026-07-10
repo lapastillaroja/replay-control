@@ -103,19 +103,48 @@ The cache is invalidated:
 
 Now-playing must be visible on the first page load when a game is already running. The server render reads `AppState.now_playing()` in `Shell` and emits a small bootstrap script before `HydrationScripts`. `App` initializes a `RwSignal<NowPlayingState>` from the same server value during SSR, and from the bootstrap value during browser hydration.
 
-After hydration, `SseNowPlayingListener` subscribes to `/sse/now-playing`. The stream sends the current state first, then later changes. Consumers use `use_now_playing()`, which exposes a `Signal<NowPlayingState>` derived from the app-root signal.
+After hydration, `SseEventsListener` subscribes to `/sse/events`. The multiplexed stream sends the current config, activity, and now-playing snapshots first, then later topic-specific changes. Consumers use `use_now_playing()`, which exposes a `Signal<NowPlayingState>` derived from the app-root signal.
 
 Do not wrap the route body in an empty `Suspense` only to satisfy now-playing reads. It can change SSR marker placement and cause hydration mismatches. If a now-playing branch needs async detail data on first paint, use a blocking resource scoped to that branch and keep the conditional shape stable with `<Show>`.
 
+## Now-Playing Runtime Model
+
+The detector lives in `replay-control-app/src/api/now_playing.rs` and polls the official RePlayOS `get_status` endpoint through `ReplayApi`. It only polls when both conditions are true:
+
+- `ReplayApiStatus` is `Active`, which means Net Control is reachable and authorized.
+- At least one browser is subscribed to the now-playing SSE stream.
+
+When either condition is false, the loop sleeps on a cheap in-process check and makes no RePlayOS API calls. Poll failures are reported back into the Replay API status machine; unauthorized responses move the integration out of `Active`, while transient network errors back off up to 60 seconds.
+
+`replay-control-core::replay_api::classify` reduces raw `get_status` payloads before the app touches the library:
+
+- Missing load-bearing fields during UI transitions classify as `Hold`, so the previous state stays visible instead of flickering through menu or not-running states.
+- An empty `game_file` classifies as `Menu`; RePlayOS has no explicit "exit game" state, so an empty file is the reliable "nothing loaded" signal.
+- A non-empty `game_file` classifies as `Loaded`, with `game_name` as the primary library key and the absolute file path as a fallback.
+
+Play state is intentionally derived from multiple fields. `halted` wins over everything else, `view_id == GamePlay` with `paused == false` becomes `Playing`, `paused == true` becomes `Paused`, and other loaded-game views become `InMenu`. Menu view IDs alone are not trusted because RePlayOS can report different menu IDs while the same game remains loaded behind the UI.
+
+Library resolution is session-scoped. On a `(system, game_name)` transition, the app resolves the running game once, caches the display fields, and resets `started_at_unix_secs`. Steady-state ticks reuse that resolution instead of hitting the DB every poll. A same-core game switch changes the transition key, forces a fresh resolution, invalidates launch-derived caches, and broadcasts the new state.
+
+Disc status is deliberately separate from game detection. For loaded games, the loop calls `get_media_status` on each tick so TV-side disc swaps update live, but failures from that decoration path are ignored and never replace the now-playing state.
+
+`AppState::set_now_playing` deduplicates unchanged states before broadcasting. Both the multiplexed stream and the legacy per-topic now-playing stream send the current state immediately on connect and re-send the current snapshot after a broadcast lag, so newly opened or briefly stalled clients converge without polling.
+
 ## SSE Endpoints
 
-Two SSE streams provide real-time updates without polling:
+The hydrated app uses one multiplexed SSE connection. Legacy per-topic streams remain available:
+
+### /sse/events
+Multiplexes config, activity, and now-playing events. Each event is wrapped as `{ "stream": "...", "payload": ... }`. The stream sends initial snapshots for all three topics on connect, re-sends the appropriate snapshot after broadcast lag, and keeps the connection alive every 15 seconds.
 
 ### /sse/activity
-Broadcasts `Activity` enum as tagged JSON. Clients receive import progress, thumbnail download counts, rebuild status. See [Activity System](activity-system.md).
+Legacy per-topic stream for `Activity` enum updates as tagged JSON. Clients receive import progress, thumbnail download counts, rebuild status. See [Activity System](activity-system.md). Keep-alive every 30 seconds.
+
+### /sse/now-playing
+Legacy per-topic stream for `NowPlayingState` updates as JSON. Clients receive the current value immediately, then only state changes. Keep-alive every 15 seconds.
 
 ### /sse/config
-Broadcasts skin changes, storage changes, available-update notifications, and database-corruption flag transitions. Sends an initial state snapshot on connect (which seeds the client's corruption banner among other things), then event-driven updates. Keep-alive every 30 seconds. The corruption events come from the pool-level callback in `DbPool::set_corruption_callback`; see [Connection Pooling](connection-pooling.md#corruption-detection).
+Legacy per-topic stream for skin changes, storage changes, available-update notifications, and database-corruption flag transitions. Sends an initial state snapshot on connect (which seeds the client's corruption banner among other things), then event-driven updates. Keep-alive every 30 seconds. The corruption events come from the pool-level callback in `DbPool::set_corruption_callback`; see [Connection Pooling](connection-pooling.md#corruption-detection).
 
 ## Authorization Guard
 

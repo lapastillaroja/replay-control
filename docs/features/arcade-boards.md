@@ -47,4 +47,4 @@ Game counts on board pages, pills, and the search blocks count distinct titles a
 
 A few boards can't be told apart from the source data — for example Irem's M84 games share a driver with the M72 in every upstream database, so they're grouped under M72 rather than split out.
 
-See [Metadata](metadata.md) for where the underlying arcade data comes from.
+See [Library Management and Metadata](library-management.md) for where the underlying arcade data comes from and how arcade metadata coverage is shown.

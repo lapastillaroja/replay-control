@@ -19,7 +19,7 @@ This split means a fresh storage (or one that just lost its DB) can rebuild the 
 
 ## Downloading Images
 
-From the metadata page (**Settings > Game Data**):
+From **Library Management and Metadata** (**Settings > Library & Games > Game Library**):
 
 - **Per-system download** -- download images for a single system
 - **Download All** -- batch download images for all systems
@@ -45,7 +45,7 @@ eligible again with a fresh attempt budget.
 
 After scan/rebuild and thumbnail update maintenance, Replay Control refreshes
 stored artwork totals from the downloaded media folders, split by box art,
-title screens, and screenshots. The metadata page reads those stored totals
+title screens, and screenshots. Library Management and Metadata reads those stored totals
 instead of walking the media folders while the page loads, so already-downloaded
 artwork is counted even when no new files were fetched.
 
@@ -77,7 +77,7 @@ On the game detail page, you can pick alternate region-variant cover art. The fe
 
 ## Thumbnail Counts
 
-The metadata page shows per-system thumbnail counts, reflecting both matched
+Library Management and Metadata shows per-system thumbnail counts, reflecting both matched
 box-art coverage and downloaded artwork already present on disk.
 
 ## Cleanup

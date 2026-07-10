@@ -173,8 +173,8 @@ Maintenance on a 95,495-ROM development library:
 
 | Operation | Duration | Hash behavior |
 |---|---:|---|
-| Startup cache verification, already fresh | ~4.5 s from service start | No system rescan needed |
-| Manual rescan | 194.1 s | Reused 17,490 exact CRC cache entries and 16 same-size entries; recomputed 2 hashes |
+| Startup library verification, already fresh | ~4.5 s from service start | No system rescan needed |
+| Manual rescan | 194.1 s | Reused 17,490 exact stored CRC entries and 16 same-size entries; recomputed 2 hashes |
 | Manual rebuild | 636.0 s | Forced 17,508 CRC reads; skipped 2 CD/image entries in hybrid folders |
 
 Deferred-identity pipeline on a 99,964-ROM NFS library:

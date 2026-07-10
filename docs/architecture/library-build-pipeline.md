@@ -14,7 +14,7 @@ share the same per-system building block:
    ScummVM folder launchers become the game rows; referenced child files are
    consumed so they are not identified as separate games.
 3. Build `GameEntry` rows from filenames, static catalog matches, and any
-   reusable cached hash identity.
+   reusable stored hash identity.
 4. Save the current rows for that system to `library.db`.
 5. Run enrichment for that same system immediately.
 6. Queue hash identity work when the system is hash-eligible.
@@ -23,16 +23,16 @@ The main differences are the startup no-op gate and the hash policy:
 
 | Mode | Discovery write | Enrichment | Hash identity |
 |---|---|---|---|
-| First scan / fresh DB | Reconciles every visible system | Runs for each scanned system | No cache exists; queues hash-eligible rows for background identity |
-| Startup scan | Walks every visible system; skips DB writes only when the durable per-system fingerprint and prior phase states are clean | Skips only with the same clean fingerprint gate | Reuses valid cached hash rows; queues new/stale/failed rows |
-| Manual rescan | Reconciles every visible system | Always runs for each successfully scanned system | Reuses valid cached hash rows; queues new/stale/failed rows |
+| First scan / fresh DB | Reconciles every visible system | Runs for each scanned system | No stored hashes exist; queues hash-eligible rows for background identity |
+| Startup scan | Walks every visible system; skips DB writes only when the durable per-system fingerprint and prior phase states are clean | Skips only with the same clean fingerprint gate | Reuses valid stored hash rows; queues new/stale/failed rows |
+| Manual rescan | Reconciles every visible system | Always runs for each successfully scanned system | Reuses valid stored hash rows; queues new/stale/failed rows |
 | Manual rebuild | Reconciles every visible system | Always runs for each successfully scanned system | Forces hash-eligible rows through background re-identification |
-| Local watcher rescan | Reconciles the changed system | Always runs for each successfully scanned system | Reuses valid cached hash rows; queues new/stale/failed rows |
+| Local watcher rescan | Reconciles the changed system | Always runs for each successfully scanned system | Reuses valid stored hash rows; queues new/stale/failed rows |
 
 First scan and manual rebuild both touch every visible system, but they differ
-in why identity work is needed. First scan has no hash cache yet, so all
+in why identity work is needed. First scan has no stored hash data yet, so all
 hash-eligible rows start unresolved. Manual rebuild deliberately ignores the
-existing hash cache for eligible rows and verifies them again. Startup scan and
+existing stored hash data for eligible rows and verifies them again. Startup scan and
 manual rescan both walk every visible system and catch ROMs added while Replay
 Control was off. Startup uses the completed walk to compare a durable
 per-system fingerprint made from relative paths, filenames, sizes, and mtimes.
@@ -44,7 +44,7 @@ refresh metadata without requiring a full hash rebuild.
 Startup scan intentionally does not depend on top-level system directory mtimes.
 Users often store ROMs in nested folders, and some storage backends do not make
 parent directory mtimes a reliable signal for those changes. A full strict walk
-is the correctness boundary; cached hash identity keeps that walk from becoming a
+is the correctness boundary; stored hash identity keeps that walk from becoming a
 full byte-read verification pass.
 
 The rebuild activity completes when the foreground pass is done. Background
@@ -64,8 +64,8 @@ changing ROMs during a long operation, the user should run a manual rescan.
 ```mermaid
 flowchart TD
     A["Start library build"] --> B{"Mode"}
-    B -->|First scan| C["All visible systems<br/>No hash cache yet"]
-    B -->|Manual rescan| D["All visible systems<br/>Reuse valid hash cache"]
+    B -->|First scan| C["All visible systems<br/>No stored hash data yet"]
+    B -->|Manual rescan| D["All visible systems<br/>Reuse valid stored hash data"]
     B -->|Manual rebuild| E["All visible systems<br/>Force hash recheck"]
     B -->|Startup scan| F["All visible systems<br/>Walk then fingerprint check"]
     B -->|Local watcher| G["Changed system only"]
@@ -78,7 +78,7 @@ flowchart TD
     S -->|Yes| N
     S -->|No| H
 
-    H --> I["Build rows from filenames,<br/>catalog data, cached identity"]
+    H --> I["Build rows from filenames,<br/>catalog data, stored identity"]
     I --> J["Reconcile with temporary table<br/>inside one transaction"]
     J --> K["Inline enrichment"]
     K --> L["Foreground pass complete<br/>library is browsable"]
@@ -94,13 +94,13 @@ flowchart TD
 ## Foreground Discovery
 
 `populate_all_systems` iterates `visible_systems()` directly. It does not depend
-on cached system summaries, and it does not pre-clear the library. Each system is
+on system summaries, and it does not pre-clear the library. Each system is
 handled independently:
 
 - A successful filesystem walk replaces that system's rows.
 - A local missing system directory reconciles to empty metadata.
 - An NFS missing/unreadable system directory is treated as ambiguous and
-  preserves the previous cached rows.
+  preserves the previous stored rows.
 - Storage-generation checks run before write boundaries so stale work cannot
   write into a newly-active storage DB.
 
@@ -152,7 +152,7 @@ accepted so hot read paths do not need token joins.
 Hash identity is the expensive part on large NFS libraries because it may stream
 large cartridge ROM files over the network. It now runs after discovery:
 
-1. The foreground scan writes rows with reusable cached identity where possible.
+1. The foreground scan writes rows with reusable stored identity where possible.
 2. Hash-eligible systems are queued as `IdentityJob`s.
 3. A bounded worker set claims 200-row mini-batches by marking those rows
    `Running`.
@@ -197,7 +197,7 @@ released between batches, and to stage replace-style detail/resource data before
 the live swap.
 
 After those changes, a manual rescan on the same 102,662-ROM NFS library
-completed in 313.3 s with cached identity fully reused. The run had no hard DB
+completed in 313.3 s with stored identity fully reused. The run had no hard DB
 failures and the UI banner cleared when the foreground pass completed. The
 largest remaining writer hold was the staged detail/resource final swap for
 `sinclair_zx` at about 13.8 s. That validates correctness and responsiveness for

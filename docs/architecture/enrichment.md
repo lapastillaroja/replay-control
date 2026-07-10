@@ -21,17 +21,17 @@ Pure data + native I/O — no web server state, no broadcast channels:
 
 Thin orchestration wrapper that handles AppState, pool access, and side effects:
 
-- **`enrichment.rs`** — `enrich_system_cache()` parallel-loads provider rows/resources, catalog manual resources, libretro repo data, and arcade info via `tokio::join!`, then calls core-server's `enrich_system()` inside one library-pool read. All writes (developer, cooperative, year, release-date resolver, `game_detail_metadata`, `library_game_resource`, box art / genre / rating) happen inside a **single** library-pool write closure so a Pi's per-commit fsync only fires once per system.
+- **`enrichment.rs`** — `enrich_system_library()` parallel-loads provider rows/resources, catalog manual resources, libretro repo data, and arcade info via `tokio::join!`, then calls core-server's `enrich_system()` inside one library-pool read. All writes (developer, cooperative, year, release-date resolver, `game_detail_metadata`, `library_game_resource`, box art / genre / rating) happen inside a **single** library-pool write closure so a Pi's per-commit fsync only fires once per system.
 
 ## When It Runs
 
 Enrichment runs per-system in these contexts:
 
-1. **Startup** (Phase 2) and **post-rebuild/rescan**: `populate_all_systems()` runs `scan_and_cache_system()` followed immediately by `enrich_system_cache()` for the same system before moving to the next — inline, not a fleet-wide second pass.
-2. **Post-import**: `reenrich_all_systems()` iterates every cached system in the library so newly-imported provider data flows into `game_library`, `game_detail_metadata`, and `library_game_resource`. (Enrichment-only — populate is not re-run.)
+1. **Startup** (Phase 2) and **post-rebuild/rescan**: `populate_all_systems()` runs `scan_and_reconcile_system()` followed immediately by `enrich_system_library()` for the same system before moving to the next — inline, not a fleet-wide second pass.
+2. **Post-import**: `reenrich_all_systems()` iterates every stored system in the library so newly-imported provider data flows into `game_library`, `game_detail_metadata`, and `library_game_resource`. (Enrichment-only — populate is not re-run.)
 3. **ROM watcher**: when inotify detects new files in a system directory (debounced, then strict scan + enrich).
 
-## Flow: `enrich_system_cache()` (app side)
+## Flow: `enrich_system_library()` (app side)
 
 For each system:
 

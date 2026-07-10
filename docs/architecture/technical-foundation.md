@@ -52,7 +52,7 @@ Feature-gated: `metadata` enables `quick-xml`; `http` enables `reqwest`. The `me
 Leptos 0.7 SSR + WASM hydration app built on Axum. Depends on `replay-control-core` unconditionally (both SSR and hydrate builds) and on `replay-control-core-server` only when the `ssr` feature is active. Contains:
 
 - **Server functions**: ~70 registered server functions for all UI data needs
-- **API layer** (`src/api/`): `AppState` (owns the two `DbPool` instances + activity broadcast), background pipeline + filesystem watchers, activity system, L1 game library cache (`api/library/`), thin Axum handlers (upload, recents, favorites, etc.). Pure I/O — pool wrappers, update HTTP, ROM writes, pipeline cores — lives in core-server.
+- **API layer** (`src/api/`): `AppState` (owns the `DbPool` instances + activity broadcast), background pipeline + filesystem watchers, activity system, durable library population (`api/library/`), thin Axum handlers (upload, recents, favorites, etc.). Pure I/O — pool wrappers, update HTTP, ROM writes, pipeline cores — lives in core-server.
 - **Pages** (`src/pages/`): home, system browser, game detail, favorites, settings, metadata management, search
 - **Components** (`src/components/`): reusable UI components (hero cards, game rows, skeleton loaders, modals)
 - **Internationalization**: runtime i18n with locale-keyed translation strings
@@ -124,7 +124,7 @@ See [Design Decisions #10](design-decisions.md) for the trade-offs and the migra
 
 ## CRC32 ROM Identification
 
-Hash-based ROM identification for 9 cartridge systems using No-Intro DATs. When a ROM filename doesn't match any database entry, CRC32 hashing provides a second-chance identification path. Hashes are computed lazily and cached in the `game_library` table (`crc32`, `hash_mtime`, `hash_matched_name` columns) to avoid re-hashing unchanged files.
+Hash-based ROM identification for 9 cartridge systems using No-Intro DATs. When a ROM filename doesn't match any database entry, CRC32 hashing provides a second-chance identification path. Hashes are computed lazily and stored in the `game_library` table (`crc32`, `hash_mtime`, `hash_matched_name` columns) to avoid re-hashing unchanged files.
 
 ## ROM Filename Parser
 
@@ -142,19 +142,19 @@ See [ROM Classification](rom-classification.md) for the full tier system and tag
 
 See [Connection Pooling](connection-pooling.md) for the full architecture.
 
-## Three-Tier Game Library Cache
+## Game Library Index
 
-The game library uses a layered cache architecture:
+The game library is a durable SQLite index populated by startup scans, manual rescan/rebuild, and local ROM watcher rescans:
 
-| Tier | Storage | Lookup Speed | Role |
-|------|---------|-------------|------|
-| L1 | In-memory (`RwLock<HashMap>`) | ~0ns | Hot cache with mtime-based freshness |
-| L2 | SQLite (`game_library` table) | ~1ms | Persistent cache surviving restarts |
-| L3 | Filesystem (`roms/` directory) | ~100ms | Source of truth (full scan) |
+| Layer | Storage | Role |
+|------|---------|------|
+| `library.db` | SQLite (`game_library`, `game_library_meta`, detail/resource tables) | Durable library index used by request-time pages and server functions |
+| Filesystem | `roms/` directory | Source of truth for discovery scans |
+| In-memory helpers | Small `RwLock` snapshots | Volatile performance caches for favorites, recents, recommendations, and query pills |
 
-NFS storage uses a 30-minute hard TTL on L1 as a safety net since inotify cannot detect remote changes.
+Request-time library pages read `library.db`; they do not walk the filesystem. Local storage changes are picked up by the ROM watcher. NFS changes are reconciled by startup scans or explicit manual rescans because inotify cannot reliably observe changes made by other NFS clients.
 
-See [Game Library](../features/game-library.md) for the cache invalidation rules and startup pipeline.
+See [Game Library](../features/game-library.md) for user-facing rescan behavior and [Library Build Pipeline](library-build-pipeline.md) for scan/write details.
 
 ## Broadcast SSE
 

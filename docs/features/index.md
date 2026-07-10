@@ -13,7 +13,9 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 ## Browse & Play
 
-- [Game Library](game-library.md) — Browse systems, manage ROMs with favorites, rename, delete, and automatic library updates
+- [Game Library](game-library.md) — Browse systems, open game lists, manage ROM files, and understand automatic library refresh
+- [Favorites](favorites.md) — Build a personal shortlist, organize it by system/genre/developer, and power favorite-based discovery
+- [Recently Played](recents.md) — Resume games from the home page through Last Played and Recently Played sections
 - [Now Playing](now-playing.md) — Live indicator showing the active game on the appliance, with elapsed time and quick actions
 - [Search](search.md) — Fast cross-system search with filters, developer pages, and random game
 - [Game Detail](game-detail.md) — Box art, screenshots, game info, launch on TV, videos, manuals, series navigation, and variant management
@@ -23,7 +25,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 ## Data & Media
 
-- [Metadata](metadata.md) — LaunchBox import for descriptions and ratings, embedded Wikidata series data
+- [Library Management and Metadata](library-management.md) — Rescan/rebuild the library, refresh metadata, inspect coverage, export CSV reports, and clean up media
 - [Thumbnails](thumbnails.md) — Box art, screenshots, and title screens from libretro-thumbnails
 
 ## Settings & System

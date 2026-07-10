@@ -14,7 +14,7 @@ When ROMs are added via SCP, NFS copy, or any mechanism outside the companion ap
 
 | Feature | Auto? | Details |
 |---------|-------|---------|
-| Game list | Yes | mtime-based cache + inotify detect new files |
+| Game list | Yes | stored scan state + inotify detect new files |
 | Built-in metadata (names, genres, players) | Yes | Compile-time DB lookup by filename |
 | LaunchBox metadata (descriptions, ratings) | Partial | Auto-matched during enrichment if LaunchBox was previously imported |
 | Thumbnails (box art / snaps) | Partial | On-demand download if thumbnail index exists; image appears on 2nd view |

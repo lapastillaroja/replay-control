@@ -28,14 +28,18 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote, urlparse
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 APP_URL = os.environ.get("APP_URL", "http://localhost:8091")
+_parsed_app_url = urlparse(APP_URL)
+APP_ORIGIN = f"{_parsed_app_url.scheme}://{_parsed_app_url.netloc}"
 
 DESKTOP = {"width": 1280, "height": 800}
 MOBILE = {"width": 375, "height": 812}
@@ -106,6 +110,8 @@ PAGES = [
     {"name": "setup", "path": "/?setup", "wait": ".setup-checklist", "extra_wait": 3000},
     # Home & navigation
     {"name": "home", "path": "/", "wait": "main"},
+    # Library systems grid on the home page
+    {"name": "game-library-systems", "path": "/", "wait": "main", "scroll_to": ".systems-grid"},
     # System browser
     {"name": "system-megadrive", "path": "/games/sega_smd?hide_hacks=true&hide_translations=true&hide_betas=true&min_rating=4", "wait": ".content", "extra_wait": 8000, "skin": 10},  # UNICOLORS
     # Game detail
@@ -134,6 +140,10 @@ PAGES = [
     {"name": "skins-page", "path": "/settings/skin", "wait": "main", "extra_wait": 5000},
     # Metadata page
     {"name": "metadata", "path": "/settings/game-library", "wait": "main"},
+    # Metadata action cards (rescan plus advanced rebuild/export controls)
+    {"name": "metadata-actions", "path": "/settings/game-library", "wait": "main", "extra_wait": 5000, "scroll": 760, "click": ".advanced-toggle-btn", "click_wait": ".export-coverage-card"},
+    # Metadata per-system coverage details
+    {"name": "metadata-system-expanded", "path": "/settings/game-library", "wait": "main", "extra_wait": 5000, "scroll": 1120, "click": ".system-overview-toggle-all", "click_wait": ".system-accordion-row.expanded"},
     # ── Device-only (skipped automatically in standalone mode) ──
     # RePlayOS Net Control settings: status card ("Connected to RePlayOS ...")
     {"name": "net-control", "path": "/settings/replay-net-control", "wait": ".net-control-status", "extra_wait": 3000, "device_only": True},
@@ -178,11 +188,14 @@ LOCALE_SHOTS = [
 ]
 
 MAX_RETRIES = 2
+HIDE_LIVE_NOW_PLAYING = False
 
 
 SFN_HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
     "Accept": "application/x-www-form-urlencoded",
+    "Origin": APP_ORIGIN,
+    "Sec-Fetch-Site": "same-origin",
 }
 
 # fn name -> route path, built by build_sfn_routes(). Server fn routes are
@@ -219,8 +232,14 @@ def repair_route(page, route):
 def build_sfn_routes(page):
     """Map server fn names to routes by extracting the /sfn/... strings from
     the served wasm bundle — it always matches the running server build."""
-    html = page.request.get(f"{APP_URL}/").text()
-    match = re.search(r'"(/static/pkg/[^"]+\.wasm)"', html)
+    html = ""
+    for path in ("/", "/login"):
+        resp = page.request.get(f"{APP_URL}{path}")
+        text = resp.text()
+        if "/static/pkg/" in text and ".wasm" in text:
+            html = text
+            break
+    match = re.search(r"[\"'](/static/pkg/[^\"']+\.wasm)[\"']", html)
     if not match:
         sys.exit("Error: could not find the wasm bundle URL in the app HTML")
     wasm = page.request.get(f"{APP_URL}{match.group(1)}").body()
@@ -261,6 +280,28 @@ def sfn(page, name, data="", accept_json=False):
     return resp
 
 
+def ensure_authenticated(page):
+    """Sign in as admin when the target requires auth for app pages."""
+    resp = sfn(page, "get_auth_status", accept_json=True)
+    if not resp.ok:
+        sys.exit("Error: could not read auth status")
+    try:
+        status = json.loads(resp.text())
+    except json.JSONDecodeError as e:
+        sys.exit(f"Error: auth status was not JSON: {e}")
+
+    if not status.get("auth_required") or status.get("role") != "anonymous":
+        return
+
+    password = os.environ.get("REPLAY_SCREENSHOT_ADMIN_PASSWORD") or os.environ.get(
+        "PI_PASS", "replayos"
+    )
+    login = sfn(page, "login_admin", f"password={quote(password)}", accept_json=True)
+    if not login.ok:
+        sys.exit("Error: admin login failed; set REPLAY_SCREENSHOT_ADMIN_PASSWORD")
+    page.goto(f"{APP_URL}/", wait_until="load", timeout=30000)
+
+
 def set_skin(page, index):
     """Set the active skin via server function POST."""
     sfn(page, "set_skin", f"index={index}")
@@ -274,6 +315,15 @@ def disable_skin_sync(page):
 def set_locale(page, locale):
     """Force the UI language so the gallery is consistent."""
     sfn(page, "save_locale", f"locale={locale}")
+
+
+def wait_for_hydration(page):
+    """Wait until the app shell has hydrated and client-side routing is active."""
+    try:
+        page.locator(".initial-loading-shell").wait_for(state="hidden", timeout=30000)
+    except PlaywrightTimeout:
+        # Some standalone/dev pages may not render the global shell overlay.
+        pass
 
 
 def detect_device_mode(page):
@@ -548,7 +598,7 @@ def check_for_errors(page):
     return None
 
 
-def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, click=None, click_wait=None, allow_bar=False):
+def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, scroll_to=None, click=None, click_wait=None, allow_bar=False):
     """Capture a single screenshot with retry on error."""
     page.set_viewport_size(viewport)
     out_path = str(output_dir / f"{name}.png")
@@ -562,6 +612,11 @@ def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, c
 
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_selector(wait, timeout=30000)
+        wait_for_hydration(page)
+        if HIDE_LIVE_NOW_PLAYING and not allow_bar:
+            page.add_style_tag(
+                content=".now-playing-bar,.now-playing-more-panel{display:none!important}"
+            )
         page.wait_for_timeout(extra_wait)
 
         error = check_for_errors(page)
@@ -573,7 +628,10 @@ def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, c
             print(f"WARNING ({error})")
         break
 
-    if scroll:
+    if scroll_to:
+        page.locator(scroll_to).first.scroll_into_view_if_needed(timeout=10000)
+        page.wait_for_timeout(1500)
+    elif scroll:
         page.evaluate(f"window.scrollBy(0, {scroll})")
         page.wait_for_timeout(1500)
 
@@ -586,7 +644,7 @@ def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0, c
     # A game launched from the TV mid-run would put the sticky player bar
     # into every remaining shot — skip the capture and keep the previous
     # good file rather than overwrite it with a polluted one.
-    if not allow_bar and page.query_selector(".now-playing-bar"):
+    if not allow_bar and not HIDE_LIVE_NOW_PLAYING and page.query_selector(".now-playing-bar"):
         print("SKIPPED (a game is running on the TV)")
         return "now-playing bar visible — game running mid-run, shot skipped"
 
@@ -618,6 +676,7 @@ def capture_pages(page, pages, is_device, output_dir, errors):
         wait = p["wait"]
         extra_wait = p.get("extra_wait", 2000)
         scroll = p.get("scroll", 0)
+        scroll_to = p.get("scroll_to")
         click = p.get("click")
         click_wait = p.get("click_wait")
         desired_skin = p.get("skin", DEFAULT_SKIN)
@@ -633,7 +692,7 @@ def capture_pages(page, pages, is_device, output_dir, errors):
         for suffix, viewport in viewports:
             name = f"{p['name']}{suffix}"
             try:
-                err = capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll, click, click_wait, allow_bar=p.get("allow_bar", False))
+                err = capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll, scroll_to, click, click_wait, allow_bar=p.get("allow_bar", False))
                 if err:
                     errors.append((name, err))
             except Exception as e:
@@ -663,8 +722,15 @@ def main():
         default="",
         help="Comma-separated page names to capture (e.g. favorites,settings,home-mobile-es); others are skipped",
     )
+    parser.add_argument(
+        "--hide-live-now-playing",
+        action="store_true",
+        help="Hide the live now-playing bar for non-now-playing documentation shots instead of skipping them",
+    )
     args = parser.parse_args()
     only = {name.strip() for name in args.only.split(",") if name.strip()}
+    global HIDE_LIVE_NOW_PLAYING
+    HIDE_LIVE_NOW_PLAYING = args.hide_live_now_playing
 
     project_root = Path(__file__).resolve().parent.parent
     output_dir = project_root / args.output_dir
@@ -688,13 +754,14 @@ def main():
             sys.exit(1)
 
         build_sfn_routes(page)
+        ensure_authenticated(page)
         is_device = detect_device_mode(page)
         print(f"Target mode: {'device' if is_device else 'standalone'}")
 
         # Precondition: no game may be running, or the sticky player bar
         # photobombs every shot (RePlayOS has no stop command — only the
         # final now-playing captures want a live game).
-        if is_device and game_is_running(page):
+        if is_device and not HIDE_LIVE_NOW_PLAYING and game_is_running(page):
             sys.exit(
                 "Error: a game is running on the TV — the player bar would appear "
                 "in every shot. Reboot RePlayOS (Settings page or the TV) and rerun."

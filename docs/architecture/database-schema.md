@@ -3,7 +3,7 @@
 Four SQLite databases:
 
 - **catalog.sqlite** — read-only, bundled with the binary; built from upstream DATs/XMLs at compile time (No-Intro, MAME, FBNeo, Flycast, Wikidata, etc.).
-- **library.db** — rebuildable cache at `/var/lib/replay-control/storages/<storage-id>/library.db` on the host SD. Centralised + keyed by a stable per-storage id so it stays on ext4/WAL and survives storage swaps. See [Design Decision #15](design-decisions.md#15-library-db-centralised-on-the-host-sd-keyed-by-storage-id).
+- **library.db** — rebuildable library index at `/var/lib/replay-control/storages/<storage-id>/library.db` on the host SD. Centralised + keyed by a stable per-storage id so it stays on ext4/WAL and survives storage swaps. See [Design Decision #15](design-decisions.md#15-library-db-centralised-on-the-host-sd-keyed-by-storage-id).
 - **external_metadata.db** — host-global at `/var/lib/replay-control/external_metadata.db`. Holds source-derived data that's identical across storages (provider metadata/resources, libretro thumbnail manifests, source-version stamps). Read **only by enrichment** — never at request time.
 - **user_data.db** — persistent user customizations at `<storage>/.replay-control/user_data.db`. Stays on the ROM storage so it travels with the ROMs; never auto-deleted.
 
@@ -204,17 +204,17 @@ Known keys include `mame_version`, `generated_at`, `is_stub`, and `catalog_enric
 
 ## library.db
 
-Per-storage rebuildable cache. Lives at `/var/lib/replay-control/storages/<id>/library.db` on the host SD.
+Per-storage rebuildable library index. Lives at `/var/lib/replay-control/storages/<id>/library.db` on the host SD.
 
 Schema is built by `init_tables()` (creates the current v6 shape on a fresh DB) and patched by `run_migrations()` (drops v1 tables on existing DBs from older binaries and applies additive migrations).
 
 ### Write-isolation rule
 
-Writes to `library.db` are restricted to **scan / rebuild / enrichment / watcher / explicit-user-action** paths — never request-time SSR or HTTP read handlers. The `system_summaries` derived view and `LibraryService::load_roms_from_db` reader entry point intentionally do **not** fall through to a filesystem scan; population is the job of `BackgroundManager::populate_all_systems`, which iterates `visible_systems()` and calls `scan_and_cache_system` (strict reconcile) per system. `system_summaries` is not a cache: static system fields come from the core `SYSTEMS` catalog, while counts come from `game_library_meta`.
+Writes to `library.db` are restricted to **scan / rebuild / enrichment / watcher / explicit-user-action** paths — never request-time SSR or HTTP read handlers. The `system_summaries` derived view and `LibraryService::load_roms_from_db` reader entry point intentionally do **not** fall through to a filesystem scan; population is the job of `BackgroundManager::populate_all_systems`, which iterates `visible_systems()` and calls `scan_and_reconcile_system` (strict reconcile) per system. `system_summaries` is not a cache: static system fields come from the core `SYSTEMS` catalog, while counts come from `game_library_meta`.
 
 Rationale: an earlier read-time L3 fallback wrote the result of a silent walker straight back to `game_library_meta`. On a partially-mounted NFS the walk returned 41 zero-rom rows that no recovery path could undo (mtime was stamped, `rom_count > 0` guard skipped). Removing the read-time write closes the vector at its source.
 
-The strict reconcile rule (`scan_and_cache_system`) closes the matching writer-side vector: a successful filesystem read replaces L2 for that system, but a failed read returns `Err` and preserves cached state. Rebuild and watcher paths additionally **do not pre-clear L2** — strict reconcile is only safe when there are cached rows to fall back on. The SQL-level zero-overwrite guard in `save_system_meta` is belt-and-suspenders.
+The strict reconcile rule (`scan_and_reconcile_system`) closes the matching writer-side vector: a successful filesystem read replaces stored rows for that system, but a failed read returns `Err` and preserves stored state. Rebuild and watcher paths additionally **do not pre-clear durable rows** — strict reconcile is only safe when there are stored rows to fall back on. The SQL-level zero-overwrite guard in `save_system_meta` is belt-and-suspenders.
 
 The type-level split between `LibraryReadPool` and `LibraryWritePool` makes the rule a compile-time invariant for SSR/HTTP handlers (they only see the read pool). The regression suite at `replay-control-app/tests/cold_nfs_tests.rs` plus the per-system reconcile tests in `replay-control-app/src/api/library/mod.rs` lock in the runtime invariants.
 
@@ -247,8 +247,8 @@ Primary game catalog. One row per ROM file. Populated by the scan pipeline, enri
 | driver_status | TEXT | Arcade driver status (good/imperfect/preliminary) |
 | size_bytes | INTEGER | ROM file size |
 | crc32 | INTEGER | CRC32 hash (NULL for CD/computer/arcade) |
-| hash_mtime | INTEGER | File mtime when CRC32 was computed (cache key) |
-| hash_size_bytes | INTEGER | ROM file size when CRC32 was computed (cache key) |
+| hash_mtime | INTEGER | File mtime when CRC32 was computed (hash reuse key) |
+| hash_size_bytes | INTEGER | ROM file size when CRC32 was computed (hash reuse key) |
 | hash_matched_name | TEXT | No-Intro canonical name if CRC32 matched |
 | scan_token | INTEGER | Discovery reconcile token for the latest successful per-system scan attempt |
 | identity_state | INTEGER | Row-level hash identity state (`pending`, `running`, matched/unmatched complete, failed, or not applicable) |
@@ -759,13 +759,13 @@ History:
 - **v2**: external_metadata.db redesign — drops `game_metadata`, `thumbnail_index`, and `data_sources`. Their content moves to `external_metadata.db` (LaunchBox text + libretro manifests + source version stamps).
 - **v3**: adds `game_description` (description + publisher denormalized from external metadata so the game-detail page stays on the library pool).
 - **v4**: adds `game_library.normalized_title` and `normalized_title_alt`, populated at scan time for faster enrichment matching and reconciled via `library_meta.title_norm_version`.
-- **v5**: adds `game_library.hash_size_bytes`, allowing CRC32 cache validation by mtime + size without a full post-upgrade rehash storm.
+- **v5**: adds `game_library.hash_size_bytes`, allowing stored CRC validation by mtime + size without a full post-upgrade rehash storm.
 - **v6**: renames `game_description` to `game_detail_metadata` and adds `library_game_resource` for manual/video suggestions copied from provider/catalog sources during enrichment.
 - **v7**: adds `game_library.identity_state` for resumable hash matching.
 - **v8**: adds per-system discovery, enrichment, and thumbnail state to `game_library_meta`.
 - **v9**: adds durable thumbnail download jobs. Newer rebuildable columns/tables such as `scan_token`, thumbnail priority, detail/resource staging, and `game_library_system_stats`, plus rebuildable `library_meta` stamps such as per-system discovery fingerprints, are validated or regenerated by the library pipeline instead of a formal migration.
 
-`run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL. For rebuildable library-cache tables, column drift is also treated as cache drift: the app recreates the table rather than carrying long migration code for data that can be rebuilt from ROM storage and metadata sources.
+`run_migrations` reads the stored version, applies each `if current < N` step in order, then stamps `SCHEMA_VERSION`. Each step's destructive SQL (`DROP TABLE`) is logged at info above the SQL. For rebuildable library-index tables, column drift is also treated as index drift: the app recreates the table rather than carrying long migration code for data that can be rebuilt from ROM storage and metadata sources.
 
 A **downgrade guard** at the top of `run_migrations` refuses to open a DB stamped with a version newer than the binary — silently treating new-shape rows as old-shape would corrupt them on subsequent writes.
 
