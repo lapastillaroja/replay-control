@@ -4,52 +4,29 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [1.1.2-beta.3]
+## [1.1.2]
 
-> Orphaned-thumbnail cleanup now uses the exact same image matching the app uses to display art, so it never removes an image a game can still show.
-
-### Fixed
-
-- Fixed "Clean orphaned thumbnails" still removing some images a game was actively displaying — including arcade games, dual-title games, and games that share a regional cover — extending the beta.2 fix. Cleanup and on-screen display now resolve each game's box art, screenshot, and title image through the exact same matching, so an image the app can still show is never deleted.
-
-### Changed
-
-- "Clean orphaned thumbnails" now also removes downloaded cover variants a game isn't using; only the cover the app displays and any cover you've chosen are kept. Removed libretro covers stay available to re-download from the cover picker.
-
----
-
-## [1.1.2-beta.2]
-
-> Fixes orphaned-thumbnail cleanup wrongly deleting box art that was still in use.
-
-### Fixed
-
-- Fixed orphaned-thumbnail cleanup deleting box art that was still in use when the image's file name didn't match the game's name — most visibly arcade games, whose stored art is often named after a different version of the game. Cleanup now correctly keeps any image a game still references.
-- Fixed standalone manual downloads rejecting local or LAN-hosted manual files; device-mode downloads still reject private/internal addresses.
-
----
-
-## [1.1.2-beta.1]
-
-> Beta preview with safer uploads and manual downloads, checksum-verified updates, more responsive library actions, and fixes for thumbnail cleanup and metadata CSV exports.
+> Safer ROM uploads and manual downloads, checksum-verified updates, snappier library actions on slow USB and network storage, and a thumbnail cleanup that never removes art a game can still show.
 
 ### Fixed
 
 - Fixed a failed or oversized ROM upload deleting the existing game of the same name — an upload now replaces a game only after it finishes successfully, so an interrupted or rejected upload leaves your library untouched.
+- Made thumbnail cleanup safe: deleting a game now clears its downloaded box art, screenshots, and title images from every thumbnail folder, and "Clean orphaned thumbnails" resolves each game's art through the exact same matching the app uses to display it — so it removes only genuinely-unused files and never an image a game can still show, including arcade, dual-title, and shared regional-cover art. (#109)
+- Fixed the metadata CSV export ignoring the selected system and exporting the whole library. (#116)
+- Fixed standalone installs rejecting local or LAN-hosted manual files; device mode still blocks private and internal addresses.
 - Fixed error messages after a failed ROM delete, rename, or upload occasionally showing internal device file paths; they now show a clear, path-free message.
 - Renaming a game to a name that is already taken now says so clearly instead of showing a generic failure.
-- Fixed deleted games leaving downloaded box art, screenshots, and title images behind; cleanup now removes orphaned files from all thumbnail folders while preserving artwork still shared by another game variant. (#109)
-- Fixed the metadata CSV export ignoring the selected system and exporting the whole library. (#116)
 
 ### Changed
 
-- ROM uploads and manual downloads are now size-limited and streamed to disk, so a very large or malformed transfer can't exhaust the device's memory.
 - Game detail, delete, and rename actions no longer briefly stall the app when the library is on slow USB or network storage.
-- Library maintenance, ROM actions, uploads, downloads, and update checks were refactored around shorter database work and clearer validation paths, reducing lock contention and making failure cases easier to recover from.
+- ROM uploads and manual downloads are now size-limited and streamed to disk, so a very large or malformed transfer can't exhaust the device's memory.
+- "Clean orphaned thumbnails" now also prunes downloaded cover variants a game isn't using; only the displayed cover and any cover you've chosen are kept, and removed libretro covers stay available to re-download from the cover picker.
+- Library maintenance, ROM actions, uploads, downloads, and update checks were refactored around shorter database work and clearer validation, reducing lock contention and making failures easier to recover from.
 
 ### Security
 
-- Manual downloads are now restricted to public web addresses: a request can no longer be pointed at the device's own network or local services.
+- Manual downloads in device mode are restricted to public web addresses — a request can't be pointed at the device's own network or local services.
 - Software updates now verify each downloaded file against the release's published checksums before installing, and reject anything that doesn't match.
 - Configuration values are sanitized before being written, so a stray special character can't corrupt the settings file.
 
