@@ -124,7 +124,11 @@ jobs:
     name: E2E
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Interim: raised 30 -> 45 to stop the suite being cancelled mid-run. This is
+    # a band-aid — the real cost is per-test service restart + full library
+    # rescan (seeded_game/seed_favorite -> reset_library + restart_app_and_scan,
+    # up to ~120s each). Proper fix: cut per-test restarts and/or shard the job.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
