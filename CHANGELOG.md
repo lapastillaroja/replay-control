@@ -4,6 +4,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.1.3]
+
+> Faster box art and screenshots on the game screen, especially on network and USB libraries.
+
+### Fixed
+
+- Box art, screenshots, and title images on the game screen now appear almost immediately. Opening a game no longer re-scans the entire image folder for every picture, so the placeholder boxes that used to linger and pop in — most noticeable on network or USB storage — are gone.
+
+---
+
 ## [1.1.2]
 
 > Safer ROM uploads and manual downloads, checksum-verified updates, snappier library actions on slow USB and network storage, and a thumbnail cleanup that never removes art a game can still show.

@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::thumbnails::{
-    base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
-    try_resolve_fake_symlink_sync,
+    IMAGE_EXTENSIONS, base_title, is_real_image_file, is_valid_image_sync, strip_image_ext,
+    strip_version, thumbnail_filename, try_resolve_fake_symlink_sync,
 };
 use replay_control_core::title_utils::{
-    normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix, strip_tags,
+    filename_stem, normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix,
+    strip_tags,
 };
 
 /// Directory index for matching ROM filenames to image files.
@@ -78,7 +79,14 @@ impl DirIndex {
                 .or_insert_with(|| path.to_string());
         }
 
-        self.exact.insert(stem.to_string(), path.clone());
+        // Exact tier: keep the most-preferred candidate deterministically (see
+        // exact_pref) — a real self-named {stem}.<ext> file over a same-stem
+        // fake-symlink redirect, then .png over .jpg. Plain last-writer-wins here
+        // would make the exact match depend on readdir order, so two independent
+        // scans (runtime serve vs orphan cleanup) could resolve the same stem to
+        // different files — and the fast path, which serves the real {stem}.png,
+        // would disagree with a scan that landed on the .jpg or a stub's target.
+        keep_preferred_exact(&mut self.exact, stem.to_string(), &path);
         keep_first(&mut self.exact_ci, stem.to_lowercase(), &path);
 
         let bt = base_title(stem);
@@ -97,6 +105,50 @@ impl DirIndex {
         if !agg_compact.is_empty() {
             keep_first(&mut self.aggressive_compact, agg_compact, &path);
         }
+    }
+}
+
+/// Basename (after the last `/`) of a relative image path.
+fn basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Priority of `path`'s extension per [`IMAGE_EXTENSIONS`] (lower = preferred);
+/// unrecognized extensions sort last.
+fn ext_rank(path: &str) -> usize {
+    IMAGE_EXTENSIONS
+        .iter()
+        .position(|ext| path.ends_with(ext))
+        .unwrap_or(IMAGE_EXTENSIONS.len())
+}
+
+/// Exact-tier preference for a candidate that resolves stem `key` to `path`
+/// (lower wins). A real self-named file — basename stem equals `key`, i.e.
+/// `{key}.<ext>` — ranks ahead of a fake-symlink redirect, whose resolved target
+/// is named something else; then by extension priority (`.png` over `.jpg`).
+///
+/// The self-named rule is what keeps the real `{key}.png` the exact match even
+/// when a same-stem `.jpg` stub points at an alphabetically-earlier `.png`
+/// target: without it the tie-break on the resolved path could pick the stub's
+/// target, and the on-disk fast path (which serves the real `{key}.png`) would
+/// disagree with the full scan — cleanup could then delete the served file.
+fn exact_pref(key: &str, path: &str) -> (bool, usize) {
+    let self_named = strip_image_ext(basename(path)) == Some(key);
+    (!self_named, ext_rank(path))
+}
+
+/// Insert into an exact-match map, keeping the most-preferred candidate per
+/// [`exact_pref`] (ties broken alphabetically by path), so a stem present under
+/// multiple files/stubs always resolves the same way regardless of scan order.
+fn keep_preferred_exact(map: &mut HashMap<String, String>, key: String, path: &str) {
+    let replace = match map.get(&key) {
+        Some(existing) => {
+            (exact_pref(&key, path), path) < (exact_pref(&key, existing), existing.as_str())
+        }
+        None => true,
+    };
+    if replace {
+        map.insert(key, path.to_string());
     }
 }
 
@@ -139,12 +191,12 @@ fn scan_dir(dir: &Path, kind: &str, collect_files: bool) -> DirScan {
                 continue;
             };
             let path = entry.path();
-            // Real image files only — never a directory whose metadata length
-            // happens to reach the >= 200 validity threshold. The app writes
-            // libretro fake-symlink stubs as regular text files (handled by the
-            // else branch) and never OS symlinks here, so a cheap file_type
-            // check is exact and gates both indexing and candidate collection.
-            if is_valid_image_sync(&path) && entry.file_type().is_ok_and(|t| t.is_file()) {
+            // Real image files only (is_real_image_file: non-symlink regular file
+            // >= 200 bytes) — never a directory, an OS symlink, or a fake-symlink
+            // stub (a tiny text file, handled by the else branch). The on-disk
+            // fast path uses the SAME predicate, so serve and cleanup classify
+            // every entry identically.
+            if is_real_image_file(&path) {
                 let relative = format!("{kind}/{name}");
                 scan.index.insert(stem, relative.clone());
                 if collect_files {
@@ -199,6 +251,33 @@ pub fn resolve_thumbnail(
     find_best_match(index, rom_filename, None, None)
 }
 
+/// The ROM filename stem used for thumbnail matching: extension stripped, then
+/// the N64DD disk-side prefix removed. The single definition of "which part of a
+/// ROM filename the thumbnail tiers match on", shared by [`find_best_match`] and
+/// the on-disk exact fast path so they can never disagree on the stem.
+pub fn match_stem(rom_filename: &str) -> &str {
+    strip_n64dd_prefix(filename_stem(rom_filename))
+}
+
+/// The single exact `thumbnail_filename` key the on-disk fast path may safely
+/// probe: the globally highest-priority tier the resolver would consult.
+///
+/// For arcade (a `arcade_display` is present) that is the display-exact key —
+/// [`resolve_thumbnail`] runs *every* display-name tier before it ever falls
+/// back to the ROM stem, so if the display-exact file exists on disk the
+/// resolver is guaranteed to return it. For non-arcade it is the stem-exact key,
+/// the resolver's top tier. This is byte-for-byte the key [`find_best_match`]
+/// computes for its tier-2 exact match on the same source, so a fast-path hit
+/// can never outrank a real resolver pick.
+///
+/// Any *lower* tier (colon/case-insensitive/fuzzy variants, or the arcade stem
+/// fallback) is deliberately NOT probed here: a competing higher-tier file would
+/// make the full resolver choose differently, so those cases must miss and fall
+/// through to `build_dir_index_with_symlinks` + [`resolve_thumbnail`].
+pub fn exact_thumbnail_key(rom_filename: &str, arcade_display: Option<&str>) -> String {
+    thumbnail_filename(arcade_display.unwrap_or_else(|| match_stem(rom_filename)))
+}
+
 /// Find the best matching image for a ROM in a `DirIndex`.
 ///
 /// Matching tiers (in order):
@@ -233,11 +312,7 @@ pub fn find_best_match(
         }
     }
 
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
-    let stem = strip_n64dd_prefix(stem);
+    let stem = match_stem(rom_filename);
     let source = arcade_display.unwrap_or(stem);
     let thumb_name = thumbnail_filename(source);
 
@@ -450,6 +525,30 @@ mod tests {
             index.insert(stem, path.to_string());
         }
         index
+    }
+
+    #[test]
+    fn arcade_display_fuzzy_match_beats_stem_exact_match() {
+        // Resolution behavior: for an arcade ROM, resolve_thumbnail exhausts the
+        // display-name tiers before the ROM stem. So art matched by a display
+        // colon-variant outranks a stem-exact file — the property the on-disk fast
+        // path must not violate (covered end-to-end in the serve==cleanup tests).
+        let index = index_from(&[
+            (
+                "Street Fighter II - Champion Edition",
+                "boxart/Street Fighter II - Champion Edition.png",
+            ),
+            ("sf2ce", "boxart/sf2ce.png"),
+        ]);
+        assert_eq!(
+            resolve_thumbnail(
+                &index,
+                "sf2ce.zip",
+                Some("Street Fighter II: Champion Edition")
+            )
+            .as_deref(),
+            Some("boxart/Street Fighter II - Champion Edition.png"),
+        );
     }
 
     #[test]
@@ -703,6 +802,47 @@ mod tests {
             index_ab.aggressive.get("game"),
             index_ba.aggressive.get("game"),
             "aggressive tier must be deterministic"
+        );
+    }
+
+    #[test]
+    fn resolution_prefers_png_over_jpg_regardless_of_scan_order() {
+        // A stem present as both Name.png and Name.jpg resolves to the .png,
+        // deterministically, whichever order the directory scan inserted them.
+        let png_first = index_from(&[("Zelda", "boxart/Zelda.png"), ("Zelda", "boxart/Zelda.jpg")]);
+        let jpg_first = index_from(&[("Zelda", "boxart/Zelda.jpg"), ("Zelda", "boxart/Zelda.png")]);
+        assert_eq!(
+            find_best_match(&png_first, "Zelda.sfc", None, None).as_deref(),
+            Some("boxart/Zelda.png"),
+        );
+        assert_eq!(
+            find_best_match(&jpg_first, "Zelda.sfc", None, None).as_deref(),
+            Some("boxart/Zelda.png"),
+            "resolution must be independent of scan order",
+        );
+    }
+
+    #[test]
+    fn resolution_prefers_real_self_named_file_over_a_same_stem_redirect() {
+        // When a stem resolves both to its own real "{stem}.png" and to a
+        // fake-symlink redirect pointing at differently-named art, the real
+        // self-named file wins — regardless of insertion order.
+        let real_first = index_from(&[
+            ("Sonic", "boxart/Sonic.png"),
+            ("Sonic", "boxart/Aardvark.png"),
+        ]);
+        let redirect_first = index_from(&[
+            ("Sonic", "boxart/Aardvark.png"),
+            ("Sonic", "boxart/Sonic.png"),
+        ]);
+        assert_eq!(
+            find_best_match(&real_first, "Sonic.sfc", None, None).as_deref(),
+            Some("boxart/Sonic.png"),
+        );
+        assert_eq!(
+            find_best_match(&redirect_first, "Sonic.sfc", None, None).as_deref(),
+            Some("boxart/Sonic.png"),
+            "the real self-named file wins independent of insertion order",
         );
     }
 

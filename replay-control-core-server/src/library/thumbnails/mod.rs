@@ -198,27 +198,54 @@ pub use replay_control_core::title_utils::{
     base_title, filename_stem, strip_n64dd_prefix, strip_tags, strip_version,
 };
 
-/// Strip a `.png` or `.jpg` extension from a filename, returning the stem.
+/// Supported thumbnail image extensions, in resolution-priority order: a stem
+/// present under more than one extension resolves to the first listed. `.png`
+/// wins over `.jpg` — it is the native download format and the extension the
+/// on-disk fast path (`exact_image_on_disk`) probes, so the exact tier's
+/// tie-break and the fast path agree. Extending image support means adding here.
+pub(crate) const IMAGE_EXTENSIONS: &[&str] = &[".png", ".jpg"];
+
+/// Strip a supported image extension from a filename, returning the stem.
 pub fn strip_image_ext(name: &str) -> Option<&str> {
-    name.strip_suffix(".png")
-        .or_else(|| name.strip_suffix(".jpg"))
+    IMAGE_EXTENSIONS
+        .iter()
+        .find_map(|ext| name.strip_suffix(*ext))
 }
 
-/// Quick check that a file is likely a real image (not a git fake-symlink text file).
+/// Quick check that a file is likely a real image (not a git fake-symlink text
+/// file), by size. Follows symlinks (uses `metadata`); for classifying a
+/// directory entry as a servable image use [`is_real_image_file`], which does
+/// not, so serve and the scanner agree.
 pub(crate) fn is_valid_image_sync(path: &Path) -> bool {
     path.metadata().map(|m| m.len() >= 200).unwrap_or(false)
 }
 
+/// True when `path` is a real, non-symlink regular file holding image bytes.
+///
+/// Uses `symlink_metadata`, so an OS symlink is rejected here just as the
+/// directory scanner rejects it (`DirEntry::file_type` does not follow links).
+/// This is the shared predicate the scanner ([`matching::scan_dir`]) and the
+/// on-disk fast path use to decide a directory entry is a servable image — as
+/// opposed to a libretro fake-symlink stub (a tiny text file) or an OS symlink —
+/// so runtime serve and orphan cleanup classify every file identically.
+pub(crate) fn is_real_image_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|meta| meta.is_file() && meta.len() >= 200)
+        .unwrap_or(false)
+}
+
 /// Try to resolve a small file as a git fake-symlink artifact.
-/// Reads its text content (a relative filename), checks if that file exists in
-/// `parent_dir` and passes `is_valid_image()`. Returns the target filename on
-/// success, `None` otherwise.
+/// Reads its text content (a relative filename), checks that it names a supported
+/// image that exists in `parent_dir` and passes [`is_valid_image_sync`]. Returns
+/// the target filename on success, `None` otherwise.
 pub(crate) fn try_resolve_fake_symlink_sync(path: &Path, parent_dir: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     let target_name = std::str::from_utf8(&bytes).ok()?.trim();
-    if target_name.is_empty() || !target_name.ends_with(".png") {
-        return None;
-    }
+    // Accept any supported image extension as a target, not just .png — the
+    // resolver, cleanup, and this stub check must agree on what counts as an
+    // image (see IMAGE_EXTENSIONS), or a stub's .jpg/.webp target would go
+    // unreferenced and be pruned.
+    strip_image_ext(target_name)?;
     let target_path = parent_dir.join(target_name);
     if target_path.exists() && is_valid_image_sync(&target_path) {
         Some(target_name.to_string())
@@ -246,8 +273,47 @@ pub(crate) fn resolve_image_on_disk_sync(
     if !kind_dir.exists() {
         return None;
     }
+    // Fast path: an exact `{thumbnail_filename}.png` match — art named after the
+    // arcade display or the ROM stem — is the overwhelmingly common case. Check
+    // it directly (one stat) before the fuzzy resolver, which builds a full
+    // directory index (read_dir + stat every file). On a large media dir
+    // (thousands of files) on NFS that scan costs hundreds of ms per lookup, and
+    // the game-detail page does two per view (snap + title).
+    if let Some(hit) = exact_image_on_disk(&kind_dir, kind, arcade_display, rom_filename) {
+        return Some(hit);
+    }
     let index = matching::build_dir_index_with_symlinks(&kind_dir, kind);
     matching::resolve_thumbnail(&index, rom_filename, arcade_display)
+}
+
+/// Fast-path the exact match for a ROM: probe `{thumbnail_filename}.<ext>` on
+/// disk for the single top-priority key (the arcade display-exact key, or the
+/// stem-exact key for non-arcade — see [`matching::exact_thumbnail_key`]). Using
+/// only that key is what keeps the fast path resolver-equivalent: it can never
+/// jump a stem match ahead of a higher-priority display-name (colon/fuzzy) match.
+///
+/// Extensions are probed in [`IMAGE_EXTENSIONS`] priority order and the first
+/// real, valid file wins — which is exactly the exact tier's pick, because that
+/// tier prefers a self-named `{key}.<ext>` file by the same extension order (see
+/// `matching::exact_pref`). Deriving the probe order from `IMAGE_EXTENSIONS`
+/// rather than hard-coding `.png` means a new supported format is picked up here
+/// automatically and the fast path can't drift from the tier's preference.
+///
+/// A `.jpg`/other-only stem still fast-paths (a later probe hits); only a
+/// fake-symlink stub, an OS symlink, or a genuine lower-tier (fuzzy) match misses
+/// every probe (via [`is_real_image_file`], which the scanner uses too) and falls
+/// through to the full scan, which resolves it. Returns `None` on a miss.
+fn exact_image_on_disk(
+    kind_dir: &Path,
+    kind: &str,
+    arcade_display: Option<&str>,
+    rom_filename: &str,
+) -> Option<String> {
+    let thumb = matching::exact_thumbnail_key(rom_filename, arcade_display);
+    IMAGE_EXTENSIONS.iter().find_map(|ext| {
+        let candidate = kind_dir.join(format!("{thumb}{ext}"));
+        is_real_image_file(&candidate).then(|| format!("{kind}/{thumb}{ext}"))
+    })
 }
 
 /// Validate an image file on disk. Runs the `metadata` syscall on the
@@ -955,6 +1021,275 @@ mod tests {
                 .into_iter()
                 .map(str::to_string)
                 .collect()
+        );
+    }
+
+    /// Regression: the on-disk fast path must not jump a stem-exact file ahead of
+    /// a higher-priority display-name match. Here the display name has a colon, so
+    /// the resolver matches the art via its colon-variant tier (`": " -> " - "`),
+    /// which outranks the ROM stem. A competing stem-exact file sits in the SAME
+    /// kind. A fast path that probed display-exact THEN stem-exact would serve the
+    /// stem file (display-exact misses the colon-variant name), while cleanup's
+    /// full resolver keeps the colon-variant file — so cleanup would delete the
+    /// served stem file. Probing only the top-priority key keeps them in agreement.
+    #[test]
+    fn matcher_and_cleanup_agree_when_display_colon_variant_outranks_stem() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "arcade_fbneo"; // is_arcade_system == true
+        // The resolver's colon tier turns "II: Champion" into "II - Champion".
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Street Fighter II - Champion Edition.png",
+        ));
+        // Competing stem-exact art in the same kind — must lose to the display tier.
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "sf2ce.png",
+        ));
+
+        let mut entry = test_entry(system, "sf2ce.zip");
+        entry.display_name = Some("Street Fighter II: Champion Edition".to_string());
+        let entries = vec![entry];
+        let media_base = system_media_base(storage.path(), system);
+
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        // The core invariant: the fast path and the full-scan cleanup must agree.
+        assert_eq!(
+            served, referenced,
+            "fast path must not outrank display colon-variant with stem-exact"
+        );
+        // Both must pick the colon-variant display art, never the stem file.
+        assert_eq!(
+            referenced,
+            ["boxart/Street Fighter II - Champion Edition.png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<HashSet<String>>()
+        );
+        // The stem file is a genuine orphan under resolver semantics, safe to prune
+        // precisely because the fast path never serves it.
+        assert_eq!(
+            orphan_filenames(storage.path(), system, &entries),
+            ["sf2ce.png"].into_iter().map(str::to_string).collect()
+        );
+    }
+
+    /// Regression: a stem present as both `.png` and `.jpg` must resolve the same
+    /// way for runtime serve (the fast path, which probes `.png`) and orphan
+    /// cleanup (the full scan). Before the exact tier gained a deterministic
+    /// `.png` > `.jpg` preference, the full scan's last-writer-wins could land on
+    /// the `.jpg` depending on readdir order, so cleanup would delete the `.png`
+    /// the fast path just served. Both must pick the `.png`, and only the `.jpg`
+    /// twin is pruned.
+    #[test]
+    fn matcher_and_cleanup_agree_on_png_over_jpg_duplicate_stem() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Sonic.png",
+        ));
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Sonic.jpg",
+        ));
+
+        let entries = vec![test_entry(system, "Sonic.sfc")];
+        let media_base = system_media_base(storage.path(), system);
+
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        assert_eq!(
+            served, referenced,
+            "serve and cleanup must agree on the .png/.jpg twin"
+        );
+        assert_eq!(
+            referenced,
+            ["boxart/Sonic.png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<HashSet<String>>(),
+            "the .png twin is the served/referenced file"
+        );
+        // Only the unreferenced .jpg twin is an orphan; the served .png survives.
+        assert_eq!(
+            orphan_filenames(storage.path(), system, &entries),
+            ["Sonic.jpg"].into_iter().map(str::to_string).collect()
+        );
+    }
+
+    #[test]
+    fn serve_resolves_non_png_art_and_prefers_png_when_both_exist() {
+        // The image served for a ROM: a jpg-only cover is served as-is, and when
+        // both a .png and .jpg exist the .png is served. (A new format added to
+        // IMAGE_EXTENSIONS is served the same way — nothing else hard-codes .png.)
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        let media_base = system_media_base(storage.path(), system);
+
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Mario.jpg",
+        ));
+        assert_eq!(
+            resolve_image_on_disk_sync(None, &media_base, "boxart", "Mario.sfc").as_deref(),
+            Some("boxart/Mario.jpg"),
+        );
+
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Mario.png",
+        ));
+        assert_eq!(
+            resolve_image_on_disk_sync(None, &media_base, "boxart", "Mario.sfc").as_deref(),
+            Some("boxart/Mario.png"),
+        );
+    }
+
+    /// Regression: a real self-named `{stem}.png` must win the exact tier over a
+    /// same-stem fake-symlink stub that redirects elsewhere — otherwise the full
+    /// scan could reference the stub's (alphabetically-earlier) target while the
+    /// fast path serves the real `{stem}.png`, and cleanup would delete the served
+    /// file. Serve and cleanup must both resolve the ROM to its real `.png`.
+    #[test]
+    fn matcher_and_cleanup_agree_when_real_png_competes_with_samestem_stub() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        // Real self-named art for the ROM (creates the boxart dir).
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Sonic.png",
+        ));
+        // A same-stem fake-symlink stub: a tiny text file whose content is the
+        // target filename, redirecting stem "Sonic" to a differently-named image.
+        std::fs::write(
+            media_file(storage.path(), system, ThumbnailKind::Boxart, "Sonic.jpg"),
+            b"Aardvark.png",
+        )
+        .unwrap();
+        // The stub's target: real, but named for a different game (sorts first).
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Aardvark.png",
+        ));
+
+        let entries = vec![test_entry(system, "Sonic.sfc")];
+        let media_base = system_media_base(storage.path(), system);
+
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        assert_eq!(
+            served, referenced,
+            "serve and cleanup must agree despite the same-stem stub"
+        );
+        assert_eq!(
+            referenced,
+            ["boxart/Sonic.png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<HashSet<String>>(),
+            "the real self-named .png wins over the stub's redirect"
+        );
+        // The served Sonic.png must NOT be pruned; only the unreferenced target is.
+        let orphans = orphan_filenames(storage.path(), system, &entries);
+        assert!(
+            !orphans.contains("Sonic.png"),
+            "served file must never be deleted, got {orphans:?}"
+        );
+        assert_eq!(
+            orphans,
+            ["Aardvark.png"].into_iter().map(str::to_string).collect()
+        );
+    }
+
+    /// Regression: an OS symlink in a media dir (which the app never writes) must
+    /// be treated the same by serve and cleanup. `is_file()` follows symlinks but
+    /// the scanner does not, so a fast path using `is_file()` would serve the
+    /// symlink while cleanup left its target an orphan — deleting a served file.
+    /// Both must ignore it (the scanner never indexes it), so nothing is served
+    /// via the link and nothing it points at is protected by it.
+    #[cfg(unix)]
+    #[test]
+    fn serve_and_cleanup_ignore_os_symlinks_identically() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Aardvark.png",
+        ));
+        let boxart = system_media_base(storage.path(), system).join("boxart");
+        std::os::unix::fs::symlink("Aardvark.png", boxart.join("Sonic.png")).unwrap();
+
+        let entries = vec![test_entry(system, "Sonic.sfc")];
+        let media_base = system_media_base(storage.path(), system);
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        assert_eq!(
+            served, referenced,
+            "serve and cleanup must treat the OS symlink identically"
+        );
+        assert!(
+            served.is_empty(),
+            "the OS symlink is never indexed, so nothing is served for it"
+        );
+    }
+
+    /// Regression: a fake-symlink stub may point at any supported extension, not
+    /// only `.png`. A stub resolving to a `.jpg` target must resolve (serve) and
+    /// keep that target (cleanup) — matching each other.
+    #[test]
+    fn serve_resolves_fake_symlink_stub_to_non_png_target() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        // The real target, named for the game, as a .jpg.
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Real Cover.jpg",
+        ));
+        // The stub, named for the ROM: a tiny text file whose content is the target.
+        std::fs::write(
+            media_file(storage.path(), system, ThumbnailKind::Boxart, "Doom.png"),
+            b"Real Cover.jpg",
+        )
+        .unwrap();
+
+        let entries = vec![test_entry(system, "Doom.sfc")];
+        let media_base = system_media_base(storage.path(), system);
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        assert_eq!(served, referenced, "serve and cleanup must agree");
+        assert_eq!(
+            referenced,
+            ["boxart/Real Cover.jpg"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<HashSet<String>>(),
+            "the stub resolves to its .jpg target",
+        );
+        assert!(
+            !orphan_filenames(storage.path(), system, &entries).contains("Real Cover.jpg"),
+            "the stub's referenced target must not be pruned"
         );
     }
 
