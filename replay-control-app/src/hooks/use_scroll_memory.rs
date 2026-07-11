@@ -40,7 +40,11 @@ pub fn use_scroll_memory(
         }
 
         // Build the route-scoped key and content signature once, on the client.
-        let (key, signature) = build();
+        // `build` runs before the Effect below, so it is a one-time snapshot and
+        // never a reactive dependency — read any signals inside it untracked, or a
+        // tracked read (e.g. the favorites list) warns about signal access outside
+        // a reactive context.
+        let (key, signature) = untrack(build);
 
         Effect::new(move || {
             let Some(node) = node_ref.get() else {
