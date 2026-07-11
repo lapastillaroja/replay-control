@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use super::fs_walk;
 use crate::library_db::{GameEntry, LibraryDb};
 use replay_control_core::error::{Error, Result};
-use replay_control_core::systems::is_arcade_system;
+use replay_control_core::systems::{find_system, is_arcade_system};
 
 /// Percent-encode one URI path segment, keeping only the RFC-3986 unreserved
 /// set (`A-Za-z0-9-._~`). Shared by the manifest and resolution modules, which
@@ -292,7 +292,7 @@ pub async fn try_resolve_fake_symlink(path: PathBuf, parent_dir: PathBuf) -> Opt
 /// thumbnail downloads.
 pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
     let roms_dir = storage_root.join("roms").join(system);
-    let extensions = replay_control_core::systems::find_system(system).map(|s| s.extensions);
+    let extensions = find_system(system).map(|s| s.extensions);
     let mut filenames = Vec::new();
     collect_rom_filenames(&roms_dir, &mut filenames, extensions);
     filenames
@@ -443,20 +443,29 @@ fn cleanup_arcade_display(is_arcade: bool, display_name: Option<&str>) -> Option
 /// [`matching::build_dir_index_with_symlinks`]), so a file absent from this set
 /// is exactly a file serving could never show — cleanup and serving cannot
 /// disagree. Each kind directory is scanned once (O(roms + files)).
-fn referenced_files_for_entries(
-    media_base: &Path,
+fn thumbnail_dir_scans(media_base: &Path) -> Vec<(&'static str, matching::DirScan)> {
+    ALL_THUMBNAIL_KINDS
+        .iter()
+        .map(|kind| {
+            let kind_name = kind.media_dir();
+            let scan = matching::scan_dir_with_symlinks(&media_base.join(kind_name), kind_name);
+            (kind_name, scan)
+        })
+        .collect()
+}
+
+fn referenced_files_for_entries_from_scans(
     system: &str,
     entries: &[GameEntry],
+    scans: &[(&'static str, matching::DirScan)],
 ) -> HashSet<String> {
     let is_arcade = is_arcade_system(system);
     let mut referenced = HashSet::new();
-    for kind in ALL_THUMBNAIL_KINDS {
-        let kind_name = kind.media_dir();
-        let index = matching::build_dir_index_with_symlinks(&media_base.join(kind_name), kind_name);
+    for (_, scan) in scans {
         for entry in entries {
             let arcade_display = cleanup_arcade_display(is_arcade, entry.display_name.as_deref());
             if let Some(relative) =
-                matching::resolve_thumbnail(&index, &entry.rom_filename, arcade_display)
+                matching::resolve_thumbnail(&scan.index, &entry.rom_filename, arcade_display)
             {
                 referenced.insert(relative);
             }
@@ -465,19 +474,19 @@ fn referenced_files_for_entries(
     referenced
 }
 
-fn referenced_thumbnail_paths_for_rom(
-    media_base: &Path,
+fn referenced_thumbnail_paths_for_rom_from_scans(
     system: &str,
     rom_filename: &str,
     display_name: Option<&str>,
     box_art_url: Option<&str>,
+    scans: &[(&'static str, matching::DirScan)],
 ) -> HashSet<String> {
     let arcade_display = cleanup_arcade_display(is_arcade_system(system), display_name);
     let mut referenced = HashSet::new();
-    for kind in ALL_THUMBNAIL_KINDS {
-        let kind_name = kind.media_dir();
-        let index = matching::build_dir_index_with_symlinks(&media_base.join(kind_name), kind_name);
-        if let Some(relative) = matching::resolve_thumbnail(&index, rom_filename, arcade_display) {
+    for (_, scan) in scans {
+        if let Some(relative) =
+            matching::resolve_thumbnail(&scan.index, rom_filename, arcade_display)
+        {
             referenced.insert(relative);
         }
     }
@@ -491,12 +500,12 @@ fn referenced_thumbnail_paths_for_rom(
     referenced
 }
 
-fn referenced_thumbnail_paths(
-    media_base: &Path,
+fn referenced_thumbnail_paths_from_scans(
     system: &str,
     entries: &[GameEntry],
+    scans: &[(&'static str, matching::DirScan)],
 ) -> HashSet<String> {
-    let mut referenced = referenced_files_for_entries(media_base, system, entries);
+    let mut referenced = referenced_files_for_entries_from_scans(system, entries, scans);
     for entry in entries {
         if let Some(url) = &entry.box_art_url
             && let Some(relative) = thumbnail_relative_from_media_url(system, url)
@@ -505,6 +514,16 @@ fn referenced_thumbnail_paths(
         }
     }
     referenced
+}
+
+#[cfg(test)]
+fn referenced_thumbnail_paths(
+    media_base: &Path,
+    system: &str,
+    entries: &[GameEntry],
+) -> HashSet<String> {
+    let scans = thumbnail_dir_scans(media_base);
+    referenced_thumbnail_paths_from_scans(system, entries, &scans)
 }
 
 fn media_system_dirs(media_dir: &Path) -> Vec<(String, PathBuf)> {
@@ -535,27 +554,13 @@ pub fn media_system_names(storage_root: &Path) -> Vec<String> {
         .collect()
 }
 
-fn thumbnail_files(system_media: &Path) -> Vec<(String, PathBuf)> {
-    let mut files = Vec::new();
-    for kind in ALL_THUMBNAIL_KINDS {
-        let kind_name = kind.media_dir();
-        let kind_dir = system_media.join(kind_name);
-        let Ok(entries) = std::fs::read_dir(&kind_dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() || !is_valid_image_sync(&path) {
-                continue;
-            }
-            let filename = entry.file_name();
-            let filename = filename.to_string_lossy();
-            if strip_image_ext(&filename).is_none() {
-                continue;
-            }
-            files.push((format!("{kind_name}/{filename}"), path));
-        }
-    }
+fn thumbnail_files_from_scans(
+    scans: &[(&'static str, matching::DirScan)],
+) -> Vec<(String, PathBuf)> {
+    let mut files: Vec<(String, PathBuf)> = scans
+        .iter()
+        .flat_map(|(_, scan)| scan.valid_files.iter().cloned())
+        .collect();
     files.sort_by(|a, b| a.0.cmp(&b.0));
     files
 }
@@ -574,18 +579,19 @@ pub fn orphaned_thumbnail_files_for_deleted_rom(
         .join(crate::storage::RC_DIR)
         .join("media")
         .join(system);
-    let candidates = referenced_thumbnail_paths_for_rom(
-        &media_base,
+    let scans = thumbnail_dir_scans(&media_base);
+    let candidates = referenced_thumbnail_paths_for_rom_from_scans(
         system,
         rom_filename,
         display_name,
         box_art_url,
+        &scans,
     );
     if candidates.is_empty() {
         return Vec::new();
     }
 
-    let retained = referenced_thumbnail_paths(&media_base, system, active_entries);
+    let retained = referenced_thumbnail_paths_from_scans(system, active_entries, &scans);
     let mut orphans: Vec<(String, PathBuf)> = candidates
         .into_iter()
         .filter(|relative| !retained.contains(relative))
@@ -623,9 +629,10 @@ pub fn find_orphaned_thumbnails_from_entries(
         if !system_media.is_dir() {
             continue;
         }
-        let referenced = referenced_thumbnail_paths(&system_media, system, entries);
+        let scans = thumbnail_dir_scans(&system_media);
+        let referenced = referenced_thumbnail_paths_from_scans(system, entries, &scans);
         orphans.extend(
-            thumbnail_files(&system_media)
+            thumbnail_files_from_scans(&scans)
                 .into_iter()
                 .filter(|(relative, _)| !referenced.contains(relative))
                 .map(|(_, path)| (system.clone(), path)),
@@ -1382,7 +1389,7 @@ mod tests {
     /// Returns (thumb_name, base_title) for a given ROM filename + system.
     async fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
         let stem = filename_stem(rom_filename);
-        let is_arcade = replay_control_core::systems::is_arcade_system(system);
+        let is_arcade = is_arcade_system(system);
         let display_name = if is_arcade {
             crate::arcade_db::lookup_arcade_game(system, stem)
                 .await

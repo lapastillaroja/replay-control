@@ -4,7 +4,7 @@
 //! cache (cache/images.rs) to avoid duplicating the multi-tier fuzzy matching logic.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::thumbnails::{
     base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
@@ -43,6 +43,18 @@ pub struct DirIndex {
     /// Catches "Galaga '88.png" ↔ catalog "Galaga88" both collapsing to
     /// "galaga88".
     pub aggressive_compact: HashMap<String, String>,
+}
+
+/// Result of one thumbnail directory scan.
+///
+/// `index` is used for resolver-accurate matching. `valid_files` is the
+/// deletion-candidate set from the same directory snapshot, containing only
+/// real image files; libretro fake-symlink stubs can resolve entries into the
+/// index, but are not themselves image bytes to delete.
+#[derive(Default)]
+pub struct DirScan {
+    pub index: DirIndex,
+    pub valid_files: Vec<(String, PathBuf)>,
 }
 
 impl DirIndex {
@@ -112,14 +124,13 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     index
 }
 
-/// Build a `DirIndex` and additionally resolve libretro fake-symlink stubs
-/// (tiny text files pointing at a real image) to their targets, inserting each
-/// through `DirIndex::insert` so resolved stubs populate exactly the same tiers
-/// as the directory scan. This is the single index builder used by the runtime
-/// resolver, the cleanup pass, and enrichment's box-art index, so their notion
-/// of "what's on disk" can never drift.
-pub fn build_dir_index_with_symlinks(dir: &Path, kind: &str) -> DirIndex {
-    let mut index = DirIndex::default();
+/// Scan `dir` once, always building the resolver index; when `collect_files`,
+/// also gather the real image files from the same snapshot as the deletion-
+/// candidate set. Libretro fake-symlink stubs resolve into the index so matching
+/// can find their targets, but only real image files are candidates — never a
+/// directory whose metadata length happens to reach the validity threshold.
+fn scan_dir(dir: &Path, kind: &str, collect_files: bool) -> DirScan {
+    let mut scan = DirScan::default();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -128,14 +139,45 @@ pub fn build_dir_index_with_symlinks(dir: &Path, kind: &str) -> DirIndex {
                 continue;
             };
             let path = entry.path();
-            if is_valid_image_sync(&path) {
-                index.insert(stem, format!("{kind}/{name}"));
+            // Real image files only — never a directory whose metadata length
+            // happens to reach the >= 200 validity threshold. The app writes
+            // libretro fake-symlink stubs as regular text files (handled by the
+            // else branch) and never OS symlinks here, so a cheap file_type
+            // check is exact and gates both indexing and candidate collection.
+            if is_valid_image_sync(&path) && entry.file_type().is_ok_and(|t| t.is_file()) {
+                let relative = format!("{kind}/{name}");
+                scan.index.insert(stem, relative.clone());
+                if collect_files {
+                    scan.valid_files.push((relative, path));
+                }
             } else if let Some(target) = try_resolve_fake_symlink_sync(&path, dir) {
-                index.insert(stem, format!("{kind}/{target}"));
+                scan.index.insert(stem, format!("{kind}/{target}"));
             }
         }
     }
-    index
+    if collect_files {
+        scan.valid_files.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+    scan
+}
+
+/// Scan a thumbnail directory, building the resolver index and collecting real
+/// image files from the same snapshot (the orphan-cleanup deletion candidates).
+///
+/// Libretro fake-symlink stubs are resolved into the index so matching can find
+/// their targets, but only real image files are included in `valid_files`.
+pub fn scan_dir_with_symlinks(dir: &Path, kind: &str) -> DirScan {
+    scan_dir(dir, kind, true)
+}
+
+/// Build a `DirIndex` and additionally resolve libretro fake-symlink stubs
+/// (tiny text files pointing at a real image) to their targets, inserting each
+/// through `DirIndex::insert` so resolved stubs populate exactly the same tiers
+/// as the directory scan. This is the single index builder used by the runtime
+/// resolver and enrichment; it skips collecting the deletion-candidate set that
+/// only orphan cleanup needs (via [`scan_dir_with_symlinks`]).
+pub fn build_dir_index_with_symlinks(dir: &Path, kind: &str) -> DirIndex {
+    scan_dir(dir, kind, false).index
 }
 
 /// Resolve one ROM to its image in `index` — the single resolution entry point
