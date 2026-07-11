@@ -1125,7 +1125,7 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
                 // Preserve the original case for the base.
                 let base = format!(
                     "{}{}",
-                    &filename[..start].trim_end(),
+                    filename[..start].trim_end(),
                     &filename[start + end + 1..]
                 );
 
@@ -1145,7 +1145,7 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
 
             let base = format!(
                 "{}{}",
-                &filename[..start].trim_end(),
+                filename[..start].trim_end(),
                 &filename[start + end + 1..]
             );
 
