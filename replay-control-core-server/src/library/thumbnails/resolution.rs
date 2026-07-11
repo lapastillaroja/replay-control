@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::external_metadata::ThumbnailManifestEntry;
 use crate::image_matching::{self, DirIndex};
 use crate::thumbnail_manifest::{self, ManifestFuzzyIndex, ManifestMatch};
-use crate::thumbnails::{self, ThumbnailKind};
+use crate::thumbnails::ThumbnailKind;
 
 /// Per-system image directory index for batch box art resolution.
 ///
@@ -62,30 +62,10 @@ pub fn build_image_index(
     let media_base = rc_dir.join("media").join(system);
     let boxart_dir = media_base.join(boxart_media);
 
-    // Build the base index using the shared image matching module.
-    let mut dir_index = image_matching::build_dir_index(&boxart_dir, boxart_media);
-
-    // Second pass: resolve fake symlinks (small text files pointing to real
-    // images). Funnel through `DirIndex::insert` so resolved symlinks populate
-    // exactly the same tiers as the directory scan — including the aggressive
-    // and compact tiers, which an open-coded insertion here would silently miss.
-    if let Ok(entries) = std::fs::read_dir(&boxart_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if let Some(img_stem) = thumbnails::strip_image_ext(&name_str) {
-                if dir_index.exact.contains_key(img_stem) {
-                    continue; // Already indexed by build_dir_index.
-                }
-                let full = entry.path();
-                if let Some(resolved) =
-                    thumbnails::try_resolve_fake_symlink_sync(&full, &boxart_dir)
-                {
-                    dir_index.insert(img_stem, format!("boxart/{resolved}"));
-                }
-            }
-        }
-    }
+    // Build the boxart index (including libretro fake-symlink stubs) via the
+    // shared symlink-aware builder — the same one the runtime resolver and
+    // orphan cleanup use, so all three agree on what's on disk.
+    let dir_index = image_matching::build_dir_index_with_symlinks(&boxart_dir, boxart_media);
 
     // db_paths used to come from `game_metadata.box_art_path` (legacy
     // thumbnail-download path). With v2, `game_library.box_art_url` is

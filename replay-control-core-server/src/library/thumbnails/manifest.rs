@@ -2086,4 +2086,78 @@ mod tests {
         assert!(!s.rate_limited);
         assert!(s.rate_limit_reset_unix.is_none());
     }
+
+    #[test]
+    fn deleted_variant_remains_offered_by_picker_layer2() {
+        // After orphan cleanup removes a non-active regional variant, the box-art
+        // picker must still OFFER it as a re-downloadable manifest entry (Layer 2),
+        // so pruning "unused" downloaded covers is recoverable, not data loss —
+        // this is what makes the unified-resolver cleanup semantics acceptable.
+        use replay_control_core::systems;
+
+        let storage = tempfile::tempdir().unwrap();
+        let em_dir = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        let repo = systems::system_thumbnail_repos(system)
+            .and_then(|r| r.first().copied())
+            .expect("nintendo_snes has a libretro thumbnail repo");
+        let source_name = thumbnails::libretro_source_name(repo);
+
+        let em = external_metadata::open_at(&em_dir.path().join("em.db")).unwrap();
+        external_metadata::upsert_data_source(&em, &source_name, "libretro", "v1", "master", 2)
+            .unwrap();
+        let boxart_repo_dir = ThumbnailKind::Boxart.repo_dir().to_string();
+        external_metadata::insert_thumbnail_manifest_rows(
+            &em,
+            &source_name,
+            &[
+                (boxart_repo_dir.clone(), "Zelda (USA)".to_string(), None),
+                (boxart_repo_dir, "Zelda (Europe)".to_string(), None),
+            ],
+        )
+        .unwrap();
+
+        let boxart_dir = storage
+            .path()
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join(system)
+            .join(ThumbnailKind::Boxart.media_dir());
+        std::fs::create_dir_all(&boxart_dir).unwrap();
+        for f in ["Zelda (USA).png", "Zelda (Europe).png"] {
+            std::fs::write(boxart_dir.join(f), vec![1u8; 201]).unwrap();
+        }
+        let active = "/media/nintendo_snes/boxart/Zelda (USA).png";
+
+        // Both downloaded → both offered as downloaded variants.
+        let before =
+            find_boxart_variants(&em, system, "Zelda.sfc", None, storage.path(), Some(active));
+        assert!(
+            before
+                .iter()
+                .any(|v| v.filename == "Zelda (Europe)" && v.is_downloaded),
+            "Europe should show as downloaded before cleanup, got {before:?}"
+        );
+
+        // Cleanup deletes the non-active Europe variant.
+        std::fs::remove_file(boxart_dir.join("Zelda (Europe).png")).unwrap();
+
+        // It is now offered as a re-downloadable (undownloaded) manifest variant.
+        let after =
+            find_boxart_variants(&em, system, "Zelda.sfc", None, storage.path(), Some(active));
+        let europe = after
+            .iter()
+            .find(|v| v.filename == "Zelda (Europe)")
+            .expect("deleted variant must still be offered via the manifest");
+        assert!(
+            !europe.is_downloaded,
+            "deleted variant should now be re-downloadable, got {europe:?}"
+        );
+        // The active USA cover is untouched on disk.
+        assert!(
+            after
+                .iter()
+                .any(|v| v.filename == "Zelda (USA)" && v.is_downloaded)
+        );
+    }
 }

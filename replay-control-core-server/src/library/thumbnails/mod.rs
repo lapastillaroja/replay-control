@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use super::fs_walk;
 use crate::library_db::{GameEntry, LibraryDb};
 use replay_control_core::error::{Error, Result};
+use replay_control_core::systems::is_arcade_system;
 
 /// Percent-encode one URI path segment, keeping only the RFC-3986 unreserved
 /// set (`A-Za-z0-9-._~`). Shared by the manifest and resolution modules, which
@@ -226,171 +227,27 @@ pub(crate) fn try_resolve_fake_symlink_sync(path: &Path, parent_dir: &Path) -> O
     }
 }
 
-/// The tiers a `thumbnail_filename`-normalized ROM name matches an image by, in
-/// priority order: exact stem, case-insensitive, base-title (tags stripped),
-/// version-stripped, and slash-split dual-title parts.
-///
-/// Single source of truth for those tiers, shared by the per-request resolver
-/// [`find_image_on_disk`] (walks tiers in priority order over one directory) and
-/// the bulk orphan-detection key-set (`ThumbnailKeys`, which unions the tiers
-/// across many ROMs and scans once). One definition keeps the two from drifting.
-struct ThumbMatchKeys {
-    exact: String,
-    lower: String,
-    base: String,
-    version: Option<String>,
-    slash_parts: Vec<String>,
-}
-
-fn thumb_match_keys(thumb_name: &str) -> ThumbMatchKeys {
-    let base = base_title(thumb_name);
-    let stripped = strip_version(&base);
-    let version = (stripped.len() < base.len()).then(|| stripped.to_string());
-    let search_base = version.as_deref().unwrap_or(&base);
-    let sep = if search_base.contains(" / ") {
-        Some(" / ")
-    } else if search_base.contains(" _ ") {
-        Some(" _ ")
-    } else {
-        None
-    };
-    let slash_parts = sep
-        .map(|sep| {
-            search_base
-                .split(sep)
-                .map(str::trim)
-                .filter(|p| p.len() >= 5)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    ThumbMatchKeys {
-        lower: thumb_name.to_lowercase(),
-        exact: thumb_name.to_string(),
-        base,
-        version,
-        slash_parts,
-    }
-}
-
-/// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
-///
-/// `media_base` is the system media directory (e.g., `.replay-control/media/sega_smd`).
-/// `kind` is the subdirectory name (e.g., `"boxart"` or `"snap"`).
-///
-/// Returns a relative path like `"boxart/Sonic The Hedgehog 3 (USA).png"` on match.
-pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> Option<String> {
-    let kind_dir = media_base.join(kind);
-    if !kind_dir.exists() {
-        return None;
-    }
-
-    let stem = filename_stem(rom_filename);
-    let stem = strip_n64dd_prefix(stem);
-    let thumb_name = thumbnail_filename(stem);
-
-    // 1. Exact match
-    let exact = kind_dir.join(format!("{thumb_name}.png"));
-    if exact.exists() {
-        if is_valid_image_sync(&exact) {
-            return Some(format!("{kind}/{thumb_name}.png"));
-        }
-        if let Some(resolved) = try_resolve_fake_symlink_sync(&exact, &kind_dir) {
-            return Some(format!("{kind}/{resolved}"));
-        }
-    }
-
-    let keys = thumb_match_keys(&thumb_name);
-
-    if let Ok(entries) = std::fs::read_dir(&kind_dir) {
-        let mut fuzzy_result: Option<String> = None;
-        let mut version_result: Option<String> = None;
-        let mut slash_result: Option<String> = None;
-
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if let Some(img_stem) = strip_image_ext(&name) {
-                // 1b. Case-insensitive exact match (preserves region tags)
-                if img_stem.to_lowercase() == keys.lower {
-                    let path = entry.path();
-                    if is_valid_image_sync(&path) {
-                        return Some(format!("{kind}/{name}"));
-                    }
-                    if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
-                        return Some(format!("{kind}/{resolved}"));
-                    }
-                }
-
-                let img_base = base_title(img_stem);
-                // 2. Fuzzy match (strip tags)
-                if img_base == keys.base && fuzzy_result.is_none() {
-                    let path = entry.path();
-                    if is_valid_image_sync(&path) {
-                        fuzzy_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
-                        fuzzy_result = Some(format!("{kind}/{resolved}"));
-                    }
-                }
-                // 3. Version-stripped match
-                if version_result.is_none() && keys.version.as_deref() == Some(img_base.as_str()) {
-                    let path = entry.path();
-                    if is_valid_image_sync(&path) {
-                        version_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
-                        version_result = Some(format!("{kind}/{resolved}"));
-                    }
-                }
-                // 4. Slash dual-name match
-                if slash_result.is_none() && keys.slash_parts.contains(&img_base) {
-                    let path = entry.path();
-                    if is_valid_image_sync(&path) {
-                        slash_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
-                        slash_result = Some(format!("{kind}/{resolved}"));
-                    }
-                }
-            }
-        }
-
-        if let Some(result) = fuzzy_result {
-            return Some(result);
-        }
-        if let Some(result) = version_result {
-            return Some(result);
-        }
-        if let Some(result) = slash_result {
-            return Some(result);
-        }
-    }
-
-    None
-}
-
 /// Resolve an image file on disk for a ROM, with arcade name translation.
 ///
-/// This is the main entry point for per-file image resolution. For arcade systems,
-/// the caller passes `arcade_display` (the MAME display name, e.g.
-/// `Golden Axe: The Revenge of Death Adder`) which is tried first; then falls back
-/// to the ROM filename. For non-arcade systems, pass `None` — it delegates directly
-/// to `find_image_on_disk`.
-///
-/// Use this instead of calling `find_image_on_disk` directly to avoid forgetting
-/// arcade name translation when adding new image types.
+/// The single per-file resolution entry point, used by both runtime serving and
+/// (through the same [`matching::resolve_thumbnail`]) orphan cleanup, so a file
+/// cleanup would delete is exactly a file serving could never show. Builds the
+/// shared symlink-aware directory index once, then resolves through the one
+/// multi-tier matcher. For arcade systems the caller passes `arcade_display`
+/// (the MAME display name, e.g. `Golden Axe: The Revenge of Death Adder`), tried
+/// first, then the ROM filename stem; for non-arcade systems, pass `None`.
 pub(crate) fn resolve_image_on_disk_sync(
     arcade_display: Option<&str>,
     media_base: &Path,
     kind: &str,
     rom_filename: &str,
 ) -> Option<String> {
-    if let Some(display) = arcade_display {
-        let thumb = thumbnail_filename(display);
-        let arcade_filename = format!("{thumb}.zip");
-        if let Some(path) = find_image_on_disk(media_base, kind, &arcade_filename) {
-            return Some(path);
-        }
+    let kind_dir = media_base.join(kind);
+    if !kind_dir.exists() {
+        return None;
     }
-    find_image_on_disk(media_base, kind, rom_filename)
+    let index = matching::build_dir_index_with_symlinks(&kind_dir, kind);
+    matching::resolve_thumbnail(&index, rom_filename, arcade_display)
 }
 
 /// Validate an image file on disk. Runs the `metadata` syscall on the
@@ -572,86 +429,36 @@ fn thumbnail_path_from_relative(media_base: &Path, relative: &str) -> Option<Pat
     }
 }
 
-/// The lookup keys a set of ROMs can match a cached thumbnail by — the same
-/// tiers [`find_image_on_disk`] resolves through (exact stem, case-insensitive,
-/// base-title, version-stripped, slash-split dual titles), collected across many
-/// ROMs at once.
-///
-/// This is the inverse of resolving each ROM to a file: instead of scanning the
-/// media directory once *per ROM* (which is O(roms × files) — it pinned the CPU
-/// and starved the read pool on large libraries), we gather every ROM's keys
-/// once, then scan the directory once and keep any file whose stem matches a
-/// key. That is O(roms + files). A file is retained if it *could* be matched by
-/// any ROM via any tier — a conservative superset of what per-ROM resolution
-/// returns, so cleanup never deletes a thumbnail the runtime would still serve
-/// (it may keep a few extra same-base-title files, which is the safe direction).
-#[derive(Default)]
-struct ThumbnailKeys {
-    exact: HashSet<String>,
-    ci: HashSet<String>,
-    fuzzy: HashSet<String>,
+/// Arcade display name to feed the resolver for one entry: `Some` only for
+/// arcade systems (where art is filed under the MAME display name), mirroring
+/// exactly what the runtime serve path passes. `None` for non-arcade, so cleanup
+/// resolves by the ROM stem just as serving does.
+fn cleanup_arcade_display(is_arcade: bool, display_name: Option<&str>) -> Option<&str> {
+    is_arcade.then_some(display_name).flatten()
 }
 
-impl ThumbnailKeys {
-    /// Add the keys for one already-`thumbnail_filename`-normalized name, using
-    /// the same tier definition the per-request resolver walks.
-    fn add_thumb(&mut self, thumb_name: &str) {
-        let keys = thumb_match_keys(thumb_name);
-        self.exact.insert(keys.exact);
-        self.ci.insert(keys.lower);
-        self.fuzzy.insert(keys.base);
-        if let Some(version) = keys.version {
-            self.fuzzy.insert(version);
-        }
-        self.fuzzy.extend(keys.slash_parts);
-    }
-
-    /// Add the two lookups [`resolve_image_on_disk_sync`] makes for one ROM: the
-    /// arcade display name (if any) and the ROM filename.
-    fn add_entry(&mut self, rom_filename: &str, display_name: Option<&str>) {
-        if let Some(display) = display_name {
-            self.add_thumb(&thumbnail_filename(display));
-        }
-        let stem = strip_n64dd_prefix(filename_stem(rom_filename));
-        self.add_thumb(&thumbnail_filename(stem));
-    }
-
-    /// Whether a file with this stem matches any collected key.
-    fn matches(&self, stem: &str) -> bool {
-        self.exact.contains(stem)
-            || self.ci.contains(&stem.to_lowercase())
-            || self.fuzzy.contains(base_title(stem).as_str())
-    }
-}
-
-/// Scan each media kind directory once and return the relative paths of files
-/// matching any of `keys`. Fake-symlink stubs that match resolve to their target
-/// (mirrors [`find_image_on_disk`]).
-fn referenced_files_matching(media_base: &Path, keys: &ThumbnailKeys) -> HashSet<String> {
+/// The set of on-disk media files the runtime could serve for `entries` — the
+/// referenced set for orphan cleanup. Built with the **same** resolver runtime
+/// serving uses ([`matching::resolve_thumbnail`] over the shared
+/// [`matching::build_dir_index_with_symlinks`]), so a file absent from this set
+/// is exactly a file serving could never show — cleanup and serving cannot
+/// disagree. Each kind directory is scanned once (O(roms + files)).
+fn referenced_files_for_entries(
+    media_base: &Path,
+    system: &str,
+    entries: &[GameEntry],
+) -> HashSet<String> {
+    let is_arcade = is_arcade_system(system);
     let mut referenced = HashSet::new();
     for kind in ALL_THUMBNAIL_KINDS {
         let kind_name = kind.media_dir();
-        let kind_dir = media_base.join(kind_name);
-        let Ok(entries) = std::fs::read_dir(&kind_dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let filename = entry.file_name();
-            let filename = filename.to_string_lossy();
-            let Some(stem) = strip_image_ext(&filename) else {
-                continue;
-            };
-            if !keys.matches(stem) {
-                continue;
-            }
-            if is_valid_image_sync(&path) {
-                referenced.insert(format!("{kind_name}/{filename}"));
-            } else if let Some(target) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
-                referenced.insert(format!("{kind_name}/{target}"));
+        let index = matching::build_dir_index_with_symlinks(&media_base.join(kind_name), kind_name);
+        for entry in entries {
+            let arcade_display = cleanup_arcade_display(is_arcade, entry.display_name.as_deref());
+            if let Some(relative) =
+                matching::resolve_thumbnail(&index, &entry.rom_filename, arcade_display)
+            {
+                referenced.insert(relative);
             }
         }
     }
@@ -665,9 +472,15 @@ fn referenced_thumbnail_paths_for_rom(
     display_name: Option<&str>,
     box_art_url: Option<&str>,
 ) -> HashSet<String> {
-    let mut keys = ThumbnailKeys::default();
-    keys.add_entry(rom_filename, display_name);
-    let mut referenced = referenced_files_matching(media_base, &keys);
+    let arcade_display = cleanup_arcade_display(is_arcade_system(system), display_name);
+    let mut referenced = HashSet::new();
+    for kind in ALL_THUMBNAIL_KINDS {
+        let kind_name = kind.media_dir();
+        let index = matching::build_dir_index_with_symlinks(&media_base.join(kind_name), kind_name);
+        if let Some(relative) = matching::resolve_thumbnail(&index, rom_filename, arcade_display) {
+            referenced.insert(relative);
+        }
+    }
 
     if let Some(url) = box_art_url
         && let Some(relative) = thumbnail_relative_from_media_url(system, url)
@@ -683,17 +496,14 @@ fn referenced_thumbnail_paths(
     system: &str,
     entries: &[GameEntry],
 ) -> HashSet<String> {
-    let mut keys = ThumbnailKeys::default();
-    let mut referenced = HashSet::new();
+    let mut referenced = referenced_files_for_entries(media_base, system, entries);
     for entry in entries {
-        keys.add_entry(&entry.rom_filename, entry.display_name.as_deref());
         if let Some(url) = &entry.box_art_url
             && let Some(relative) = thumbnail_relative_from_media_url(system, url)
         {
             referenced.insert(relative);
         }
     }
-    referenced.extend(referenced_files_matching(media_base, &keys));
     referenced
 }
 
@@ -979,6 +789,168 @@ mod tests {
         }
     }
 
+    fn system_media_base(storage_root: &Path, system: &str) -> PathBuf {
+        storage_root
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join(system)
+    }
+
+    /// The set of files the runtime serve path would show for `entries`, resolved
+    /// per entry per kind via the same `resolve_image_on_disk_sync` GetInfo uses.
+    fn served_files(media_base: &Path, system: &str, entries: &[GameEntry]) -> HashSet<String> {
+        let is_arcade = is_arcade_system(system);
+        let mut served = HashSet::new();
+        for entry in entries {
+            let arcade_display = cleanup_arcade_display(is_arcade, entry.display_name.as_deref());
+            for kind in ALL_THUMBNAIL_KINDS {
+                if let Some(relative) = resolve_image_on_disk_sync(
+                    arcade_display,
+                    media_base,
+                    kind.media_dir(),
+                    &entry.rom_filename,
+                ) {
+                    served.insert(relative);
+                }
+            }
+        }
+        served
+    }
+
+    fn orphan_filenames(
+        storage_root: &Path,
+        system: &str,
+        entries: &[GameEntry],
+    ) -> HashSet<String> {
+        let by_system = vec![(system.to_string(), entries.to_vec())];
+        find_orphaned_thumbnails_from_entries(storage_root, &by_system)
+            .into_iter()
+            .map(|(_, path)| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// The core invariant of the unification: runtime serving
+    /// (`resolve_image_on_disk_sync`) and cleanup (`referenced_thumbnail_paths`)
+    /// resolve every ROM through the SAME shared `resolve_thumbnail` over the same
+    /// index, so they must agree file-for-file — cleanup can never delete a file
+    /// serving would show, nor keep a true orphan. Exercises exact (Mario),
+    /// fuzzy + regional tie-break (Zelda → alphabetically-first Europe), and slash
+    /// dual-title (Sonic) resolution, with pure orphans mixed in.
+    #[test]
+    fn matcher_and_cleanup_resolve_identically() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "nintendo_snes";
+        for f in [
+            "Zelda (USA).png",
+            "Zelda (Europe).png",
+            "Mario (USA).png",
+            "Boxart Orphan.png",
+        ] {
+            write_test_image(&media_file(
+                storage.path(),
+                system,
+                ThumbnailKind::Boxart,
+                f,
+            ));
+        }
+        for f in ["Sonic 3.png", "Snap Orphan.png"] {
+            write_test_image(&media_file(storage.path(), system, ThumbnailKind::Snap, f));
+        }
+
+        let entries = vec![
+            test_entry(system, "Mario (USA).sfc"),
+            test_entry(system, "Zelda.sfc"),
+            test_entry(system, "Sonic & Knuckles _ Sonic 3 (World).sfc"),
+        ];
+        let media_base = system_media_base(storage.path(), system);
+
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+
+        // The invariant: serve and cleanup resolve to exactly the same files.
+        assert_eq!(
+            served, referenced,
+            "serve and cleanup must resolve identically"
+        );
+
+        let expected: HashSet<String> = [
+            "boxart/Mario (USA).png",
+            "boxart/Zelda (Europe).png",
+            "snap/Sonic 3.png",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        assert_eq!(referenced, expected);
+
+        // Cleanup deletes exactly the files no ROM resolves to — never a served one.
+        let expected_orphans: HashSet<String> =
+            ["Zelda (USA).png", "Boxart Orphan.png", "Snap Orphan.png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect();
+        assert_eq!(
+            orphan_filenames(storage.path(), system, &entries),
+            expected_orphans
+        );
+    }
+
+    /// Same invariant for the arcade path: art filed under the MAME display name
+    /// resolves via the display tier, art filed under the ROM short name via the
+    /// stem fallback — serve and cleanup both try both, so both are retained.
+    #[test]
+    fn matcher_and_cleanup_agree_on_arcade_display_and_stem() {
+        let storage = tempfile::tempdir().unwrap();
+        let system = "arcade_fbneo"; // is_arcade_system == true
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Street Fighter II' - Champion Edition.png",
+        ));
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Snap,
+            "sf2ce.png",
+        ));
+        write_test_image(&media_file(
+            storage.path(),
+            system,
+            ThumbnailKind::Boxart,
+            "Arcade Orphan.png",
+        ));
+
+        let mut entry = test_entry(system, "sf2ce.zip");
+        entry.display_name = Some("Street Fighter II' - Champion Edition".to_string());
+        let entries = vec![entry];
+        let media_base = system_media_base(storage.path(), system);
+
+        let served = served_files(&media_base, system, &entries);
+        let referenced = referenced_thumbnail_paths(&media_base, system, &entries);
+        assert_eq!(served, referenced, "arcade serve and cleanup must agree");
+
+        let expected: HashSet<String> = [
+            "boxart/Street Fighter II' - Champion Edition.png",
+            "snap/sf2ce.png",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        assert_eq!(
+            referenced, expected,
+            "display-named and stem-named art both kept"
+        );
+
+        assert_eq!(
+            orphan_filenames(storage.path(), system, &entries),
+            ["Arcade Orphan.png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
+    }
+
     #[test]
     fn find_orphaned_thumbnails_scans_boxart_snap_and_title() {
         let storage = tempfile::tempdir().unwrap();
@@ -1130,6 +1102,47 @@ mod tests {
                 .iter()
                 .all(|(_, p)| p.file_name().unwrap() == "Unrelated.png"),
             "box_art_url target should be retained, got {orphans:?}"
+        );
+    }
+
+    #[test]
+    fn find_orphaned_thumbnails_keeps_active_variant_and_removes_others() {
+        // The user's selected cover (box_art_url) survives cleanup even when it
+        // is NOT the resolver's default pick, while a third non-active,
+        // non-default regional variant is removed. This is the accepted cleanup
+        // semantic: the active cover is kept; alternates are pruned (and remain
+        // re-downloadable via the picker's manifest layer — see the
+        // find_boxart_variants Layer 2 test).
+        let storage = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let mut conn = LibraryDb::open(db_dir.path()).unwrap();
+        for f in ["Zelda (USA).png", "Zelda (Europe).png", "Zelda (Japan).png"] {
+            write_test_image(&media_file(
+                storage.path(),
+                "nintendo_snes",
+                ThumbnailKind::Boxart,
+                f,
+            ));
+        }
+        // Resolver default for "Zelda.sfc" is the alphabetically-first variant
+        // (Europe); the user selected USA, stored percent-encoded in box_art_url.
+        let mut entry = test_entry("nintendo_snes", "Zelda.sfc");
+        entry.box_art_url = Some("/media/nintendo_snes/boxart/Zelda%20%28USA%29.png".to_string());
+        LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[entry], None).unwrap();
+
+        let orphans: HashSet<String> = find_orphaned_thumbnails(storage.path(), &conn)
+            .unwrap()
+            .into_iter()
+            .map(|(_, p)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+
+        // USA kept (active/box_art_url), Europe kept (resolver default), Japan removed.
+        assert_eq!(
+            orphans,
+            ["Zelda (Japan).png"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
         );
     }
 

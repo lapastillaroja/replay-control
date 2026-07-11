@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::thumbnails::{
     base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
+    try_resolve_fake_symlink_sync,
 };
 use replay_control_core::title_utils::{
     normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix, strip_tags,
@@ -111,6 +112,51 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     index
 }
 
+/// Build a `DirIndex` and additionally resolve libretro fake-symlink stubs
+/// (tiny text files pointing at a real image) to their targets, inserting each
+/// through `DirIndex::insert` so resolved stubs populate exactly the same tiers
+/// as the directory scan. This is the single index builder used by the runtime
+/// resolver, the cleanup pass, and enrichment's box-art index, so their notion
+/// of "what's on disk" can never drift.
+pub fn build_dir_index_with_symlinks(dir: &Path, kind: &str) -> DirIndex {
+    let mut index = DirIndex::default();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = strip_image_ext(&name) else {
+                continue;
+            };
+            let path = entry.path();
+            if is_valid_image_sync(&path) {
+                index.insert(stem, format!("{kind}/{name}"));
+            } else if let Some(target) = try_resolve_fake_symlink_sync(&path, dir) {
+                index.insert(stem, format!("{kind}/{target}"));
+            }
+        }
+    }
+    index
+}
+
+/// Resolve one ROM to its image in `index` — the single resolution entry point
+/// shared by runtime serving and orphan cleanup, so a file cleanup would delete
+/// is exactly a file serving could never show. For arcade ROMs the translated
+/// display name is tried first (arcade art is filed under the display name),
+/// then the ROM filename stem as a fallback (art filed under the MAME short
+/// name), mirroring the two lookups the runtime has always made.
+pub fn resolve_thumbnail(
+    index: &DirIndex,
+    rom_filename: &str,
+    arcade_display: Option<&str>,
+) -> Option<String> {
+    if arcade_display.is_some()
+        && let Some(path) = find_best_match(index, rom_filename, arcade_display, None)
+    {
+        return Some(path);
+    }
+    find_best_match(index, rom_filename, None, None)
+}
+
 /// Find the best matching image for a ROM in a `DirIndex`.
 ///
 /// Matching tiers (in order):
@@ -121,6 +167,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
 /// 5. Base title (strip region/version tags)
 /// 6. Tilde dual-title split — for names with ` ~ `, try each half through exact + fuzzy
 /// 7. Version-stripped base title
+/// 8. Slash/underscore dual-title split — for ` / ` or ` _ ` (raw) names, try each half
 ///
 /// `rom_filename` is the ROM file name (with extension).
 /// `arcade_display` is the translated display name for arcade ROMs (None for non-arcade).
@@ -207,7 +254,37 @@ pub fn find_best_match(
         return Some(path.clone());
     }
 
-    // Tier 7: aggressive normalization (strip all punctuation, keep spaces)
+    // Tier 7: slash/underscore dual-title split — for "A / B" or "A _ B" names,
+    // try each half through exact + fuzzy: arcade "/" names ("Demon Front / Moyu
+    // Zhanxian ..."), lock-on combos ("Sonic & Knuckles _ Sonic 3"). Split the
+    // RAW source, not the '&'-mapped thumb, so "A & B" compounds ("Battletoads &
+    // Double Dragon") are NOT split into halves and mis-matched to a single-title
+    // cover. Halves under 5 chars are too generic to match on.
+    let dual_sep = if source.contains(" / ") {
+        Some(" / ")
+    } else if source.contains(" _ ") {
+        Some(" _ ")
+    } else {
+        None
+    };
+    if let Some(sep) = dual_sep {
+        for half in source.split(sep) {
+            let half = half.trim();
+            if half.len() < 5 {
+                continue;
+            }
+            let half_thumb = thumbnail_filename(half);
+            if let Some(path) = index.exact.get(&half_thumb) {
+                return Some(path.clone());
+            }
+            let half_base = base_title(&half_thumb);
+            if let Some(path) = index.fuzzy.get(&half_base) {
+                return Some(path.clone());
+            }
+        }
+    }
+
+    // Tier 8: aggressive normalization (strip all punctuation, keep spaces)
     let agg = normalize_aggressive(&base);
     if !agg.is_empty()
         && let Some(path) = index.aggressive.get(&agg)
@@ -215,7 +292,7 @@ pub fn find_best_match(
         return Some(path.clone());
     }
 
-    // Tier 8: compact-aggressive (also strips spaces). Mirror of
+    // Tier 9: compact-aggressive (also strips spaces). Mirror of
     // find_in_manifest tier 9. Same guard: only fire when the source's
     // aggressive form has no internal whitespace, to avoid over-matching
     // transliterated names that have spaces on one side.

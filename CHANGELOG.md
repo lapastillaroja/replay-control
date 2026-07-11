@@ -4,6 +4,20 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.1.2-beta.3]
+
+> Orphaned-thumbnail cleanup now uses the exact same image matching the app uses to display art, so it never removes an image a game can still show.
+
+### Fixed
+
+- Fixed "Clean orphaned thumbnails" still removing some images a game was actively displaying — including arcade games, dual-title games, and games that share a regional cover — extending the beta.2 fix. Cleanup and on-screen display now resolve each game's box art, screenshot, and title image through the exact same matching, so an image the app can still show is never deleted.
+
+### Changed
+
+- "Clean orphaned thumbnails" now also removes downloaded cover variants a game isn't using; only the cover the app displays and any cover you've chosen are kept. Removed libretro covers stay available to re-download from the cover picker.
+
+---
+
 ## [1.1.2-beta.2]
 
 > Fixes orphaned-thumbnail cleanup wrongly deleting box art that was still in use.
