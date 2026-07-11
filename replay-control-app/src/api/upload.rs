@@ -81,11 +81,11 @@ async fn upload_rom(
 
     if !uploaded.is_empty() {
         if let Err(e) = state
-            .cache
-            .invalidate_system(system.clone(), &state.library_writer)
+            .library
+            .clear_system_and_invalidate_caches(system.clone(), &state.library_writer)
             .await
         {
-            tracing::debug!("post-upload invalidate_system skipped: {e}");
+            tracing::debug!("post-upload system library clear skipped: {e}");
         }
         state.invalidate_user_caches().await;
     }

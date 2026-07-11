@@ -103,23 +103,24 @@ impl LibraryService {
         self.recommendations.invalidate().await;
     }
 
-    /// Strict-reconcile per-system scan + write-through to L2.
+    /// Strict-reconcile per-system scan + write-through to `library.db`.
     ///
-    /// One rule: a successful filesystem read replaces L2 for that system;
-    /// a failed filesystem read returns `Err` and preserves existing L2.
+    /// One rule: a successful filesystem read replaces stored rows for that
+    /// system; a failed filesystem read returns `Err` and preserves existing
+    /// stored rows.
     ///
     /// - `Ok(non-empty)` → replace rows + meta with the scan result.
     /// - `Ok(empty)` → reconcile to empty (delete rows, upsert meta with
     ///   `rom_count=0`). A successful empty walk is a real reconcile, not
     ///   a failure.
-    /// - `Err` → callers preserve existing L2 state for that system.
+    /// - `Err` → callers preserve existing stored state for that system.
     ///
     /// Missing top-level system directory:
     /// - Local storage: treat as a successful empty scan (user-initiated
     ///   deletion); reconcile to empty.
     /// - NFS: treat as ambiguous storage failure; return `Err` so callers
-    ///   preserve cached state.
-    pub async fn scan_and_cache_system(
+    ///   preserve stored state.
+    pub async fn scan_and_reconcile_system(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -127,7 +128,7 @@ impl LibraryService {
         region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
-        self.scan_and_cache_system_with_inputs(
+        self.scan_and_reconcile_system_with_inputs(
             storage,
             system,
             region_pref,
@@ -139,7 +140,7 @@ impl LibraryService {
         .map(|outcome| outcome.roms)
     }
 
-    pub(crate) async fn scan_and_cache_system_with_inputs(
+    pub(crate) async fn scan_and_reconcile_system_with_inputs(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -152,7 +153,7 @@ impl LibraryService {
         let system_dir = storage.roms_dir().join(system);
 
         // NFS missing dir is ambiguous (transient mount blip vs remote
-        // delete) — preserve L2. Local missing dir is a user-initiated
+        // delete) — preserve stored rows. Local missing dir is a user-initiated
         // deletion: fall through to `list_roms`, which returns
         // `Ok(empty)` and reconciles to zero per the strict rule.
         let exists = system_dir.try_exists().map_err(|e| {
@@ -163,7 +164,7 @@ impl LibraryService {
         })?;
         if !exists && !storage.kind.is_local() {
             return Err(replay_control_core::error::Error::Other(format!(
-                "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving cached state)"
+                "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving stored state)"
             )));
         }
 
@@ -181,7 +182,7 @@ impl LibraryService {
             Ok(roms) => roms,
             Err(e) => {
                 tracing::warn!(
-                    "L2 scan profile: {system}: list failed after {}ms: {e}",
+                    "library reconcile profile: {system}: list failed after {}ms: {e}",
                     list_started.elapsed().as_millis()
                 );
                 return Err(e);
@@ -193,7 +194,7 @@ impl LibraryService {
             let mtime_stats = replay_control_core_server::roms::scan_mtime_stats(&roms);
             if mtime_stats.is_suspicious() {
                 tracing::info!(
-                    "L2 scan mtime profile: {system}: suspicious distribution total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}; startup skip remains gated by storage probe",
+                    "library reconcile mtime profile: {system}: suspicious distribution total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}; startup skip remains gated by storage probe",
                     mtime_stats.total,
                     mtime_stats.unique_mtimes,
                     mtime_stats.unique_ratio(),
@@ -203,7 +204,7 @@ impl LibraryService {
                 );
             } else {
                 tracing::debug!(
-                    "L2 scan mtime profile: {system}: total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}",
+                    "library reconcile mtime profile: {system}: total={} unique={} unique_ratio={:.3} dominant={} dominant_ratio={:.3} missing_or_invalid={}",
                     mtime_stats.total,
                     mtime_stats.unique_mtimes,
                     mtime_stats.unique_ratio(),
@@ -219,7 +220,7 @@ impl LibraryService {
         let arc = Arc::new(roms);
         if scan_inputs.startup_can_skip(&scan_fingerprint) {
             tracing::info!(
-                "L2 scan profile: {system}: roms={} list_ms={list_ms} unchanged; skipped discovery save and enrichment total_ms={}",
+                "library reconcile profile: {system}: roms={} list_ms={list_ms} unchanged; skipped discovery save and enrichment total_ms={}",
                 arc.len(),
                 total_started.elapsed().as_millis()
             );
@@ -230,7 +231,7 @@ impl LibraryService {
         }
 
         let identity_started = Instant::now();
-        let hash_results = self.cached_identity_for_discovery(storage, system, &arc, scan_inputs);
+        let hash_results = self.stored_identity_for_discovery(storage, system, &arc, scan_inputs);
         let identity_ms = identity_started.elapsed().as_millis();
         scan_inputs.ensure_current()?;
 
@@ -249,14 +250,14 @@ impl LibraryService {
         let save_ms = save_started.elapsed().as_millis();
         if let Err(e) = save_result {
             tracing::warn!(
-                "L2 scan profile: {system}: save failed after {save_ms}ms (roms={}, list_ms={list_ms}, cached_identity_ms={identity_ms}): {e}",
+                "library reconcile profile: {system}: save failed after {save_ms}ms (roms={}, list_ms={list_ms}, stored_identity_ms={identity_ms}): {e}",
                 arc.len()
             );
             return Err(e);
         }
 
         tracing::info!(
-            "L2 scan profile: {system}: roms={} list_ms={list_ms} cached_identity_ms={identity_ms} save_ms={save_ms} total_ms={}",
+            "library reconcile profile: {system}: roms={} list_ms={list_ms} stored_identity_ms={identity_ms} save_ms={save_ms} total_ms={}",
             arc.len(),
             total_started.elapsed().as_millis()
         );
@@ -282,7 +283,7 @@ impl LibraryService {
             .await?
             .ok()??;
 
-        // No cached ROMs? Skip L2.
+        // No stored ROMs for this system.
         if meta.rom_count == 0 {
             return None;
         }
@@ -291,35 +292,35 @@ impl LibraryService {
         let current_mtime_secs = dir_mtime_secs(system_dir);
 
         match (meta.dir_mtime_secs, current_mtime_secs) {
-            (Some(cached), Some(current)) if cached != current => {
+            (Some(stored), Some(current)) if stored != current => {
                 tracing::debug!(
-                    "L2 cache stale for {system}: mtime changed ({cached} → {current})"
+                    "stored library rows stale for {system}: mtime changed ({stored} → {current})"
                 );
-                return None; // Stale — fall through to L3.
+                return None;
             }
             (Some(_), None) => {
-                // Can't read current mtime (NFS flake) — trust the cache.
+                // Can't read current mtime (NFS flake) — trust stored rows.
             }
             (None, _) => {
-                // No mtime stored — cache was saved without mtime info. Trust it.
+                // No mtime stored — rows were saved without mtime info. Trust them.
             }
-            _ => {} // Mtimes match — cache is fresh.
+            _ => {} // Mtimes match — stored rows are current.
         }
 
         // Load ROMs from DB.
         let sys = system.to_string();
-        let cached_roms = db
+        let stored_roms = db
             .read(move |conn| LibraryDb::load_system_entries(conn, &sys))
             .await?
             .ok()?;
 
-        if cached_roms.is_empty() && meta.rom_count > 0 {
-            // Meta says we have ROMs but game_library is empty — need L3 scan.
+        if stored_roms.is_empty() && meta.rom_count > 0 {
+            // Meta says we have ROMs but game_library is empty — rescan.
             return None;
         }
 
         // Convert GameEntry -> RomEntry.
-        let roms: Vec<RomEntry> = cached_roms
+        let roms: Vec<RomEntry> = stored_roms
             .into_iter()
             .map(|cr| {
                 use replay_control_core_server::game_ref::GameRef;
@@ -343,13 +344,13 @@ impl LibraryService {
             .collect();
 
         tracing::debug!(
-            "L2 cache hit for {system}: {} ROMs loaded from SQLite",
+            "stored library rows hit for {system}: {} ROMs loaded from SQLite",
             roms.len()
         );
         Some(roms)
     }
 
-    /// Get cached recents or scan and cache.
+    /// Get cached recents or populate the in-memory recents cache.
     ///
     /// Invalidated explicitly by the launch server_fn and by the inotify
     /// watcher on `_recents/` changes. Single-flight on miss.
@@ -371,32 +372,37 @@ impl LibraryService {
         Ok(entries)
     }
 
-    /// Invalidate L1 (in-memory) caches only — does NOT touch the L2
-    /// (SQLite) game_library tables. Use this for non-destructive flows like
+    /// Invalidate in-memory caches only — does NOT touch the durable
+    /// `game_library` tables. Use this for non-destructive flows like
     /// rescan that reconcile rows in place without clearing the whole
-    /// library. Destructive flows should call `invalidate()` instead.
-    pub async fn invalidate_l1(&self) {
+    /// library. Destructive flows should call
+    /// `clear_library_and_invalidate_caches()` instead.
+    pub async fn invalidate_in_memory_views(&self) {
         *self.favorites.write().await = None;
         *self.recents.write().await = None;
         self.query_cache.invalidate_all();
     }
 
-    /// Invalidate all caches (after delete, rename, upload). Clears L1
-    /// in-memory caches *and* L2 (SQLite). Returns `Ok(())` only if the
-    /// L2 clear actually ran — caller-driven destructive flows (rebuild,
+    /// Clear the durable library rows and invalidate in-memory caches.
+    /// Returns `Ok(())` only if the `library.db` clear actually ran —
+    /// caller-driven destructive flows (rebuild,
     /// re-import) must propagate the error rather than proceeding to write
     /// over a not-actually-cleared table.
-    pub async fn invalidate(&self, db: &LibraryWritePool) -> Result<(), DbError> {
-        self.invalidate_l1().await;
+    pub async fn clear_library_and_invalidate_caches(
+        &self,
+        db: &LibraryWritePool,
+    ) -> Result<(), DbError> {
+        self.invalidate_in_memory_views().await;
         db.try_write(|conn| LibraryDb::clear_all_game_library(conn))
             .await?
             .map_err(|e| DbError::Other(format!("clear_all_game_library: {e}")))
     }
 
-    /// Invalidate cache for a specific system. Same semantics as
-    /// `invalidate()` — typed error so destructive callers can detect a
-    /// no-op clear.
-    pub async fn invalidate_system(
+    /// Clear durable library rows for a specific system and invalidate
+    /// in-memory query caches. Same semantics as
+    /// `clear_library_and_invalidate_caches()` — typed error so destructive
+    /// callers can detect a no-op clear.
+    pub async fn clear_system_and_invalidate_caches(
         &self,
         system: String,
         db: &LibraryWritePool,
@@ -432,7 +438,7 @@ mod tests {
     use super::*;
     use replay_control_core::game_ref::GameRef;
     use replay_control_core::rom_tags::RegionPreference;
-    use replay_control_core_server::rom_hash::{CachedHash, HashResult};
+    use replay_control_core_server::rom_hash::{HashResult, StoredHash};
     use replay_control_core_server::roms::RomEntry;
     use replay_control_core_server::test_utils::build_library_pool;
     use replay_control_core_server::{
@@ -541,7 +547,7 @@ mod tests {
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
 
-        svc.scan_and_cache_system(
+        svc.scan_and_reconcile_system(
             &storage,
             "nintendo_nes",
             RegionPreference::default(),
@@ -560,7 +566,7 @@ mod tests {
 
         std::fs::remove_file(&rom_path).unwrap();
 
-        svc.scan_and_cache_system(
+        svc.scan_and_reconcile_system(
             &storage,
             "nintendo_nes",
             RegionPreference::default(),
@@ -594,11 +600,11 @@ mod tests {
     }
 
     /// Local storage (SD/USB/NVMe): a missing top-level system dir means
-    /// the user deleted the folder. Reconcile to empty so the cache
+    /// the user deleted the folder. Reconcile to empty so the library DB
     /// matches disk — phantom ROMs that can't be launched would be a
     /// worse UX than an honest empty list.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn reconcile_local_missing_dir_with_cached_rows_drops_to_empty() {
+    async fn reconcile_local_missing_dir_with_stored_rows_drops_to_empty() {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
@@ -614,7 +620,7 @@ mod tests {
         let svc = LibraryService::new();
 
         // Seed: scan once so meta + rows exist for nintendo_nes.
-        svc.scan_and_cache_system(
+        svc.scan_and_reconcile_system(
             &storage,
             "nintendo_nes",
             RegionPreference::default(),
@@ -631,7 +637,7 @@ mod tests {
         // Strict reconcile on local storage: missing dir → Ok(empty) →
         // reconcile to empty.
         let arc = svc
-            .scan_and_cache_system(
+            .scan_and_reconcile_system(
                 &storage,
                 "nintendo_nes",
                 RegionPreference::default(),
@@ -648,7 +654,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(filenames.is_empty(), "cached rows should be dropped");
+        assert!(filenames.is_empty(), "stored rows should be dropped");
 
         let meta = reader
             .read(LibraryDb::load_all_system_meta)
@@ -664,10 +670,10 @@ mod tests {
 
     /// NFS storage: a missing top-level system dir is ambiguous (could be
     /// transient mount blip or remote-side delete). Strict reconcile
-    /// returns `Err` so cached state is preserved — the
-    /// failure-preserves-L2 contract.
+    /// returns `Err` so stored state is preserved — the
+    /// failure-preserves-stored-rows contract.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn reconcile_nfs_missing_dir_returns_err_and_preserves_cache() {
+    async fn reconcile_nfs_missing_dir_returns_err_and_preserves_stored_rows() {
         use replay_control_core_server::storage::StorageLocation;
 
         let (pool, _db_tmp) = build_library_pool();
@@ -685,7 +691,7 @@ mod tests {
         let storage_local =
             StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
-        svc.scan_and_cache_system(
+        svc.scan_and_reconcile_system(
             &storage_local,
             "nintendo_nes",
             RegionPreference::default(),
@@ -701,7 +707,7 @@ mod tests {
             StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Nfs);
 
         let err = svc
-            .scan_and_cache_system(
+            .scan_and_reconcile_system(
                 &storage_nfs,
                 "nintendo_nes",
                 RegionPreference::default(),
@@ -709,13 +715,13 @@ mod tests {
                 &writer,
             )
             .await
-            .expect_err("NFS missing-dir must return Err to preserve cached state");
+            .expect_err("NFS missing-dir must return Err to preserve stored state");
         assert!(
             err.to_string().contains("NFS storage"),
             "unexpected error: {err}"
         );
 
-        // Cached rows + meta unchanged.
+        // Stored rows + meta unchanged.
         let filenames = reader
             .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
             .await
@@ -755,10 +761,10 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
 
-        let mut cached_hashes = HashMap::new();
-        cached_hashes.insert(
+        let mut stored_hashes = HashMap::new();
+        stored_hashes.insert(
             "Mario.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0x1234_ABCD,
                 hash_mtime: mtime_secs,
                 hash_size_bytes: None,
@@ -768,7 +774,7 @@ mod tests {
             },
         );
         let scan_inputs = ScanInputs::new(
-            cached_hashes,
+            stored_hashes,
             None,
             false,
             ScanOptions {
@@ -780,7 +786,7 @@ mod tests {
 
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
-        svc.scan_and_cache_system_with_inputs(
+        svc.scan_and_reconcile_system_with_inputs(
             &storage,
             "nintendo_snes",
             RegionPreference::default(),
@@ -792,15 +798,15 @@ mod tests {
         .unwrap();
 
         let hashes = reader
-            .read(|conn| LibraryDb::load_cached_hashes(conn, "nintendo_snes"))
+            .read(|conn| LibraryDb::load_stored_hashes(conn, "nintendo_snes"))
             .await
             .unwrap()
             .unwrap();
-        let cached = hashes
+        let stored = hashes
             .get("Mario.sfc")
-            .expect("cached hash should round-trip after scan save");
-        assert_eq!(cached.crc32, 0x1234_ABCD);
-        assert_eq!(cached.hash_size_bytes, Some(3));
+            .expect("stored hash should round-trip after scan save");
+        assert_eq!(stored.crc32, 0x1234_ABCD);
+        assert_eq!(stored.hash_size_bytes, Some(3));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -819,7 +825,7 @@ mod tests {
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
         let first = svc
-            .scan_and_cache_system_with_inputs(
+            .scan_and_reconcile_system_with_inputs(
                 &storage,
                 "nintendo_ds",
                 RegionPreference::default(),
@@ -856,7 +862,7 @@ mod tests {
             None,
         );
         let unchanged = svc
-            .scan_and_cache_system_with_inputs(
+            .scan_and_reconcile_system_with_inputs(
                 &storage,
                 "nintendo_ds",
                 RegionPreference::default(),
@@ -879,7 +885,7 @@ mod tests {
             None,
         );
         let manual = svc
-            .scan_and_cache_system_with_inputs(
+            .scan_and_reconcile_system_with_inputs(
                 &storage,
                 "nintendo_ds",
                 RegionPreference::default(),
@@ -893,7 +899,7 @@ mod tests {
 
         std::fs::write(&rom_path, b"changed rom").unwrap();
         let changed = svc
-            .scan_and_cache_system_with_inputs(
+            .scan_and_reconcile_system_with_inputs(
                 &storage,
                 "nintendo_ds",
                 RegionPreference::default(),
@@ -921,7 +927,7 @@ mod tests {
 
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
-        svc.scan_and_cache_system(
+        svc.scan_and_reconcile_system(
             &storage,
             "nintendo_snes",
             RegionPreference::default(),
@@ -1015,8 +1021,8 @@ mod tests {
         let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();
 
-        // Seed scan: cached rows + meta with rom_count=1.
-        svc.scan_and_cache_system(
+        // Seed scan: stored rows + meta with rom_count=1.
+        svc.scan_and_reconcile_system(
             &storage,
             "nintendo_nes",
             RegionPreference::default(),
@@ -1034,7 +1040,7 @@ mod tests {
 
         // Reconcile: walk returns Ok(empty) → reconcile-to-empty.
         let arc = svc
-            .scan_and_cache_system(
+            .scan_and_reconcile_system(
                 &storage,
                 "nintendo_nes",
                 RegionPreference::default(),
@@ -1050,7 +1056,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(filenames.is_empty(), "cached rows should be dropped");
+        assert!(filenames.is_empty(), "stored rows should be dropped");
 
         let meta = reader
             .read(LibraryDb::load_all_system_meta)

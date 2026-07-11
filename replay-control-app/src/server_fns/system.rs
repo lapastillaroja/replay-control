@@ -98,7 +98,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         .await
         .and_then(Result::ok)
         .unwrap_or_default();
-    let total_favorites = state.cache.get_favorites_count(&storage).await;
+    let total_favorites = state.library.get_favorites_count(&storage).await;
     let live = gather_live_stats(&state).await;
 
     let systems_with_games = system_meta.iter().filter(|s| s.rom_count > 0).count();
@@ -281,7 +281,7 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let entries = state
-        .cache
+        .library
         .get_recents(&storage)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -344,7 +344,7 @@ pub async fn delete_recent(marker_filename: String) -> Result<(), ServerFnError>
     // recents) so the deletion surfaces on the next `get_recents` instead of
     // reappearing on reload. Mirrors the launch path; the ROM watcher also
     // invalidates on `_recent/` changes but is unreliable on NFS.
-    state.cache.invalidate_after_launch().await;
+    state.library.invalidate_after_launch().await;
     Ok(())
 }
 

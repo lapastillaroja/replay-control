@@ -41,7 +41,7 @@ pub const LIBRARY_DB_FILE: &str = "library.db";
 pub const LAUNCHBOX_XML: &str = "launchbox-metadata.xml";
 
 /// Find the LaunchBox XML on disk. Searches in priority order:
-///   1. host-global cache (`/var/lib/replay-control/cache/launchbox-metadata.xml`)
+///   1. host-global download directory (`/var/lib/replay-control/cache/launchbox-metadata.xml`)
 ///      — where `download_metadata` writes
 ///   2. per-storage legacy location (`<storage>/.replay-control/launchbox-metadata.xml`)
 ///      — pre-v2 location, kept for users who manually placed the XML there
@@ -49,11 +49,11 @@ pub const LAUNCHBOX_XML: &str = "launchbox-metadata.xml";
 ///
 /// Returns the first existing path. None when no XML is present.
 pub fn resolve_launchbox_xml(
-    cache_dir: &Path,
+    download_dir: &Path,
     storage_rc_dir: &Path,
 ) -> Option<std::path::PathBuf> {
     let candidates = [
-        cache_dir.join(LAUNCHBOX_XML),
+        download_dir.join(LAUNCHBOX_XML),
         storage_rc_dir.join(LAUNCHBOX_XML),
         storage_rc_dir.join("Metadata.xml"),
     ];
@@ -96,7 +96,7 @@ pub fn year_from_release_date(date: &str) -> Option<u16> {
     date.get(..4).and_then(|y| y.parse().ok())
 }
 
-/// A cached ROM entry from the `game_library` table.
+/// A stored ROM entry from the `game_library` table.
 #[derive(Debug, Clone, Default)]
 pub struct GameEntry {
     pub system: String,
@@ -123,7 +123,7 @@ pub struct GameEntry {
     /// CRC32 hash of the ROM file. NULL for CD/computer/arcade systems.
     pub crc32: Option<u32>,
     /// File mtime (seconds since UNIX epoch) when the CRC32 was computed.
-    /// Used with `hash_size_bytes` as a cache key for the hash result.
+    /// Used with `hash_size_bytes` as a hash reuse key for the hash result.
     pub hash_mtime: Option<i64>,
     /// File size observed when the CRC32 was computed.
     pub hash_size_bytes: Option<u64>,
@@ -149,7 +149,7 @@ pub struct GameEntry {
     pub release_region_used: Option<String>,
     /// Cooperative play flag (from imported metadata).
     pub cooperative: bool,
-    /// Cached normalized title (`normalize_title_for_metadata` of the canonical
+    /// Stored normalized title (`normalize_title_for_metadata` of the canonical
     /// stem/display name). Stored at scan time so the enrichment matcher does
     /// hashmap lookups instead of normalizing per ROM. Reconciled by the
     /// `TITLE_NORM_VERSION` boot check; empty until the next scan/reconcile.
@@ -840,7 +840,7 @@ impl LibraryDb {
     ];
 
     /// Open (or create) the library database at the given file path.
-    /// Library is rebuildable cache, so a bad-header / probe-failure file
+    /// Library data is rebuildable from ROM storage and metadata sources, so a bad-header / probe-failure file
     /// is silently deleted and recreated; runtime corruption is surfaced
     /// via the pool's corruption banner instead.
     pub fn open_at(db_path: &Path) -> Result<Connection> {
@@ -999,7 +999,7 @@ impl LibraryDb {
     /// (`game_library` and friends) are dropped so `CREATE TABLE IF NOT EXISTS`
     /// recreates them at the new shape. Their content comes from filesystem
     /// scans, LaunchBox import, and build-time seed — all reproducible, so the
-    /// drop is a cache flush, not data loss (favorites live on the filesystem;
+    /// drop is a rebuildable-data reset, not data loss (favorites live on the filesystem;
     /// user data lives in separate, non-dropped tables). The next scan rebuilds
     /// the dropped tables, which re-hashes ROMs and re-enriches from the
     /// current catalog. A schema change therefore self-heals into fresh data.

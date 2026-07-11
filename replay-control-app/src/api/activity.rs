@@ -14,7 +14,7 @@ pub enum Activity {
     /// No activity running. All buttons enabled.
     Idle,
 
-    /// Startup pipeline (Phases 2+3: cache verify/populate + thumbnail index rebuild).
+    /// Startup pipeline (Phases 2+3: library verification + thumbnail index rebuild).
     /// Phase 1 (auto-import) uses the Import variant instead. `enriching` is
     /// true while the inline per-system enrichment step runs for `system`.
     Startup {
@@ -194,7 +194,7 @@ pub enum StartupPhase {
     FetchingMetadata,
     /// Scanning ROM directories, populating game library.
     Scanning,
-    /// Walking cached artwork/media files to refresh summary stats.
+    /// Walking downloaded artwork/media files to refresh summary stats.
     MediaStats,
     /// Rebuilding thumbnail index from disk.
     RebuildingIndex,
@@ -290,7 +290,7 @@ pub enum RebuildPhase {
     Scanning,
     /// Applying metadata and local thumbnail matches for the current system.
     Enriching,
-    /// Walking cached artwork/media files to refresh summary stats.
+    /// Walking downloaded artwork/media files to refresh summary stats.
     MediaStats,
     /// Rebuild completed successfully.
     Complete,
@@ -488,7 +488,7 @@ impl super::AppState {
     }
 
     /// Check if startup scanning is active (replaces is_scanning).
-    /// Used by LibraryService::get_roms() to suppress L3 scans.
+    /// Used by LibraryService::get_roms() to suppress filesystem scans.
     pub fn is_startup_scanning(&self) -> bool {
         matches!(
             *self.activity.read().expect("activity lock"),

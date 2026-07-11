@@ -276,10 +276,10 @@ fn append_catalog_resources_for_candidates(
 /// Run the full enrichment pipeline for a system.
 ///
 /// Pure data function: reads from DB + filesystem, returns all updates.
-/// The app layer is responsible for writing updates and cache invalidation.
+/// The app layer is responsible for writing updates and invalidating in-memory views.
 ///
 /// # Arguments
-/// * `conn` - Library DB connection (game_library + derived caches).
+/// * `conn` - Library DB connection (game_library + derived tables).
 /// * `system` - System folder name.
 /// * `index` - Pre-built image index for this system.
 /// * `arcade_lookup` - Per-system arcade-game info (display_name etc.).

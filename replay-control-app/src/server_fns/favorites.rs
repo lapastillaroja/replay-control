@@ -100,7 +100,7 @@ pub async fn add_favorite(
     )
     .await
     .map_err(|e| super::to_user_error("Failed to add favorite", e))?;
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)
 }
@@ -129,7 +129,7 @@ pub async fn remove_favorite(
         }
     }
 
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(())
 }
@@ -167,7 +167,7 @@ pub async fn organize_favorites(
     )
     .await
     .map_err(|e| super::to_user_error("Failed to organize favorites", e))?;
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(OrganizeResult {
         organized: result.organized,
@@ -181,7 +181,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
     super::require_storage_mutation_allowed(&state, "group favorites").await?;
     let result = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|e| super::to_user_error("Failed to group favorites", e))?;
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)
 }
@@ -192,7 +192,7 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     super::require_storage_mutation_allowed(&state, "flatten favorites").await?;
     let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|e| super::to_user_error("Failed to flatten favorites", e))?;
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
     Ok(result)
 }
@@ -223,9 +223,13 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
-    let recents = state.cache.get_recents(&storage).await.unwrap_or_default();
+    let recents = state
+        .library
+        .get_recents(&storage)
+        .await
+        .unwrap_or_default();
     let all_favorites = state
-        .cache
+        .library
         .get_all_favorited_systems(&storage)
         .await
         .unwrap_or_default();

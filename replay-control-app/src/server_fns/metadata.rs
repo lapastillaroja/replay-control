@@ -259,7 +259,7 @@ pub struct BuiltinDbStats {
     pub shmups_wiki_video_index_entries: usize,
 }
 
-/// Clear cached provider metadata and reset the XML hash stamp so the next
+/// Clear imported provider metadata and reset the XML hash stamp so the next
 /// boot re-parses LaunchBox metadata from disk.
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
@@ -314,12 +314,12 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 ///
 /// Per-system semantics:
 /// - **Local storage** (SD/USB/NVMe): a missing top-level system folder is
-///   treated as a user-initiated deletion and reconciled to empty (cached
+///   treated as a user-initiated deletion and reconciled to empty (stored
 ///   rows are dropped, meta updates to `rom_count=0`).
 /// - **NFS storage**: a missing top-level system folder is ambiguous (could
 ///   be a transient mount blip or a real remote-side delete) and returns
-///   `Err`; cached rows are preserved.
-/// - Any FS read error mid-walk returns `Err` and preserves cached state on
+///   `Err`; stored rows are preserved.
+/// - Any FS read error mid-walk returns `Err` and preserves stored state on
 ///   every storage kind.
 #[server(prefix = "/sfn")]
 pub async fn rescan_game_library() -> Result<(), ServerFnError> {
@@ -334,7 +334,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    state.cache.invalidate_l1().await;
+    state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
 
     state.spawn_populate(guard, true);
@@ -342,7 +342,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
 }
 
 /// Rebuild the game library: strict-reconciles every visible system from disk
-/// and enriches each successful scan without pre-clearing the L2 cache.
+/// and enriches each successful scan without pre-clearing the durable library rows.
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
@@ -356,12 +356,12 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Clear L1 / user caches only. **Do not pre-clear L2** — under the
-    // strict reconcile rule, each per-system scan replaces L2 only on
-    // success and preserves L2 on FS error. Pre-clearing destroys the
+    // Clear in-memory/user caches only. **Do not pre-clear durable rows** — under the
+    // strict reconcile rule, each per-system scan replaces stored rows only on
+    // success and preserves stored rows on FS error. Pre-clearing destroys the
     // fallback rows, reopening the "rebuild during NFS hiccup wipes
     // your library" vector.
-    state.cache.invalidate_l1().await;
+    state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
 
     state.spawn_populate(guard, false);
@@ -402,10 +402,8 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
             "Failed to reopen library DB after rebuild",
         ));
     }
-    // L2 was already wiped by reset_to_empty; this drops L1.
-    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
-        tracing::warn!("post-rebuild cache.invalidate failed: {e}");
-    }
+    // library.db was already recreated by reset_to_empty; only drop in-memory views.
+    state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
     // Trigger background re-import if XML exists.
     crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());

@@ -10,7 +10,7 @@ use replay_control_core::error::{Error, Result};
 /// `_` are skipped when `skip_underscore_dirs` is set.
 ///
 /// A dangling symlink (`NotFound`) is skipped; any other filesystem error is
-/// returned so callers can preserve cached state instead of treating a partial
+/// returned so callers can preserve stored state instead of treating a partial
 /// walk as authoritative.
 pub(crate) fn for_each_file(
     root: &Path,

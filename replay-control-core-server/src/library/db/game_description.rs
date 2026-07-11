@@ -1,6 +1,6 @@
 //! Operations on the `game_detail_metadata` table.
 //!
-//! Denormalized per-ROM cache of LaunchBox `description` + `publisher` —
+//! Denormalized per-ROM copy of LaunchBox `description` + `publisher` —
 //! the long-form fields the game-detail page needs. Lives in `library.db`
 //! so the request path stays on a single pool; written by the enrichment
 //! pass which already holds the matched `ProviderGameRow` for each ROM.

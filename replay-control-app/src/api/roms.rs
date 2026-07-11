@@ -19,15 +19,15 @@ async fn list_system_roms(
 ) -> Json<Vec<replay_control_core_server::roms::RomEntry>> {
     let storage = state.storage();
 
-    // L2 only: this is a GET handler, so it stays read-only. A miss
+    // Stored library only: this is a GET handler, so it stays read-only. A miss
     // returns an empty list and lets the background pipeline populate
-    // L2 — request handlers used to fall through to a full L3 scan
+    // library DB — request handlers used to fall through to a full filesystem scan
     // here, which kicked off enrichment writes (TGDB aliases, Wikidata
     // series, release-date seeding) from a GET. That was the second
     // half of the cold-NFS poisoning vector traced in the
     // write-isolation investigation.
     if let Some(roms) = state
-        .cache
+        .library
         .load_roms_from_db(
             &system,
             &storage.roms_dir().join(&system),
@@ -59,8 +59,12 @@ async fn rename_rom(
         &payload.new_filename,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
-        tracing::debug!("post-mutation cache.invalidate skipped: {e}");
+    if let Err(e) = state
+        .library
+        .clear_library_and_invalidate_caches(&state.library_writer)
+        .await
+    {
+        tracing::debug!("post-mutation library clear skipped: {e}");
     }
     state.invalidate_user_caches().await;
     Ok(Json(serde_json::json!({

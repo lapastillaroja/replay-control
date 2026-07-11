@@ -162,7 +162,7 @@ pub struct AppState {
     /// normal (config-dependent features are disabled). Never an empty
     /// fabrication.
     pub replay_config: Arc<std::sync::RwLock<Option<ReplayConfig>>>,
-    pub cache: Arc<LibraryService>,
+    pub library: Arc<LibraryService>,
     /// Response-level cache for assembled recommendation payloads.
     pub response_cache: Arc<response_cache::ResponseCache>,
     /// How the app is deployed (`Device` on RePlayOS, `Standalone` off-device).
@@ -444,7 +444,7 @@ fn ensure_mtime_probe_metadata(
 /// SQLite magic header is invalid. Used by both initial open and storage
 /// swap so the corruption banner fires on either path. Library DBs don't
 /// need this — `LibraryDb::open_at` deletes-and-recreates on bad header
-/// (the file is rebuildable cache); user_data is not rebuildable.
+/// because the file is a rebuildable library index; user_data is not rebuildable.
 async fn reopen_user_data_or_mark_corrupt(
     pool: &db_pools::UserDataWritePool,
     db_path: &std::path::Path,
@@ -797,7 +797,7 @@ impl AppState {
             storage_status,
             rom_watcher_status,
             replay_config: Arc::new(std::sync::RwLock::new(config)),
-            cache: Arc::new(LibraryService::new()),
+            library: Arc::new(LibraryService::new()),
             response_cache: Arc::new(response_cache::ResponseCache::new()),
             settings,
             data_dir,
@@ -1095,7 +1095,7 @@ impl AppState {
     /// The metadata page reads DB-backed system stats directly.
     pub async fn invalidate_user_caches(&self) {
         self.response_cache.invalidate_all();
-        self.cache.invalidate_recommendations().await;
+        self.library.invalidate_recommendations().await;
     }
 
     /// Returns `(library_corrupt, user_data_corrupt, user_data_backup_exists)`.
@@ -1454,12 +1454,12 @@ impl AppState {
             }
 
             // The writer now points at the newly selected storage's central
-            // library DB. Do not call the destructive `invalidate()` here:
+            // library DB. Do not call the destructive `clear_library_and_invalidate_caches()` here:
             // it clears that DB and a Some -> Some storage swap would leave
             // the metadata page/library empty until a manual rebuild. Drop
             // only in-memory snapshots; the pipeline below verifies or
-            // populates L2 using the strict reconcile rules.
-            self.cache.invalidate_l1().await;
+            // populates stored library rows using the strict reconcile rules.
+            self.library.invalidate_in_memory_views().await;
             self.invalidate_user_caches().await;
 
             // Reload user preferences from the settings store.

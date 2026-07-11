@@ -25,9 +25,9 @@ pub const LIBRARY_DB_FILE: &str = "library.db";
 pub const EXTERNAL_METADATA_DB_FILE: &str = "external_metadata.db";
 pub const AUTH_COOKIE_KEY_FILE: &str = "auth-cookie.key";
 
-/// Subdirectory under the data root for downloaded source files (e.g.
-/// LaunchBox XML). Created on demand by the refresh path.
-pub const CACHE_SUBDIR: &str = "cache";
+/// Legacy subdirectory name for downloaded source files (e.g. LaunchBox XML).
+/// The on-disk name stays `cache` for compatibility with existing installs.
+pub const DOWNLOAD_SUBDIR: &str = "cache";
 
 /// Cheap to clone.
 #[derive(Debug, Clone)]
@@ -71,8 +71,8 @@ impl DataDir {
 
     /// Directory used for downloaded source files awaiting parse
     /// (e.g. `launchbox-metadata.xml`).
-    pub fn cache_dir(&self) -> PathBuf {
-        self.root.join(CACHE_SUBDIR)
+    pub fn download_dir(&self) -> PathBuf {
+        self.root.join(DOWNLOAD_SUBDIR)
     }
 
     pub fn ensure_storage_dir(&self, id: &StorageId) -> Result<PathBuf> {

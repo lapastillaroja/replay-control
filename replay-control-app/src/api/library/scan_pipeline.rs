@@ -7,7 +7,7 @@ use std::time::Instant;
 use replay_control_core::error::{Error, Result};
 use replay_control_core_server::game_entry_builder;
 use replay_control_core_server::game_entry_builder::HashIdentificationMethod;
-use replay_control_core_server::rom_hash::{CachedHash, HashResult, HashStats};
+use replay_control_core_server::rom_hash::{HashResult, HashStats, StoredHash};
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 
@@ -26,7 +26,7 @@ pub(crate) struct ScanOptions {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ScanInputs {
-    cached_hashes: HashMap<String, CachedHash>,
+    stored_hashes: HashMap<String, StoredHash>,
     clean_startup_fingerprint: Option<String>,
     mtime_probe_trustworthy: bool,
     options: ScanOptions,
@@ -59,14 +59,14 @@ impl ScanCancellation {
 
 impl ScanInputs {
     pub(crate) fn new(
-        cached_hashes: HashMap<String, CachedHash>,
+        stored_hashes: HashMap<String, StoredHash>,
         clean_startup_fingerprint: Option<String>,
         mtime_probe_trustworthy: bool,
         options: ScanOptions,
         cancellation: Option<ScanCancellation>,
     ) -> Self {
         Self {
-            cached_hashes,
+            stored_hashes,
             clean_startup_fingerprint,
             mtime_probe_trustworthy,
             options,
@@ -119,10 +119,10 @@ pub(crate) struct DiscoverySaveRequest<'a> {
 impl LibraryService {
     /// Build hash-result input for discovery without reading ROM bytes.
     ///
-    /// Valid cached identity is carried into the discovery save so the UI does
+    /// Valid stored identity is carried into the discovery save so the UI does
     /// not regress on normal rescans or hidden rebuilds. New/stale rows stay
     /// identity-pending and are handled by the later identity phase.
-    pub(super) fn cached_identity_for_discovery(
+    pub(super) fn stored_identity_for_discovery(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -144,7 +144,7 @@ impl LibraryService {
             if !is_disc && !rom_hash::is_file_hash_eligible(system, rom_filename) {
                 continue;
             }
-            let Some(cached) = scan_inputs.cached_hashes.get(rom_filename) else {
+            let Some(stored) = scan_inputs.stored_hashes.get(rom_filename) else {
                 continue;
             };
             let abs_path = storage.root.join(rom.game.rom_path.trim_start_matches('/'));
@@ -157,10 +157,10 @@ impl LibraryService {
                 continue;
             };
             // Disc rows are keyed by the actual file size; cartridge rows keep the
-            // discovered size (matches how the cached hash was originally recorded).
+            // discovered size (matches how the stored hash was originally recorded).
             let current_size = if is_disc { file_size } else { rom.size_bytes };
             if let Some(hash) =
-                rom_hash::reusable_cached_hash(rom_filename, cached, current_mtime, current_size)
+                rom_hash::reusable_stored_hash(rom_filename, stored, current_mtime, current_size)
             {
                 result.insert(rom_filename.clone(), hash);
             }
@@ -171,7 +171,7 @@ impl LibraryService {
     /// Hash ROM files for a hash-eligible system and apply identification results.
     ///
     /// For eligible systems (cartridge-based with No-Intro CRC data), this:
-    /// 1. Loads cached hashes from the database
+    /// 1. Loads stored hashes from the database
     /// 2. Computes CRC32 for new/modified files
     /// 3. Looks up CRC32 in the No-Intro index
     /// 4. Returns identity results for the library-row builder to finalize display names
@@ -221,7 +221,7 @@ impl LibraryService {
             rc_hash_disc::hash_and_identify_discs(
                 system,
                 &rom_files,
-                &scan_inputs.cached_hashes,
+                &scan_inputs.stored_hashes,
                 &storage.root,
                 hash_options,
                 hash_cancel.clone(),
@@ -231,7 +231,7 @@ impl LibraryService {
             rom_hash::hash_and_identify_with_options_and_cancel(
                 system,
                 &rom_files,
-                &scan_inputs.cached_hashes,
+                &scan_inputs.stored_hashes,
                 &storage.root,
                 hash_options,
                 hash_cancel.clone(),
@@ -264,7 +264,7 @@ impl LibraryService {
         }
 
         tracing::info!(
-            "L2 hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} cancelled={cancelled} input_ms={input_ms} hash_ms={hash_ms} total_ms={}",
+            "library hash profile: {system}: files={} results={} exact={} migrated={} size_only={} computed={} forced={} skipped={} cancelled={cancelled} input_ms={input_ms} hash_ms={hash_ms} total_ms={}",
             rom_files.len(),
             result_map.len(),
             stats.reused_exact,
@@ -298,15 +298,15 @@ impl LibraryService {
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
         let build_started = Instant::now();
-        let cached_roms = game_entry_builder::build_game_entries(system, roms, hash_results).await;
+        let game_entries = game_entry_builder::build_game_entries(system, roms, hash_results).await;
         let build_ms = build_started.elapsed().as_millis();
 
         tracing::debug!(
-            "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
-            cached_roms.len()
+            "library write: saving {} ROMs for {system} (mtime={mtime_secs:?})",
+            game_entries.len()
         );
         let mut seen = HashSet::new();
-        let unique_roms: Vec<_> = cached_roms
+        let unique_roms: Vec<_> = game_entries
             .iter()
             .filter(|rom| seen.insert(rom.rom_filename.as_str()))
             .cloned()
@@ -324,13 +324,13 @@ impl LibraryService {
         let (scan_token, scanned_at) = match begin_result {
             Ok(Ok(token)) => token,
             Ok(Err(e)) => {
-                tracing::warn!("L2 write-through: begin {system} FAILED: {e}");
+                tracing::warn!("library write: begin {system} FAILED: {e}");
                 return Err(e);
             }
             Err(e) => {
-                tracing::warn!("L2 write-through: begin {system} write failed: {e}");
+                tracing::warn!("library write: begin {system} write failed: {e}");
                 return Err(Error::Other(format!(
-                    "L2 write-through begin failed for {system}: {e}"
+                    "library write begin failed for {system}: {e}"
                 )));
             }
         };
@@ -352,13 +352,13 @@ impl LibraryService {
             match chunk_result {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    tracing::warn!("L2 write-through: chunk {system} FAILED: {e}");
+                    tracing::warn!("library write: chunk {system} FAILED: {e}");
                     return Err(e);
                 }
                 Err(e) => {
-                    tracing::warn!("L2 write-through: chunk {system} write failed: {e}");
+                    tracing::warn!("library write: chunk {system} write failed: {e}");
                     return Err(Error::Other(format!(
-                        "L2 write-through chunk failed for {system}: {e}"
+                        "library write chunk failed for {system}: {e}"
                     )));
                 }
             }
@@ -387,23 +387,23 @@ impl LibraryService {
         let save_write_ms = save_write_started.elapsed().as_millis();
         match finalize_result {
             Ok(Ok(())) => {
-                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", unique_roms.len());
+                tracing::debug!("library write: {system} OK ({} ROMs)", unique_roms.len());
 
                 tracing::info!(
-                    "L2 discovery save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} total_ms={}",
+                    "library discovery save profile: {system}: roms={} mtime_ms={mtime_ms} build_ms={build_ms} save_write_ms={save_write_ms} total_ms={}",
                     unique_roms.len(),
                     save_profile_started.elapsed().as_millis()
                 );
                 Ok(())
             }
             Ok(Err(e)) => {
-                tracing::warn!("L2 write-through: finalize {system} FAILED: {e}");
+                tracing::warn!("library write: finalize {system} FAILED: {e}");
                 Err(e)
             }
             Err(e) => {
-                tracing::warn!("L2 write-through: finalize {system} write failed: {e}");
+                tracing::warn!("library write: finalize {system} write failed: {e}");
                 Err(Error::Other(format!(
-                    "L2 write-through finalize failed for {system}: {e}"
+                    "library write finalize failed for {system}: {e}"
                 )))
             }
         }
@@ -482,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_identity_for_discovery_reuses_disc_m3u_child_identity() {
+    fn stored_identity_for_discovery_reuses_disc_m3u_child_identity() {
         let temp = tempfile::tempdir().unwrap();
         let roms_dir = temp.path().join("roms").join("sega_cd");
         std::fs::create_dir_all(&roms_dir).unwrap();
@@ -492,10 +492,10 @@ mod tests {
         std::fs::write(&m3u, "Game (Disc 1).bin\n").unwrap();
 
         let (disc_mtime, disc_size) = rom_hash::file_mtime_size(&disc).unwrap();
-        let mut cached_hashes = HashMap::new();
-        cached_hashes.insert(
+        let mut stored_hashes = HashMap::new();
+        stored_hashes.insert(
             "Game.m3u".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0,
                 hash_mtime: disc_mtime,
                 hash_size_bytes: Some(disc_size),
@@ -504,7 +504,7 @@ mod tests {
                 ra_id: Some("9876".to_string()),
             },
         );
-        let inputs = ScanInputs::new(cached_hashes, None, false, ScanOptions::default(), None);
+        let inputs = ScanInputs::new(stored_hashes, None, false, ScanOptions::default(), None);
         let storage = StorageLocation::from_path(temp.path().to_path_buf(), StorageKind::Sd);
         let rom = RomEntry {
             game: GameRef::from_parts(
@@ -523,14 +523,14 @@ mod tests {
             players: None,
         };
 
-        let result = LibraryService::new().cached_identity_for_discovery(
+        let result = LibraryService::new().stored_identity_for_discovery(
             &storage,
             "sega_cd",
             &[rom],
             &inputs,
         );
 
-        let hash = result.get("Game.m3u").expect("cached m3u identity");
+        let hash = result.get("Game.m3u").expect("stored m3u identity");
         assert_eq!(hash.size_bytes, disc_size);
         assert_eq!(hash.rc_hash.as_deref(), Some("disc-ra-hash"));
         assert_eq!(hash.ra_id.as_deref(), Some("9876"));

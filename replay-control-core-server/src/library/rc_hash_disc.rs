@@ -925,7 +925,7 @@ fn first_disc_from_m3u(m3u_path: &Path, storage_root: &Path) -> Option<PathBuf> 
 
 /// Filesystem identity used for a disc hash row. Plain disc images hash
 /// themselves; M3U playlists hash the first referenced disc while keeping the
-/// playlist as the library/cache key.
+/// playlist as the library/hash reuse key.
 pub fn disc_hash_identity_path(path: &Path, storage_root: &Path) -> PathBuf {
     let is_m3u = path
         .extension()
@@ -947,19 +947,19 @@ pub fn disc_hash_identity_path(path: &Path, storage_root: &Path) -> PathBuf {
 pub async fn hash_and_identify_discs(
     system: &str,
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
-    cached_hashes: &std::collections::HashMap<String, rom_hash::CachedHash>,
+    stored_hashes: &std::collections::HashMap<String, rom_hash::StoredHash>,
     storage_root: &Path,
     options: rom_hash::HashOptions,
     cancel: Option<Arc<AtomicBool>>,
 ) -> rom_hash::HashIdentifyResult {
-    use rom_hash::{HashIdentifyResult, HashResult, HashStats, reusable_cached_hash};
+    use rom_hash::{HashIdentifyResult, HashResult, HashStats, reusable_stored_hash};
 
     if !is_disc_rc_hash_system(system) {
         return HashIdentifyResult::default();
     }
 
     let rom_files = rom_files.to_vec();
-    let cached = cached_hashes.clone();
+    let stored = stored_hashes.clone();
     let root = storage_root.to_path_buf();
     let sys = system.to_string();
     let cancel_owned = cancel.clone();
@@ -985,9 +985,9 @@ pub async fn hash_and_identify_discs(
                 };
                 // Reuse the persisted rc_hash when the file identity is unchanged.
                 if !options.force_rehash
-                    && let Some(c) = cached.get(rom_filename)
+                    && let Some(c) = stored.get(rom_filename)
                     && let Some(reused) =
-                        reusable_cached_hash(rom_filename, c, current_mtime, current_size)
+                        reusable_stored_hash(rom_filename, c, current_mtime, current_size)
                 {
                     stats.reused_exact += 1;
                     results.push(reused);
@@ -1311,7 +1311,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn m3u_hash_reuses_playlist_cache_against_referenced_disc_identity() {
+    async fn m3u_hash_reuses_stored_playlist_hash_against_referenced_disc_identity() {
         let temp = tempfile::tempdir().unwrap();
         let roms_dir = temp.path().join("roms").join("sega_cd");
         std::fs::create_dir_all(&roms_dir).unwrap();
@@ -1335,10 +1335,10 @@ mod tests {
         .await;
         let first = first.results.into_iter().next().unwrap();
 
-        let mut cached = std::collections::HashMap::new();
-        cached.insert(
+        let mut stored_hashes = std::collections::HashMap::new();
+        stored_hashes.insert(
             "Game.m3u".to_string(),
-            rom_hash::CachedHash {
+            rom_hash::StoredHash {
                 crc32: first.crc32,
                 hash_mtime: first.mtime_secs,
                 hash_size_bytes: Some(first.size_bytes),
@@ -1355,7 +1355,7 @@ mod tests {
                 "/roms/sega_cd/Game.m3u".to_string(),
                 std::fs::metadata(&m3u).unwrap().len(),
             )],
-            &cached,
+            &stored_hashes,
             temp.path(),
             rom_hash::HashOptions::default(),
             None,

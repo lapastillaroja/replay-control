@@ -49,18 +49,18 @@ impl LibraryService {
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
     /// Reads the host-global `external_metadata.db` for LaunchBox metadata and
     /// libretro thumbnail manifests, and the per-storage `library.db` for
-    /// filesystem state. Called after L2 write-through to populate fields
+    /// filesystem state. Called after library write to populate fields
     /// that `list_roms()` doesn't set.
-    pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
+    pub async fn enrich_system_library(&self, state: &crate::api::AppState, system: String) {
         if let Err(e) = self
-            .enrich_system_cache_with_cancellation(state, system, None)
+            .enrich_system_library_with_cancellation(state, system, None)
             .await
         {
-            tracing::warn!("L2 enrichment cancelled or failed: {e}");
+            tracing::warn!("library enrichment cancelled or failed: {e}");
         }
     }
 
-    pub(crate) async fn enrich_system_cache_with_cancellation(
+    pub(crate) async fn enrich_system_library_with_cancellation(
         &self,
         state: &crate::api::AppState,
         system: String,
@@ -127,7 +127,7 @@ impl LibraryService {
             set_enrichment_state(state, &system, PhaseState::Complete).await?;
             set_thumbnail_state(state, &system, ThumbnailPhaseState::Complete).await?;
             tracing::info!(
-                "L2 enrichment profile: {system}: roms=0 visible_ms={visible_ms} cleanup_write_ms={} total_ms={}",
+                "library enrichment profile: {system}: roms=0 visible_ms={visible_ms} cleanup_write_ms={} total_ms={}",
                 cleanup_started.elapsed().as_millis(),
                 enrichment_started.elapsed().as_millis()
             );
@@ -205,7 +205,7 @@ impl LibraryService {
 
         let Some(result) = result else {
             tracing::warn!(
-                "L2 enrichment profile: {system}: enrichment read unavailable after {match_ms}ms"
+                "library enrichment profile: {system}: enrichment read unavailable after {match_ms}ms"
             );
             return Ok(());
         };
@@ -351,10 +351,10 @@ impl LibraryService {
         }
 
         tracing::debug!(
-            "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
+            "library enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {resource_count} resources / {enrich_count} box+genre+players+ratings"
         );
         tracing::info!(
-            "L2 enrichment profile: {system}: roms={} visible_ms={visible_ms} scan_metadata_ms={scan_metadata_ms} setup_ms={setup_ms} match_ms={match_ms} manifest_ms={manifest_ms} metadata_write_ms={metadata_write_ms} detail_write_ms={detail_write_ms} box_art_write_ms={box_art_write_ms} total_ms={} dev={dev_count} coop={coop_count} dates={date_count} desc={desc_count} resources={resource_count} enrich={enrich_count}",
+            "library enrichment profile: {system}: roms={} visible_ms={visible_ms} scan_metadata_ms={scan_metadata_ms} setup_ms={setup_ms} match_ms={match_ms} manifest_ms={manifest_ms} metadata_write_ms={metadata_write_ms} detail_write_ms={detail_write_ms} box_art_write_ms={box_art_write_ms} total_ms={} dev={dev_count} coop={coop_count} dates={date_count} desc={desc_count} resources={resource_count} enrich={enrich_count}",
             rom_filenames.len(),
             enrichment_started.elapsed().as_millis()
         );

@@ -17,12 +17,12 @@ use super::game_library::ORIGINALS_ONLY;
 use super::game_library::region_rank_case;
 
 impl LibraryDb {
-    /// Get random cached ROMs with box art from all systems.
+    /// Get random stored ROMs with box art from all systems.
     /// Returns a diverse selection across different systems.
     /// Filters out arcade clones and deduplicates regional variants,
     /// preferring the user's region preference.
     /// `region_secondary` is the fallback region (empty string = no secondary).
-    pub fn random_cached_roms_diverse(
+    pub fn random_stored_roms_diverse(
         conn: &Connection,
         count: usize,
         region_pref: &str,
@@ -44,20 +44,20 @@ impl LibraryDb {
         );
         let mut stmt = conn
             .prepare(&sql)
-            .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
+            .map_err(|e| Error::Other(format!("Prepare random_stored_roms_diverse: {e}")))?;
 
         let rows = stmt
             .query_map(
                 params![(count * 5) as i64, region_pref, region_secondary],
                 Self::row_to_game_entry,
             )
-            .map_err(|e| Error::Other(format!("Query random_cached_roms_diverse: {e}")))?;
+            .map_err(|e| Error::Other(format!("Query random_stored_roms_diverse: {e}")))?;
 
         Ok(rows.flatten().collect())
     }
 
-    /// Get random cached ROMs with box art from a specific system.
-    pub fn random_cached_roms(
+    /// Get random stored ROMs with box art from a specific system.
+    pub fn random_stored_roms(
         conn: &Connection,
         system: &str,
         count: usize,
@@ -70,16 +70,16 @@ impl LibraryDb {
         );
         let mut stmt = conn
             .prepare(&sql)
-            .map_err(|e| Error::Other(format!("Prepare random_cached_roms: {e}")))?;
+            .map_err(|e| Error::Other(format!("Prepare random_stored_roms: {e}")))?;
 
         let rows = stmt
             .query_map(params![system, count as i64], Self::row_to_game_entry)
-            .map_err(|e| Error::Other(format!("Query random_cached_roms: {e}")))?;
+            .map_err(|e| Error::Other(format!("Query random_stored_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
     }
 
-    /// Get top-rated cached ROMs across all systems.
+    /// Get top-rated stored ROMs across all systems.
     /// Filters out arcade clones and deduplicates regional variants,
     /// then selects from the top-rated pool and randomizes within it
     /// so each page load shows a different selection of highly-rated games.
@@ -92,7 +92,7 @@ impl LibraryDb {
     /// This prevents obscure games rated 5.0 by a single voter from
     /// appearing above well-known classics with many votes.
     /// `region_secondary` is the fallback region (empty string = no secondary).
-    pub fn top_rated_cached_roms(
+    pub fn top_rated_stored_roms(
         conn: &Connection,
         count: usize,
         region_pref: &str,
@@ -123,14 +123,14 @@ impl LibraryDb {
         );
         let mut stmt = conn
             .prepare(&sql)
-            .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
+            .map_err(|e| Error::Other(format!("Prepare top_rated_stored_roms: {e}")))?;
 
         let rows = stmt
             .query_map(
                 params![pool_size, region_pref, region_secondary],
                 Self::row_to_game_entry,
             )
-            .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
+            .map_err(|e| Error::Other(format!("Query top_rated_stored_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
     }
@@ -351,11 +351,11 @@ impl LibraryDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Get top-rated cached ROMs with optional filters for system, genre, and developer.
+    /// Get top-rated stored ROMs with optional filters for system, genre, and developer.
     ///
-    /// Follows the same dedup CTE + weighted scoring pattern as `top_rated_cached_roms`,
+    /// Follows the same dedup CTE + weighted scoring pattern as `top_rated_stored_roms`,
     /// but adds optional WHERE clauses. When all filters are None, behaves identically
-    /// to `top_rated_cached_roms`.
+    /// to `top_rated_stored_roms`.
     ///
     /// Developer matching uses COLLATE NOCASE for case-insensitive comparison.
     pub fn top_rated_filtered(
@@ -591,7 +591,7 @@ mod tests {
 
         LibraryDb::save_system_entries(&mut conn, "snes", &[normal, special], None).unwrap();
 
-        let random = LibraryDb::random_cached_roms(&conn, "snes", 10).unwrap();
+        let random = LibraryDb::random_stored_roms(&conn, "snes", 10).unwrap();
         assert_eq!(random.len(), 1);
         assert_eq!(random[0].rom_filename, "Mario (USA).sfc");
 
@@ -621,7 +621,7 @@ mod tests {
 
         LibraryDb::save_system_entries(&mut conn, "snes", &[obscure, classic], None).unwrap();
 
-        let top = LibraryDb::top_rated_cached_roms(&conn, 2, "usa", "").unwrap();
+        let top = LibraryDb::top_rated_stored_roms(&conn, 2, "usa", "").unwrap();
         assert_eq!(top.len(), 2);
 
         // Both should be present. The classic should rank higher due to weighted scoring.

@@ -4,7 +4,7 @@
 //! them against the embedded No-Intro DAT data to get definitive ROM identification.
 //! CD-based, computer/folder, and arcade systems are excluded (see [`is_hash_eligible`]).
 //!
-//! The hash result is cached in the `game_library` table keyed by file mtime
+//! The hash result is stored in the `game_library` table keyed by file mtime
 //! and size, so unchanged files do not need to be re-hashed on subsequent scans.
 
 use std::io;
@@ -348,15 +348,15 @@ pub struct HashResult {
     pub rc_hash: Option<String>,
 }
 
-/// Cached hash data from the database.
+/// Stored hash data from the database.
 #[derive(Debug, Clone)]
-pub struct CachedHash {
+pub struct StoredHash {
     pub crc32: u32,
     pub hash_mtime: i64,
     pub hash_size_bytes: Option<u64>,
     pub matched_name: Option<String>,
     /// Previously computed `rc_hash` (header carts), preserved across rehashes so
-    /// a cache reuse can re-resolve `ra_id` against the current catalog without
+    /// a stored reuse can re-resolve `ra_id` against the current catalog without
     /// re-reading the ROM. The resolved `ra_id` is normally recomputed from this
     /// hash every scan so a catalog refresh always wins.
     pub rc_hash: Option<String>,
@@ -366,46 +366,46 @@ pub struct CachedHash {
     pub ra_id: Option<String>,
 }
 
-/// Reuse a cached hash when the current file identity still matches.
+/// Reuse a stored hash when the current file identity still matches.
 ///
-/// This is the shared discovery-time cache rule: exact size+mtime is best,
+/// This is the shared discovery-time stored rule: exact size+mtime is best,
 /// legacy rows without `hash_size_bytes` can reuse by mtime, and the existing
 /// conservative same-size path avoids rehashing when only mtime drifted.
-pub fn reusable_cached_hash(
+pub fn reusable_stored_hash(
     rom_filename: &str,
-    cached: &CachedHash,
+    stored: &StoredHash,
     current_mtime: i64,
     current_size: u64,
 ) -> Option<HashResult> {
-    let reusable = match cached.hash_size_bytes {
-        Some(cached_size) => cached_size == current_size,
-        None => cached.hash_mtime == current_mtime,
+    let reusable = match stored.hash_size_bytes {
+        Some(stored_size) => stored_size == current_size,
+        None => stored.hash_mtime == current_mtime,
     };
     reusable.then(|| HashResult {
         rom_filename: rom_filename.to_string(),
-        crc32: cached.crc32,
+        crc32: stored.crc32,
         mtime_secs: current_mtime,
         size_bytes: current_size,
-        matched_name: cached.matched_name.clone(),
-        // Only header carts (which have a cached rc_hash) source ra_id from the
+        matched_name: stored.matched_name.clone(),
+        // Only header carts (which have a stored rc_hash) source ra_id from the
         // HashResult — carry the prior value as a preserve-on-failure fallback.
         // Whole-file carts resolve ra_id from the CRC-matched rom_entry during
-        // enrichment, so leave it None here; otherwise a stale cached value would
+        // enrichment, so leave it None here; otherwise a stale stored value would
         // be preferred over the fresh catalog row on a catalog-only refresh.
-        ra_id: cached.rc_hash.as_ref().and_then(|_| cached.ra_id.clone()),
-        rc_hash: cached.rc_hash.clone(),
+        ra_id: stored.rc_hash.as_ref().and_then(|_| stored.ra_id.clone()),
+        rc_hash: stored.rc_hash.clone(),
     })
 }
 
 /// Hash and identify a batch of ROM files for a single system.
 ///
 /// For each ROM file:
-/// 1. Check if a cached hash exists and the mtime matches (skip rehashing)
+/// 1. Check if a stored hash exists and the mtime matches (skip rehashing)
 /// 2. If stale or missing: read the file, compute CRC32, look up in the
 ///    system's CRC index
-/// 3. Return results for all files (both cached and freshly computed)
+/// 3. Return results for all files (both stored and freshly computed)
 ///
-/// The `cached_hashes` map is keyed by rom_filename and contains previously
+/// The `stored_hashes` map is keyed by rom_filename and contains previously
 /// stored hash data from the database.
 ///
 /// The `rom_dir_root` is the parent of the storage root, used to resolve
@@ -413,7 +413,7 @@ pub fn reusable_cached_hash(
 pub async fn hash_and_identify(
     system: &str,
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
-    cached_hashes: &std::collections::HashMap<String, CachedHash>,
+    stored_hashes: &std::collections::HashMap<String, StoredHash>,
     storage_root: &Path,
 ) -> HashIdentifyResult {
     if !is_hash_eligible(system) {
@@ -423,7 +423,7 @@ pub async fn hash_and_identify(
     hash_and_identify_with_options(
         system,
         rom_files,
-        cached_hashes,
+        stored_hashes,
         storage_root,
         HashOptions::default(),
     )
@@ -433,14 +433,14 @@ pub async fn hash_and_identify(
 pub async fn hash_and_identify_with_options(
     system: &str,
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
-    cached_hashes: &std::collections::HashMap<String, CachedHash>,
+    stored_hashes: &std::collections::HashMap<String, StoredHash>,
     storage_root: &Path,
     options: HashOptions,
 ) -> HashIdentifyResult {
     hash_and_identify_with_options_and_cancel(
         system,
         rom_files,
-        cached_hashes,
+        stored_hashes,
         storage_root,
         options,
         None,
@@ -451,7 +451,7 @@ pub async fn hash_and_identify_with_options(
 pub async fn hash_and_identify_with_options_and_cancel(
     system: &str,
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
-    cached_hashes: &std::collections::HashMap<String, CachedHash>,
+    stored_hashes: &std::collections::HashMap<String, StoredHash>,
     storage_root: &Path,
     options: HashOptions,
     cancel: Option<Arc<AtomicBool>>,
@@ -461,7 +461,7 @@ pub async fn hash_and_identify_with_options_and_cancel(
     }
 
     enum Pending {
-        Cached(HashResult),
+        Stored(HashResult),
         NeedsLookup {
             rom_filename: String,
             crc32: u32,
@@ -480,7 +480,7 @@ pub async fn hash_and_identify_with_options_and_cancel(
     // Phase 1 does per-file std::fs::metadata + File::open + read of
     // potentially megabytes of ROM content. Keep it off tokio workers.
     let rom_files_owned = rom_files.to_vec();
-    let cached_hashes_owned = cached_hashes.clone();
+    let stored_hashes_owned = stored_hashes.clone();
     let storage_root_owned = storage_root.to_path_buf();
     let system_owned = system.to_string();
     let cancel_owned = cancel.clone();
@@ -509,26 +509,26 @@ pub async fn hash_and_identify_with_options_and_cancel(
                     };
 
                     if !options.force_rehash
-                        && let Some(cached) = cached_hashes_owned.get(rom_filename)
+                        && let Some(stored) = stored_hashes_owned.get(rom_filename)
                     {
-                        let reuse_kind = match cached.hash_size_bytes {
-                            Some(cached_size)
-                                if cached.hash_mtime == current_mtime
-                                    && cached_size == *size_bytes =>
+                        let reuse_kind = match stored.hash_size_bytes {
+                            Some(stored_size)
+                                if stored.hash_mtime == current_mtime
+                                    && stored_size == *size_bytes =>
                             {
                                 Some(Reuse::Exact)
                             }
-                            None if cached.hash_mtime == current_mtime => Some(Reuse::Migrated),
-                            Some(cached_size) if cached_size == *size_bytes => {
+                            None if stored.hash_mtime == current_mtime => Some(Reuse::Migrated),
+                            Some(stored_size) if stored_size == *size_bytes => {
                                 Some(Reuse::SizeOnly)
                             }
                             _ => None,
                         };
 
                         if let Some(kind) = reuse_kind
-                            && let Some(result) = reusable_cached_hash(
+                            && let Some(result) = reusable_stored_hash(
                                 rom_filename,
-                                cached,
+                                stored,
                                 current_mtime,
                                 *size_bytes,
                             )
@@ -538,7 +538,7 @@ pub async fn hash_and_identify_with_options_and_cancel(
                                 Reuse::Migrated => stats.reused_migrated += 1,
                                 Reuse::SizeOnly => stats.reused_size_only += 1,
                             }
-                            pending.push(Pending::Cached(result));
+                            pending.push(Pending::Stored(result));
                             continue;
                         }
                     }
@@ -591,12 +591,12 @@ pub async fn hash_and_identify_with_options_and_cancel(
         game_db::lookup_by_crcs_batch(system, &fresh_crcs).await
     };
 
-    // Build every result first; ra_id is resolved afterwards so cached and
+    // Build every result first; ra_id is resolved afterwards so stored and
     // freshly-hashed entries go through the same catalog lookup.
     let mut results: Vec<HashResult> = pending
         .into_iter()
         .map(|p| match p {
-            Pending::Cached(r) => r,
+            Pending::Stored(r) => r,
             Pending::NeedsLookup {
                 rom_filename,
                 crc32,
@@ -616,7 +616,7 @@ pub async fn hash_and_identify_with_options_and_cancel(
         .collect();
 
     // Re-resolve ra_id from rc_hash against the CURRENT catalog for every header
-    // cart (cached + fresh). Deliberately not cached: a catalog refresh must win,
+    // cart (stored + fresh). Deliberately not stored: a catalog refresh must win,
     // and this needs no file I/O (the rc_hash is already in hand). Whole-file
     // carts carry no rc_hash and resolve ra_id via CRC during enrichment instead.
     let rc_hashes: Vec<String> = results.iter().filter_map(|r| r.rc_hash.clone()).collect();
@@ -631,8 +631,8 @@ pub async fn hash_and_identify_with_options_and_cancel(
                     }
                 }
             }
-            // Failure (catalog/pool/SQL error): do NOT clear. Cached rows keep the
-            // ra_id carried from cache; fresh rows stay None. The startup
+            // Failure (catalog/pool/SQL error): do NOT clear. Stored rows keep the
+            // ra_id carried from stored; fresh rows stay None. The startup
             // `reresolve_rc_hash` phase re-resolves once the catalog is healthy.
             None => {
                 tracing::warn!(
@@ -651,7 +651,7 @@ pub(crate) fn file_mtime_secs(path: &Path) -> Option<i64> {
 }
 
 /// Modification time (seconds since epoch) and size of a file in a single
-/// `stat`. Callers that need both (cache-identity checks keyed by mtime+size)
+/// `stat`. Callers that need both (stored-identity checks keyed by mtime+size)
 /// should use this rather than `file_mtime_secs` + a separate `.metadata()`.
 pub fn file_mtime_size(path: &Path) -> Option<(i64, u64)> {
     let meta = std::fs::metadata(path).ok()?;
@@ -862,7 +862,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hash_and_identify_uses_cache() {
+    async fn hash_and_identify_uses_stored_hash() {
         let tmp = tempdir();
         let roms_dir = tmp.join("roms/nintendo_snes");
         fs::create_dir_all(&roms_dir).unwrap();
@@ -872,14 +872,14 @@ mod tests {
 
         let mtime = file_mtime_secs(&abs_path).unwrap();
 
-        let mut cache = std::collections::HashMap::new();
-        cache.insert(
+        let mut stored = std::collections::HashMap::new();
+        stored.insert(
             "game.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: mtime,
                 hash_size_bytes: Some(100),
-                matched_name: Some("Cached Game Name".to_string()),
+                matched_name: Some("Stored Game Name".to_string()),
                 rc_hash: None,
                 ra_id: None,
             },
@@ -888,7 +888,7 @@ mod tests {
         let results = hash_and_identify(
             "nintendo_snes",
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
-            &cache,
+            &stored,
             &tmp,
         )
         .await;
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(results.results[0].crc32, 0xDEADBEEF);
         assert_eq!(
             results.results[0].matched_name.as_deref(),
-            Some("Cached Game Name")
+            Some("Stored Game Name")
         );
         assert_eq!(results.stats.reused_exact, 1);
     }
@@ -911,11 +911,11 @@ mod tests {
         let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
         fs::write(&abs_path, b"some rom data").unwrap();
 
-        // Cache with a stale mtime
-        let mut cache = std::collections::HashMap::new();
-        cache.insert(
+        // Stored with a stale mtime
+        let mut stored = std::collections::HashMap::new();
+        stored.insert(
             "game.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: 0, // Very old mtime — won't match current
                 hash_size_bytes: Some(99),
@@ -928,7 +928,7 @@ mod tests {
         let results = hash_and_identify(
             "nintendo_snes",
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
-            &cache,
+            &stored,
             &tmp,
         )
         .await;
@@ -940,7 +940,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hash_and_identify_reuses_migrated_cache_on_matching_mtime() {
+    async fn hash_and_identify_reuses_migrated_stored_hash_on_matching_mtime() {
         let tmp = tempdir();
         let roms_dir = tmp.join("roms/nintendo_snes");
         fs::create_dir_all(&roms_dir).unwrap();
@@ -950,14 +950,14 @@ mod tests {
 
         let mtime = file_mtime_secs(&abs_path).unwrap();
 
-        let mut cache = std::collections::HashMap::new();
-        cache.insert(
+        let mut stored = std::collections::HashMap::new();
+        stored.insert(
             "game.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: mtime,
                 hash_size_bytes: None,
-                matched_name: Some("Cached Game Name".to_string()),
+                matched_name: Some("Stored Game Name".to_string()),
                 rc_hash: None,
                 ra_id: None,
             },
@@ -966,7 +966,7 @@ mod tests {
         let results = hash_and_identify(
             "nintendo_snes",
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
-            &cache,
+            &stored,
             &tmp,
         )
         .await;
@@ -985,14 +985,14 @@ mod tests {
         let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
         fs::write(&abs_path, b"some rom data").unwrap();
 
-        let mut cache = std::collections::HashMap::new();
-        cache.insert(
+        let mut stored = std::collections::HashMap::new();
+        stored.insert(
             "game.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: 0,
                 hash_size_bytes: Some(100),
-                matched_name: Some("Cached Game Name".to_string()),
+                matched_name: Some("Stored Game Name".to_string()),
                 rc_hash: None,
                 ra_id: None,
             },
@@ -1001,7 +1001,7 @@ mod tests {
         let results = hash_and_identify(
             "nintendo_snes",
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
-            &cache,
+            &stored,
             &tmp,
         )
         .await;
@@ -1011,7 +1011,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hash_and_identify_force_rehash_ignores_same_size_cache() {
+    async fn hash_and_identify_force_rehash_ignores_same_size_stored_hash() {
         let tmp = tempdir();
         let roms_dir = tmp.join("roms/nintendo_snes");
         fs::create_dir_all(&roms_dir).unwrap();
@@ -1019,14 +1019,14 @@ mod tests {
         let abs_path = tmp.join("roms/nintendo_snes/game.sfc");
         fs::write(&abs_path, b"some rom data").unwrap();
 
-        let mut cache = std::collections::HashMap::new();
-        cache.insert(
+        let mut stored = std::collections::HashMap::new();
+        stored.insert(
             "game.sfc".to_string(),
-            CachedHash {
+            StoredHash {
                 crc32: 0xDEADBEEF,
                 hash_mtime: file_mtime_secs(&abs_path).unwrap(),
                 hash_size_bytes: Some(100),
-                matched_name: Some("Cached Game Name".to_string()),
+                matched_name: Some("Stored Game Name".to_string()),
                 rc_hash: None,
                 ra_id: None,
             },
@@ -1035,7 +1035,7 @@ mod tests {
         let results = hash_and_identify_with_options(
             "nintendo_snes",
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
-            &cache,
+            &stored,
             &tmp,
             HashOptions { force_rehash: true },
         )

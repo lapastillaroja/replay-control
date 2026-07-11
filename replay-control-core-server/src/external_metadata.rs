@@ -173,7 +173,7 @@ pub mod meta_keys {
 
     /// `replay_control_core::title_utils::TITLE_NORM_VERSION` value at the
     /// time `provider_alternate.normalized_alternate` (and any other
-    /// host-global normalized cache) was last (re)populated. Mismatch on
+    /// host-global normalized stored field) was last (re)populated. Mismatch on
     /// boot triggers a `refresh_launchbox` reparse.
     pub const TITLE_NORM_VERSION: &str = "title_norm_version";
 

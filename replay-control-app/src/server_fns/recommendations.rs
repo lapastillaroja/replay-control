@@ -54,7 +54,7 @@ pub struct RecommendationData {
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations() -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.recommendations_snapshot(&state).await)
+    Ok(state.library.recommendations_snapshot(&state).await)
 }
 
 /// Compute the recommendation payload from scratch. Called by
@@ -83,12 +83,16 @@ pub(crate) async fn compute_recommendations(
     // Only collect recent + favorite keys when Hidden Gems is selected (type 4).
     // These are (system, rom_filename) pairs used as an exclusion set.
     let hidden_gems_exclude: Vec<(String, String)> = if spotlight_type == 4 {
-        let recents = state.cache.get_recents(&storage).await.unwrap_or_default();
+        let recents = state
+            .library
+            .get_recents(&storage)
+            .await
+            .unwrap_or_default();
         let recent_keys = recents
             .iter()
             .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()));
         let fav_keys = state
-            .cache
+            .library
             .get_all_favorited_systems(&storage)
             .await
             .unwrap_or_default()
@@ -103,17 +107,17 @@ pub(crate) async fn compute_recommendations(
 
     let (region_str, region_secondary_str) = super::region_strings(state);
 
-    let cached_genres = state.cache.query_cache.get_top_genres();
-    let cached_developers = state.cache.query_cache.get_top_developers();
-    let cached_decades = state.cache.query_cache.get_decades();
-    let cached_active_systems = state.cache.query_cache.get_active_systems();
+    let cached_genres = state.library.query_cache.get_top_genres();
+    let cached_developers = state.library.query_cache.get_top_developers();
+    let cached_decades = state.library.query_cache.get_decades();
+    let cached_active_systems = state.library.query_cache.get_active_systems();
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
     // separate DB read round-trip.
     let db_data = state
         .library_reader
         .read(move |conn| {
-            let random_pool = LibraryDb::random_cached_roms_diverse(
+            let random_pool = LibraryDb::random_stored_roms_diverse(
                 conn,
                 count,
                 &region_str,
@@ -402,10 +406,16 @@ pub(crate) async fn compute_recommendations(
         return Some(RecommendationData::default());
     };
 
-    state.cache.query_cache.set_top_genres(&top_genres);
-    state.cache.query_cache.set_top_developers(&top_developers);
-    state.cache.query_cache.set_decades(&decades);
-    state.cache.query_cache.set_active_systems(&active_systems);
+    state.library.query_cache.set_top_genres(&top_genres);
+    state
+        .library
+        .query_cache
+        .set_top_developers(&top_developers);
+    state.library.query_cache.set_decades(&decades);
+    state
+        .library
+        .query_cache
+        .set_active_systems(&active_systems);
 
     // --- Post-process random picks: ensure system diversity ---
     let random_picks = diversify_picks(random_pool, count);
@@ -503,7 +513,7 @@ async fn collect_favorites_info_sync(
     state: &crate::api::AppState,
     storage: &replay_control_core_server::storage::StorageLocation,
 ) -> Option<FavoritesInfo> {
-    let all_favorites = state.cache.get_all_favorited_systems(storage).await?;
+    let all_favorites = state.library.get_all_favorited_systems(storage).await?;
     if all_favorites.is_empty() {
         return None;
     }

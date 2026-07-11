@@ -27,8 +27,8 @@ pub enum StorageProbe {
     /// directory entry. The mount is alive enough to start scanning.
     /// Note: this answers "is the mount surfaced?", not "does the user
     /// have ROMs" — the per-system meta-write rule (see
-    /// `scan_and_cache_system`) is what protects against persisting
-    /// empty meta on partial-mount cold-cache states.
+    /// `scan_and_reconcile_system`) is what protects against persisting
+    /// empty meta on partial-mount cold-start states.
     HasVisibleEntries,
     /// Every visible system folder either doesn't exist or returned
     /// zero entries, consistently across the retry budget. Either the
@@ -106,7 +106,7 @@ async fn probe_once(storage: &StorageLocation) -> StorageProbe {
 ///
 /// Strict semantics: a missing top-level system directory is treated as an
 /// empty system (`Ok(empty)`). A `read_dir` failure on any nested directory
-/// returns `Err`, so callers preserve cached state instead of silently
+/// returns `Err`, so callers preserve stored state instead of silently
 /// wiping rows on a transient FS error.
 pub async fn list_roms(
     storage: &StorageLocation,
@@ -237,7 +237,7 @@ fn hash_str(hasher: &mut crc32fast::Hasher, value: &str) {
 /// Walk the system's ROM directory on the blocking pool. Returns `Ok(empty)`
 /// if the system directory does not exist (caller treats that as a real
 /// "no ROMs" answer per the per-system reconcile rule). Returns `Err` on
-/// any inner `read_dir` failure so callers preserve cached state.
+/// any inner `read_dir` failure so callers preserve stored state.
 async fn walk_raw_roms_blocking(
     system_dir: PathBuf,
     roms_root: PathBuf,
@@ -1954,7 +1954,7 @@ mod tests {
         // transient NFS ESTALE/EIO on a single file). The scan must NOT silently
         // omit the failing entry and return Ok: a partial set looks authoritative
         // and the reconcile then deletes the missing games from library.db. It
-        // must return Err so cached rows are preserved (the list_roms contract).
+        // must return Err so stored rows are preserved (the list_roms contract).
         let tmp = tempdir();
         let system_dir = tmp.join("roms").join("nintendo_nes");
         fs::create_dir_all(&system_dir).unwrap();
@@ -1966,7 +1966,7 @@ mod tests {
         let result = list_roms(&storage, "nintendo_nes", RegionPreference::default(), None).await;
         assert!(
             result.is_err(),
-            "scan must Err (preserve cache) on a non-NotFound stat failure, got Ok: {result:?}"
+            "scan must Err (preserve stored rows) on a non-NotFound stat failure, got Ok: {result:?}"
         );
     }
 

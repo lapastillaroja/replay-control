@@ -142,7 +142,7 @@ async fn apply_status(
                 // storage no filesystem watcher sees the marker (disabled by
                 // design) — the observed transition is the invalidation
                 // signal. Mirrors the launch server fn.
-                state.cache.invalidate_after_launch().await;
+                state.library.invalidate_after_launch().await;
             }
             let session = resolved_cache.as_ref().expect("session resolved above");
 

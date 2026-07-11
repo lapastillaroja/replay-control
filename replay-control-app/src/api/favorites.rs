@@ -113,7 +113,7 @@ async fn flatten_all_favorites(
 /// mutation, matching what the `/sfn` favorites handlers do — otherwise an
 /// API-driven change serves stale favorites/recommendations until TTL.
 async fn invalidate_favorites(state: &AppState) {
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
 }
 

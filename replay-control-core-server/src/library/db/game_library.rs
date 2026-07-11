@@ -361,7 +361,7 @@ impl LibraryDb {
         Ok(map)
     }
 
-    // ── Game Library (L2 persistent cache) ─────────────────────────────
+    // ── Game Library (persistent library index) ────────────────────────
 
     /// Save a system's game list to the game_library table.
     /// Reconciles the system with a durable scan token so unchanged ROM rows
@@ -774,7 +774,7 @@ impl LibraryDb {
     /// Load a page of game entries for a system, sorted by display name (case-insensitive).
     ///
     /// Same columns as `load_system_entries` but with `ORDER BY` + `LIMIT`/`OFFSET`
-    /// for SQL-level pagination. Used as a fast-path when the L1 cache is cold.
+    /// for SQL-level pagination. Used as the durable read path for ROM lists.
     pub fn load_system_entries_page(
         conn: &Connection,
         system: &str,
@@ -999,11 +999,11 @@ impl LibraryDb {
         .map_err(|e| Error::Other(format!("Query random_library_rom_for_system: {e}")))
     }
 
-    /// Load cached hash data for all ROMs of a system from the game_library table.
-    pub fn load_cached_hashes(
+    /// Load stored hash data for all ROMs of a system from the game_library table.
+    pub fn load_stored_hashes(
         conn: &Connection,
         system: &str,
-    ) -> Result<std::collections::HashMap<String, crate::rom_hash::CachedHash>> {
+    ) -> Result<std::collections::HashMap<String, crate::rom_hash::StoredHash>> {
         use std::collections::HashMap;
 
         let mut stmt = conn
@@ -1014,7 +1014,7 @@ impl LibraryDb {
                    AND crc32 IS NOT NULL
                    AND identity_state IN (?2, ?3)",
             )
-            .map_err(|e| Error::Other(format!("Prepare load_cached_hashes: {e}")))?;
+            .map_err(|e| Error::Other(format!("Prepare load_stored_hashes: {e}")))?;
 
         let rows = stmt
             .query_map(
@@ -1026,7 +1026,7 @@ impl LibraryDb {
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        crate::rom_hash::CachedHash {
+                        crate::rom_hash::StoredHash {
                             crc32: row.get::<_, i64>(1)? as u32,
                             hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
                             hash_size_bytes: row.get::<_, Option<i64>>(3)?.map(|s| s as u64),
@@ -1041,7 +1041,7 @@ impl LibraryDb {
                     ))
                 },
             )
-            .map_err(|e| Error::Other(format!("Query load_cached_hashes: {e}")))?;
+            .map_err(|e| Error::Other(format!("Query load_stored_hashes: {e}")))?;
 
         let mut map = HashMap::new();
         for row in rows.flatten() {
@@ -1402,7 +1402,7 @@ impl LibraryDb {
 
     /// Set `ra_id` for the given `(rom_filename, ra_id)` pairs, writing only rows
     /// whose value actually changes. Used to re-resolve header-cart `ra_id` from
-    /// `rc_hash` after a catalog refresh, independent of the scan cache. Returns
+    /// `rc_hash` after a catalog refresh, independent of scan-time hash reuse. Returns
     /// the number of rows changed.
     pub fn set_ra_ids(
         conn: &mut Connection,
@@ -3769,7 +3769,7 @@ mod tests {
     }
 
     #[test]
-    fn load_cached_hashes_excludes_in_flight_identity_rows() {
+    fn load_stored_hashes_excludes_in_flight_identity_rows() {
         let (mut conn, _dir) = open_temp_db();
         let mut complete = make_game_entry("nintendo_snes", "Complete.sfc", false);
         complete.crc32 = Some(0x1234_ABCD);
@@ -3788,7 +3788,7 @@ mod tests {
         LibraryDb::save_system_entries(&mut conn, "nintendo_snes", &[complete, running], None)
             .unwrap();
 
-        let hashes = LibraryDb::load_cached_hashes(&conn, "nintendo_snes").unwrap();
+        let hashes = LibraryDb::load_stored_hashes(&conn, "nintendo_snes").unwrap();
         assert!(hashes.contains_key("Complete.sfc"));
         assert!(!hashes.contains_key("Running.sfc"));
     }
@@ -4659,7 +4659,7 @@ mod tests {
     }
 
     #[test]
-    fn load_cached_hashes_round_trips_hash_size() {
+    fn load_stored_hashes_round_trips_hash_size() {
         let (mut conn, _dir) = open_temp_db();
         let mut entry = make_game_entry("snes", "Mario.sfc", false);
         entry.crc32 = Some(0x1234_ABCD);
@@ -4670,13 +4670,13 @@ mod tests {
 
         LibraryDb::save_system_entries(&mut conn, "snes", &[entry], None).unwrap();
 
-        let hashes = LibraryDb::load_cached_hashes(&conn, "snes").unwrap();
-        let cached = hashes.get("Mario.sfc").expect("hash row should load");
-        assert_eq!(cached.crc32, 0x1234_ABCD);
-        assert_eq!(cached.hash_mtime, 42);
-        assert_eq!(cached.hash_size_bytes, Some(3_145_728));
+        let hashes = LibraryDb::load_stored_hashes(&conn, "snes").unwrap();
+        let stored = hashes.get("Mario.sfc").expect("hash row should load");
+        assert_eq!(stored.crc32, 0x1234_ABCD);
+        assert_eq!(stored.hash_mtime, 42);
+        assert_eq!(stored.hash_size_bytes, Some(3_145_728));
         assert_eq!(
-            cached.matched_name.as_deref(),
+            stored.matched_name.as_deref(),
             Some("Super Mario World (USA)")
         );
     }

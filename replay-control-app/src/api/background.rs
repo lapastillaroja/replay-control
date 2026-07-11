@@ -189,7 +189,7 @@ where
 ///
 /// Pipeline phases (sequential, async):
 ///   1. Auto-import — if a LaunchBox XML file exists and the DB is empty
-///   2. Cache populate/verify — scan all systems, enrich box art + ratings
+///   2. Library populate/verify — scan all systems, enrich box art + ratings
 ///   3. Auto-rebuild thumbnail index — if data_sources exist but index is empty (data loss)
 ///
 /// Filesystem watchers (config file, ROM directory) run independently.
@@ -252,10 +252,10 @@ impl BackgroundManager {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Phase 0: confirm storage dirents are stable enough before any
-        // scan writes L2. On NFS / autofs / USB hot-plug the storage root
+        // scan writes stored library rows. On NFS / autofs / USB hot-plug the storage root
         // may resolve before subdirectories surface; without this, the
         // first strict scan can legitimately observe an empty filesystem
-        // and reconcile cached rows to zero.
+        // and reconcile stored rows to zero.
         let storage = state.storage();
         let mut next_probe_warn = std::time::Instant::now() + Duration::from_secs(30);
         loop {
@@ -302,7 +302,7 @@ impl BackgroundManager {
         // Bumping `replay_control_core::title_utils::TITLE_NORM_VERSION` in
         // a release silently rebuilds stored normalized columns here so
         // matching benefits without user action. No-op when stamps match
-        // (steady-state) or the cached XML is missing (fresh install
+        // (steady-state) or the downloaded XML is missing (fresh install
         // pre-LB-import — auto_import will write the stamp itself).
         Self::phase_title_norm_reconcile(state).await;
 
@@ -316,12 +316,15 @@ impl BackgroundManager {
                 return;
             };
 
-            Self::phase_cache_verification(state).await;
+            Self::phase_library_verification(state).await;
             Self::phase_enrichment_inputs_reconcile(state).await;
             Self::phase_reresolve_rc_hash_ra_ids(state).await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
-            state.cache.resume_pending_thumbnail_downloads(state).await;
+            state
+                .library
+                .resume_pending_thumbnail_downloads(state)
+                .await;
 
             // _guard drops → Idle
         }
@@ -358,23 +361,23 @@ impl BackgroundManager {
     ) -> Result<ScanInputs, replay_control_core::error::Error> {
         state.ensure_storage_generation(generation)?;
 
-        let cached_hashes = if is_hash_identifiable(system) {
+        let stored_hashes = if is_hash_identifiable(system) {
             let system_owned = system.to_string();
             match state
                 .library_reader
-                .read(move |conn| LibraryDb::load_cached_hashes(conn, &system_owned))
+                .read(move |conn| LibraryDb::load_stored_hashes(conn, &system_owned))
                 .await
             {
                 Some(Ok(hashes)) => hashes,
                 Some(Err(e)) => {
                     tracing::warn!(
-                        "Could not load cached hashes for {system}: {e}; CRCs will be recomputed"
+                        "Could not load stored hashes for {system}: {e}; CRCs will be recomputed"
                     );
                     std::collections::HashMap::new()
                 }
                 None => {
                     tracing::warn!(
-                        "Could not load cached hashes for {system}: library DB unavailable; CRCs will be recomputed"
+                        "Could not load stored hashes for {system}: library DB unavailable; CRCs will be recomputed"
                     );
                     std::collections::HashMap::new()
                 }
@@ -438,7 +441,7 @@ impl BackgroundManager {
         };
 
         Ok(ScanInputs::new(
-            cached_hashes,
+            stored_hashes,
             clean_startup_fingerprint,
             mtime_probe_trustworthy,
             options,
@@ -777,7 +780,7 @@ impl BackgroundManager {
             });
             let batch_started = Instant::now();
             let (hash_results, _stats) = state
-                .cache
+                .library
                 .hash_roms_for_system(
                     storage,
                     &job.system,
@@ -1016,14 +1019,14 @@ impl BackgroundManager {
         job: &IdentityJob,
     ) -> replay_control_core::error::Result<()> {
         state
-            .cache
-            .enrich_system_cache_with_cancellation(
+            .library
+            .enrich_system_library_with_cancellation(
                 state,
                 job.system.clone(),
                 job.scan_inputs.cancellation(),
             )
             .await?;
-        state.cache.invalidate_l1().await;
+        state.library.invalidate_in_memory_views().await;
         state.invalidate_user_caches().await;
         Ok(())
     }
@@ -1037,7 +1040,7 @@ impl BackgroundManager {
     }
 
     /// Spawn a background task that downloads the LaunchBox `Metadata.zip`
-    /// into the host-global cache directory, extracts the XML, then triggers
+    /// into the host-global download directory, extracts the XML, then triggers
     /// the standard refresh path against it.
     ///
     /// Uses an HTTP ETag check to skip the 100+ MB download when the upstream
@@ -1086,7 +1089,7 @@ impl BackgroundManager {
         };
 
         let start = std::time::Instant::now();
-        let cache_dir = state.data_dir.cache_dir();
+        let download_dir = state.data_dir.download_dir();
 
         let stored_etag = state
             .external_metadata_reader
@@ -1147,7 +1150,7 @@ impl BackgroundManager {
                 const THROTTLE_BYTES: u64 = 1024 * 1024;
                 let last_reported = AtomicU64::new(0);
                 replay_control_core_server::launchbox::download_metadata(
-                    &cache_dir,
+                    &download_dir,
                     upstream_content_length,
                     |bytes, total| {
                         let prev = last_reported.load(Ordering::Relaxed);
@@ -1259,7 +1262,7 @@ impl BackgroundManager {
 
         let storage = state.storage();
         let rc_dir = storage.rc_dir();
-        let cache_dir = state.data_dir.cache_dir();
+        let download_dir = state.data_dir.download_dir();
         drop(storage);
 
         let seed_check = state
@@ -1284,7 +1287,7 @@ impl BackgroundManager {
             }
         };
 
-        let xml_on_disk = resolve_launchbox_xml(&cache_dir, &rc_dir).is_some();
+        let xml_on_disk = resolve_launchbox_xml(&download_dir, &rc_dir).is_some();
         let needs_launchbox = !has_crc32 && !xml_on_disk;
         let needs_libretro = !has_libretro_sources;
 
@@ -1299,7 +1302,7 @@ impl BackgroundManager {
         );
 
         if needs_launchbox {
-            let dest = cache_dir.clone();
+            let dest = download_dir.clone();
             let result = tokio::task::spawn_blocking(move || {
                 replay_control_core_server::launchbox::download_metadata(&dest, None, |_, _| {})
             })
@@ -1370,12 +1373,12 @@ impl BackgroundManager {
 
         let storage = state.storage();
         let rc_dir = storage.rc_dir();
-        let cache_dir = state.data_dir.cache_dir();
+        let download_dir = state.data_dir.download_dir();
 
-        let Some(xml_path) = resolve_launchbox_xml(&cache_dir, &rc_dir) else {
+        let Some(xml_path) = resolve_launchbox_xml(&download_dir, &rc_dir) else {
             tracing::debug!(
                 "phase_auto_import: no LaunchBox XML in {} or {} — skipping",
-                cache_dir.display(),
+                download_dir.display(),
                 rc_dir.display()
             );
             return;
@@ -1438,7 +1441,7 @@ impl BackgroundManager {
         // Re-parse on any input change:
         //   - XML content (hash) — upstream LaunchBox data changed
         //   - normalizer version — `title_utils::normalize_title_for_metadata`
-        //     output changed, so cached `provider_alternate.normalized_alternate`
+        //     output changed, so stored `provider_alternate.normalized_alternate`
         //     is stale
         //   - platform-map fingerprint — a system was added/removed or its
         //     `launchbox_platforms` field changed (e.g. arcade_stv joining),
@@ -1586,7 +1589,7 @@ impl BackgroundManager {
             active.len()
         );
         for system in active {
-            state.cache.enrich_system_cache(state, system).await;
+            state.library.enrich_system_library(state, system).await;
         }
         state.invalidate_user_caches().await;
     }
@@ -1594,8 +1597,8 @@ impl BackgroundManager {
     /// Phase 2: strict startup reconciliation across every visible system.
     ///
     /// Works directly with the DB and filesystem — does NOT use UI summary
-    /// views or cached ROM readers to avoid circular dependencies.
-    async fn phase_cache_verification(state: &AppState) {
+    /// views or stored ROM readers to avoid circular dependencies.
+    async fn phase_library_verification(state: &AppState) {
         let storage = state.storage();
         let generation = state.storage_generation();
         let region_pref = state.region_preference();
@@ -1732,7 +1735,7 @@ impl BackgroundManager {
 
         // The catalog's enrichment inputs changed (e.g. a refreshed
         // RetroAchievements extract or detail metadata). Rescan every system
-        // rather than re-enrich: `force_rehash: false` reuses the cached CRC32s
+        // rather than re-enrich: `force_rehash: false` reuses stored CRC32s
         // (no ROM re-streaming on NFS), while `skip_unchanged_startup: false`
         // rebuilds each system's `game_library` rows against the new catalog
         // even when its ROMs are unchanged — the steady-state case for a
@@ -2019,7 +2022,7 @@ impl BackgroundManager {
         Ok(())
     }
 
-    /// Pre-populate L2 cache for all systems that have games. Walks ROM
+    /// Pre-populate durable library rows for all systems that have games. Walks ROM
     /// directories, hashes new files, and enriches box art / ratings.
     pub(crate) async fn populate_all_systems(
         state: &AppState,
@@ -2033,14 +2036,14 @@ impl BackgroundManager {
         // Iterate every visible_systems() platform — strict reconcile is
         // safe to call on systems we don't have on disk (it early-returns
         // cheaply via list_roms's missing-dir branch on local
-        // storage, returns Err on NFS preserving cached state). The per-
-        // system rule (in `scan_and_cache_system`) ensures empty walks
+        // storage, returns Err on NFS preserving stored state). The per-
+        // system rule (in `scan_and_reconcile_system`) ensures empty walks
         // don't poison meta on partial-mount fresh boots.
         let systems: Vec<&'static replay_control_core::systems::System> =
             replay_control_core::systems::visible_systems().collect();
         let total = systems.len();
 
-        tracing::info!("L2 populate: {total} visible system(s)");
+        tracing::info!("library populate: {total} visible system(s)");
 
         let start = std::time::Instant::now();
 
@@ -2064,8 +2067,8 @@ impl BackgroundManager {
                 Self::scan_inputs_for_system(state, sys.folder_name, options, generation).await?;
             let scan_started = Instant::now();
             let scan_result = state
-                .cache
-                .scan_and_cache_system_with_inputs(
+                .library
+                .scan_and_reconcile_system_with_inputs(
                     storage,
                     sys.folder_name,
                     region_pref,
@@ -2080,7 +2083,7 @@ impl BackgroundManager {
                     let roms = outcome.roms;
                     if !roms.is_empty() {
                         tracing::debug!(
-                            "L2 populate: {} — {} ROMs (scan+enrich)",
+                            "library populate: {} — {} ROMs (scan+enrich)",
                             sys.folder_name,
                             roms.len()
                         );
@@ -2088,11 +2091,11 @@ impl BackgroundManager {
                     }
                     if !outcome.discovery_changed {
                         tracing::debug!(
-                            "L2 populate: {} unchanged; skipping enrichment and identity",
+                            "library populate: {} unchanged; skipping enrichment and identity",
                             sys.folder_name
                         );
                         tracing::info!(
-                            "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms=0 total_ms={}",
+                            "library system profile: {}: roms={} scan_ms={scan_ms} enrich_ms=0 total_ms={}",
                             sys.folder_name,
                             roms.len(),
                             system_started.elapsed().as_millis()
@@ -2115,13 +2118,13 @@ impl BackgroundManager {
                     // Per-system enrichment is best-effort: a transient failure
                     // (e.g. a flaky box-art lookup) must not abort the whole
                     // rebuild and block later systems — mirror the scan step's
-                    // preserve-cached-state policy and move on. Scan-derived
+                    // preserve-stored-state policy and move on. Scan-derived
                     // fields are already persisted by the scan above, and
                     // hash identity work has already been queued. Storage swaps
                     // still abort (the caller redoes the pass on the new storage).
                     if let Err(e) = state
-                        .cache
-                        .enrich_system_cache_with_cancellation(
+                        .library
+                        .enrich_system_library_with_cancellation(
                             state,
                             sys.folder_name.to_string(),
                             scan_inputs.cancellation(),
@@ -2132,14 +2135,14 @@ impl BackgroundManager {
                             return Err(e);
                         }
                         tracing::warn!(
-                            "L2 populate: {} enrichment skipped (preserving cached state): {e}",
+                            "library populate: {} enrichment skipped (preserving stored state): {e}",
                             sys.folder_name
                         );
                         continue;
                     }
                     let enrich_ms = enrich_started.elapsed().as_millis();
                     tracing::info!(
-                        "L2 system profile: {}: roms={} scan_ms={scan_ms} enrich_ms={enrich_ms} total_ms={}",
+                        "library system profile: {}: roms={} scan_ms={scan_ms} enrich_ms={enrich_ms} total_ms={}",
                         sys.folder_name,
                         roms.len(),
                         system_started.elapsed().as_millis()
@@ -2148,7 +2151,7 @@ impl BackgroundManager {
                 Err(e) if Self::is_storage_changed(&e) => return Err(e),
                 Err(e) => {
                     tracing::warn!(
-                        "L2 populate: {} skipped after {scan_ms}ms (preserving cached state): {e}",
+                        "library populate: {} skipped after {scan_ms}ms (preserving stored state): {e}",
                         sys.folder_name
                     );
                 }
@@ -2156,7 +2159,7 @@ impl BackgroundManager {
         }
 
         tracing::info!(
-            "L2 populate: done — {} ROMs across {} systems in {:.1}s",
+            "library populate: done — {} ROMs across {} systems in {:.1}s",
             total_roms,
             total,
             start.elapsed().as_secs_f64()
@@ -2184,7 +2187,7 @@ impl BackgroundManager {
                 }
             });
         }
-        Self::refresh_thumbnail_media_stats(state, storage, generation, "L2 populate").await?;
+        Self::refresh_thumbnail_media_stats(state, storage, generation, "library populate").await?;
         Self::spawn_identity_jobs(state.clone(), storage.clone(), identity_jobs, generation);
         Ok(())
     }
@@ -2192,7 +2195,7 @@ impl BackgroundManager {
 
 // ── Methods that remain on AppState ────────────────────────────────
 //
-// These are the long-running watchers and the cache enrichment helper
+// These are the long-running watchers and the library enrichment helper
 // that various parts of the code still call on AppState.
 impl AppState {
     /// Re-enrich game library after a metadata or thumbnail import.
@@ -2203,8 +2206,8 @@ impl AppState {
     ///
     /// Otherwise the per-system enrich loop is the *primary* job here —
     /// it's the path that picks up newly-imported external_metadata for
-    /// already-cached systems.
-    pub fn spawn_cache_enrichment(&self) {
+    /// already-stored systems.
+    pub fn spawn_library_enrichment(&self) {
         let state = self.clone();
         tokio::spawn(async move {
             let storage = state.storage();
@@ -2243,8 +2246,8 @@ impl AppState {
                 }
             } else {
                 // Enrichment-only re-pass: pick up the newly-imported
-                // external_metadata for already-cached systems. NOT
-                // gated because enrich_system_cache reads from the DB
+                // external_metadata for already-stored systems. NOT
+                // gated because enrich_system_library reads from the DB
                 // and the write gate blocks ALL reads on the same pool.
                 // Enrichment writes are small per-system UPDATEs.
                 let with_games = super::library_systems::active_systems(
@@ -2260,7 +2263,7 @@ impl AppState {
                     );
                     let enrich_start = std::time::Instant::now();
                     for system in with_games {
-                        state.cache.enrich_system_cache(&state, system).await;
+                        state.library.enrich_system_library(&state, system).await;
                     }
                     tracing::info!(
                         "Post-import enrichment: done in {:.1}s",
@@ -2271,7 +2274,7 @@ impl AppState {
         });
     }
 
-    /// Strict-reconcile every visible system in place (preserving cached
+    /// Strict-reconcile every visible system in place (preserving stored
     /// rows on per-system FS errors), then mark complete. Inline enrichment
     /// is part of `populate_all_systems`, so there's no separate post-loop
     /// enrichment pass. Rescan and rebuild share this body; the `is_rescan`
@@ -2556,7 +2559,7 @@ impl AppState {
     ///
     /// Watches recursively for create/modify/remove events. On change,
     /// extracts the affected system folder name from the event path and
-    /// triggers `get_roms` + `enrich_system_cache` after a debounce window.
+    /// triggers `get_roms` + `enrich_system_library` after a debounce window.
     ///
     /// When a top-level change is detected in the `roms/` directory itself
     /// (new system directory created), triggers a `get_systems` refresh.
@@ -2666,12 +2669,12 @@ impl AppState {
                 // whether any ROM-file systems were affected in this batch.
                 if favorites_changed {
                     tracing::debug!("ROM watcher: _favorites/ changed, invalidating cache");
-                    state.cache.invalidate_favorites().await;
+                    state.library.invalidate_favorites().await;
                     state.invalidate_user_caches().await;
                 }
                 if recents_changed {
                     tracing::debug!("ROM watcher: _recent/ changed, invalidating cache");
-                    state.cache.invalidate_after_launch().await;
+                    state.library.invalidate_after_launch().await;
                 }
 
                 // Skip the heavier system rescan if any activity is running
@@ -2708,7 +2711,7 @@ impl AppState {
                 }
 
                 if !to_scan.is_empty() {
-                    state.cache.invalidate_l1().await;
+                    state.library.invalidate_in_memory_views().await;
                     state.invalidate_user_caches().await;
                 }
 
@@ -2735,8 +2738,8 @@ impl AppState {
                         }
                     };
                     match state
-                        .cache
-                        .scan_and_cache_system_with_inputs(
+                        .library
+                        .scan_and_reconcile_system_with_inputs(
                             &storage,
                             system,
                             region_pref,
@@ -2753,8 +2756,8 @@ impl AppState {
                                 break;
                             }
                             match state
-                                .cache
-                                .enrich_system_cache_with_cancellation(
+                                .library
+                                .enrich_system_library_with_cancellation(
                                     &state,
                                     system.clone(),
                                     scan_inputs.cancellation(),
@@ -2792,13 +2795,13 @@ impl AppState {
                             break;
                         }
                         Err(e) => tracing::warn!(
-                            "ROM watcher: scan failed for {system}, preserving cached state: {e}"
+                            "ROM watcher: scan failed for {system}, preserving stored state: {e}"
                         ),
                     }
                 }
 
                 if !to_scan.is_empty() {
-                    state.cache.invalidate_l1().await;
+                    state.library.invalidate_in_memory_views().await;
                     state.invalidate_user_caches().await;
                 }
             }
@@ -2843,7 +2846,7 @@ impl AppState {
 
             let system_name = first.as_os_str().to_string_lossy();
 
-            // Internal marker directories trigger targeted cache invalidation
+            // Internal marker directories trigger targeted in-memory invalidation
             // so remote/OS-level edits (e.g. a .fav symlink written outside
             // the UI) propagate without a restart.
             match system_name.as_ref() {

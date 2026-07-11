@@ -679,13 +679,13 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     }
 
     if let Err(e) = state
-        .cache
-        .invalidate_system(system, &state.library_writer)
+        .library
+        .clear_system_and_invalidate_caches(system, &state.library_writer)
         .await
     {
-        tracing::debug!("post-mutation invalidate_system skipped: {e}");
+        tracing::debug!("post-mutation system library clear skipped: {e}");
     }
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
 
     Ok(())
@@ -928,13 +928,13 @@ pub async fn rename_rom(
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
 
     if let Err(e) = state
-        .cache
-        .invalidate_system(system, &state.library_writer)
+        .library
+        .clear_system_and_invalidate_caches(system, &state.library_writer)
         .await
     {
-        tracing::debug!("post-mutation invalidate_system skipped: {e}");
+        tracing::debug!("post-mutation system library clear skipped: {e}");
     }
-    state.cache.invalidate_favorites().await;
+    state.library.invalidate_favorites().await;
     state.invalidate_user_caches().await;
 
     Ok(new_path.display().to_string())
@@ -1103,7 +1103,7 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
     if let Err(e) = add_recent(&storage, system, rom_filename, &rom_path) {
         tracing::warn!("Failed to create recents entry: {e}");
     }
-    state.cache.invalidate_after_launch().await;
+    state.library.invalidate_after_launch().await;
 
     #[cfg(feature = "ssr")]
     redirect_after_progressive_form(&return_to);

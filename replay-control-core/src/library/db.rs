@@ -39,7 +39,7 @@ pub struct ImportProgress {
     pub download_total: Option<u64>,
 }
 
-/// Cache-level stats about the library DB as a whole.
+/// Aggregate stats about the library DB as a whole.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataStats {
     pub total_entries: usize,

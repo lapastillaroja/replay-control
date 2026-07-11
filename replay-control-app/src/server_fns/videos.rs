@@ -53,7 +53,7 @@ pub async fn get_game_videos(
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// Get provider-supplied video suggestions copied into the library cache.
+/// Get provider-supplied video suggestions copied into the library DB.
 #[server(prefix = "/sfn")]
 pub async fn get_provider_game_videos(
     system: String,

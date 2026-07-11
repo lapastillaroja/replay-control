@@ -812,7 +812,7 @@ pub async fn get_region_preference() -> Result<String, ServerFnError> {
 }
 
 /// Set the region preference in `.replay-control/settings.cfg`.
-/// Invalidates the ROM cache so lists are re-sorted with the new preference.
+/// Invalidates in-memory library views so lists are re-sorted with the new preference.
 #[server(prefix = "/sfn")]
 pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -820,11 +820,11 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     replay_control_core_server::settings::write_region_preference(&state.settings, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.prefs.write().expect("prefs lock poisoned").region = pref;
-    // Drop only L1; the resolver below rewrites the region-dependent
+    // Drop only in-memory views; the resolver below rewrites the region-dependent
     // mirror columns. A destructive `clear_all_game_library` here would
     // truncate rows that any concurrent rebuild/import is filling — see
     // `docs/architecture/cross-activity-coordination.md` finding F-3.
-    state.cache.invalidate_l1().await;
+    state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
     let region_secondary = state.region_preference_secondary();
     match state
@@ -858,7 +858,7 @@ pub async fn get_region_preference_secondary() -> Result<String, ServerFnError> 
 }
 
 /// Set the secondary (fallback) region preference in `.replay-control/settings.cfg`.
-/// Pass empty string to clear. Invalidates the ROM cache.
+/// Pass empty string to clear. Invalidates in-memory library views.
 #[server(prefix = "/sfn")]
 pub async fn save_region_preference_secondary(value: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -874,8 +874,8 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
         .write()
         .expect("prefs lock poisoned")
         .region_secondary = pref;
-    // Drop only L1; see save_region_preference for why.
-    state.cache.invalidate_l1().await;
+    // Drop only in-memory views; see save_region_preference for why.
+    state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
     let region_primary = state.region_preference();
     match state

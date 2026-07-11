@@ -85,7 +85,7 @@ impl GameRef {
         }
     }
 
-    /// Create a GameRef with a pre-resolved display name (from cache).
+    /// Create a GameRef with a pre-resolved display name from stored library data.
     /// Skips the DB lookup — useful when restoring from the game library.
     pub fn new_with_display(
         system: &str,

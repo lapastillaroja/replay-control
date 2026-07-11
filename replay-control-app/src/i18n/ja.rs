@@ -604,7 +604,7 @@ pub fn translate(key: Key) -> &'static str {
 
         Key::MetadataAttribution => "出典",
         Key::MetadataAttributionText => {
-            "ゲームメタデータはTheGamesDB、No-Intro、libretro-databaseから。説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。シリーズデータはWikidata（CC0）から。マニュアルリンクはMiSTer Manual DownloaderとRetrokitから取得し、PDFは保存時のみダウンロードされます。データはオフライン利用のためローカルにキャッシュされています。"
+            "ゲームメタデータはTheGamesDB、No-Intro、libretro-databaseから。説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。シリーズデータはWikidata（CC0）から。マニュアルリンクはMiSTer Manual DownloaderとRetrokitから取得し、PDFは保存時のみダウンロードされます。データはオフライン利用のためローカルに保存されます。"
         }
 
         // Logs

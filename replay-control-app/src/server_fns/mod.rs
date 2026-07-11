@@ -132,7 +132,7 @@ pub(crate) async fn enrich_box_art_and_favorites(
             let storage = storage.clone();
             let sys = sys.to_string();
             set.spawn(async move {
-                let favs = state.cache.get_favorites_set(&storage, &sys).await;
+                let favs = state.library.get_favorites_set(&storage, &sys).await;
                 (sys, favs)
             });
         }
@@ -275,7 +275,7 @@ pub struct GameInfo {
     #[serde(default)]
     pub ra_count: u32,
 
-    // --- External metadata (from local cache, None if not yet fetched) ---
+    // --- External metadata (from local external metadata DB, None if not yet fetched) ---
     pub description: Option<String>,
     pub rating: Option<f32>,
     pub publisher: Option<String>,

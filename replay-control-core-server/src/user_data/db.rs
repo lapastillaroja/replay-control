@@ -1,7 +1,7 @@
 //! User data database — persistent user customizations that survive metadata clears.
 //!
 //! Stored at `<rom_storage>/.replay-control/user_data.db`.
-//! Separate from `library.db` (which is a rebuildable cache) to ensure user
+//! Separate from `library.db` (which is a rebuildable library index) to ensure user
 //! choices are never accidentally destroyed.
 
 use std::collections::HashMap;

@@ -42,8 +42,8 @@ async fn populate_test_library(state: &replay_control_app::api::AppState) {
             continue;
         }
         let _ = state
-            .cache
-            .scan_and_cache_system(
+            .library
+            .scan_and_reconcile_system(
                 &storage,
                 system.folder_name,
                 region_pref,

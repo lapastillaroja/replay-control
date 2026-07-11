@@ -299,7 +299,7 @@ pub struct MtimeProbeResult {
 /// [`StorageLocation::is_ready`] to close the rootfs-stub race.
 ///
 /// Resolution order:
-/// 1. Existing marker (cache hit).
+/// 1. Existing marker already exists.
 /// 2. Derive a deterministic id from the filesystem UUID (or
 ///    `server:/share` for NFS). Same storage → same id forever.
 /// 3. If the FS id can't be obtained (tmpfs, tempdir, exotic mount), random

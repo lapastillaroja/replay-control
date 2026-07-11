@@ -73,7 +73,7 @@ async fn game_refs_to_core_entries(state: &AppState, games: Vec<GameRef>) -> Vec
 async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
     let storage = state.storage();
     let games: Vec<GameRef> = state
-        .cache
+        .library
         .get_recents(&storage)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
