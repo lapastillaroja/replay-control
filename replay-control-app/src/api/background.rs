@@ -203,51 +203,10 @@ impl BackgroundManager {
         !env_flag("REPLAY_CONTROL_SKIP_FIRST_RUN_SEED")
     }
 
-    /// Start the ordered background pipeline.
-    pub fn start(state: AppState) {
-        // Clean up stale update temp files from a previous run.
-        update_io::nuke_update_dir();
-
-        Self::spawn_pipeline(state.clone());
-
-        // Start watchers immediately (they're independent of the pipeline).
-        state.clone().spawn_storage_watcher();
-        state.spawn_rom_watcher();
-
-        // Spawn update checker (independent of pipeline, no activity lock needed).
-        let update_state = state.clone();
-        tokio::spawn(async move {
-            Self::update_check_loop(update_state).await;
-        });
-
-        // Spawn the now-playing detector loop (independent of the startup
-        // pipeline). API-based: exits immediately in standalone mode, where
-        // `state.replay_api` is `None`.
-        let now_playing_state = state.clone();
-        tokio::spawn(async move {
-            super::now_playing::run_now_playing_loop(now_playing_state).await;
-        });
-
-        // RePlayOS API integration: startup probe + self-recovery maintenance.
-        // No-ops immediately in standalone mode (`state.replay_api` is None).
-        let replay_api_state = state.clone();
-        tokio::spawn(async move {
-            super::replay_api::run_replay_api_maintenance(replay_api_state).await;
-        });
-    }
-
-    /// Spawn only the ordered pipeline. Used after an already-running app
-    /// swaps from one available storage device to another; the long-running
-    /// watchers already exist and must not be duplicated.
-    pub fn spawn_pipeline(state: AppState) {
-        let pipeline_state = state.clone();
-        tokio::spawn(async move {
-            Self::run_pipeline(&pipeline_state).await;
-        });
-    }
-
-    /// Run the ordered startup pipeline (async).
-    async fn run_pipeline(state: &AppState) {
+    /// Run the ordered startup pipeline (async). Returns `true` once the boot
+    /// library scan has completed (the caller marks the populate done), or
+    /// `false` if it bailed early because the activity slot couldn't be claimed.
+    pub(crate) async fn run_pipeline(state: &AppState) -> bool {
         // Brief delay to let the server start accepting requests.
         tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -313,7 +272,7 @@ impl BackgroundManager {
         {
             let Some(_guard) = Self::claim_startup_activity(state, StartupPhase::Scanning).await
             else {
-                return;
+                return false;
             };
 
             Self::phase_library_verification(state).await;
@@ -328,6 +287,10 @@ impl BackgroundManager {
 
             // _guard drops → Idle
         }
+
+        // Reached the end: scan + enrich + thumbnail-index rebuild done. The
+        // caller marks the boot populate complete.
+        true
     }
 
     async fn claim_startup_activity(
@@ -2343,6 +2306,42 @@ impl AppState {
             }
 
             drop(guard);
+        });
+    }
+
+    /// Spawn every long-running background task at boot (or when storage first
+    /// appears): the startup library pipeline, the storage + ROM watchers, the
+    /// update checker, the now-playing detector, and RePlayOS API maintenance.
+    /// App-startup orchestration lives on AppState; BackgroundManager provides the
+    /// individual task bodies.
+    pub fn spawn_boot_tasks(&self) {
+        // Clean up stale update temp files from a previous run.
+        update_io::nuke_update_dir();
+
+        self.spawn_startup_pipeline();
+
+        // Watchers are independent of the pipeline.
+        self.clone().spawn_storage_watcher();
+        self.spawn_rom_watcher();
+
+        // Update checker (independent of the pipeline, no activity lock needed).
+        let update_state = self.clone();
+        tokio::spawn(async move {
+            BackgroundManager::update_check_loop(update_state).await;
+        });
+
+        // Now-playing detector loop. API-based: exits immediately in standalone
+        // mode, where `replay_api` is `None`.
+        let now_playing_state = self.clone();
+        tokio::spawn(async move {
+            super::now_playing::run_now_playing_loop(now_playing_state).await;
+        });
+
+        // RePlayOS API integration: startup probe + self-recovery maintenance.
+        // No-ops immediately in standalone mode (`replay_api` is None).
+        let replay_api_state = self.clone();
+        tokio::spawn(async move {
+            super::replay_api::run_replay_api_maintenance(replay_api_state).await;
         });
     }
 

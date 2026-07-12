@@ -959,7 +959,7 @@ mod ssr {
         // start the pipeline on the None->Some transition via
         // reload_config_and_redetect_storage().
         if app_state.has_storage() {
-            api::BackgroundManager::start(app_state.clone());
+            app_state.spawn_boot_tasks();
         } else {
             app_state.clone().spawn_storage_watcher();
         }

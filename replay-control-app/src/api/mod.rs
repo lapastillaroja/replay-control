@@ -210,6 +210,12 @@ pub struct AppState {
     /// Unified activity state: at most one activity at a time.
     /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
     pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
+    /// Set once the boot library populate has finished at least once. Lets
+    /// `/api/core/status` distinguish a genuinely-empty library (`ready`) from
+    /// one that simply hasn't been scanned yet (an empty per-system map appears
+    /// in both cases, and `activity` can't disambiguate — see the ~2s pre-Startup
+    /// idle window). Never reset; a later rescan only touches per-system state.
+    pub(crate) initial_populate_done: Arc<std::sync::atomic::AtomicBool>,
     /// Broadcast channel for config change notifications (skin, storage).
     pub events_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
     /// RePlayOS API integration (client + status machine). `None` in
@@ -737,6 +743,7 @@ impl AppState {
         let rom_watcher_status = Arc::new(std::sync::RwLock::new(RomWatcherStatus::default()));
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
+        let initial_populate_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
@@ -760,7 +767,7 @@ impl AppState {
 
         // RePlayOS API integration: device-only by construction. The stored
         // Net Control code (if onboarding happened) seeds the client; the
-        // startup probe in `BackgroundManager::start` resolves the status.
+        // startup probe in `spawn_boot_tasks` resolves the status.
         let replay_api = mode.is_device().then(|| {
             Arc::new(replay_api::ReplayApi::new(
                 replay_control_core_server::settings::read_replay_api_token(&settings),
@@ -816,6 +823,7 @@ impl AppState {
                 ),
             ),
             activity,
+            initial_populate_done,
             events_tx,
             replay_api,
             activity_tx,
@@ -1235,6 +1243,20 @@ impl AppState {
         true
     }
 
+    /// Spawn the ordered startup library pipeline and, once it finishes the boot
+    /// scan, mark the populate done — which gates `ready` in `/api/core/status`.
+    /// Used at boot and after a storage swap. The pipeline runs on its own task;
+    /// tracking that the boot populate completed is this startup orchestration's
+    /// concern, not something the pipeline body reaches back into.
+    pub(crate) fn spawn_startup_pipeline(&self) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            if BackgroundManager::run_pipeline(&state).await {
+                state.mark_initial_populate_done();
+            }
+        });
+    }
+
     /// Reload `replay.cfg` and then re-detect storage from it. Used by the
     /// config-file watcher, the fallback poll, and user-triggered refreshes —
     /// any path where the on-disk config may have changed. Returns whether the
@@ -1475,10 +1497,10 @@ impl AppState {
             // None->Some transition: start background pipeline and ROM watcher.
             if !had_storage {
                 tracing::info!("Storage appeared — starting background pipeline and ROM watcher");
-                BackgroundManager::start(self.clone());
+                self.spawn_boot_tasks();
             } else {
                 tracing::info!("Storage swapped — starting background verification pipeline");
-                BackgroundManager::spawn_pipeline(self.clone());
+                self.spawn_startup_pipeline();
                 self.restart_rom_watcher();
             }
         }
@@ -1654,13 +1676,20 @@ pub fn is_allowed_without_storage(path: &str) -> bool {
         || path == "/first-setup"
         || path.starts_with("/static/")
         || path == "/api/version"
+        || path == "/api/core/status"
         || path
             .strip_prefix("/sfn/")
             .is_some_and(|_| server_function_required_role(path) == Some(AuthRole::Anonymous))
 }
 
 pub fn is_public_without_auth(path: &str) -> bool {
-    path == "/login" || path == "/waiting" || path == "/api/version" || path.starts_with("/static/")
+    path == "/login"
+        || path == "/waiting"
+        || path == "/api/version"
+        // Read-only library-state signal for the libretro core + health checks +
+        // the E2E harness.
+        || path == "/api/core/status"
+        || path.starts_with("/static/")
 }
 
 pub fn with_auth_guard(app: axum::Router, app_state: AppState) -> axum::Router {

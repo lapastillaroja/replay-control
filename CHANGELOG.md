@@ -4,6 +4,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- A read-only library-status endpoint (`GET /api/core/status`) reporting whether the library is ready, still scanning, or empty — so on-device clients can tell a still-loading library apart from a genuinely empty one during startup.
+
+---
+
 ## [1.1.3]
 
 > Faster box art and screenshots on the game screen, especially on network and USB libraries.

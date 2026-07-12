@@ -1,17 +1,18 @@
-//! Plain REST endpoints for the libretro core.
-//!
-//! These are lightweight Axum handlers — not Leptos server functions — so they
-//! have stable, hash-free URLs that the core can call reliably.
+//! `/api/core/{recents,favorites,game/…}` — game-data endpoints for the libretro
+//! core. Lightweight Axum handlers with stable, hash-free URLs.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use replay_control_core_server::library_db::LibraryDb;
 use serde::Serialize;
 
-use super::AppState;
+use replay_control_core_server::favorites::list_favorites;
 use replay_control_core_server::game_ref::GameRef;
+use replay_control_core_server::library_db::LibraryDb;
+
+use crate::api::AppState;
+use crate::server_fns::build_game_detail;
 
 /// Minimal game entry returned by recents/favorites list endpoints.
 /// Matches the shape expected by the libretro core's JSON parser.
@@ -87,7 +88,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
 /// GET /api/core/favorites — returns JSON array of favorites.
 async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
     let storage = state.storage();
-    let games: Vec<GameRef> = replay_control_core_server::favorites::list_favorites(&storage)
+    let games: Vec<GameRef> = list_favorites(&storage)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
@@ -112,7 +113,7 @@ async fn game_detail(
         .flatten()
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let game = crate::server_fns::build_game_detail(&state, &entry).await;
+    let game = build_game_detail(&state, &entry).await;
 
     Ok(Json(CoreGameDetail {
         display_name: game.display_name,
@@ -128,7 +129,7 @@ async fn game_detail(
     }))
 }
 
-pub fn routes() -> Router<AppState> {
+pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route("/recents", get(recents))
         .route("/favorites", get(favorites))

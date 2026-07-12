@@ -488,35 +488,76 @@ class ActivityStream:
 
 
 def wait_for_activity_idle(timeout: int = 45):
-    """Best-effort wait until /sse/activity reports Idle.
+    """Best-effort wait until /api/core/status reports activity 'idle'.
 
     A freshly restarted app runs scan + background identity hashing; the
-    maintenance server fns (clear images, cleanup, etc.) refuse to start while
-    any activity owns the slot. This returns quietly on timeout — callers use it
-    only to let background work settle, so it is safe to call unwrapped.
+    maintenance server fns (clear images, cleanup, etc.) refuse to start while any
+    activity owns the slot. Polls the typed status contract rather than the
+    activity SSE stream. Returns quietly on timeout — callers use it only to let
+    background work settle, so it is safe to call unwrapped.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        try:
-            with ActivityStream(timeout=5) as stream:
-                stream.wait_for(lambda e: e.get("type") == "Idle", timeout=6)
-                return
-        except Exception:  # noqa: BLE001
-            time.sleep(0.3)
+        if library_status().get("activity") == "idle":
+            return
+        time.sleep(0.3)
 
 
-def restart_app_and_scan(timeout: int = 120):
-    """Restart the service and wait for the per-system populate to finish.
-
-    'L2 populate: done' is the signal that discovery has written the scanned
-    ROM rows into library.db, so a seeded ROM is queryable afterwards. We then
-    let the activity slot settle to Idle so background identity hashing doesn't
-    collide with maintenance actions a test might trigger.
+def library_status() -> dict:
+    """GET /api/core/status -> the full library-state payload
+    ({"ready", "scanning", "total_roms", "activity", "systems"}), or {} on error.
     """
-    before = container_logs()
+    try:
+        with urlopen(f"{PI_URL}/api/core/status", timeout=5) as resp:
+            return json.load(resp)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def wait_for_library_ready(expect_systems=(), timeout: int = 120) -> dict:
+    """Wait until each system in `expect_systems` reports refresh state 'Fresh'
+    (its scan completed and its ROMs are queryable) and nothing is scanning.
+
+    Polls the typed `/api/core/status` contract rather than grepping the app's log
+    text — a log-line rename can't silently break this the way the old
+    "L2 populate: done" grep did. Callers that wipe library.db before restarting
+    (the seed fixtures do) see systems appear only after the new scan, so there is
+    no stale-state race.
+
+    With no `expect_systems` (an intentionally empty library), fall back to the
+    top-level `ready` flag, which is gated on the boot populate having completed —
+    so it can't false-positive during the pre-scan boot window. Returns the full
+    status payload; raises on timeout.
+    """
+    deadline = time.monotonic() + timeout
+    expect = list(expect_systems)
+    payload = {}
+    while time.monotonic() < deadline:
+        payload = library_status()
+        systems = payload.get("systems", {})
+        expected_fresh = all(systems.get(s, {}).get("state") == "Fresh" for s in expect)
+        settled = not payload.get("scanning", True)
+        base_ready = payload.get("ready", False) if not expect else True
+        if expected_fresh and settled and base_ready:
+            return payload
+        time.sleep(0.3)
+    raise AssertionError(
+        f"timed out waiting for library ready (expect {expect}); last status: {payload}"
+    )
+
+
+def restart_app_and_scan(expect_systems=("nintendo_nes",), timeout: int = 120):
+    """Restart the service and wait for the seeded systems' scan to complete.
+
+    Readiness is the typed `/api/library/status` contract reporting each expected
+    system 'Fresh' (its ROMs are queryable) — not a grep of the app's log text,
+    which silently broke when a log line was renamed. Then let the activity slot
+    settle to Idle so background identity hashing doesn't collide with maintenance
+    actions a test might trigger.
+    """
     exec_cmd("systemctl restart replay-control")
     wait_for_app(timeout)
-    wait_for_new_log(before, "L2 populate: done", timeout)
+    wait_for_library_ready(expect_systems, timeout=timeout)
     wait_for_activity_idle(timeout=45)
 
 

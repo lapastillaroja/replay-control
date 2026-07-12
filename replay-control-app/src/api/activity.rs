@@ -61,6 +61,24 @@ fn default_cancel() -> Arc<AtomicBool> {
 }
 
 impl Activity {
+    /// Coarse, stable label for the public `/api/core/status` payload — a hint
+    /// for clients (e.g. the libretro core) that poll rather than consume the
+    /// activity SSE. Kept intentionally coarse so it is a lasting contract, not a
+    /// mirror of internal variant names.
+    pub fn status_label(&self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Startup { .. } => "startup",
+            Self::Rebuild { .. } => "rebuilding",
+            Self::Identity { .. } => "identity",
+            Self::Import { .. } => "import",
+            Self::RefreshExternalMetadata { .. } => "metadata",
+            Self::ThumbnailUpdate { .. } => "thumbnails",
+            Self::Maintenance { .. } => "maintenance",
+            Self::Update { .. } => "updating",
+        }
+    }
+
     /// Check if this activity represents a terminal (completed/failed/cancelled) state.
     pub fn is_terminal(&self) -> bool {
         use replay_control_core_server::library_db::ImportState;
@@ -455,6 +473,20 @@ impl super::AppState {
         self.activity.read().expect("activity lock").clone()
     }
 
+    /// Mark that the boot library populate has finished at least once. Idempotent.
+    pub fn mark_initial_populate_done(&self) {
+        self.initial_populate_done
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether the boot library populate has completed at least once. Gates the
+    /// `ready` flag in `/api/core/status` so a genuinely-empty library isn't
+    /// confused with a not-yet-scanned one.
+    pub fn initial_populate_done(&self) -> bool {
+        self.initial_populate_done
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Broadcast the current activity state to all SSE listeners.
     pub fn broadcast_activity(&self) {
         let activity = self.activity();
@@ -518,6 +550,27 @@ impl super::AppState {
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn status_label_is_coarse_and_stable() {
+        assert_eq!(Activity::Idle.status_label(), "idle");
+        assert_eq!(
+            Activity::Startup {
+                phase: StartupPhase::Scanning,
+                system: String::new(),
+                enriching: false,
+            }
+            .status_label(),
+            "startup"
+        );
+        assert_eq!(
+            Activity::Maintenance {
+                kind: MaintenanceKind::CleanupOrphans,
+            }
+            .status_label(),
+            "maintenance"
+        );
+    }
 
     /// ActivityGuard is cleared on drop.
     /// This validates the guard pattern used in BackgroundManager::run_pipeline.

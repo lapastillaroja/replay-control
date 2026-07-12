@@ -311,6 +311,36 @@ impl LibraryDb {
         .map_err(|e| Error::Other(format!("read thumbnail media stats: {e}")))
     }
 
+    /// Per-system ROM count and durable refresh state, for the library-readiness
+    /// endpoint (`GET /api/library/status`). A machine-readable signal that a
+    /// scan has completed (`Fresh`) — the contract the E2E harness polls instead
+    /// of grepping log text. Ordered by system for stable output.
+    pub fn system_refresh_status(
+        conn: &Connection,
+    ) -> Result<Vec<(String, usize, SystemStatsRefreshState)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_count, refresh_state
+                 FROM game_library_system_stats
+                 ORDER BY system",
+            )
+            .map_err(|e| Error::Other(format!("prepare system_refresh_status: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let system: String = row.get(0)?;
+                let rom_count: i64 = row.get(1)?;
+                let state: i64 = row.get(2)?;
+                Ok((
+                    system,
+                    rom_count.max(0) as usize,
+                    StatsRefreshState::from_i64(state).as_wire(),
+                ))
+            })
+            .map_err(|e| Error::Other(format!("query system_refresh_status: {e}")))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("read system_refresh_status: {e}")))
+    }
+
     #[cfg(test)]
     fn load_game_library_system_stats(conn: &Connection) -> Result<Vec<GameLibrarySystemStats>> {
         let mut stmt = conn
@@ -911,6 +941,26 @@ mod tests {
 
     use super::*;
     use crate::library_db::{IdentityState, LibraryGameResource};
+
+    #[test]
+    fn system_refresh_status_reports_state_and_rom_count() {
+        use replay_control_core::library::db::SystemStatsRefreshState;
+
+        let (mut conn, _tmp) = super::super::tests::open_temp_db();
+        let mario = super::super::tests::make_game_entry("snes", "Mario.sfc", false);
+        let zelda = super::super::tests::make_game_entry("snes", "Zelda.sfc", false);
+        LibraryDb::save_system_entries(&mut conn, "snes", &[mario, zelda], None).unwrap();
+        // save_system_entries materializes a base stats row; pin a known state.
+        LibraryDb::set_game_library_system_stats_state(&conn, "snes", StatsRefreshState::Fresh)
+            .unwrap();
+
+        let status = LibraryDb::system_refresh_status(&conn).unwrap();
+        assert_eq!(status.len(), 1);
+        let (system, roms, state) = &status[0];
+        assert_eq!(system, "snes");
+        assert_eq!(*roms, 2);
+        assert_eq!(*state, SystemStatsRefreshState::Fresh);
+    }
 
     #[test]
     fn save_system_entries_refreshes_base_stats() {
