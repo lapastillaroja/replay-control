@@ -140,7 +140,7 @@ pub async fn start_setup_metadata_downloads() -> Result<(), ServerFnError> {
     if has_metadata && has_thumbnail_index {
         return Ok(());
     }
-    crate::api::BackgroundManager::spawn_setup_metadata_downloads(
+    crate::api::background::spawn_setup_metadata_downloads(
         state,
         !has_metadata,
         !has_thumbnail_index,
@@ -294,7 +294,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());
+    crate::api::background::spawn_external_metadata_refresh(state.clone());
     Ok(())
 }
 
@@ -304,7 +304,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     super::require_storage_mutation_allowed(&state, "download metadata").await?;
-    crate::api::BackgroundManager::spawn_external_metadata_download_and_refresh(state.clone());
+    crate::api::background::spawn_external_metadata_download_and_refresh(state.clone());
     Ok(())
 }
 
@@ -337,7 +337,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
 
-    state.spawn_populate(guard, true);
+    crate::api::background::spawn_populate(&state, guard, true);
     Ok(())
 }
 
@@ -364,7 +364,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
 
-    state.spawn_populate(guard, false);
+    crate::api::background::spawn_populate(&state, guard, false);
     Ok(())
 }
 
@@ -406,7 +406,7 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     state.library.invalidate_in_memory_views().await;
     state.invalidate_user_caches().await;
     // Trigger background re-import if XML exists.
-    crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());
+    crate::api::background::spawn_external_metadata_refresh(state.clone());
     Ok(())
 }
 

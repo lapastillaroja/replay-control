@@ -462,7 +462,7 @@ impl ThumbnailPipeline {
 
         // Re-enrich game library with freshly downloaded box art.
         if !cancelled {
-            state.spawn_library_enrichment();
+            crate::api::background::spawn_library_enrichment(state);
         }
 
         tracing::info!(

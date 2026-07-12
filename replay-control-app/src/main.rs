@@ -959,9 +959,9 @@ mod ssr {
         // start the pipeline on the None->Some transition via
         // reload_config_and_redetect_storage().
         if app_state.has_storage() {
-            app_state.spawn_boot_tasks();
+            api::background::spawn_boot_tasks(&app_state);
         } else {
-            app_state.clone().spawn_storage_watcher();
+            api::background::spawn_storage_watcher(app_state.clone());
         }
 
         // Explicitly register all server functions (inventory auto-registration

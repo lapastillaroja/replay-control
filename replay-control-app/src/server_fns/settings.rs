@@ -1070,7 +1070,7 @@ pub async fn save_analytics_preference(enabled: bool) -> Result<(), ServerFnErro
 pub async fn check_for_updates()
 -> Result<Option<replay_control_core::update::AvailableUpdate>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    crate::api::background::BackgroundManager::perform_update_check(&state)
+    crate::api::updates::perform_update_check(&state)
         .await
         .map_err(|e| ServerFnError::new(format!("Update check failed: {e}")))
 }
@@ -1097,7 +1097,7 @@ pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
     replay_control_core_server::update::nuke_update_dir();
     let state_clone = state.clone();
     tokio::spawn(async move {
-        match crate::api::background::BackgroundManager::perform_update_check(&state_clone).await {
+        match crate::api::updates::perform_update_check(&state_clone).await {
             Ok(_) => {}
             Err(e) => tracing::debug!("Re-check after channel switch failed: {e}"),
         }
@@ -1150,7 +1150,7 @@ pub async fn get_update_changelog() -> Result<UpdateChangelog, ServerFnError> {
             let cached = match update_io::fetch_changelog(
                 crate::VERSION,
                 &update_io::github_api_base_url(),
-                crate::api::background::BackgroundManager::REPO,
+                crate::api::updates::REPO,
                 github_key.as_deref(),
             )
             .await
@@ -1239,7 +1239,7 @@ mod tests {
 #[server(prefix = "/sfn")]
 pub async fn start_update(tag: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    crate::api::background::BackgroundManager::start_update(&state, &tag)
+    crate::api::updates::start_update(&state, &tag)
         .await
         .map_err(|e| ServerFnError::new(format!("Update failed: {e}")))
 }

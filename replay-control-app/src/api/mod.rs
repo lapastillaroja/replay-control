@@ -20,7 +20,6 @@ pub mod updates;
 pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
-pub use background::BackgroundManager;
 pub use library::LibraryService;
 use replay_control_core::auth::{AuthRole, valid_session_cookie_value};
 pub use replay_control_core_server::db_pool::{DbError, DbPool, rusqlite};
@@ -1251,7 +1250,7 @@ impl AppState {
     pub(crate) fn spawn_startup_pipeline(&self) {
         let state = self.clone();
         tokio::spawn(async move {
-            if BackgroundManager::run_pipeline(&state).await {
+            if background::run_pipeline(&state).await {
                 state.mark_initial_populate_done();
             }
         });
@@ -1497,11 +1496,11 @@ impl AppState {
             // None->Some transition: start background pipeline and ROM watcher.
             if !had_storage {
                 tracing::info!("Storage appeared — starting background pipeline and ROM watcher");
-                self.spawn_boot_tasks();
+                background::spawn_boot_tasks(self);
             } else {
                 tracing::info!("Storage swapped — starting background verification pipeline");
                 self.spawn_startup_pipeline();
-                self.restart_rom_watcher();
+                background::restart_rom_watcher(self);
             }
         }
         Ok(true)

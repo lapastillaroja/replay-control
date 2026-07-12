@@ -573,7 +573,7 @@ mod tests {
     }
 
     /// ActivityGuard is cleared on drop.
-    /// This validates the guard pattern used in BackgroundManager::run_pipeline.
+    /// This validates the guard pattern used in `background::run_pipeline`.
     #[test]
     fn activity_guard_resets_to_idle_on_drop() {
         let activity = Arc::new(RwLock::new(Activity::Idle));
