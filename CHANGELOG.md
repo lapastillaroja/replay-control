@@ -10,6 +10,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - A read-only library-status endpoint (`GET /api/core/status`) reporting whether the library is ready, still scanning, or empty — so on-device clients can tell a still-loading library apart from a genuinely empty one during startup.
 
+### Changed
+
+- Internal (no behavior change): reorganized the background-work subsystem — dissolved the stateless `BackgroundManager` and the scattered `impl AppState` blocks into free functions grouped by concern (startup pipeline, ROM identity matching, external-metadata download/refresh, device watchers, self-update).
+
 ---
 
 ## [1.1.3]
