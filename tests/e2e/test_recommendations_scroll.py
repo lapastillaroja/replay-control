@@ -90,7 +90,7 @@ def seeded_recs_library():
     reset_library()
     for system, rom in _SEEDS:
         seed_rom(system, rom)
-    restart_app_and_scan()
+    restart_app_and_scan(sorted({system for system, _ in _SEEDS}))
     yield
     _teardown_library()
 
@@ -103,7 +103,7 @@ def seeded_recents_library():
     for system, rom in _SEEDS:
         seed_rom(system, rom)
         seed_recent(system, rom)
-    restart_app_and_scan()
+    restart_app_and_scan(sorted({system for system, _ in _SEEDS}))
     yield
     _teardown_library()
 
