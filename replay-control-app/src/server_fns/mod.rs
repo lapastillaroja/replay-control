@@ -114,52 +114,25 @@ pub(crate) async fn enrich_box_art_and_favorites(
     state: &crate::api::AppState,
     entries: &[(String, String, Option<String>)], // (system, rom_filename, existing_box_art_url)
 ) -> std::collections::HashMap<(String, String), (Option<String>, bool)> {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     let storage = state.storage();
 
-    // Collect distinct systems for batch operations.
-    let distinct_systems: HashSet<&str> = entries.iter().map(|(sys, _, _)| sys.as_str()).collect();
+    // Test favorite-membership for all entries against the cached favorites in a
+    // single read lock (the cache is loaded whole on first miss, so per-system
+    // fan-out bought nothing but per-system HashSet clones).
+    let keys: Vec<(String, String)> = entries
+        .iter()
+        .map(|(system, rom_filename, _)| (system.clone(), rom_filename.clone()))
+        .collect();
+    let favorited = state.library.favorited_entries(&storage, &keys).await;
 
-    // Fan out per-system favorite lookups concurrently. Each lookup may hit
-    // the shared favorites cache on the fast path, or spawn a blocking fs walk
-    // on miss — running them in parallel keeps the request off the critical
-    // sequential path when multiple systems are involved (homepage, search).
-    let fav_sets: HashMap<String, HashSet<String>> = {
-        let mut set = tokio::task::JoinSet::new();
-        for sys in distinct_systems {
-            let state = state.clone();
-            let storage = storage.clone();
-            let sys = sys.to_string();
-            set.spawn(async move {
-                let favs = state.library.get_favorites_set(&storage, &sys).await;
-                (sys, favs)
-            });
-        }
-        let mut out = HashMap::new();
-        while let Some(res) = set.join_next().await {
-            match res {
-                Ok((sys, favs)) => {
-                    out.insert(sys, favs);
-                }
-                Err(e) => {
-                    tracing::warn!("favorites fan-out task failed: {e}");
-                }
-            }
-        }
-        out
-    };
-
-    // Build result map.
+    // Build result map. Box art comes straight from the DB `box_art_url`.
     let mut result = HashMap::with_capacity(entries.len());
     for (system, rom_filename, existing_url) in entries {
-        let is_favorite = fav_sets
-            .get(system.as_str())
-            .is_some_and(|set| set.contains(rom_filename));
-        result.insert(
-            (system.clone(), rom_filename.clone()),
-            (existing_url.clone(), is_favorite),
-        );
+        let key = (system.clone(), rom_filename.clone());
+        let is_favorite = favorited.contains(&key);
+        result.insert(key, (existing_url.clone(), is_favorite));
     }
     result
 }

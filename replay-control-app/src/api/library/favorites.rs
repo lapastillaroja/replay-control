@@ -65,6 +65,27 @@ impl LibraryService {
         .await
     }
 
+    /// Return which of the given `(system, filename)` entries are favorited,
+    /// testing membership against the cached favorites under a single read lock.
+    /// Avoids cloning a whole per-system `HashSet` per request (the list/search
+    /// enrichment path only needs membership, not the set itself).
+    pub async fn favorited_entries(
+        &self,
+        storage: &StorageLocation,
+        entries: &[(String, String)],
+    ) -> HashSet<(String, String)> {
+        self.with_favorites(storage, |data| {
+            entries
+                .iter()
+                .filter(|(system, filename)| {
+                    data.get(system).is_some_and(|set| set.contains(filename))
+                })
+                .cloned()
+                .collect()
+        })
+        .await
+    }
+
     /// Get the most-favorited system and its favorited filenames.
     /// Uses the cached favorites — no filesystem access on cache hit.
     pub async fn get_top_favorited_system(
