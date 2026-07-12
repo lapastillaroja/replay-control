@@ -306,10 +306,39 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         }
     };
 
-    let is_favorite =
-        replay_control_core_server::favorites::is_favorite(&storage, &system, &filename).await;
-
-    let game = build_game_detail(&state, &entry).await;
+    // These four reads are independent (they only need `entry` + the ids) and
+    // hit different pools / the filesystem, so run them concurrently instead of
+    // sequentially — this hides their latencies behind the slowest one rather
+    // than summing them on the detail-page critical path.
+    let (is_favorite, game, variant_count, library_resources) = tokio::join!(
+        replay_control_core_server::favorites::is_favorite(&storage, &system, &filename),
+        build_game_detail(&state, &entry),
+        // Box art variant count (manifest index only — no filesystem scan). The
+        // arcade display name is needed first, so it stays sequential *within*
+        // this branch.
+        async {
+            let arcade_display =
+                replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename)
+                    .await;
+            state
+                .external_metadata_reader
+                .read({
+                    let system = system.clone();
+                    let filename = filename.clone();
+                    move |em_conn| {
+                        replay_control_core_server::thumbnail_manifest::count_boxart_variants(
+                            em_conn,
+                            &system,
+                            &filename,
+                            arcade_display.as_deref(),
+                        )
+                    }
+                })
+                .await
+                .unwrap_or(0)
+        },
+        load_library_resources(&state, &system, &filename),
+    );
 
     #[cfg(feature = "ssr")]
     tracing::debug!(
@@ -318,27 +347,6 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     );
 
     let user_screenshots = screenshot_urls_for_rom(&storage, &system, &filename);
-
-    // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
-    let arcade_display =
-        replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename).await;
-    let variant_count = state
-        .external_metadata_reader
-        .read({
-            let system = system.clone();
-            let filename = filename.clone();
-            let arcade_display = arcade_display.clone();
-            move |em_conn| {
-                replay_control_core_server::thumbnail_manifest::count_boxart_variants(
-                    em_conn,
-                    &system,
-                    &filename,
-                    arcade_display.as_deref(),
-                )
-            }
-        })
-        .await
-        .unwrap_or(0);
 
     let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
@@ -355,8 +363,6 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         total_discs: di.total_discs,
         siblings: di.siblings,
     });
-
-    let library_resources = load_library_resources(&state, &system, &filename).await;
 
     #[cfg(feature = "ssr")]
     tracing::debug!(
