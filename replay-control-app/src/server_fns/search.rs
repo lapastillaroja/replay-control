@@ -1,3 +1,9 @@
+// Server functions need flat parameter lists (`#[server(default)]` per field), so
+// several here exceed clippy's arg-count threshold. server_fn 0.8's `#[server]`
+// macro no longer propagates a per-fn `#[allow]` to the generated client stub, so
+// the allow is module-scoped to cover the macro-generated code.
+#![allow(clippy::too_many_arguments)]
+
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;

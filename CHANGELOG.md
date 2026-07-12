@@ -12,6 +12,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Changed
 
+- Upgraded the web framework to leptos 0.8 (with axum 0.8 and server_fn 0.8). No user-facing behavior change; server memory, CPU, and search are unchanged. Trade-off: the compiled WebAssembly bundle is about 37% larger compressed (944 KB → 1,296 KB brotli), a one-time cold-load download cost. See [benchmarks](docs/features/benchmarks.md#regressions-and-analysis).
 - Internal (no behavior change): reorganized the background-work subsystem — dissolved the stateless `BackgroundManager` and the scattered `impl AppState` blocks into free functions grouped by concern (startup pipeline, ROM identity matching, external-metadata download/refresh, device watchers, self-update).
 
 ---

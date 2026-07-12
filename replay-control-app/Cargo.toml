@@ -20,9 +20,9 @@ path = "src/main.rs"
 # separate statics. cargo-edit has no ignore-file, so the exact pin is what makes
 # `cargo upgrade` skip them (it leaves `=` requirements alone by default).
 # Mirrors the major-version block in .github/dependabot.yml; bump these as a set.
-leptos = "=0.7.8"
-leptos_router = "=0.7.8"
-server_fn = "=0.7.8"
+leptos = "=0.8.19"
+leptos_router = "=0.8.13"
+server_fn = "=0.8.13"
 serde = { workspace = true }
 serde_json = { workspace = true }
 urlencoding = "2.1.3"
@@ -34,9 +34,9 @@ replay-control-core-server = { path = "../replay-control-core-server", default-f
 
 # SSR-only
 # axum and leptos_axum are part of the exact-pinned Leptos set above.
-axum = { version = "=0.7.9", features = ["multipart"], optional = true }
+axum = { version = "=0.8.9", features = ["multipart"], optional = true }
 axum-server = { version = "0.8.0", features = ["tls-rustls"], optional = true }
-leptos_axum = { version = "=0.7.8", optional = true }
+leptos_axum = { version = "=0.8.9", optional = true }
 tower-http = { version = "0.7.0", features = ["fs", "cors", "compression-gzip", "set-header", "limit"], optional = true }
 tower = { version = "0.5.3", optional = true }
 http = { version = "1.4.2", optional = true }
@@ -44,7 +44,7 @@ tokio = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 clap = { version = "4.6.1", features = ["derive"], optional = true }
-any_spawner = { version = "=0.2.0", features = ["tokio"], optional = true }
+any_spawner = { version = "=0.3.0", features = ["tokio"], optional = true }
 notify = { version = "8.2.0", optional = true }
 tokio-stream = { version = "0.1.18", optional = true }
 async-stream = { version = "0.3.6", optional = true }

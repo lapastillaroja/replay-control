@@ -153,7 +153,7 @@ fn GameDetailContent(
         let locale = i18n.locale.get();
         match game_playtime.get() {
             None => "\u{2026}".to_string(),
-            Some(result) => match result.take() {
+            Some(result) => match result {
                 Ok(p) if p.availability == PlaytimeAvailability::Tracked => {
                     format_elapsed_short(p.seconds)
                 }

@@ -76,7 +76,7 @@ pub fn MetadataPage() -> impl IntoView {
         let Some(result) = playtime.get() else {
             return PlaytimeUi::Loading;
         };
-        match result.take() {
+        match result {
             Ok(summary) if summary.availability == PlaytimeAvailability::Tracked => {
                 PlaytimeUi::Ready {
                     all_seconds: summary.all_seconds,

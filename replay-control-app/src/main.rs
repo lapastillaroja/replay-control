@@ -107,11 +107,11 @@ mod ssr {
         let guidance_skin_css = skins::theme_css(state.effective_skin()).unwrap_or_default();
         let loopback_compat_routes = axum::Router::new()
             .nest("/api/core", api::core_routes().with_state(state))
-            .route("/captures/*path", captures_handler)
-            .route("/manuals/*path", manuals_handler)
-            .route("/owned-manuals/*path", owned_manuals_handler)
-            .route("/rom-docs/*path", rom_docs_handler)
-            .route("/media/*path", media_handler)
+            .route("/captures/{*path}", captures_handler)
+            .route("/manuals/{*path}", manuals_handler)
+            .route("/owned-manuals/{*path}", owned_manuals_handler)
+            .route("/rom-docs/{*path}", rom_docs_handler)
+            .route("/media/{*path}", media_handler)
             .route_layer(axum::middleware::from_fn(require_loopback));
 
         axum::Router::new()
@@ -1334,7 +1334,7 @@ mod ssr {
                 axum::routing::get(|| async { axum::response::Redirect::permanent("/settings") }),
             )
             .route(
-                "/more/*rest",
+                "/more/{*rest}",
                 axum::routing::get(
                     |axum::extract::Path(rest): axum::extract::Path<String>| async move {
                         axum::response::Redirect::permanent(&format!("/settings/{rest}"))
@@ -1354,11 +1354,11 @@ mod ssr {
             .route("/sse/config", config_sse_handler)
             .route("/sse/now-playing", now_playing_sse_handler)
             .route("/sse/events", events_sse_handler)
-            .route("/captures/*path", captures_handler)
-            .route("/manuals/*path", manuals_handler)
-            .route("/owned-manuals/*path", owned_manuals_handler)
-            .route("/rom-docs/*path", rom_docs_handler)
-            .route("/media/*path", media_handler)
+            .route("/captures/{*path}", captures_handler)
+            .route("/manuals/{*path}", manuals_handler)
+            .route("/owned-manuals/{*path}", owned_manuals_handler)
+            .route("/rom-docs/{*path}", rom_docs_handler)
+            .route("/media/{*path}", media_handler)
             .nest_service(
                 "/static/pkg/snippets",
                 tower::ServiceBuilder::new()

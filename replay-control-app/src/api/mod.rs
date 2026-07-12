@@ -1628,7 +1628,7 @@ pub fn build_router(
     Router::new()
         .nest("/api", api_routes)
         .route(
-            "/sfn/*fn_name",
+            "/sfn/{*fn_name}",
             axum::routing::post(move |req: axum::http::Request<axum::body::Body>| {
                 let state = state_for_sfn.clone();
                 async move {
