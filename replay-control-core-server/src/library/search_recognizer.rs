@@ -49,7 +49,15 @@ pub struct RecognizedQuery {
 /// - `"Capcom CPS-2 fighter"` → board = Cps2, remaining = `"Capcom fighter"`.
 /// - `"sonic"` → no match, remaining = `"sonic"`.
 pub fn recognize(input: &str) -> RecognizedQuery {
-    let mut working = input.trim().to_string();
+    let trimmed = input.trim();
+    // Board recognition only matters for a non-empty query. The default
+    // (empty-query) library list hits this on every render and every
+    // infinite-scroll page, so skip the ~40-board token scan and its
+    // allocations entirely when there is nothing to match.
+    if trimmed.is_empty() {
+        return RecognizedQuery::default();
+    }
+    let mut working = trimmed.to_string();
     let mut filters = SearchFilter::default();
 
     // Try board recognition from the start and end. A single board can only

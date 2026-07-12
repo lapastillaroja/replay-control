@@ -54,7 +54,9 @@ def test_delete_rom_removes_file_and_returns_to_system(page, seeded_game):
     assert path_exists(rom_path)
 
     goto_hydrated(page, seeded_game["detail_url"])
-    page.locator(".game-action-delete").click()
+    delete_button = page.locator(".game-action-delete")
+    expect(delete_button).to_be_visible(timeout=10000)
+    delete_button.click()
     confirm_in_app_dialog(page, "Delete")
 
     # Delete navigates back to the system ROM list.

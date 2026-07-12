@@ -84,7 +84,7 @@ def test_admin_login_with_correct_password_grants_access(device_mode_app, page):
     goto_hydrated(page, "/login")
     page.fill("#login-admin-password", ADMIN_PW)
     page.get_by_role("button", name="Sign in as admin").click()
-    page.wait_for_url(lambda url: "/login" not in url, timeout=10000)
+    page.wait_for_function("!location.pathname.startsWith('/login')", timeout=10000)
 
     # The session persists: a fresh gated request is NOT bounced back to /login.
     # (Anonymous would redirect to /login — see the gating tests. In this device
