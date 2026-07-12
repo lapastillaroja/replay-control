@@ -8,6 +8,18 @@ set -euo pipefail
 TARGET="${1:-http://replay.local:8080}"
 DESCRIPTION="${2:-}"
 REQUESTS=50
+
+# When the target is HTTPS (Pi with https-by-default), accept its self-signed
+# cert; when BENCH_COOKIE is set (e.g. BENCH_COOKIE="ReplayControlSession=..."),
+# send it so authenticated routes return real pages instead of a 401. Mirrors
+# bench.sh's HTTPS/auth handling.
+AB_COOKIE_ARGS=()
+CURL_TLS_ARGS=()
+[[ "$TARGET" == https://* ]] && CURL_TLS_ARGS+=(--insecure)
+if [[ -n "${BENCH_COOKIE:-}" ]]; then
+    AB_COOKIE_ARGS=(-C "$BENCH_COOKIE")
+    CURL_TLS_ARGS+=(--cookie "$BENCH_COOKIE")
+fi
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_DIR="${REPO_ROOT}/tools/bench-results"
@@ -57,7 +69,7 @@ run_ab() {
     local url="$1"
     local concurrency="$2"
     local requests="$3"
-    ab -n "$requests" -c "$concurrency" "$url" 2>&1
+    ab -n "$requests" -c "$concurrency" "${AB_COOKIE_ARGS[@]}" "$url" 2>&1
 }
 
 extract_rps() {
@@ -101,16 +113,24 @@ log "Concurrency levels: ${CONCURRENCIES[*]}"
 log "========================================================================"
 log ""
 
-# Check reachability
-if ! curl -s -o /dev/null --max-time 5 "$TARGET/" 2>/dev/null; then
-    echo "ERROR: Server at $TARGET is not reachable."
+# Check reachability. Retry a few times: a single transient blip (a momentary
+# TLS/connection hiccup) should not abort the whole run under `set -e`.
+reachable=false
+for _try in 1 2 3 4 5; do
+    if curl -s -o /dev/null --max-time 10 "${CURL_TLS_ARGS[@]}" "$TARGET/" 2>/dev/null; then
+        reachable=true; break
+    fi
+    sleep 2
+done
+if ! $reachable; then
+    echo "ERROR: Server at $TARGET is not reachable (5 attempts)."
     exit 1
 fi
 
 # Warmup
 echo "Warming up..."
 for path in "${EP_PATHS[@]}"; do
-    curl -s -o /dev/null --max-time 60 "${TARGET}${path}" 2>/dev/null || true
+    curl -s -o /dev/null --max-time 60 "${CURL_TLS_ARGS[@]}" "${TARGET}${path}" 2>/dev/null || true
 done
 echo ""
 
@@ -136,7 +156,10 @@ for ep_idx in "${!EP_LABELS[@]}"; do
         log "--- n=$REQUESTS c=$c ---"
         log ""
 
-        ab_out=$(run_ab "$url" "$c" "$REQUESTS")
+        # Tolerate a transient non-zero ab exit (e.g. a connection reset under
+        # load): record what we can and keep sweeping the remaining endpoints
+        # rather than aborting the whole run under `set -e`.
+        ab_out=$(run_ab "$url" "$c" "$REQUESTS") || true
         log_raw "$ab_out"
         log ""
 
@@ -172,7 +195,7 @@ for i in 0 1 2 3; do
     tmpfile=$(mktemp /tmp/ab-mixed-XXXXXX.txt)
     MIXED_TMPFILES+=("$tmpfile")
     url="${TARGET}${EP_PATHS[$i]}"
-    ab -n "$MIXED_REQUESTS" -c "$MIXED_CONCURRENCY" "$url" > "$tmpfile" 2>&1 &
+    ab -n "$MIXED_REQUESTS" -c "$MIXED_CONCURRENCY" "${AB_COOKIE_ARGS[@]}" "$url" > "$tmpfile" 2>&1 &
     MIXED_PIDS+=($!)
 done
 
