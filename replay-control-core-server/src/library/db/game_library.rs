@@ -1434,26 +1434,6 @@ impl LibraryDb {
         Ok(changed)
     }
 
-    /// Mark rows claimed by an identity worker but not successfully updated.
-    pub fn finish_unresolved_identity_running(
-        conn: &Connection,
-        system: &str,
-        state: super::IdentityState,
-    ) -> Result<usize> {
-        conn.execute(
-            "UPDATE game_library
-             SET identity_state = ?1
-             WHERE system = ?2
-               AND identity_state = ?3",
-            params![
-                state.as_i64(),
-                system,
-                super::IdentityState::Running.as_i64()
-            ],
-        )
-        .map_err(|e| Error::Other(format!("finish unresolved identity for {system}: {e}")))
-    }
-
     /// Mark a specific claimed identity batch as pending/failed.
     pub fn finish_identity_batch(
         conn: &mut Connection,
@@ -3003,7 +2983,10 @@ impl LibraryDb {
             candidates.insert((entry.system.clone(), entry.rom_filename.clone()), entry);
         }
 
-        let mut scored: Vec<(u32, GameEntry)> = candidates
+        // Decorate with the lowercase tie-break key once per entry — computing
+        // it inside the comparator would re-lowercase each name O(log n) times
+        // during the sort, allocating two Strings per comparison.
+        let mut scored: Vec<(u32, String, GameEntry)> = candidates
             .into_values()
             .filter_map(|entry| {
                 let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
@@ -3024,26 +3007,21 @@ impl LibraryDb {
                     score = 350;
                 }
 
-                (score > 0).then_some((score, entry))
+                (score > 0).then(|| {
+                    let name_lower = entry
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&entry.rom_filename)
+                        .to_lowercase();
+                    (score, name_lower, entry)
+                })
             })
             .collect();
 
-        scored.sort_by(|(score_a, entry_a), (score_b, entry_b)| {
+        scored.sort_by(|(score_a, name_a, entry_a), (score_b, name_b, entry_b)| {
             score_b
                 .cmp(score_a)
-                .then_with(|| {
-                    let name_a = entry_a
-                        .display_name
-                        .as_deref()
-                        .unwrap_or(&entry_a.rom_filename)
-                        .to_lowercase();
-                    let name_b = entry_b
-                        .display_name
-                        .as_deref()
-                        .unwrap_or(&entry_b.rom_filename)
-                        .to_lowercase();
-                    name_a.cmp(&name_b)
-                })
+                .then_with(|| name_a.cmp(name_b))
                 .then_with(|| entry_a.system.cmp(&entry_b.system))
                 .then_with(|| entry_a.rom_filename.cmp(&entry_b.rom_filename))
         });
@@ -3053,7 +3031,7 @@ impl LibraryDb {
             .into_iter()
             .skip(offset)
             .take(limit)
-            .map(|(_, entry)| entry)
+            .map(|(_, _, entry)| entry)
             .collect();
 
         Ok((entries, total))

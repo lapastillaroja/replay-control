@@ -304,68 +304,6 @@ async fn download_to_file_with(
     result
 }
 
-/// GET a URL with custom headers and parse as JSON.
-pub async fn get_json_with_headers(
-    url: &str,
-    headers: &[(&str, &str)],
-    timeout: std::time::Duration,
-) -> Result<serde_json::Value> {
-    let mut req = shared_client().get(url).timeout(timeout);
-    for (key, value) in headers {
-        req = req.header(*key, *value);
-    }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| Error::Other(format!("HTTP request failed for {url}: {e}")))?
-        .error_for_status()
-        .map_err(|e| Error::Other(format!("HTTP error for {url}: {e}")))?;
-
-    resp.json()
-        .await
-        .map_err(|e| Error::Other(format!("JSON parse error for {url}: {e}")))
-}
-
-/// GET a URL with custom timeout and return as text.
-pub async fn get_text_with_timeout(url: &str, timeout: std::time::Duration) -> Result<String> {
-    let resp = shared_client()
-        .get(url)
-        .timeout(timeout)
-        .send()
-        .await
-        .map_err(|e| Error::Other(format!("HTTP request failed for {url}: {e}")))?
-        .error_for_status()
-        .map_err(|e| Error::Other(format!("HTTP error for {url}: {e}")))?;
-
-    resp.text()
-        .await
-        .map_err(|e| Error::Other(format!("Failed to read response text from {url}: {e}")))
-}
-
-/// GET a URL with custom headers and return raw text.
-pub async fn get_text_with_headers(
-    url: &str,
-    headers: &[(&str, &str)],
-    timeout: std::time::Duration,
-) -> Result<String> {
-    let mut req = shared_client().get(url).timeout(timeout);
-    for (key, value) in headers {
-        req = req.header(*key, *value);
-    }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| Error::Other(format!("HTTP request failed for {url}: {e}")))?
-        .error_for_status()
-        .map_err(|e| Error::Other(format!("HTTP error for {url}: {e}")))?;
-
-    resp.text()
-        .await
-        .map_err(|e| Error::Other(format!("Failed to read response text from {url}: {e}")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

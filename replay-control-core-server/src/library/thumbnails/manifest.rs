@@ -959,11 +959,7 @@ pub async fn save_thumbnail(
     matched_stem: &str,
     png_bytes: Vec<u8>,
 ) -> Result<std::path::PathBuf> {
-    let media_dir = storage_root
-        .join(crate::storage::RC_DIR)
-        .join("media")
-        .join(system)
-        .join(kind.media_dir());
+    let media_dir = super::media_kind_dir(storage_root, system, kind);
     let dest = media_dir.join(format!("{matched_stem}.png"));
 
     let work = {
@@ -1034,11 +1030,7 @@ pub fn find_boxart_variants(
     // also match either half individually.
     let tilde_halves = super::matching::tilde_halves(source);
 
-    let media_base = storage_root
-        .join(crate::storage::RC_DIR)
-        .join("media")
-        .join(system)
-        .join(ThumbnailKind::Boxart.media_dir());
+    let media_base = super::media_kind_dir(storage_root, system, ThumbnailKind::Boxart);
 
     let mut variants = Vec::new();
     // Dedup is by filename stem, not image content. On exFAT/NFS the media folder
@@ -1303,11 +1295,7 @@ pub fn plan_system_thumbnails_from_repo_data(
     let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
     let total = rom_filenames.len();
 
-    let media_dir = storage_root
-        .join(crate::storage::RC_DIR)
-        .join("media")
-        .join(system)
-        .join(kind.media_dir());
+    let media_dir = super::media_kind_dir(storage_root, system, kind);
     let dir_index = image_matching::build_dir_index(&media_dir, kind.media_dir());
 
     let mut work: Vec<(String, ManifestMatch)> = Vec::new();

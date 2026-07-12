@@ -250,13 +250,8 @@ pub async fn global_search(
         let system_display = sys_db::system_display_name(&system);
 
         // Take top N entries for this system.
-        let top = system_entries
-            .into_iter()
-            .take(per_system_limit)
-            .collect::<Vec<_>>();
-
         system_meta.push((system, system_display, match_count));
-        all_top_entries.extend(top);
+        all_top_entries.extend(system_entries.into_iter().take(per_system_limit));
     }
 
     // Batch-enrich all top entries at once (shared box art + favorites resolution).

@@ -129,13 +129,6 @@ impl LibraryDb {
         Ok(out)
     }
 
-    /// Clear all game aliases.
-    pub fn clear_aliases(conn: &Connection) -> Result<()> {
-        conn.execute("DELETE FROM game_alias", [])
-            .map_err(|e| Error::Other(format!("Clear game_alias failed: {e}")))?;
-        Ok(())
-    }
-
     // ── Game Series (Wikidata-sourced franchise data) ────────────────────
 
     const SERIES_BATCH_ROWS: usize = 5_000;
@@ -527,13 +520,6 @@ impl LibraryDb {
             Self::row_to_game_entry,
         )
         .ok()
-    }
-
-    /// Clear all game series data.
-    pub fn clear_series(conn: &Connection) -> Result<()> {
-        conn.execute("DELETE FROM game_series", [])
-            .map_err(|e| Error::Other(format!("Clear game_series failed: {e}")))?;
-        Ok(())
     }
 }
 

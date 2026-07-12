@@ -132,6 +132,23 @@ pub fn libretro_source_name(display_name: &str) -> String {
     format!("libretro:{}", repo_url_name(display_name))
 }
 
+/// `<storage_root>/.replay-control/media` — root of all downloaded thumbnail
+/// media. Central definition of the media layout; every non-test path below
+/// derives from these helpers instead of re-spelling the joins.
+pub fn media_root(storage_root: &Path) -> PathBuf {
+    storage_root.join(crate::storage::RC_DIR).join("media")
+}
+
+/// `<storage_root>/.replay-control/media/<system>`
+pub fn system_media_dir(storage_root: &Path, system: &str) -> PathBuf {
+    media_root(storage_root).join(system)
+}
+
+/// `<storage_root>/.replay-control/media/<system>/<kind dir>`
+pub fn media_kind_dir(storage_root: &Path, system: &str, kind: ThumbnailKind) -> PathBuf {
+    system_media_dir(storage_root, system).join(kind.media_dir())
+}
+
 /// Check if any system has downloaded thumbnail images on disk.
 /// Scans `<rc_dir>/media/*/boxart/` for valid PNG files (>= 200 bytes).
 pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
@@ -342,14 +359,6 @@ pub async fn resolve_image_on_disk(
     })
 }
 
-/// Resolve a single libretro-thumbnails "fake symlink" entry (a tiny text
-/// file with the target filename in it). Runs on the blocking pool.
-pub async fn try_resolve_fake_symlink(path: PathBuf, parent_dir: PathBuf) -> Option<String> {
-    tokio::task::spawn_blocking(move || try_resolve_fake_symlink_sync(&path, &parent_dir))
-        .await
-        .unwrap_or(None)
-}
-
 /// Build a list of ROM filenames for a system from the filesystem.
 ///
 /// Only includes files whose extension matches the system's known ROM
@@ -387,7 +396,7 @@ fn collect_rom_filenames(dir: &Path, filenames: &mut Vec<String>, extensions: Op
 /// This is maintenance work; request-time handlers should read the persisted
 /// values from `library.db` instead of calling this.
 pub fn scan_media_stats(storage_root: &Path) -> Vec<ThumbnailMediaStats> {
-    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    let media_dir = media_root(storage_root);
     scan_media_stats_dir(&media_dir)
 }
 
@@ -437,21 +446,9 @@ fn scan_kind_media_dir(kind_dir: &Path, kind: ThumbnailKind, stats: &mut Thumbna
     }
 }
 
-/// Delete media files for a single system.
-pub fn clear_system_media(storage_root: &Path, system: &str) -> Result<()> {
-    let media_dir = storage_root
-        .join(crate::storage::RC_DIR)
-        .join("media")
-        .join(system);
-    if media_dir.exists() {
-        std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
-    }
-    Ok(())
-}
-
 /// Delete all media files for all systems.
 pub fn clear_media(storage_root: &Path) -> Result<()> {
-    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    let media_dir = media_root(storage_root);
     if media_dir.exists() {
         std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
     }
@@ -613,7 +610,7 @@ fn media_system_dirs(media_dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// Return systems that have downloaded thumbnail media on disk.
 pub fn media_system_names(storage_root: &Path) -> Vec<String> {
-    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    let media_dir = media_root(storage_root);
     media_system_dirs(&media_dir)
         .into_iter()
         .map(|(system, _)| system)
@@ -641,10 +638,7 @@ pub fn orphaned_thumbnail_files_for_deleted_rom(
     box_art_url: Option<&str>,
     active_entries: &[GameEntry],
 ) -> Vec<(String, PathBuf)> {
-    let media_base = storage_root
-        .join(crate::storage::RC_DIR)
-        .join("media")
-        .join(system);
+    let media_base = system_media_dir(storage_root, system);
     let scans = thumbnail_dir_scans(&media_base);
     let candidates = referenced_thumbnail_paths_for_rom_from_scans(
         system,
@@ -683,7 +677,7 @@ pub fn find_orphaned_thumbnails_from_entries(
     storage_root: &Path,
     entries_by_system: &[(String, Vec<GameEntry>)],
 ) -> Vec<(String, PathBuf)> {
-    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    let media_dir = media_root(storage_root);
     if !media_dir.exists() {
         return Vec::new();
     }
@@ -725,17 +719,6 @@ pub fn find_orphaned_thumbnails(
         storage_root,
         &entries_by_system,
     ))
-}
-
-/// Delete orphaned thumbnail files and return `(count_deleted, bytes_freed)`.
-///
-/// Uses [`find_orphaned_thumbnails`] to identify files, then deletes each one.
-pub fn delete_orphaned_thumbnails(
-    storage_root: &Path,
-    conn: &rusqlite::Connection,
-) -> Result<(usize, u64)> {
-    let orphans = find_orphaned_thumbnails(storage_root, conn)?;
-    Ok(delete_thumbnail_files(&orphans))
 }
 
 /// Delete thumbnail files previously returned by [`find_orphaned_thumbnails`].
@@ -1562,134 +1545,6 @@ mod tests {
                 ".replay-control/media/snes/title/Deleted.png",
             ]
         );
-    }
-
-    // --- strip_tags ---
-
-    #[test]
-    fn strip_tags_removes_parenthesized() {
-        assert_eq!(strip_tags("Game Name (USA)"), "Game Name");
-        assert_eq!(strip_tags("Indiana Jones (Spanish)"), "Indiana Jones");
-    }
-
-    #[test]
-    fn strip_tags_removes_bracketed() {
-        assert_eq!(strip_tags("Game Name [!]"), "Game Name");
-    }
-
-    #[test]
-    fn strip_tags_no_tags() {
-        assert_eq!(strip_tags("Dark Seed"), "Dark Seed");
-    }
-
-    #[test]
-    fn strip_tags_empty_string() {
-        assert_eq!(strip_tags(""), "");
-    }
-
-    #[test]
-    fn strip_tags_strips_from_first_tag() {
-        assert_eq!(strip_tags("Game (USA) (Rev 1)"), "Game");
-    }
-
-    #[test]
-    fn strip_tags_trims_whitespace() {
-        assert_eq!(strip_tags("Game  (USA)"), "Game");
-    }
-
-    #[test]
-    fn strip_tags_paren_no_space_before() {
-        assert_eq!(strip_tags("Game(USA)"), "Game(USA)");
-    }
-
-    // --- strip_version ---
-
-    #[test]
-    fn strip_version_standard() {
-        assert_eq!(
-            strip_version("Sonic Adventure 2 v1.008"),
-            "Sonic Adventure 2"
-        );
-    }
-
-    #[test]
-    fn strip_version_space_separated() {
-        assert_eq!(strip_version("Sega Rally 2 v1 001"), "Sega Rally 2");
-    }
-
-    #[test]
-    fn strip_version_simple() {
-        assert_eq!(strip_version("Game v2"), "Game");
-    }
-
-    #[test]
-    fn strip_version_with_dots() {
-        assert_eq!(strip_version("Game v1.2.3"), "Game");
-    }
-
-    #[test]
-    fn strip_version_no_version() {
-        assert_eq!(strip_version("Super Mario World"), "Super Mario World");
-    }
-
-    #[test]
-    fn strip_version_empty() {
-        assert_eq!(strip_version(""), "");
-    }
-
-    #[test]
-    fn strip_version_v_without_digit() {
-        assert_eq!(strip_version("Game vs Evil"), "Game vs Evil");
-    }
-
-    #[test]
-    fn strip_version_v_in_middle_of_word() {
-        assert_eq!(strip_version("Marvel"), "Marvel");
-    }
-
-    #[test]
-    fn strip_version_non_version_text_after() {
-        assert_eq!(
-            strip_version("Game v2 Special Edition"),
-            "Game v2 Special Edition"
-        );
-    }
-
-    #[test]
-    fn strip_version_underscore_separated() {
-        assert_eq!(strip_version("Game v1_003"), "Game");
-    }
-
-    // --- base_title ---
-
-    #[test]
-    fn base_title_reorders_trailing_the() {
-        assert_eq!(base_title("Legend of Zelda, The"), "the legend of zelda");
-    }
-
-    #[test]
-    fn base_title_reorders_trailing_a() {
-        assert_eq!(base_title("Legend of Zelda, A"), "a legend of zelda");
-    }
-
-    #[test]
-    fn base_title_reorders_trailing_an() {
-        assert_eq!(base_title("NHL 95, An"), "an nhl 95");
-    }
-
-    #[test]
-    fn base_title_no_article_unchanged() {
-        assert_eq!(base_title("Super Mario World"), "super mario world");
-    }
-
-    #[test]
-    fn base_title_short_name_no_article() {
-        assert_eq!(base_title("Contra"), "contra");
-    }
-
-    #[test]
-    fn base_title_does_not_false_match_article_suffix() {
-        assert_eq!(base_title("America"), "america");
     }
 
     // --- ThumbnailKind ---

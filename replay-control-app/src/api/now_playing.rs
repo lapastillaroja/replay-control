@@ -30,9 +30,7 @@ use std::time::Duration;
 use replay_control_core::replay_api::{Classification, StatusResponse, classify};
 use replay_control_core::systems::system_display_name;
 use replay_control_core_server::arcade_db;
-use replay_control_core_server::boxart::resolve_effective_box_art_url;
 use replay_control_core_server::library_db::{GameEntry, LibraryDb};
-use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::AppState;
 use super::replay_api::ReplayApi;
@@ -210,30 +208,14 @@ async fn resolve_game(
 /// Resolve now-playing cover art with the same precedence as detail pages:
 /// explicit user override, library-enriched URL, then filesystem fallback.
 async fn resolve_box_art_url(state: &AppState, entry: &GameEntry) -> Option<String> {
-    let system = entry.system.clone();
-    let rom_filename = entry.rom_filename.clone();
-    let override_path = state
-        .user_data_reader
-        .read({
-            let system = system.clone();
-            let rom_filename = rom_filename.clone();
-            move |conn| {
-                UserDataDb::get_override(conn, &system, &rom_filename)
-                    .ok()
-                    .flatten()
-            }
-        })
-        .await
-        .flatten();
     let arcade_display =
         arcade_db::display_name_if_arcade(&entry.system, &entry.rom_filename).await;
-    resolve_effective_box_art_url(
-        &state.storage().rc_dir(),
+    crate::server_fns::resolve_box_art_url(
+        state,
         &entry.system,
         &entry.rom_filename,
         entry.box_art_url.as_deref(),
         arcade_display.as_deref(),
-        override_path.as_deref(),
     )
     .await
 }

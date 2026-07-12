@@ -43,10 +43,6 @@ impl View {
             other => View::Unknown(other),
         }
     }
-
-    pub fn is_game_play(self) -> bool {
-        self == View::GamePlay
-    }
 }
 
 /// `get_status` payload.

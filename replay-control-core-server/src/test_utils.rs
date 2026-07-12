@@ -6,7 +6,6 @@
 //! to a feature-gated module if this crate is ever published.
 
 #[cfg(feature = "library")]
-use rusqlite::params;
 #[cfg(feature = "library")]
 use tempfile::TempDir;
 
@@ -27,41 +26,6 @@ pub fn build_library_pool() -> (DbPool, TempDir) {
     LibraryDb::open_at(&db_path).expect("open library db");
     let pool = DbPool::new(db_path, "library_db", LibraryDb::open_at, 1).expect("build pool");
     (pool, tmp)
-}
-
-/// Insert a minimal `game_library` row.
-///
-/// Default-only columns (genre, region, developer, etc.) are left at their
-/// schema defaults. Pass `base_title = ""` if a test only cares about
-/// `visible_filenames`/`active_systems` and not alias matching.
-#[cfg(feature = "library")]
-pub async fn insert_game_library_row(
-    pool: &DbPool,
-    system: &str,
-    base_title: &str,
-    rom_filename: &str,
-) {
-    let system = system.to_string();
-    let base_title = base_title.to_string();
-    let rom = rom_filename.to_string();
-    pool.try_write(move |db| {
-        db.execute(
-            "INSERT INTO game_library
-             (system, rom_filename, rom_path, display_name,
-              base_title, series_key, region, developer, search_text)
-             VALUES (?1, ?2, ?3, ?4, ?5, '', '', '', '')",
-            params![
-                system,
-                rom,
-                format!("/{system}/{rom}"),
-                base_title,
-                base_title,
-            ],
-        )
-    })
-    .await
-    .expect("pool open")
-    .expect("insert succeeds");
 }
 
 /// Spin up a minimal HTTP server that answers every request with the given

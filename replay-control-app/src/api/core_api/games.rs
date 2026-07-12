@@ -47,11 +47,7 @@ async fn game_refs_to_core_entries(state: &AppState, games: Vec<GameRef>) -> Vec
         .iter()
         .map(|g| (g.system.clone(), g.rom_filename.clone()))
         .collect();
-    let db_entries = state
-        .library_reader
-        .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
-        .await
-        .unwrap_or_default();
+    let db_entries = crate::server_fns::lookup_entries_by_keys(state, keys).await;
 
     games
         .into_iter()

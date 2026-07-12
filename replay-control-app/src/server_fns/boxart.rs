@@ -31,6 +31,7 @@ pub async fn get_boxart_variants(
         &state,
         &system,
         &rom_filename,
+        None,
         arcade_display.as_deref(),
     )
     .await;

@@ -117,8 +117,12 @@ pub async fn get_related_games(
             let specials_raw =
                 LibraryDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
-            let all_entries = LibraryDb::load_system_entries(conn, &system_cl).unwrap_or_default();
-            let current_entry = all_entries.iter().find(|e| e.rom_filename == filename_cl);
+            // Indexed single-row lookup — loading the whole system table just
+            // to find this one entry allocated thousands of rows per detail
+            // view on large systems.
+            let current_entry =
+                LibraryDb::load_single_entry(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let current_entry = current_entry.as_ref();
 
             let base_title = current_entry
                 .map(|e| e.base_title.clone())
@@ -215,8 +219,9 @@ pub async fn get_related_games(
                 .unwrap_or_default()
             };
 
+            // Arcade version chips only need the filenames, not full rows.
             let all_system_roms: Vec<String> = if is_arcade {
-                all_entries.iter().map(|e| e.rom_filename.clone()).collect()
+                LibraryDb::visible_filenames(conn, &system_cl).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -624,13 +629,9 @@ async fn build_arcade_versions(
                 return None;
             }
 
-            // Filter out hacks.
-            if info.display_name.to_lowercase().contains("hack") {
-                return None;
-            }
-
-            // Filter out bootlegs.
-            if info.display_name.to_lowercase().contains("bootleg") {
+            // Filter out hacks and bootlegs.
+            let display_lower = info.display_name.to_lowercase();
+            if display_lower.contains("hack") || display_lower.contains("bootleg") {
                 return None;
             }
 

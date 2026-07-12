@@ -293,11 +293,7 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         .collect();
 
     // Batch-lookup box_art_url from game_library (most entries will have it).
-    let db_entries = state
-        .library_reader
-        .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
-        .await
-        .unwrap_or_default();
+    let db_entries = crate::server_fns::lookup_entries_by_keys(&state, keys).await;
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),

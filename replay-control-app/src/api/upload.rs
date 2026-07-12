@@ -31,9 +31,8 @@ async fn upload_rom(
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("upload ROMs")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("upload ROMs")
+        .await?;
     let storage = state.storage();
     let mut uploaded = Vec::new();
 
@@ -115,9 +114,8 @@ async fn upload_manual(
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("upload manuals")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("upload manuals")
+        .await?;
 
     let mut rom_filename = String::new();
     let mut base_title = String::new();

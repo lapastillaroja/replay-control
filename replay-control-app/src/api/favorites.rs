@@ -36,9 +36,8 @@ async fn add_favorite(
     StatusCode,
 > {
     state
-        .require_configured_storage_ready_for_mutation("add favorites")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("add favorites")
+        .await?;
     let fav = replay_control_core_server::favorites::add_favorite(
         &state.storage(),
         &payload.system,
@@ -56,9 +55,8 @@ async fn remove_favorite(
     Json(payload): Json<RemoveFavoriteRequest>,
 ) -> Result<StatusCode, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("remove favorites")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("remove favorites")
+        .await?;
     // Match the server-fn semantics: with no subfolder given, the same `.fav`
     // may exist in multiple locations after reorganization, so remove it
     // everywhere rather than only from the root.
@@ -87,9 +85,8 @@ async fn group_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("group favorites")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("group favorites")
+        .await?;
     let count = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     invalidate_favorites(&state).await;
@@ -100,9 +97,8 @@ async fn flatten_all_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("flatten favorites")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("flatten favorites")
+        .await?;
     let count = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     invalidate_favorites(&state).await;

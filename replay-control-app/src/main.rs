@@ -39,6 +39,7 @@ mod ssr {
         RestartReplayosGame, SaveReplayosKioskMode, SendReplayPlayerCommand, SendReplayosMessage,
         SetAdminSessionTimeout, StartSetupMetadataDownloads, VerifyReplayApiToken,
     };
+    use replay_control_app::util::escape_html;
 
     #[derive(Parser)]
     #[command(
@@ -414,21 +415,6 @@ mod ssr {
                         .chars()
                         .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
             })
-    }
-
-    fn escape_html(value: &str) -> String {
-        let mut escaped = String::with_capacity(value.len());
-        for ch in value.chars() {
-            match ch {
-                '&' => escaped.push_str("&amp;"),
-                '<' => escaped.push_str("&lt;"),
-                '>' => escaped.push_str("&gt;"),
-                '"' => escaped.push_str("&quot;"),
-                '\'' => escaped.push_str("&#39;"),
-                _ => escaped.push(ch),
-            }
-        }
-        escaped
     }
 
     /// Broadcast-based SSE stream for activity state changes.
@@ -889,83 +875,12 @@ mod ssr {
         as_given
     }
 
-    pub async fn run() {
-        install_default_crypto_provider();
-
-        use std::io::IsTerminal;
-        tracing_subscriber::fmt()
-            .with_ansi(std::io::stderr().is_terminal())
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                    "replay_control_app=info,replay_control_core=info"
-                        .parse()
-                        .unwrap()
-                }),
-            )
-            .init();
-
-        // Initialize the async task executor for Leptos reactive system.
-        // Without this, Resource async tasks won't run during SSR.
-        let _ = any_spawner::Executor::init_tokio();
-
-        let cli = Cli::parse();
-        tracing::info!(
-            "Replay Control version: v{} ({})",
-            replay_control_app::VERSION,
-            replay_control_app::GIT_HASH
-        );
-
-        let catalog_path = resolve_catalog_path(&cli.catalog_path);
-        if let Err(e) = replay_control_core_server::init_catalog(&catalog_path).await {
-            tracing::error!(
-                "catalog not loaded from {} ({e}) — catalog.sqlite is required. \
-                Place it next to the executable or pass --catalog-path.",
-                catalog_path.display()
-            );
-            std::process::exit(1);
-        }
-        tracing::info!("catalog loaded from {}", catalog_path.display());
-
-        let mut app_state =
-            match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir) {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!("Failed to initialize: {e}");
-                    tracing::info!(
-                        "Hint: use --storage-path to point to a RePlayOS storage location"
-                    );
-                    std::process::exit(1);
-                }
-            };
-        let device_mode = app_state.mode.is_device();
-        let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, device_mode);
-
-        // Browsers drop a Secure cookie on a non-HTTPS origin, so when we are not
-        // serving HTTPS the session cookie must drop Secure or login never
-        // persists (infinite redirect to /login). Secure iff serving HTTPS.
-        if !serve_https {
-            tracing::warn!("serving without HTTPS; session cookies will be sent over plain HTTP");
-            app_state.auth.cookie_policy.allow_insecure_transport();
-        }
-        if cli.dangerous_disable_https && cli.enable_https {
-            tracing::warn!("dangerous_disable_https overrides enable_https; serving without HTTPS");
-        }
-
-        // The external_metadata DB pool is constructed inside AppState::new
-        // (alongside library_pool / user_data_pool); no extra wiring here.
-
-        // Start background pipeline only if storage is available.
-        // When no storage, the mount/config watchers (and the fallback poll)
-        // start the pipeline on the None->Some transition via
-        // reload_config_and_redetect_storage().
-        if app_state.has_storage() {
-            api::background::spawn_boot_tasks(&app_state);
-        } else {
-            api::background::spawn_storage_watcher(app_state.clone());
-        }
-
-        // Explicitly register all server functions (inventory auto-registration
-        // doesn't work when the functions are in a library crate).
+    /// Explicitly register every server function (inventory
+    /// auto-registration does not work when the functions live in a
+    /// library crate). The auth-gate inventory test
+    /// (api::auth_gate::tests::every_server_function_is_registered_in_main)
+    /// cross-checks this list against the server_fns sources.
+    fn register_server_functions() {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetInfo>();
         server_fn::axum::register_explicit::<GetLiveStats>();
         server_fn::axum::register_explicit::<GetAuthStatus>();
@@ -1125,6 +1040,84 @@ mod ssr {
         >();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataPageSnapshot>(
         );
+    }
+
+    pub async fn run() {
+        install_default_crypto_provider();
+
+        use std::io::IsTerminal;
+        tracing_subscriber::fmt()
+            .with_ansi(std::io::stderr().is_terminal())
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    "replay_control_app=info,replay_control_core=info"
+                        .parse()
+                        .unwrap()
+                }),
+            )
+            .init();
+
+        // Initialize the async task executor for Leptos reactive system.
+        // Without this, Resource async tasks won't run during SSR.
+        let _ = any_spawner::Executor::init_tokio();
+
+        let cli = Cli::parse();
+        tracing::info!(
+            "Replay Control version: v{} ({})",
+            replay_control_app::VERSION,
+            replay_control_app::GIT_HASH
+        );
+
+        let catalog_path = resolve_catalog_path(&cli.catalog_path);
+        if let Err(e) = replay_control_core_server::init_catalog(&catalog_path).await {
+            tracing::error!(
+                "catalog not loaded from {} ({e}) — catalog.sqlite is required. \
+                Place it next to the executable or pass --catalog-path.",
+                catalog_path.display()
+            );
+            std::process::exit(1);
+        }
+        tracing::info!("catalog loaded from {}", catalog_path.display());
+
+        let mut app_state =
+            match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir) {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::error!("Failed to initialize: {e}");
+                    tracing::info!(
+                        "Hint: use --storage-path to point to a RePlayOS storage location"
+                    );
+                    std::process::exit(1);
+                }
+            };
+        let device_mode = app_state.mode.is_device();
+        let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, device_mode);
+
+        // Browsers drop a Secure cookie on a non-HTTPS origin, so when we are not
+        // serving HTTPS the session cookie must drop Secure or login never
+        // persists (infinite redirect to /login). Secure iff serving HTTPS.
+        if !serve_https {
+            tracing::warn!("serving without HTTPS; session cookies will be sent over plain HTTP");
+            app_state.auth.cookie_policy.allow_insecure_transport();
+        }
+        if cli.dangerous_disable_https && cli.enable_https {
+            tracing::warn!("dangerous_disable_https overrides enable_https; serving without HTTPS");
+        }
+
+        // The external_metadata DB pool is constructed inside AppState::new
+        // (alongside library_pool / user_data_pool); no extra wiring here.
+
+        // Start background pipeline only if storage is available.
+        // When no storage, the mount/config watchers (and the fallback poll)
+        // start the pipeline on the None->Some transition via
+        // reload_config_and_redetect_storage().
+        if app_state.has_storage() {
+            api::background::spawn_boot_tasks(&app_state);
+        } else {
+            api::background::spawn_storage_watcher(app_state.clone());
+        }
+
+        register_server_functions();
         let site_root_abs = std::fs::canonicalize(&cli.site_root).unwrap_or_else(|e| {
             panic!("site root '{}' not found: {e}", cli.site_root);
         });

@@ -185,12 +185,6 @@ pub fn write_region_preference_secondary(
     store.save(&settings)
 }
 
-/// Read the font size preference from settings.
-/// Returns `"normal"` or `"large"`, defaults to `"normal"`.
-pub fn read_font_size(store: &SettingsStore) -> String {
-    store.load().font_size().to_string()
-}
-
 /// Write the font size preference to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_font_size(store: &SettingsStore, size: &str) -> Result<()> {
@@ -379,12 +373,6 @@ pub fn write_locale(
     store.save(&settings)
 }
 
-/// Read the setup dismissed flag from settings.
-/// Returns `false` if the file doesn't exist or the key is missing.
-pub fn read_setup_dismissed(store: &SettingsStore) -> bool {
-    store.load().setup_dismissed()
-}
-
 /// Write the setup dismissed flag to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_setup_dismissed(store: &SettingsStore, dismissed: bool) -> Result<()> {
@@ -477,13 +465,6 @@ pub fn read_analytics_enabled(store: &SettingsStore) -> bool {
 pub fn write_analytics(store: &SettingsStore, enabled: bool) -> Result<()> {
     let mut settings = store.load();
     settings.set_analytics(enabled);
-    store.save(&settings)
-}
-
-/// Write the install ID to settings.
-pub fn write_install_id(store: &SettingsStore, id: &str) -> Result<()> {
-    let mut settings = store.load();
-    settings.set_install_id(id);
     store.save(&settings)
 }
 

@@ -565,23 +565,6 @@ pub async fn system_alternates(system: &str) -> Vec<(u32, Vec<String>)> {
     }
 }
 
-/// Get the canonical games for a system.
-pub async fn system_games(system: &str) -> Vec<CanonicalGame> {
-    {
-        let system = system.to_string();
-        return crate::catalog_pool::with_catalog(move |conn| {
-            let mut stmt = conn.prepare_cached(
-                "SELECT display_name, year, genre, developer, publisher, players, coop, rating, \
-                 normalized_genre, description, source FROM canonical_game WHERE system = ?1 ORDER BY id",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![system], row_to_canonical_game)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .await
-        .unwrap_or_default();
-    }
-}
-
 /// Per-system catalog detail metadata keyed by the enrichment normalized title.
 ///
 /// Used by the enrichment pipeline as a fallback when LaunchBox has no detail

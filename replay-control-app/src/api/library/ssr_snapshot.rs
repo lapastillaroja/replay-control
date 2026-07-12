@@ -61,8 +61,10 @@ impl<T: Clone + Default> SsrSnapshot<T> {
         Self::default()
     }
 
-    /// Read-locked fast path: returns the cached value if present.
-    #[allow(dead_code)] // Public API for future callers; only test-used today.
+    /// Read-locked peek at the cached value, without triggering a rebuild.
+    /// Test-only observation point; production reads go through
+    /// [`Self::get_or_compute`].
+    #[cfg(test)]
     pub async fn get_cached(&self) -> Option<T> {
         self.inner.read().await.clone()
     }

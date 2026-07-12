@@ -219,17 +219,6 @@ impl LibraryDb {
         Self::upsert_release_dates(conn, &rows)
     }
 
-    /// Populate `game_release_date` from build-time embedded static data for
-    /// one system only.
-    pub fn seed_release_dates_from_static_for_system(
-        conn: &mut Connection,
-        system: &str,
-        data: StaticReleaseData,
-    ) -> Result<usize> {
-        let rows = Self::static_release_date_rows_for_system(conn, system, data)?;
-        Self::upsert_release_dates(conn, &rows)
-    }
-
     /// Build static release-date rows that apply to one system's current library rows.
     pub fn static_release_date_rows_for_system(
         conn: &Connection,
@@ -252,16 +241,6 @@ impl LibraryDb {
     /// never downgrade an existing higher-precision entry.
     pub fn seed_release_dates_from_library(conn: &mut Connection, source: &str) -> Result<usize> {
         Self::seed_release_dates_from_library_scope(conn, None, source)
-    }
-
-    /// Populate `game_release_date` from one system's current
-    /// `game_library` mirror columns.
-    pub fn seed_release_dates_from_library_for_system(
-        conn: &mut Connection,
-        system: &str,
-        source: &str,
-    ) -> Result<usize> {
-        Self::seed_release_dates_from_library_scope(conn, Some(system), source)
     }
 
     fn seed_release_dates_from_library_scope(

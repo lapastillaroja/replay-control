@@ -771,3 +771,14 @@ mod tests {
         );
     }
 }
+
+/// Minimal HTML escaping for text interpolated into server-rendered HTML
+/// (the waiting page, the HTTPS-guidance page). Escapes the five
+/// context-sensitive characters.
+pub fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}

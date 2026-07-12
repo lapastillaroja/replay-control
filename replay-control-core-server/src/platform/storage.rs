@@ -104,7 +104,6 @@ const MTIME_PROBE_FILE: &str = "mtime-probe";
 const ROMS_DIR: &str = "roms";
 const SAVES_DIR: &str = "saves";
 const CONFIG_DIR: &str = "config";
-const BIOS_DIR: &str = "bios";
 const CAPTURES_DIR: &str = "captures";
 const MANUALS_DIR: &str = "manuals";
 
@@ -158,26 +157,12 @@ impl StorageLocation {
         self.root.join(ROMS_DIR)
     }
 
-    /// Absolute path of a ROM from its stored `rom_path` (which includes the
-    /// `roms/` prefix, e.g. `/roms/sega_st/Game.m3u`).
-    pub fn rom_abs_path(&self, rom_path: &str) -> PathBuf {
-        self.root.join(rom_path.trim_start_matches('/'))
-    }
-
     pub fn saves_dir(&self) -> PathBuf {
         self.root.join(SAVES_DIR)
     }
 
-    pub fn config_dir(&self) -> PathBuf {
-        self.root.join(CONFIG_DIR)
-    }
-
     pub fn config_file(&self) -> PathBuf {
         self.root.join(CONFIG_DIR).join("replay.cfg")
-    }
-
-    pub fn bios_dir(&self) -> PathBuf {
-        self.root.join(BIOS_DIR)
     }
 
     pub fn captures_dir(&self) -> PathBuf {

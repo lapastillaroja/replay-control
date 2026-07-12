@@ -46,9 +46,8 @@ async fn rename_rom(
     Json(payload): Json<RenameRomRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
-        .require_configured_storage_ready_for_mutation("rename ROMs")
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
+        .require_storage_ready_or_conflict("rename ROMs")
+        .await?;
     // The request carries only the path; the system folder is its first
     // component (`roms/<system>/...`).
     let (system, _) = launch_parts(&payload.relative_path).map_err(|_| StatusCode::BAD_REQUEST)?;

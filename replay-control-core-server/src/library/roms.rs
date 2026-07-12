@@ -288,22 +288,6 @@ async fn resolve_rom_companions_blocking(
         })
 }
 
-/// Mark each ROM entry's `is_favorite` flag using the favorites on disk.
-/// Efficient: collects favorite filenames once, then checks via HashSet lookup.
-pub async fn mark_favorites(storage: &StorageLocation, system: &str, roms: &mut [RomEntry]) {
-    let fav_set: std::collections::HashSet<String> =
-        crate::favorites::list_favorites_for_system(storage, system)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|f| f.game.rom_filename)
-            .collect();
-
-    for rom in roms.iter_mut() {
-        rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
-    }
-}
-
 /// Delete a ROM file.
 pub fn delete_rom(storage: &StorageLocation, relative_path: &str) -> Result<()> {
     let full_path = storage.root.join(relative_path.trim_start_matches('/'));

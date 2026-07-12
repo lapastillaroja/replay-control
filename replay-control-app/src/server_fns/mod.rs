@@ -2,7 +2,7 @@ use replay_control_core::runtime_env::Mode;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::boxart::resolve_effective_box_art_url;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
@@ -105,86 +105,42 @@ pub struct RomListEntry {
     pub genre: String,
 }
 
-/// Batch-resolve favorites for a set of game references.
-/// Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
-/// If NULL, no art is available — show placeholder.
-/// Returns a `HashMap` keyed by `(system, rom_filename)` with `(box_art_url, is_favorite)`.
-#[cfg(feature = "ssr")]
-pub(crate) async fn enrich_box_art_and_favorites(
-    state: &crate::api::AppState,
-    entries: &[(String, String, Option<String>)], // (system, rom_filename, existing_box_art_url)
-) -> std::collections::HashMap<(String, String), (Option<String>, bool)> {
-    use std::collections::HashMap;
-
-    let storage = state.storage();
-
-    // Test favorite-membership for all entries against the cached favorites in a
-    // single read lock (the cache is loaded whole on first miss, so per-system
-    // fan-out bought nothing but per-system HashSet clones).
-    let keys: Vec<(String, String)> = entries
-        .iter()
-        .map(|(system, rom_filename, _)| (system.clone(), rom_filename.clone()))
-        .collect();
-    let favorited = state.library.favorited_entries(&storage, &keys).await;
-
-    // Build result map. Box art comes straight from the DB `box_art_url`.
-    let mut result = HashMap::with_capacity(entries.len());
-    for (system, rom_filename, existing_url) in entries {
-        let key = (system.clone(), rom_filename.clone());
-        let is_favorite = favorited.contains(&key);
-        result.insert(key, (existing_url.clone(), is_favorite));
-    }
-    result
-}
-
 /// Convert a slice of `GameEntry` rows into enriched `RomListEntry` values.
 ///
-/// Handles multi-system results (e.g., developer page, global search) by
-/// batching favorites per distinct system. Box art comes from the DB
-/// `box_art_url` field (set by enrichment pipeline). All other metadata
-/// fields (genre, rating, players, driver_status) are already populated
-/// in `GameEntry` from the `game_library` table.
+/// The only enrichment left is the favorites overlay (one membership check
+/// against the cached favorites); box art and all other metadata fields
+/// (genre, rating, players, driver_status) are already populated on
+/// `GameEntry` from the `game_library` table.
 #[cfg(feature = "ssr")]
 pub(crate) async fn enrich_game_entries(
     state: &crate::api::AppState,
-    entries: Vec<replay_control_core_server::library_db::GameEntry>,
+    entries: Vec<GameEntry>,
 ) -> Vec<RomListEntry> {
-    // Build input tuples for the shared enrichment function.
-    let input: Vec<(String, String, Option<String>)> = entries
+    let storage = state.storage();
+    let keys: Vec<(String, String)> = entries
         .iter()
-        .map(|e| {
-            (
-                e.system.clone(),
-                e.rom_filename.clone(),
-                e.box_art_url.clone(),
-            )
-        })
+        .map(|e| (e.system.clone(), e.rom_filename.clone()))
         .collect();
+    let favorited = state.library.favorited_entries(&storage, &keys).await;
 
-    let enriched = enrich_box_art_and_favorites(state, &input).await;
-
-    // Single pass: convert GameEntry -> RomListEntry with enrichment.
     entries
         .into_iter()
-        .map(|entry| {
-            let key = (entry.system.clone(), entry.rom_filename.clone());
-            let (box_art_url, is_favorite) = enriched.get(&key).cloned().unwrap_or((None, false));
-            RomListEntry {
-                display_name: entry
-                    .display_name
-                    .unwrap_or_else(|| entry.rom_filename.clone()),
-                system: entry.system,
-                rom_filename: entry.rom_filename,
-                rom_path: entry.rom_path,
-                size_bytes: entry.size_bytes,
-                is_m3u: entry.is_m3u,
-                is_favorite,
-                box_art_url,
-                driver_status: entry.driver_status,
-                rating: entry.rating,
-                players: entry.players,
-                genre: entry.genre_group,
-            }
+        .zip(keys)
+        .map(|(entry, key)| RomListEntry {
+            is_favorite: favorited.contains(&key),
+            display_name: entry
+                .display_name
+                .unwrap_or_else(|| entry.rom_filename.clone()),
+            system: entry.system,
+            rom_filename: entry.rom_filename,
+            rom_path: entry.rom_path,
+            size_bytes: entry.size_bytes,
+            is_m3u: entry.is_m3u,
+            box_art_url: entry.box_art_url,
+            driver_status: entry.driver_status,
+            rating: entry.rating,
+            players: entry.players,
+            genre: entry.genre_group,
         })
         .collect()
 }
@@ -482,26 +438,12 @@ async fn enrich_detail_fields(
     info: &mut GameInfo,
     arcade_display: Option<&str>,
 ) {
-    let override_path = state
-        .user_data_reader
-        .read({
-            let system = info.system.clone();
-            let rom_filename = info.rom_filename.clone();
-            move |conn| {
-                UserDataDb::get_override(conn, &system, &rom_filename)
-                    .ok()
-                    .flatten()
-            }
-        })
-        .await
-        .flatten();
-    info.box_art_url = resolve_effective_box_art_url(
-        &state.storage().rc_dir(),
+    info.box_art_url = resolve_box_art_url(
+        state,
         &info.system,
         &info.rom_filename,
         info.box_art_url.as_deref(),
         arcade_display,
-        override_path.as_deref(),
     )
     .await;
 
@@ -520,43 +462,58 @@ async fn enrich_detail_fields(
         info.publisher = meta.publisher;
     }
 
-    // Filesystem fallback for screenshots and title screens.
+    // Filesystem fallback for screenshots and title screens: same resolve,
+    // different media kind and target field.
     if info.screenshot_url.is_none() || info.title_url.is_none() {
+        use replay_control_core_server::thumbnails::ThumbnailKind;
+
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
-        if info.screenshot_url.is_none()
-            && let Some(path) = resolve_image_on_disk(
-                arcade_display_owned.clone(),
-                media_base.clone(),
-                replay_control_core_server::thumbnails::ThumbnailKind::Snap.media_dir(),
-                info.rom_filename.clone(),
-            )
-            .await
-        {
-            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+        let resolve_media_url = |kind: ThumbnailKind| {
+            let arcade_display = arcade_display_owned.clone();
+            let media_base = media_base.clone();
+            let rom_filename = info.rom_filename.clone();
+            let system = info.system.clone();
+            async move {
+                resolve_image_on_disk(arcade_display, media_base, kind.media_dir(), rom_filename)
+                    .await
+                    .map(|path| format!("/media/{system}/{path}"))
+            }
+        };
+        if info.screenshot_url.is_none() {
+            info.screenshot_url = resolve_media_url(ThumbnailKind::Snap).await;
         }
-        if info.title_url.is_none()
-            && let Some(path) = resolve_image_on_disk(
-                arcade_display_owned,
-                media_base,
-                replay_control_core_server::thumbnails::ThumbnailKind::Title.media_dir(),
-                info.rom_filename.clone(),
-            )
-            .await
-        {
-            info.title_url = Some(format!("/media/{}/{path}", info.system));
+        if info.title_url.is_none() {
+            info.title_url = resolve_media_url(ThumbnailKind::Title).await;
         }
     }
 }
 
-/// Resolve a box art URL for a ROM, checking library DB first, then filesystem.
+/// Batch-fetch library rows for `(system, rom_filename)` keys in one reader
+/// trip. The shared front half of every "overlay library data onto a marker
+/// list" path (recents, favorites, core API entries); consumers pick the
+/// fields they need from the returned map.
 #[cfg(feature = "ssr")]
-pub(crate) async fn resolve_box_art_url(
+pub(crate) async fn lookup_entries_by_keys(
+    state: &crate::api::AppState,
+    keys: Vec<(String, String)>,
+) -> std::collections::HashMap<(String, String), GameEntry> {
+    state
+        .library_reader
+        .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
+        .await
+        .unwrap_or_default()
+}
+
+/// Box-art override from `user_data.db` — user-selected art beats everything.
+/// Shared by every box-art resolution path (detail page, now-playing, boxart
+/// picker) so the pool-read boilerplate lives in exactly one place.
+#[cfg(feature = "ssr")]
+pub(crate) async fn read_boxart_override(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
-    arcade_display: Option<&str>,
 ) -> Option<String> {
-    let override_path = state
+    state
         .user_data_reader
         .read({
             let system = system.to_string();
@@ -568,12 +525,25 @@ pub(crate) async fn resolve_box_art_url(
             }
         })
         .await
-        .flatten();
+        .flatten()
+}
+
+/// Resolve a ROM's box-art URL with the standard precedence: user override,
+/// then the library-enriched `existing_url`, then filesystem fallback.
+#[cfg(feature = "ssr")]
+pub(crate) async fn resolve_box_art_url(
+    state: &crate::api::AppState,
+    system: &str,
+    rom_filename: &str,
+    existing_url: Option<&str>,
+    arcade_display: Option<&str>,
+) -> Option<String> {
+    let override_path = read_boxart_override(state, system, rom_filename).await;
     resolve_effective_box_art_url(
         &state.storage().rc_dir(),
         system,
         rom_filename,
-        None,
+        existing_url,
         arcade_display,
         override_path.as_deref(),
     )

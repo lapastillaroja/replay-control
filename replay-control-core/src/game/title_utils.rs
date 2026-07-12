@@ -666,6 +666,26 @@ mod tests {
     }
 
     #[test]
+    fn base_title_reorders_trailing_a() {
+        assert_eq!(base_title("Legend of Zelda, A"), "a legend of zelda");
+    }
+
+    #[test]
+    fn base_title_reorders_trailing_an() {
+        assert_eq!(base_title("NHL 95, An"), "an nhl 95");
+    }
+
+    #[test]
+    fn base_title_short_name_no_article() {
+        assert_eq!(base_title("Contra"), "contra");
+    }
+
+    #[test]
+    fn base_title_does_not_false_match_article_suffix() {
+        assert_eq!(base_title("America"), "america");
+    }
+
+    #[test]
     fn base_title_tilde_inside_parens() {
         // Neo Geo games have ` ~ ` inside parens: (NGM-055 ~ NGH-055)
         // Tags should be stripped BEFORE tilde splitting.
@@ -694,11 +714,37 @@ mod tests {
     #[test]
     fn strip_tags_removes_parenthesized() {
         assert_eq!(strip_tags("Game Name (USA)"), "Game Name");
+        assert_eq!(strip_tags("Indiana Jones (Spanish)"), "Indiana Jones");
     }
 
     #[test]
     fn strip_tags_no_tags() {
         assert_eq!(strip_tags("Dark Seed"), "Dark Seed");
+    }
+
+    #[test]
+    fn strip_tags_removes_bracketed() {
+        assert_eq!(strip_tags("Game Name [!]"), "Game Name");
+    }
+
+    #[test]
+    fn strip_tags_empty_string() {
+        assert_eq!(strip_tags(""), "");
+    }
+
+    #[test]
+    fn strip_tags_strips_from_first_tag() {
+        assert_eq!(strip_tags("Game (USA) (Rev 1)"), "Game");
+    }
+
+    #[test]
+    fn strip_tags_trims_whitespace() {
+        assert_eq!(strip_tags("Game  (USA)"), "Game");
+    }
+
+    #[test]
+    fn strip_tags_paren_no_space_before() {
+        assert_eq!(strip_tags("Game(USA)"), "Game(USA)");
     }
 
     // --- strip_version ---
@@ -714,6 +760,49 @@ mod tests {
     #[test]
     fn strip_version_no_version() {
         assert_eq!(strip_version("Super Mario World"), "Super Mario World");
+    }
+
+    #[test]
+    fn strip_version_space_separated() {
+        assert_eq!(strip_version("Sega Rally 2 v1 001"), "Sega Rally 2");
+    }
+
+    #[test]
+    fn strip_version_simple() {
+        assert_eq!(strip_version("Game v2"), "Game");
+    }
+
+    #[test]
+    fn strip_version_with_dots() {
+        assert_eq!(strip_version("Game v1.2.3"), "Game");
+    }
+
+    #[test]
+    fn strip_version_empty() {
+        assert_eq!(strip_version(""), "");
+    }
+
+    #[test]
+    fn strip_version_v_without_digit() {
+        assert_eq!(strip_version("Game vs Evil"), "Game vs Evil");
+    }
+
+    #[test]
+    fn strip_version_v_in_middle_of_word() {
+        assert_eq!(strip_version("Marvel"), "Marvel");
+    }
+
+    #[test]
+    fn strip_version_non_version_text_after() {
+        assert_eq!(
+            strip_version("Game v2 Special Edition"),
+            "Game v2 Special Edition"
+        );
+    }
+
+    #[test]
+    fn strip_version_underscore_separated() {
+        assert_eq!(strip_version("Game v1_003"), "Game");
     }
 
     // --- series_key ---
