@@ -1,7 +1,9 @@
 # Performance Benchmarks
 
-Last updated: 2026-06-28
+Last updated: 2026-07-12
 Primary benchmark build: 1.0.0 release build, commit `433e899`. Measured over HTTPS (now on by default) with an authenticated session, so server times include the TLS handshake and the session check — a few ms above the earlier plain-HTTP figures. Search and stress-load figures are carried over from 0.9.0 (the load harness has not yet been re-run against the authenticated HTTPS endpoint).
+
+> **2026-07-12 re-measurement round (web-framework upgrade).** A candidate build carrying the leptos 0.7→0.8 upgrade was benchmarked against the immediately-preceding release (1.1.3, still on leptos 0.7) on the same Pi 5 and the same libraries (USB 26,777 games, NFS 93,649). The A/B isolates what the framework upgrade costs from what two months of new features cost. Headline: the only framework-attributable regression is a **larger download bundle** (+37% compressed); everyday memory and CPU are unchanged (memory is slightly lower), and search is untouched. The separate, larger drop in raw page throughput since 1.0.0 is **feature growth, not the framework** — see [Regressions and Analysis](#regressions-and-analysis). Baselines below still reflect 1.0.0 unless noted.
 
 Replay Control is designed to run quietly on a Raspberry Pi while still handling large game libraries. The practical result from the 1.0.0 measurements is:
 
@@ -76,6 +78,16 @@ The web app's static files. WASM is served gzip-compressed by the server.
 | Home HTML | 57 KB | - | - |
 
 This is a CI release build, so the WASM bundle includes the `wasm-opt -Oz` pass — the raw bundle is 4,725 KB, down from 0.9.0's 5,318 KB. This benchmark build served the gzip variant (1,431 KB, at maximum gzip). 1.0.0 adds brotli pre-compression: browsers that accept `br` download **944 KB — about 485 KB (34%) smaller than gzip**. Gzip remains the fallback for clients or builds without brotli.
+
+**leptos 0.8 upgrade (2026-07-12 round).** The framework upgrade grows the WASM bundle materially. Both figures below are release builds with the same `wasm-opt -Oz` pass; the only difference is the framework version, so the delta is framework codegen, not features (confirmed by A/B against the leptos-0.7 v1.1.3 release, which matches the 1.0.0 column).
+
+| WASM bundle | Raw | Gzip | Brotli |
+|---|---:|---:|---:|
+| leptos 0.7 (1.0.0 / v1.1.3) | 4,695–4,805 KB | 1,429–1,438 KB | 944–946 KB |
+| leptos 0.8 (candidate) | 6,139 KB | 1,955 KB | 1,296 KB |
+| **Δ** | **+27.8%** | **+36.8%** | **+37.3%** |
+
+Modern browsers accept `br`, so the practical cost is **+350 KB (+37%) per cold load**. This is the one clear framework-attributable regression; it lands on first-load download, not on per-request server time.
 
 ## Stress Tests
 
@@ -229,6 +241,26 @@ Two metrics moved the wrong way versus 0.4.0. Both are understood; neither is a 
 - Require a minimum query length — ignore free-text queries shorter than 2 characters after trimming whitespace. This removes the single-character worst case outright and matches common search-box behavior. Keep the threshold at **two, not three**: two-character board shorthands like "f3" (Taito F3) and "cps" must keep working. Those already resolve through the separate arcade-board recognizer (a board-tag lookup, independent of free-text search), so they return results regardless of this guard or the text index. Cheapest guard, but it only eliminates 1-character queries; 2+ character broad free-text queries still scan and materialize.
 - Cap the candidate set with a generous in-database limit before ranking, so even a broad query never loads the entire library into memory. This also lowers the broad-search load-test memory peak (observed ~0.7-1.1 GB), which comes from the same unbounded materialization.
 - Add a full-text index for the searchable text. A leading-wildcard substring match cannot use a normal index, so today every text search is a full scan. Measured on the device, an FTS5 index over the search column costs about 6-9 s to build at library-build time and ~20 MB on disk (trigram, which supports substring matching), and turns the per-query lookup from ~46-67 ms into well under 1 ms while returning only matching rows to rank. Trigram matches need ≥3 characters, so two-character free-text queries would keep a `LIKE` fallback (rare and cheap — few rows match), and board shorthands stay on the recognizer path. It pairs naturally with the minimum-length guard above. This is the deeper fix.
+
+### The leptos 0.8 upgrade: bigger bundle, slightly heavier renders (2026-07-12)
+
+Upgrading the web framework (leptos 0.7 → 0.8) was benchmarked as an A/B on one Pi 5 against the immediately-preceding release (1.1.3, still leptos 0.7), same USB (26,777) and NFS (93,649) libraries, authenticated HTTPS. Because the two builds share the same feature set and catalog, every difference is the framework.
+
+**What moved:**
+- **Download bundle: +37% compressed (944 → 1,296 KB brotli; +27.8% raw).** The one clear regression. It is paid once per cold load, not per request. See [Download Sizes](#download-sizes).
+- **Server-side render time: up, and it scales with page size.** Small pages barely move (game detail ~−6% throughput; a small system list within noise); large list pages pay the most — the arcade list warm TTFB roughly doubled (5.2 → 12.3 ms). At c=1 the leptos-0.7 baseline and 1.0.0 agree, so this delta is the framework, not features.
+
+**What did *not* move:**
+- **Memory is neutral, even slightly better.** Settled idle was 97 MB resident / 36 MB heap on leptos 0.8 vs 108 / 45 MB on the leptos-0.7 build; post-load peak was comparable (~500 MB). The larger WASM lives in a file-backed mmap, not server heap.
+- **CPU is unchanged** (idle ~0%, one-user browsing 0.90% vs 0.87%).
+- **Search is untouched** — it is database-bound, so the framework version is irrelevant (mario c=1 ~42 ms, "a" c=1 ~1,284 ms on NFS, matching the leptos-0.7 build).
+
+**Don't confuse this with feature drift.** Raw light-page throughput is far lower than 1.0.0 (game detail c=1 700 → 344 req/s, SNES list 563 → 290). Almost all of that happened *before* leptos 0.8: the leptos-0.7 v1.1.3 release already measures ~365 / ~352 req/s. The cause is the per-render work added by two months of features (now-playing detection, RetroAchievements, series, richer per-game metadata), not the framework. leptos 0.8 adds only the last ~−6 to −17% on top.
+
+**Options.**
+- Accept it — the bundle is a one-time cold-load cost that brotli already keeps near 1.3 MB, and per-request time stays in single-digit-to-low-double-digit milliseconds for normal pages.
+- If cold-load size matters, revisit WASM size levers independent of the framework (feature-gating rarely-used client code, `wasm-opt` flag tuning). The catalog/library mmap and server memory are unaffected either way.
+- The per-render feature cost (the larger driver of the throughput drop) is addressable separately — it is per-page work in the SSR path, not a framework limit.
 
 ## Test Methodology
 
