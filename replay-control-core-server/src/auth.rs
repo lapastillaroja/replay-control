@@ -254,7 +254,7 @@ impl AuthStore {
             .ok_or_else(|| Error::Other("Admin session is required".to_string()))?;
         let claims = verify_claims_with_key(token, &key)?
             .ok_or_else(|| Error::Other("Admin session is required".to_string()))?;
-        let resolved = self.effective_session(&claims, settings, now)?;
+        let resolved = self.effective_session(&claims, settings, now, &key)?;
         if !resolved.is_some_and(|session| session.role == AuthRole::Admin) {
             return Err(Error::Other("Admin session is required".to_string()));
         }
@@ -316,7 +316,7 @@ impl AuthStore {
             .ok_or_else(|| Error::Other("Admin session is required".to_string()))?;
         let claims = verify_claims_with_key(token, &key)?
             .ok_or_else(|| Error::Other("Admin session is required".to_string()))?;
-        let resolved = self.effective_session(&claims, settings, now)?;
+        let resolved = self.effective_session(&claims, settings, now, &key)?;
         if !resolved.is_some_and(|session| session.can_downgrade) {
             return Err(Error::Other(
                 "Only elevated admin sessions can switch to normal user".to_string(),
@@ -357,10 +357,18 @@ impl AuthStore {
         settings: &SettingsStore,
         now: u64,
     ) -> Result<Option<ResolvedAuthSession>> {
-        let Some(claims) = self.verify_claims(token)? else {
+        // Read the signing key once and thread it through verification and the
+        // credential-fingerprint checks. Previously each of those re-read the
+        // key file (2-3 `std::fs::read`s per request on the hot path); one read
+        // per request is enough, and reading fresh each request preserves the
+        // "an invalid key on disk makes existing cookies anonymous" behavior.
+        let Some(key) = self.load_signing_key()? else {
             return Ok(None);
         };
-        self.effective_session(&claims, settings, now)
+        let Some(claims) = verify_claims_with_key(token, &key)? else {
+            return Ok(None);
+        };
+        self.effective_session(&claims, settings, now, &key)
     }
 
     fn effective_session(
@@ -368,13 +376,18 @@ impl AuthStore {
         claims: &SignedSessionClaims,
         settings: &SettingsStore,
         now: u64,
+        key: &[u8],
     ) -> Result<Option<ResolvedAuthSession>> {
         if claims.expires_at <= now {
             return Ok(None);
         }
         match claims.role {
             AuthRole::User => {
-                if !self.user_fingerprint_matches(settings, claims.user_fingerprint.as_deref())? {
+                if !self.user_fingerprint_matches(
+                    settings,
+                    claims.user_fingerprint.as_deref(),
+                    key,
+                )? {
                     return Ok(None);
                 }
                 Ok(Some(ResolvedAuthSession {
@@ -386,8 +399,11 @@ impl AuthStore {
             }
             AuthRole::Admin => {
                 let user_valid = claims.base_role == Some(AuthRole::User)
-                    && self
-                        .user_fingerprint_matches(settings, claims.user_fingerprint.as_deref())?;
+                    && self.user_fingerprint_matches(
+                        settings,
+                        claims.user_fingerprint.as_deref(),
+                        key,
+                    )?;
                 if claims.elevated_until.is_some_and(|expires| expires <= now) {
                     if user_valid {
                         return Ok(Some(ResolvedAuthSession {
@@ -399,14 +415,15 @@ impl AuthStore {
                     }
                     return Ok(None);
                 }
-                let admin_valid =
-                    match self.admin_fingerprint_matches(claims.admin_fingerprint.as_deref()) {
-                        Ok(valid) => valid,
-                        Err(error) => {
-                            tracing::warn!("admin session fingerprint check failed: {error}");
-                            false
-                        }
-                    };
+                let admin_valid = match self
+                    .admin_fingerprint_matches(claims.admin_fingerprint.as_deref(), key)
+                {
+                    Ok(valid) => valid,
+                    Err(error) => {
+                        tracing::warn!("admin session fingerprint check failed: {error}");
+                        false
+                    }
+                };
                 if !admin_valid {
                     if user_valid {
                         return Ok(Some(ResolvedAuthSession {
@@ -435,6 +452,9 @@ impl AuthStore {
         Ok(sign_claims_with_key(claims, &key))
     }
 
+    // Kept for tests; the hot path now reads the key once and calls
+    // `verify_claims_with_key` directly (see `resolve_session_details_at`).
+    #[cfg(test)]
     fn verify_claims(&self, token: &str) -> Result<Option<SignedSessionClaims>> {
         let key = match self.load_signing_key()? {
             Some(key) => key,
@@ -472,6 +492,9 @@ impl AuthStore {
         }
     }
 
+    // Kept for tests; production reads the key once and calls the `_with_key`
+    // variant directly (see `user_fingerprint_matches`).
+    #[cfg(test)]
     fn user_credential_fingerprint(&self, settings: &SettingsStore) -> Result<String> {
         let key = self.load_or_create_signing_key()?;
         self.user_credential_fingerprint_with_key(settings, &key)
@@ -496,11 +519,6 @@ impl AuthStore {
         Ok(fingerprint_with_key("user", token.as_bytes(), key))
     }
 
-    fn admin_credential_fingerprint(&self) -> Result<String> {
-        let key = self.load_or_create_signing_key()?;
-        self.admin_credential_fingerprint_with_key(&key)
-    }
-
     fn admin_credential_fingerprint_with_key(&self, key: &[u8]) -> Result<String> {
         let shadow = std::fs::read_to_string(&self.root_shadow_path)
             .map_err(|e| Error::Other(format!("Cannot read shadow file: {e}")))?;
@@ -512,21 +530,22 @@ impl AuthStore {
         &self,
         settings: &SettingsStore,
         claim: Option<&str>,
+        key: &[u8],
     ) -> Result<bool> {
         let Some(claim) = claim else {
             return Ok(false);
         };
-        let Ok(current) = self.user_credential_fingerprint(settings) else {
+        let Ok(current) = self.user_credential_fingerprint_with_key(settings, key) else {
             return Ok(false);
         };
         Ok(constant_time_eq(current.as_bytes(), claim.as_bytes()))
     }
 
-    fn admin_fingerprint_matches(&self, claim: Option<&str>) -> Result<bool> {
+    fn admin_fingerprint_matches(&self, claim: Option<&str>, key: &[u8]) -> Result<bool> {
         let Some(claim) = claim else {
             return Ok(false);
         };
-        let current = self.admin_credential_fingerprint()?;
+        let current = self.admin_credential_fingerprint_with_key(key)?;
         Ok(constant_time_eq(current.as_bytes(), claim.as_bytes()))
     }
 }
@@ -1513,8 +1532,9 @@ mod tests {
             admin_fingerprint: Some("test-admin".to_string()),
         };
 
+        let key = store.load_or_create_signing_key().unwrap();
         let resolved = store
-            .effective_session(&claims, &settings, now)
+            .effective_session(&claims, &settings, now, &key)
             .unwrap()
             .unwrap();
         assert_eq!(resolved.role, AuthRole::User);
@@ -1539,8 +1559,11 @@ mod tests {
             admin_fingerprint: Some("test-admin".to_string()),
         };
 
+        let key = store.load_or_create_signing_key().unwrap();
         assert_eq!(
-            store.effective_session(&claims, &settings, now).unwrap(),
+            store
+                .effective_session(&claims, &settings, now, &key)
+                .unwrap(),
             None
         );
     }
