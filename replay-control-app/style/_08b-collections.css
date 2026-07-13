@@ -1,0 +1,182 @@
+/* Collections page — favorites `_favorites/` folder tree, and the collection
+   selector reused on /favorites. The "My Games" idiom this was designed to
+   share (.my-games-tabs / .my-games-tab / .my-games-grid / .my-games-card)
+   lives in an unmerged sibling PR, so those classes are styled here,
+   self-contained, rather than left to inherit CSS that doesn't exist yet. */
+
+.my-games-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.my-games-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+.my-games-tab:hover {
+    color: var(--text);
+}
+
+.my-games-tab-icon {
+    margin-right: 0.4em;
+}
+
+.my-games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 1rem;
+}
+
+.my-games-card {
+    display: block;
+    background: var(--surface);
+    border: var(--control-border);
+    border-radius: var(--surface-radius);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color var(--motion-base);
+}
+
+.my-games-card:hover {
+    border-color: var(--accent);
+}
+
+.my-games-card-cover {
+    width: 100%;
+    aspect-ratio: 0.7;
+    background: var(--surface-hover);
+    overflow: hidden;
+}
+
+.my-games-card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.my-games-card-info {
+    padding: 0.6rem 0.7rem;
+}
+
+.my-games-card-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.my-games-card-meta {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.my-games-card-system {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.my-games-card-sep {
+    opacity: 0.6;
+    margin: 0 0.3em;
+}
+
+.collections-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--control-gap-tight, 0.25rem);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.collections-breadcrumb .crumb {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    padding: 0.2em 0.35em;
+    border-radius: var(--radius-sm);
+}
+
+.collections-breadcrumb .crumb:hover {
+    color: var(--text);
+}
+
+.collections-breadcrumb .crumb.active {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.collections-breadcrumb .crumb-sep {
+    color: var(--text-secondary);
+    opacity: 0.6;
+    padding: 0 0.1em;
+}
+
+.collections-chips {
+    margin-bottom: 1.25rem;
+}
+
+/* Count badge inside a collection chip */
+.collection-chip-count {
+    font-size: 0.7rem;
+    opacity: 0.75;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 999px;
+    padding: 0.1em 0.55em;
+}
+
+/* Game detail: "in lists" favorite-list badges. */
+.game-detail-collections {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.game-detail-collections .gdc-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.game-detail-collections .gdc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.game-detail-collections .gdc-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--surface-hover);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2em 0.7em;
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.game-detail-collections .gdc-chip:hover {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: transparent;
+}

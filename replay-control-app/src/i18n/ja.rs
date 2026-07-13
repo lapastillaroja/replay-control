@@ -45,6 +45,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::FavoritesBySystem => "システム別",
         Key::FavoritesAll => "すべてのお気に入り",
         Key::FavoritesRemoveConfirm => "{0}をお気に入りから削除しますか？",
+        Key::CollectionsTitle => "コレクション",
+        Key::CollectionsOpen => "コレクションを見る",
+        Key::CollectionsLoading => "コレクションを読み込み中…",
+        Key::CollectionsEmpty => "ここにはまだコレクションがありません",
+        Key::CollectionsGeneral => "お気に入り",
 
         // Organize favorites
         Key::OrganizeTitle => "お気に入りを整理",
@@ -323,6 +328,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Game detail page
         Key::GameDetailInfo => "ゲーム情報",
+        Key::GameDetailInCollections => "リスト",
         Key::GameDetailSystem => "システム",
         Key::GameDetailFilename => "ファイル名",
         Key::GameDetailStorageSize => "ストレージサイズ",

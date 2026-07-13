@@ -988,6 +988,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::FlattenFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomsPage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameCollections>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DeleteRom>();
         server_fn::axum::register_explicit::<DeleteUserCapture>();
         server_fn::axum::register_explicit::<GetUserCaptures>();

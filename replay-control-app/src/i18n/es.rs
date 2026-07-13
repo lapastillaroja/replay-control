@@ -45,6 +45,11 @@ pub fn translate(key: Key) -> &'static str {
         Key::FavoritesBySystem => "Por sistema",
         Key::FavoritesAll => "Todos los favoritos",
         Key::FavoritesRemoveConfirm => "¿Quitar {0} de favoritos?",
+        Key::CollectionsTitle => "Colecciones",
+        Key::CollectionsOpen => "Explorar colecciones",
+        Key::CollectionsLoading => "Cargando colecciones…",
+        Key::CollectionsEmpty => "Aún no hay colecciones aquí",
+        Key::CollectionsGeneral => "Favoritos",
 
         // Organize favorites
         Key::OrganizeTitle => "Organizar favoritos",
@@ -323,6 +328,7 @@ pub fn translate(key: Key) -> &'static str {
 
         // Game detail page
         Key::GameDetailInfo => "Información del juego",
+        Key::GameDetailInCollections => "En listas",
         Key::GameDetailSystem => "Sistema",
         Key::GameDetailFilename => "Nombre de archivo",
         Key::GameDetailStorageSize => "Tamaño en disco",

@@ -45,6 +45,32 @@ pub async fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> 
     Ok(favorites)
 }
 
+/// List every collection (subfolder) a single ROM's favorite marker appears
+/// in. Unlike [`list_favorites`], this does NOT dedupe — the same marker can
+/// legitimately live in several lists (root + one or more subfolders), and
+/// callers here want the full membership, not a single preferred copy.
+pub async fn collections_for_marker(
+    storage: &StorageLocation,
+    marker_filename: &str,
+) -> Result<Vec<String>> {
+    let favs_dir = storage.favorites_dir();
+    if !favs_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut favorites = Vec::new();
+    collect_favorites(&favs_dir, &favs_dir, &mut favorites).await?;
+
+    let mut cols: Vec<String> = favorites
+        .into_iter()
+        .filter(|f| f.marker_filename == marker_filename)
+        .map(|f| f.subfolder)
+        .collect();
+    cols.sort();
+    cols.dedup();
+    Ok(cols)
+}
+
 /// List favorites for a specific system.
 pub async fn list_favorites_for_system(
     storage: &StorageLocation,

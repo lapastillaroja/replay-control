@@ -668,7 +668,7 @@
     --outline-action-font-size: var(--font-size-compact-default);
 }
 
-:where(.filter-chip, .system-chip, .discover-link, .region-chip, .recent-chip) {
+:where(.filter-chip, .system-chip, .discover-link, .region-chip, .recent-chip, .my-games-tab) {
     display: inline-flex;
     align-items: center;
     gap: var(--chip-gap);
@@ -698,7 +698,7 @@
     --chip-font-size: var(--font-size-regular-default);
 }
 
-:where(.filter-chip, .system-chip, .discover-link, .region-chip, .recent-chip):hover {
+:where(.filter-chip, .system-chip, .discover-link, .region-chip, .recent-chip, .my-games-tab):hover {
     border-color: var(--accent);
 }
 

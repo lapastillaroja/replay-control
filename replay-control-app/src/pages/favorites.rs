@@ -1,7 +1,7 @@
 use crate::components::status_message::StatusMessage;
 use leptos::prelude::*;
 use leptos_router::components::A;
-use leptos_router::hooks::use_params_map;
+use leptos_router::hooks::{use_navigate, use_params_map, use_query_map};
 use replay_control_core::systems::system_abbreviation;
 use server_fn::ServerFnError;
 
@@ -14,6 +14,54 @@ use crate::hooks::{LaunchControl, use_launch_control, use_scroll_memory};
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
+
+/// Sentinel for the generic system favorites list (loose `.fav` in the
+/// `_favorites/` root — RePlayOS's own ⭐ list). Mirrors collections.rs.
+const ROOT_LIST: &str = "\u{0}general";
+/// URL token for [`ROOT_LIST`] in the `?c=` query (the sentinel isn't URL-safe).
+const ROOT_LIST_URL: &str = "~general";
+
+/// Encode a collection path into the `?c=` query value.
+fn encode_col_path(path: &[String]) -> String {
+    path.iter()
+        .map(|seg| {
+            if seg == ROOT_LIST {
+                ROOT_LIST_URL.to_string()
+            } else {
+                urlencoding::encode(seg).into_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Decode a `?c=` query value back into a collection path.
+fn decode_col_path(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return Vec::new();
+    }
+    s.split('/')
+        .map(|seg| {
+            if seg == ROOT_LIST_URL {
+                ROOT_LIST.to_string()
+            } else {
+                urlencoding::decode(seg)
+                    .map(|c| c.into_owned())
+                    .unwrap_or_else(|_| seg.to_string())
+            }
+        })
+        .collect()
+}
+
+/// Build the `/favorites` URL for a given collection path.
+fn col_url(path: &[String]) -> String {
+    let c = encode_col_path(path);
+    if c.is_empty() {
+        "/favorites".to_string()
+    } else {
+        format!("/favorites?c={c}")
+    }
+}
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -62,17 +110,77 @@ where
     let i18n = use_i18n();
     let favorites = RwSignal::new(favs);
 
-    // Filter input for the "All Favorites" section.
+    // Current collection path: [] = "All"; [ROOT_LIST] = the generic ⭐ system
+    // list (loose `.fav`); [a, b, …] = drill into subfolders. Each level is its
+    // own independent list (e.g. Evercade / Capcom Collection). Driven by the
+    // `?c=` query param so back/refresh/share all work.
+    let query = use_query_map();
+    let path = Memo::new(move |_| decode_col_path(&query.get().get("c").unwrap_or_default()));
+    // Copy handle so reactive/event closures can capture it freely.
+    let navigate = StoredValue::new(use_navigate());
+
+    // Immediate child folders at the current path (+ loose count at the root),
+    // for the selector chips.
+    let child_collections = move || {
+        let cur = path.get();
+        let depth = cur.len();
+        let favs = favorites.read();
+        let mut map: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut loose = 0usize;
+        for f in favs.iter() {
+            let sub = &f.fav.subfolder;
+            if sub.is_empty() {
+                if depth == 0 {
+                    loose += 1;
+                }
+                continue;
+            }
+            let segs: Vec<&str> = sub.split('/').collect();
+            if segs.len() <= depth {
+                continue;
+            }
+            if !cur.iter().zip(segs.iter()).all(|(a, b)| a == b) {
+                continue;
+            }
+            *map.entry(segs[depth].to_string()).or_insert(0) += 1;
+        }
+        (map, loose)
+    };
+
+    // Favorites under the current path (prefix match). Before the text filter.
+    let collection_favorites = move || {
+        let cur = path.get();
+        let favs = favorites.get();
+        if cur.is_empty() {
+            return favs;
+        }
+        if cur.len() == 1 && cur[0] == ROOT_LIST {
+            return favs
+                .into_iter()
+                .filter(|f| f.fav.subfolder.is_empty())
+                .collect();
+        }
+        favs.into_iter()
+            .filter(|f| {
+                if f.fav.subfolder.is_empty() {
+                    return false;
+                }
+                let segs: Vec<&str> = f.fav.subfolder.split('/').collect();
+                segs.len() >= cur.len() && cur.iter().zip(segs.iter()).all(|(a, b)| a == b)
+            })
+            .collect()
+    };
+
+    // Filter input for the favorites list.
     let filter_text = RwSignal::new(String::new());
 
     let filtered_favorites = move || {
+        let base = collection_favorites();
         let query = filter_text.get().to_lowercase();
         if query.is_empty() {
-            return favorites.get();
+            return base;
         }
-        favorites
-            .get()
-            .into_iter()
+        base.into_iter()
             .filter(|f| {
                 let name = f
                     .fav
@@ -157,36 +265,6 @@ where
         (format!("{path}|favorites-recently-added"), sig)
     });
 
-    // System summary: for each system, count and the most recently added favorite.
-    let system_cards = move || {
-        let favs = favorites.read();
-        let mut map: std::collections::BTreeMap<String, (String, String, usize, String, u64)> =
-            std::collections::BTreeMap::new();
-        for f in favs.iter() {
-            let entry = map.entry(f.fav.game.system.clone()).or_insert_with(|| {
-                (
-                    f.fav.game.system_display.clone(),
-                    f.fav.game.system.clone(),
-                    0,
-                    String::new(),
-                    0,
-                )
-            });
-            entry.2 += 1;
-            // Track the most recently added favorite for this system.
-            if f.fav.date_added >= entry.4 {
-                entry.3 = f
-                    .fav
-                    .game
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| f.fav.game.rom_filename.clone());
-                entry.4 = f.fav.date_added;
-            }
-        }
-        map.into_values().collect::<Vec<_>>()
-    };
-
     view! {
         <Show when=move || !is_empty() fallback=move || view! {
             <div class="page-header">
@@ -194,110 +272,149 @@ where
             </div>
             <p class="empty-state">{t(i18n.locale.get(), Key::FavoritesEmpty)}</p>
         }>
-            // Featured / Latest Added — hero card
-            <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesLatestAdded)}</h2>
-                {move || featured().map(|f| {
-                    let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
-                    let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
-                    let system = f.fav.game.system_display.clone();
-                    let system_folder = f.fav.game.system.clone();
-                    let box_art_url = f.box_art_url.clone();
-                    view! {
-                        <HeroCard href name system system_folder box_art_url />
-                    }
-                })}
-            </section>
+            // Collection selector — breadcrumb + child chips. Each level is an
+            // independent list; folders with subfolders (e.g. Evercade) drill in.
+            <Show when=move || !path.get().is_empty()>
+                <div class="collections-breadcrumb fav-breadcrumb">
+                    <button class="crumb" on:click=move |_| navigate.with_value(|n| n("/favorites", Default::default()))>
+                        {move || t(i18n.locale.get(), Key::FavoritesTitle)}
+                    </button>
+                    {move || {
+                        let cur = path.get();
+                        cur.iter().enumerate().map(|(i, seg)| {
+                            let label = if seg == ROOT_LIST {
+                                t(i18n.locale.get(), Key::CollectionsGeneral).to_string()
+                            } else {
+                                seg.clone()
+                            };
+                            let upto = cur[..=i].to_vec();
+                            view! {
+                                <span class="crumb-sep">"/"</span>
+                                <button class="crumb" on:click=move |_| navigate.with_value(|n| n(&col_url(&upto), Default::default()))>
+                                    {label}
+                                </button>
+                            }
+                        }).collect::<Vec<_>>()
+                    }}
+                </div>
+            </Show>
 
-            // Recently Added — horizontal scroll
-            <Show when=move || !recent_items().is_empty()>
-                <section class="section">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesRecentlyAdded)}</h2>
-                    <div class="scroll-card-row" node_ref=recently_added_ref>
-                        {move || recent_items().into_iter().map(|f| {
+            <div class="my-games-tabs fav-collections">
+                {move || {
+                    let cur = path.get();
+                    let (map, loose) = child_collections();
+                    let mk = move |label: String, seg: String, count: Option<usize>| {
+                        let go = seg.clone();
+                        view! {
+                            <button
+                                class="my-games-tab"
+                                on:click=move |_| {
+                                    let mut p = path.get_untracked();
+                                    p.push(go.clone());
+                                    navigate.with_value(|n| n(&col_url(&p), Default::default()));
+                                }
+                            >
+                                <span>{label}</span>
+                                {count.map(|c| view! { <span class="collection-chip-count">{c}</span> })}
+                            </button>
+                        }
+                        .into_any()
+                    };
+                    let locale = i18n.locale.get();
+                    let mut chips: Vec<_> = Vec::new();
+                    // At the root, offer the generic ⭐ list as a leaf chip.
+                    if cur.is_empty() && loose > 0 {
+                        chips.push(mk(
+                            t(locale, Key::CollectionsGeneral).to_string(),
+                            ROOT_LIST.to_string(),
+                            Some(loose),
+                        ));
+                    }
+                    for (name, count) in map {
+                        chips.push(mk(name.clone(), name, Some(count)));
+                    }
+                    chips
+                }}
+            </div>
+
+            // Rich overview (hero, recent, stats, organize, recommendations) —
+            // only on "All". A specific collection shows just its list below.
+            {move || {
+                if !path.get().is_empty() {
+                    return ().into_any();
+                }
+                view! {
+                    <section class="section">
+                        <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesLatestAdded)}</h2>
+                        {move || featured().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                             let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
-                            let system = system_abbreviation(&f.fav.game.system);
+                            let system = f.fav.game.system_display.clone();
                             let system_folder = f.fav.game.system.clone();
                             let box_art_url = f.box_art_url.clone();
-                            view! {
-                                <GameScrollCard href name system system_folder box_art_url />
-                            }
-                        }).collect::<Vec<_>>()}
-                    </div>
-                </section>
-            </Show>
+                            view! { <HeroCard href name system system_folder box_art_url /> }
+                        })}
+                    </section>
 
-            // Stats
-            <section class="section">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value">{total_count}</div>
-                        <div class="stat-label">{move || t(i18n.locale.get(), Key::StatsFavorites)}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{system_count}</div>
-                        <div class="stat-label">{move || t(i18n.locale.get(), Key::CommonSystems)}</div>
-                    </div>
-                </div>
-            </section>
+                    <Show when=move || !recent_items().is_empty()>
+                        <section class="section">
+                            <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesRecentlyAdded)}</h2>
+                            <div class="scroll-card-row" node_ref=recently_added_ref>
+                                {move || recent_items().into_iter().map(|f| {
+                                    let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
+                                    let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
+                                    let system = system_abbreviation(&f.fav.game.system);
+                                    let system_folder = f.fav.game.system.clone();
+                                    let box_art_url = f.box_art_url.clone();
+                                    view! { <GameScrollCard href name system system_folder box_art_url /> }
+                                }).collect::<Vec<_>>()}
+                            </div>
+                        </section>
+                    </Show>
 
-            // Organize panel
-            <OrganizePanel favorites />
+                    <section class="section">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">{total_count}</div>
+                                <div class="stat-label">{move || t(i18n.locale.get(), Key::StatsFavorites)}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{system_count}</div>
+                                <div class="stat-label">{move || t(i18n.locale.get(), Key::CommonSystems)}</div>
+                            </div>
+                        </div>
+                    </section>
 
-            // Personalized recommendations (loaded in parallel, non-blocking)
-            // Uses skeleton from home page while streaming.
-            <Suspense fallback=move || view! { <FavRecommendationsSkeleton /> }>
-                {move || Suspend::new(async move {
-                    let recs = recommendations.await;
-                    let sections = recs.ok().unwrap_or_default();
-                    Ok::<_, ServerFnError>(view! {
-                        {sections.into_iter().map(|section| {
-                            view! { <GameSectionRow section /> }
-                        }).collect::<Vec<_>>()}
-                    })
-                })}
-            </Suspense>
+                    <OrganizePanel favorites />
 
-            // By System — system cards
-            <Show when=move || { system_cards().len() > 1 }>
-                <section class="section">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesBySystem)}</h2>
-                    <div class="systems-grid">
-                        {move || system_cards().into_iter().map(|(display_name, system, count, latest, _)| {
-                            let href = format!("/favorites/{system}");
-                            let icon_src = format!("/static/icons/systems/{system}.png");
-                            let count_label = move || {
-                                let locale = i18n.locale.get();
-                                tf(locale, Key::CountFavorites, &[&count.to_string()])
-                            };
-                            view! {
-                                <A href=href attr:class="system-card">
-                                    <div class="system-card-name">{display_name}</div>
-                                    <div class="system-card-body">
-                                        <img
-                                            class="system-card-icon"
-                                            src=icon_src
-                                            alt=""
-                                            onerror="this.style.display='none'"
-                                            loading="lazy"
-                                        />
-                                        <div class="system-card-text">
-                                            <div class="system-card-count">{count_label}</div>
-                                            <div class="system-card-size">{latest}</div>
-                                        </div>
-                                    </div>
-                                </A>
-                            }
-                        }).collect::<Vec<_>>()}
-                    </div>
-                </section>
-            </Show>
+                    <Suspense fallback=move || view! { <FavRecommendationsSkeleton /> }>
+                        {move || Suspend::new(async move {
+                            let recs = recommendations.await;
+                            let sections = recs.ok().unwrap_or_default();
+                            Ok::<_, ServerFnError>(view! {
+                                {sections.into_iter().map(|section| {
+                                    view! { <GameSectionRow section /> }
+                                }).collect::<Vec<_>>()}
+                            })
+                        })}
+                    </Suspense>
+                }
+                .into_any()
+            }}
 
-            // All Favorites — full list with grouped/flat toggle
+            // Favorites list — the selected collection (or all), grouped/flat + filter.
             <section class="section">
                 <div class="page-header">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesAll)}</h2>
+                    <h2 class="section-title">
+                        {move || {
+                            let locale = i18n.locale.get();
+                            match path.get().last() {
+                                None => t(locale, Key::FavoritesAll).to_string(),
+                                Some(c) if c == ROOT_LIST => t(locale, Key::CollectionsGeneral).to_string(),
+                                Some(c) => c.clone(),
+                            }
+                        }}
+                    </h2>
                     <button class="toggle-btn" on:click=move |_| grouped_view.update(|v| *v = !*v)>
                         {toggle_label.clone()}
                     </button>
@@ -324,9 +441,10 @@ where
                     <span class="fav-filter-count">
                         {
                             let filtered_for_count = filtered_favorites;
+                            let base_for_count = collection_favorites;
                             move || {
+                                let total = base_for_count().len();
                                 let filtered = filtered_for_count().len();
-                                let total = total_count();
                                 if filter_text.read().is_empty() {
                                     tf(i18n.locale.get(), Key::CountFavorites, &[&total.to_string()])
                                 } else {
