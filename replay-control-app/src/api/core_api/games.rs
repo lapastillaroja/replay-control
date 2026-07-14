@@ -109,7 +109,7 @@ async fn game_detail(
         .flatten()
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let game = build_game_detail(&state, &entry).await;
+    let (game, _arcade_display) = build_game_detail(&state, &entry).await;
 
     Ok(Json(CoreGameDetail {
         display_name: game.display_name,

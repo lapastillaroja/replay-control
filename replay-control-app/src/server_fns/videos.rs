@@ -4,8 +4,6 @@ use replay_control_core::resource_kind;
 #[cfg(feature = "ssr")]
 use replay_control_core::systems;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
-#[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
 pub use replay_control_core::user_data_db::VideoEntry;
@@ -27,26 +25,25 @@ pub async fn get_game_videos(
     base_title: String,
 ) -> Result<Vec<VideoEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
+    videos_for_titles(&state, &system, all_titles).await
+}
 
-    // Resolve alias base_titles for cross-name sharing (best-effort).
-    let mut all_titles = vec![base_title.clone()];
-    if let Some(aliases) = state
-        .library_reader
-        .read({
-            let system = system.clone();
-            let base_title = base_title.clone();
-            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
-        })
-        .await
-    {
-        all_titles.extend(aliases);
-    }
-
+/// User-saved videos for a pre-resolved title set — one user_data read.
+#[cfg(feature = "ssr")]
+pub(crate) async fn videos_for_titles(
+    state: &crate::api::AppState,
+    system: &str,
+    all_titles: Vec<String>,
+) -> Result<Vec<VideoEntry>, ServerFnError> {
     state
         .user_data_reader
-        .read(move |conn| {
-            let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
-            UserDataDb::get_game_videos(conn, &system, &title_refs)
+        .read({
+            let system = system.to_string();
+            move |conn| {
+                let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
+                UserDataDb::get_game_videos(conn, &system, &title_refs)
+            }
         })
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
@@ -60,17 +57,20 @@ pub async fn get_provider_game_videos(
     rom_filename: String,
 ) -> Result<Vec<VideoRecommendation>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let resources = state
-        .library_reader
-        .read(move |conn| {
-            LibraryDb::game_resources(conn, &system, &rom_filename, resource_kind::VIDEO)
-        })
-        .await
-        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let rows =
+        super::game_resource_rows(&state, &system, &rom_filename, resource_kind::VIDEO).await?;
+    Ok(provider_videos_from_links(rows))
+}
 
+/// Provider video suggestions from pre-fetched `library_game_resource` VIDEO
+/// rows. Pure assembly — the detail-page bundle hands it the partition of
+/// rows it already loaded.
+#[cfg(feature = "ssr")]
+pub(crate) fn provider_videos_from_links(
+    rows: Vec<super::LibraryResourceLink>,
+) -> Vec<VideoRecommendation> {
     let mut out = Vec::new();
-    for row in resources {
+    for row in rows {
         let Ok(parsed) = replay_control_core::video_url::parse_video_url(&row.url) else {
             continue;
         };
@@ -88,7 +88,7 @@ pub async fn get_provider_game_videos(
             channel: Some(row.source),
         });
     }
-    Ok(out)
+    out
 }
 
 /// Add a video to a game (from manual paste or recommendation pin).

@@ -1,7 +1,5 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
-#[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
 pub use replay_control_core::user_data_db::ResourceEntry;
@@ -13,25 +11,25 @@ pub async fn get_game_resource_links(
     base_title: String,
 ) -> Result<Vec<ResourceEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
+    resource_links_for_titles(&state, &system, all_titles).await
+}
 
-    let mut all_titles = vec![base_title.clone()];
-    if let Some(aliases) = state
-        .library_reader
-        .read({
-            let system = system.clone();
-            let base_title = base_title.clone();
-            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
-        })
-        .await
-    {
-        all_titles.extend(aliases);
-    }
-
+/// User-saved external links for a pre-resolved title set — one user_data read.
+#[cfg(feature = "ssr")]
+pub(crate) async fn resource_links_for_titles(
+    state: &crate::api::AppState,
+    system: &str,
+    all_titles: Vec<String>,
+) -> Result<Vec<ResourceEntry>, ServerFnError> {
     state
         .user_data_reader
-        .read(move |conn| {
-            let title_refs: Vec<&str> = all_titles.iter().map(String::as_str).collect();
-            UserDataDb::get_game_resource_links(conn, &system, &title_refs)
+        .read({
+            let system = system.to_string();
+            move |conn| {
+                let title_refs: Vec<&str> = all_titles.iter().map(String::as_str).collect();
+                UserDataDb::get_game_resource_links(conn, &system, &title_refs)
+            }
         })
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?

@@ -3,6 +3,8 @@ use super::*;
 use replay_control_core::error::Error as CoreError;
 use replay_control_core::library_db::LibraryResourceLink;
 #[cfg(feature = "ssr")]
+use replay_control_core::resource_kind;
+#[cfg(feature = "ssr")]
 use replay_control_core::{systems, title_utils};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::favorites;
@@ -304,17 +306,18 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     // hit different pools / the filesystem, so run them concurrently instead of
     // sequentially — this hides their latencies behind the slowest one rather
     // than summing them on the detail-page critical path.
-    let (is_favorite, game, variant_count, library_resources) = tokio::join!(
+    let (is_favorite, (game, variant_count), library_resources) = tokio::join!(
         replay_control_core_server::favorites::is_favorite(&storage, &system, &filename),
-        build_game_detail(&state, &entry),
-        // Box art variant count (manifest index only — no filesystem scan). The
-        // arcade display name is needed first, so it stays sequential *within*
-        // this branch.
+        // Box art variant count (manifest index only — no filesystem scan)
+        // chains after build_game_detail so it can reuse the arcade display
+        // name that lookup already resolved, instead of a second catalog
+        // lookup for the same ROM.
         async {
-            let arcade_display =
-                replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename)
-                    .await;
-            state
+            let (game, arcade_display) = build_game_detail(&state, &entry).await;
+            // Match the semantics of the display_name_if_arcade lookup this
+            // replaced: an empty catalog display name counts as no name.
+            let arcade_display = arcade_display.filter(|name| !name.is_empty());
+            let variant_count = state
                 .external_metadata_reader
                 .read({
                     let system = system.clone();
@@ -329,7 +332,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
                     }
                 })
                 .await
-                .unwrap_or(0)
+                .unwrap_or(0);
+            (game, variant_count)
         },
         load_library_resources(&state, &system, &filename),
     );
@@ -345,6 +349,12 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
 
+    // Deliberately recomputed from the resolved display name rather than read
+    // from `entry.base_title`: the stored column falls back to the filename
+    // *stem* while this convention falls back to the full filename, and —
+    // decisive — user_data rows (saved manuals/videos/links) are keyed by the
+    // value clients echo back from this field. Switching to the stored column
+    // would orphan saved data wherever the two diverge.
     let base_title = replay_control_core::title_utils::base_title(&game.display_name);
 
     // Determine rename restrictions.
@@ -368,24 +378,47 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .unwrap_or(entry.size_bytes);
 
     // Load the resources-section data concurrently so it ships with this single
-    // request (see RomDetail::documents). Each call reuses the existing server
-    // fn and is best-effort: a failed read degrades that section to empty rather
-    // than failing the whole detail page.
-    let (
-        documents,
-        local_manuals,
-        saved_videos,
-        saved_resource_links,
-        manual_suggestions,
-        video_suggestions,
-    ) = tokio::join!(
+    // request (see RomDetail::documents). Shared inputs are resolved once and
+    // threaded in: the alias-title set (the standalone section endpoints each
+    // re-resolve it), the saved-manuals rows (feeding both the local-manuals
+    // list and the suggestion exclusion keys), and the per-type partition of
+    // the library resource rows already loaded above. Reads stay best-effort:
+    // a failed read degrades that section to empty rather than failing the
+    // whole detail page. Deliberate tradeoff of the sharing: a transient
+    // failure of one shared read now degrades its dependent sections
+    // together (they used to fail independently) — accepted, since each
+    // failure mode is unchanged and the dedup removes more failure
+    // opportunities than it correlates.
+    let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
+    let saved_manuals =
+        super::manuals::fetch_saved_manuals(&state, &system, all_titles.clone()).await;
+    let saved_manual_keys: std::collections::HashSet<String> = saved_manuals
+        .iter()
+        .map(|m| m.resource_key.clone())
+        .collect();
+    let partition = |kind: &str| -> Vec<LibraryResourceLink> {
+        library_resources
+            .iter()
+            .filter(|row| row.resource_type == kind)
+            .cloned()
+            .collect()
+    };
+    let manual_rows = partition(resource_kind::MANUAL);
+    let video_rows = partition(resource_kind::VIDEO);
+
+    let (documents, local_manuals, saved_videos, saved_resource_links) = tokio::join!(
         get_game_documents(system.clone(), filename.clone()),
-        get_local_manuals(system.clone(), base_title.clone()),
-        get_game_videos(system.clone(), base_title.clone()),
-        get_game_resource_links(system.clone(), base_title.clone()),
-        get_game_manual_suggestions(system.clone(), filename.clone(), base_title.clone()),
-        get_provider_game_videos(system.clone(), filename.clone()),
+        super::manuals::local_manuals_inner(&state, &system, all_titles.clone(), saved_manuals),
+        super::videos::videos_for_titles(&state, &system, all_titles.clone()),
+        super::resources::resource_links_for_titles(&state, &system, all_titles),
     );
+    let manual_suggestions = super::manuals::manual_recommendations_from_rows(
+        &state,
+        &base_title,
+        &saved_manual_keys,
+        manual_rows,
+    );
+    let video_suggestions = super::videos::provider_videos_from_links(video_rows);
 
     Ok(RomDetail {
         game,
@@ -405,8 +438,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         local_manuals: local_manuals.unwrap_or_default(),
         saved_videos: saved_videos.unwrap_or_default(),
         saved_resource_links: saved_resource_links.unwrap_or_default(),
-        manual_suggestions: manual_suggestions.unwrap_or_default(),
-        video_suggestions: video_suggestions.unwrap_or_default(),
+        manual_suggestions,
+        video_suggestions,
     })
 }
 

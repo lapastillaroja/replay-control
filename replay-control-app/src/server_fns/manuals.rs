@@ -4,8 +4,6 @@ use replay_control_core_server::game_docs::scan_game_documents;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::http::{download_to_file, download_to_file_guarded};
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
-#[cfg(feature = "ssr")]
 use replay_control_core_server::retrokit_manuals::manual_folder_name;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::settings::{
@@ -94,41 +92,49 @@ pub async fn get_local_manuals(
     base_title: String,
 ) -> Result<Vec<LocalManual>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
+    let saved_manuals = fetch_saved_manuals(&state, &system, all_titles.clone()).await;
+    local_manuals_inner(&state, &system, all_titles, saved_manuals).await
+}
 
-    // Resolve alias base_titles for cross-name sharing.
-    let mut all_titles = vec![base_title.clone()];
-    if let Some(aliases) = state
-        .library_reader
-        .read({
-            let system = system.clone();
-            let base_title = base_title.clone();
-            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
-        })
-        .await
-    {
-        all_titles.extend(aliases);
-    }
-
-    let saved_manuals = state
+/// Saved (RePlay-owned) manuals for a title set — one user_data read. The
+/// detail-page bundle fetches this once and reuses the rows for both the
+/// local-manuals list and the suggestion exclusion keys.
+#[cfg(feature = "ssr")]
+pub(crate) async fn fetch_saved_manuals(
+    state: &crate::api::AppState,
+    system: &str,
+    titles: Vec<String>,
+) -> Vec<ManualEntry> {
+    state
         .user_data_reader
         .read({
-            let system = system.clone();
-            let titles = all_titles.clone();
+            let system = system.to_string();
             move |conn| {
                 let refs: Vec<&str> = titles.iter().map(String::as_str).collect();
                 UserDataDb::get_game_manuals(conn, &system, &refs).unwrap_or_default()
             }
         })
         .await
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
 
+/// Local manuals for a game: pre-fetched saved (RePlay-owned) rows plus the
+/// legacy on-storage manuals-folder scan.
+#[cfg(feature = "ssr")]
+pub(crate) async fn local_manuals_inner(
+    state: &crate::api::AppState,
+    system: &str,
+    all_titles: Vec<String>,
+    saved_manuals: Vec<ManualEntry>,
+) -> Result<Vec<LocalManual>, ServerFnError> {
     let owned_root = state.storage().rc_dir().join("manuals");
     let mut manuals: Vec<LocalManual> = saved_manuals
         .into_iter()
         .filter_map(|entry| local_manual_from_user_entry(&owned_root, entry))
         .collect();
 
-    let folder = manual_folder_name(&system).to_string();
+    let folder = manual_folder_name(system).to_string();
     let manuals_dir = state.storage().manuals_dir().join(&folder);
 
     // Run all blocking filesystem I/O off the async runtime to avoid stalling
@@ -206,16 +212,38 @@ pub async fn get_game_manual_suggestions(
     base_title: String,
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    library_manual_recommendations(&state, &system, &rom_filename, &base_title).await
+    let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
+    let saved_keys: std::collections::HashSet<String> =
+        fetch_saved_manuals(&state, &system, all_titles)
+            .await
+            .into_iter()
+            .map(|m| m.resource_key)
+            .collect();
+    // Best-effort, matching this endpoint's pre-consolidation behavior: a
+    // failed read degrades suggestions to empty rather than erroring.
+    let manual_rows =
+        super::game_resource_rows(&state, &system, &rom_filename, resource_kind::MANUAL)
+            .await
+            .unwrap_or_default();
+    Ok(manual_recommendations_from_rows(
+        &state,
+        &base_title,
+        &saved_keys,
+        manual_rows,
+    ))
 }
 
+/// Bundled/library manual suggestions from pre-fetched `library_game_resource`
+/// MANUAL rows, excluding manuals the user already saved, sorted by language
+/// preference. Pure assembly — the detail-page bundle hands it the partition
+/// of rows it already loaded.
 #[cfg(feature = "ssr")]
-async fn library_manual_recommendations(
+pub(crate) fn manual_recommendations_from_rows(
     state: &crate::api::AppState,
-    system: &str,
-    rom_filename: &str,
     base_title: &str,
-) -> Result<Vec<ManualRecommendation>, ServerFnError> {
+    saved_keys: &std::collections::HashSet<String>,
+    manual_rows: Vec<LibraryResourceLink>,
+) -> Vec<ManualRecommendation> {
     let preferred_langs = {
         let primary = read_language_primary(&state.settings);
         let secondary = read_language_secondary(&state.settings);
@@ -223,19 +251,7 @@ async fn library_manual_recommendations(
         preferred_languages(primary.as_deref(), secondary.as_deref(), region)
     };
 
-    let saved_keys = saved_manual_resource_keys(state, system, base_title).await;
-    let mut results: Vec<ManualRecommendation> = state
-        .library_reader
-        .read({
-            let system = system.to_string();
-            let rom_filename = rom_filename.to_string();
-            move |conn| {
-                LibraryDb::game_resources(conn, &system, &rom_filename, resource_kind::MANUAL)
-                    .unwrap_or_default()
-            }
-        })
-        .await
-        .unwrap_or_default()
+    let mut results: Vec<ManualRecommendation> = manual_rows
         .into_iter()
         .filter(|row| !saved_keys.contains(&format!("url:{}", row.url)))
         .map(|row| ManualRecommendation {
@@ -251,7 +267,7 @@ async fn library_manual_recommendations(
     results.sort_by_key(|r| {
         language_match_score(r.language.as_deref().unwrap_or(""), &preferred_langs)
     });
-    Ok(results)
+    results
 }
 
 /// Download a manual PDF from a URL and save it locally.
@@ -531,41 +547,6 @@ fn local_manual_from_user_entry(
 }
 
 #[cfg(feature = "ssr")]
-async fn saved_manual_resource_keys(
-    state: &crate::api::AppState,
-    system: &str,
-    base_title: &str,
-) -> std::collections::HashSet<String> {
-    let mut all_titles = vec![base_title.to_string()];
-    if let Some(aliases) = state
-        .library_reader
-        .read({
-            let system = system.to_string();
-            let base_title = base_title.to_string();
-            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
-        })
-        .await
-    {
-        all_titles.extend(aliases);
-    }
-    state
-        .user_data_reader
-        .read({
-            let system = system.to_string();
-            let titles = all_titles.clone();
-            move |conn| {
-                let refs: Vec<&str> = titles.iter().map(String::as_str).collect();
-                UserDataDb::get_game_manuals(conn, &system, &refs)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|m| m.resource_key)
-                    .collect::<std::collections::HashSet<_>>()
-            }
-        })
-        .await
-        .unwrap_or_default()
-}
-
 #[cfg(feature = "ssr")]
 async fn validate_downloaded_manual(
     path: &std::path::Path,

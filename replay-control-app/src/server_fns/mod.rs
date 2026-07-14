@@ -2,7 +2,7 @@ use replay_control_core::runtime_env::Mode;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::boxart::resolve_effective_box_art_url;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::{GameEntry, LibraryDb};
+use replay_control_core_server::library_db::{GameEntry, LibraryDb, LibraryResourceLink};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
@@ -319,10 +319,14 @@ pub(crate) fn unix_now_secs() -> u64 {
 /// `game_library`. Arcade-only fields (rotation, parent_rom, arcade_category)
 /// are supplemented from `arcade_db` (cheap static lookups).
 #[cfg(feature = "ssr")]
+/// Returns the assembled [`GameInfo`] plus the arcade display name it already
+/// resolved from the catalog (`None` for non-arcade or unmatched ROMs), so
+/// callers that also need it (the box-art variant count) don't repeat the
+/// same catalog lookup.
 pub(crate) async fn build_game_detail(
     state: &crate::api::AppState,
-    entry: &replay_control_core_server::library_db::GameEntry,
-) -> GameInfo {
+    entry: &GameEntry,
+) -> (GameInfo, Option<String>) {
     use replay_control_core::systems;
     use replay_control_core_server::{arcade_db, game_db};
 
@@ -424,7 +428,7 @@ pub(crate) async fn build_game_detail(
     // Enrich with detail-only fields not stored in GameEntry.
     enrich_detail_fields(state, &mut info, arcade_display.as_deref()).await;
 
-    info
+    (info, arcade_display)
 }
 
 /// Enrich a `GameInfo` with detail-page-only fields not stored in `GameEntry`.
@@ -502,6 +506,56 @@ pub(crate) async fn lookup_entries_by_keys(
         .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default()
+}
+
+/// `base_title` plus its alias titles (cross-name sharing for manuals, videos,
+/// and resource links). One library read. `get_rom_detail` resolves this once
+/// and threads it into every bundled section read — the standalone section
+/// endpoints resolve it themselves.
+#[cfg(feature = "ssr")]
+pub(crate) async fn resolve_shared_titles(
+    state: &crate::api::AppState,
+    system: &str,
+    base_title: &str,
+) -> Vec<String> {
+    let mut all_titles = vec![base_title.to_string()];
+    if let Some(aliases) = state
+        .library_reader
+        .read({
+            let system = system.to_string();
+            let base_title = base_title.to_string();
+            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
+        })
+        .await
+    {
+        all_titles.extend(aliases);
+    }
+    all_titles
+}
+
+/// One-kind `library_game_resource` read for a ROM, as wire-shaped links.
+/// Used by the standalone section endpoints; the detail-page bundle instead
+/// partitions the full-row load it already has. Fallible so each endpoint
+/// keeps its own error semantics (provider videos propagate pool/SQL errors;
+/// manual suggestions degrade to empty).
+#[cfg(feature = "ssr")]
+pub(crate) async fn game_resource_rows(
+    state: &crate::api::AppState,
+    system: &str,
+    rom_filename: &str,
+    kind: &'static str,
+) -> Result<Vec<LibraryResourceLink>, ServerFnError> {
+    state
+        .library_reader
+        .read({
+            let system = system.to_string();
+            let rom_filename = rom_filename.to_string();
+            move |conn| LibraryDb::game_resources(conn, &system, &rom_filename, kind)
+        })
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map(|rows| rows.into_iter().map(LibraryResourceLink::from).collect())
 }
 
 /// Box-art override from `user_data.db` — user-selected art beats everything.
