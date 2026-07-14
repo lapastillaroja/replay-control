@@ -55,12 +55,12 @@ The base `open_connection()` in `sqlite.rs` sets `cache_size = -8000` (8MB) for 
 
 ```rust
 // replay-control-app/src/api/mod.rs
-const LIBRARY_READ_POOL_SIZE: usize = 3;
+const LIBRARY_READ_POOL_SIZE: usize = 2;
 const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 2;
 const USER_DATA_READ_POOL_SIZE: usize = 1;
 ```
 
-Sized at construction time, per pool, by the host crate. The library DB lives centrally on the host SD (always WAL on ext4); 3 readers cover SSR fan-out — recommendations + recents + favorites + system info — overlapping with one long enrichment / thumbnail-planning pass without queueing. The host-global external metadata DB uses 2 readers so short metadata/UI reads can proceed while one longer enrichment or manifest-planning read is active. The user_data DB stays on ROM storage (often exFAT/NFS, DELETE-mode), where the gate serialises readers vs. writers and extra reader slots don't help.
+Sized at construction time, per pool, by the host crate (each with a `REPLAY_*_READ_POOL_SIZE` env override). The library DB lives centrally on the host SD (always WAL on ext4); two readers with 2 MiB caches were the best memory/runtime tradeoff measured on the large NFS test library, covering SSR fan-out overlapping with one long enrichment / thumbnail-planning pass. The host-global external metadata DB uses 2 readers so short metadata/UI reads can proceed while one longer enrichment or manifest-planning read is active. The user_data DB stays on ROM storage (often exFAT/NFS, DELETE-mode), where the gate serialises readers vs. writers and extra reader slots don't help.
 
 **Files**: `replay-control-app/src/api/mod.rs`, `replay-control-core-server/src/db_pool.rs`
 
@@ -257,7 +257,7 @@ The split replaces that workaround with a crate-level firewall:
 
 **Why not `#[cfg(feature = "server")]` on core instead?** It would rename the gates, not remove them. The goal was to stop branching in core, not relabel it. Two crates removes the cfgs by construction.
 
-**Why not fold the native code into `replay-control-app`?** `metadata_report` (a CLI reporting bin) and `tools/build-catalog` consume the same logic. Moving it into the Leptos crate would force those consumers to either depend on `app` (wrong layering) or duplicate code.
+**Why not fold the native code into `replay-control-app`?** `library_report` (a CLI reporting bin) and `tools/build-catalog` consume the same logic. Moving it into the Leptos crate would force those consumers to either depend on `app` (wrong layering) or duplicate code.
 
 **Orphan-rule note**: `DatePrecision` is in core but serialized to SQLite in core-server. A `DpSql` newtype scoped to `library_db` carries the `rusqlite::ToSql` / `FromSql` impls, sidestepping the orphan rule. Future foreign-trait-on-core-type impls should use the same pattern.
 

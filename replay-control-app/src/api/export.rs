@@ -3,7 +3,7 @@
 //! `GET /api/export/library.csv[?system=<folder>]` streams a per-ROM CSV
 //! describing, for every metadata field, what the catalog and LaunchBox tiers
 //! carry — a gap report for pack/data maintainers. Admin-gated (see
-//! `route_required_role` in `api/mod.rs`).
+//! `route_required_role` in `api/auth_gate.rs`).
 //!
 //! With `?system=`, only that system is exported; otherwise every active system
 //! is included. The heavy two-tier derivation lives in

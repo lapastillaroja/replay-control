@@ -372,7 +372,7 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
                 }
             }
             "--help" | "-h" => {
-                eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
+                eprintln!("Usage: library_report --storage-path <PATH> [--import <XML>]");
                 eprintln!();
                 eprintln!("Generates a metadata coverage report for all systems with ROMs.");
                 eprintln!();
@@ -385,7 +385,7 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
             }
             other => {
                 eprintln!("Unknown argument: {other}");
-                eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
+                eprintln!("Usage: library_report --storage-path <PATH> [--import <XML>]");
                 std::process::exit(1);
             }
         }
@@ -394,7 +394,7 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
 
     let path = storage_path.unwrap_or_else(|| {
         eprintln!("Error: --storage-path is required");
-        eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
+        eprintln!("Usage: library_report --storage-path <PATH> [--import <XML>]");
         std::process::exit(1);
     });
     (path, import_xml)

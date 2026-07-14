@@ -41,11 +41,11 @@ Server-only native implementation. Compiled for native targets only (never wasm)
 - **HTTP client**: `reqwest`-backed helpers for RePlayOS API, updates, metadata downloads, and remote media
 - **Settings store**: `replay.cfg` / `settings.cfg` readers and app-settings writers. RePlayOS-facing Wi-Fi, NFS, RetroAchievements, launch, and player commands go through the RePlayOS API. The remaining direct `replay.cfg` write is assisted Net Control setup, which enables the API flag before a token exists.
 - **Launch**: validates local ROM existence, then asks RePlayOS to launch through the official API
-- **Test utilities**: `test_utils` module with shared fixtures (`build_library_pool`, `insert_game_library_row`) used by both inline `#[cfg(test)]` modules and any `tests/*.rs` integration tests
+- **Test utilities**: `test_utils` module with shared fixtures (`build_library_pool`, `mock_replay_api`, `refused_replay_api`) used by both inline `#[cfg(test)]` modules and any `tests/*.rs` integration tests
 
 Re-exports `replay-control-core`'s pure types at each matching module level (e.g. `replay_control_core_server::arcade_db::ArcadeGameInfo` resolves via `pub use replay_control_core::arcade_db::*`), so SSR callers have a single import path for both type and native fn.
 
-Feature-gated: `metadata` enables `quick-xml`; `http` enables `reqwest`. The `metadata_report` bin requires `metadata`.
+Feature-gated: the `library` feature enables `quick-xml` and `chd` (LaunchBox XML parsing, disc-image hashing) and gates the library modules' test suite — run core-server tests with `--all-features` (as CI does) or the `library`-gated tests are silently skipped. The `library_report` bin requires `library`.
 
 ### replay-control-app (web application)
 
