@@ -62,7 +62,6 @@ pub use library::imports::launchbox;
 #[cfg(feature = "library")]
 pub use library::manuals::game_docs;
 #[cfg(feature = "library")]
-pub use library::manuals::retrokit as retrokit_manuals;
 #[cfg(feature = "library")]
 pub use library::matching::alias as alias_matching;
 #[cfg(feature = "library")]

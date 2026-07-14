@@ -1,10 +1,10 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use replay_control_core::retrokit_manuals::manual_folder_name;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::game_docs::scan_game_documents;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::http::{download_to_file, download_to_file_guarded};
-#[cfg(feature = "ssr")]
-use replay_control_core_server::retrokit_manuals::manual_folder_name;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::settings::{
     language_match_score, preferred_languages, read_language_primary, read_language_secondary,
