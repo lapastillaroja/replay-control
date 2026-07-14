@@ -77,7 +77,11 @@ pub async fn login_with_replay_code(code: String) -> Result<AuthStatus, ServerFn
         .store
         .create_user_session(&state.settings)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    set_session_cookie(&session.token, USER_MAX_AGE_SECONDS)?;
+    set_session_cookie(
+        &session.token,
+        USER_MAX_AGE_SECONDS,
+        state.auth.cookie_policy.secure_attribute(),
+    )?;
     Ok(auth_status_from_created_session(&state, &session, false))
 }
 
@@ -173,7 +177,11 @@ fn create_admin_session_response(
         .create_admin_session(base_role, &state.settings)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let max_age_seconds = remaining_seconds(session.expires_at).unwrap_or(0);
-    set_session_cookie(&session.token, max_age_seconds)?;
+    set_session_cookie(
+        &session.token,
+        max_age_seconds,
+        state.auth.cookie_policy.secure_attribute(),
+    )?;
     Ok(auth_status_from_created_session(
         state,
         &session,
@@ -265,6 +273,7 @@ pub async fn set_admin_session_timeout(value: String) -> Result<AuthStatus, Serv
     set_session_cookie(
         &session.token,
         remaining_seconds(session.expires_at).unwrap_or(0),
+        state.auth.cookie_policy.secure_attribute(),
     )?;
     Ok(auth_status_from_created_session(
         &state,
@@ -302,6 +311,7 @@ pub async fn downgrade_admin_to_user() -> Result<AuthStatus, ServerFnError> {
     set_session_cookie(
         &session.token,
         remaining_seconds(session.expires_at).unwrap_or(0),
+        state.auth.cookie_policy.secure_attribute(),
     )?;
     Ok(auth_status_from_created_session(&state, &session, false))
 }
@@ -492,8 +502,12 @@ fn session_token_from_headers(headers: &HeaderMap) -> Option<String> {
 }
 
 #[cfg(feature = "ssr")]
-fn set_session_cookie(token: &str, max_age_seconds: u64) -> Result<(), ServerFnError> {
-    let cookie = build_session_cookie(token, max_age_seconds, session_cookie_secure());
+fn set_session_cookie(
+    token: &str,
+    max_age_seconds: u64,
+    secure: bool,
+) -> Result<(), ServerFnError> {
+    let cookie = build_session_cookie(token, max_age_seconds, secure);
     append_cookie_header(cookie)
 }
 
@@ -510,14 +524,6 @@ fn append_cookie_header(cookie: String) -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("invalid session cookie: {e}")))?;
     response.append_header(SET_COOKIE, value);
     Ok(())
-}
-
-#[cfg(feature = "ssr")]
-fn session_cookie_secure() -> bool {
-    expect_context::<crate::api::AppState>()
-        .auth
-        .cookie_policy
-        .secure_attribute()
 }
 
 #[cfg(feature = "ssr")]

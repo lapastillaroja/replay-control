@@ -404,6 +404,10 @@ pub async fn get_log_level_config() -> Result<LogLevelConfig, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn save_log_level_config(level: String) -> Result<LogLevelSaveResult, ServerFnError> {
+    // Read the request context before any await: a mid-flight read
+    // panics if the client disconnects and the reactive owner is
+    // disposed while the env file is being read/written.
+    let state = expect_context::<crate::api::AppState>();
     #[cfg(feature = "ssr")]
     {
         let rust_log = match level.as_str() {
@@ -429,7 +433,6 @@ pub async fn save_log_level_config(level: String) -> Result<LogLevelSaveResult, 
         // RUST_LOG is read once at process start (systemd reads EnvironmentFile
         // on start; the tracing filter is built once in main). A change only
         // applies after a restart — do it for the user, device only.
-        let state = expect_context::<crate::api::AppState>();
         let restarting = changed && state.mode.is_device();
         if restarting {
             schedule_service_restart();
