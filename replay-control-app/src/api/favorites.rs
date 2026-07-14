@@ -147,9 +147,9 @@ pub fn routes() -> Router<AppState> {
         .route("/favorites", delete(remove_favorite))
         .route("/favorites/group", put(group_favorites))
         .route("/favorites/flatten", put(flatten_all_favorites))
-        .route("/favorites/{system}", get(list_system_favorites))
+        .route("/favorites/:system", get(list_system_favorites))
         .route(
-            "/favorites/check/{system}/{rom_filename}",
+            "/favorites/check/:system/:rom_filename",
             get(check_favorite),
         )
 }

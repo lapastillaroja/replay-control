@@ -94,7 +94,7 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
     Ok(Json(game_refs_to_core_entries(&state, games).await))
 }
 
-/// GET /api/core/game/{system}/{filename} — returns JSON game detail.
+/// GET /api/core/game/:system/:filename — returns JSON game detail.
 async fn game_detail(
     State(state): State<AppState>,
     Path((system, filename)): Path<(String, String)>,
@@ -129,5 +129,5 @@ pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route("/recents", get(recents))
         .route("/favorites", get(favorites))
-        .route("/game/{system}/{filename}", get(game_detail))
+        .route("/game/:system/:filename", get(game_detail))
 }

@@ -287,7 +287,7 @@ fn unix_now_secs() -> u64 {
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/upload/{system}", post(upload_rom))
-        .route("/manuals/upload/{system}", post(upload_manual))
+        .route("/upload/:system", post(upload_rom))
+        .route("/manuals/upload/:system", post(upload_manual))
         .route("/upload/targets", get(list_upload_targets))
 }

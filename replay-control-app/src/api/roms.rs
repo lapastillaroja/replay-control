@@ -103,7 +103,7 @@ struct DuplicateResponse {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/systems", get(list_systems))
-        .route("/systems/{system}/roms", get(list_system_roms))
+        .route("/systems/:system/roms", get(list_system_roms))
         .route("/roms/rename", axum::routing::put(rename_rom))
         .route("/roms/duplicates", get(find_duplicates))
 }
