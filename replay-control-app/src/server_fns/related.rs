@@ -91,15 +91,46 @@ pub async fn get_related_games(
 
     let (region_pref_str, region_secondary_str) = super::region_strings(&state);
 
-    let genre_fallback = {
-        let g = super::search::lookup_genre(&system, &filename).await;
-        if g.is_empty() { None } else { Some(g) }
+    // Load the row first (indexed single-row lookup): base_title, series_key,
+    // board, and — for most ROMs — the enrichment-written genre all come from
+    // it. The catalog is consulted only when the row has no genre yet, instead
+    // of eagerly on every detail view.
+    let current_entry = {
+        let system_cl = system.clone();
+        let filename_cl = filename.clone();
+        state
+            .library_reader
+            .read(move |conn| LibraryDb::load_single_entry(conn, &system_cl, &filename_cl))
+            .await
+            .and_then(|r| r.ok())
+            .flatten()
+    };
+    let base_title = current_entry
+        .as_ref()
+        .map(|e| e.base_title.clone())
+        .unwrap_or_default();
+    let series_key = current_entry
+        .as_ref()
+        .map(|e| e.series_key.clone())
+        .unwrap_or_default();
+    let board = current_entry.as_ref().and_then(|e| e.board);
+    let is_primary = current_entry
+        .as_ref()
+        .is_none_or(|e| !e.is_clone && !e.is_hack);
+    let detail_genre = match current_entry
+        .as_ref()
+        .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
+    {
+        Some(genre) => genre,
+        None => super::search::catalog_genre(&system, &filename).await,
     };
 
     let system_cl = system.clone();
     let filename_cl = filename.clone();
     let region_pref_str_cl = region_pref_str.clone();
     let region_secondary_cl = region_secondary_str.clone();
+    let base_title_cl = base_title.clone();
+    let detail_genre_cl = detail_genre.clone();
 
     let db_data = state
         .library_reader
@@ -117,23 +148,8 @@ pub async fn get_related_games(
             let specials_raw =
                 LibraryDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
-            // Indexed single-row lookup — loading the whole system table just
-            // to find this one entry allocated thousands of rows per detail
-            // view on large systems.
-            let current_entry =
-                LibraryDb::load_single_entry(conn, &system_cl, &filename_cl).unwrap_or_default();
-            let current_entry = current_entry.as_ref();
-
-            let base_title = current_entry
-                .map(|e| e.base_title.clone())
-                .unwrap_or_default();
-            let series_key = current_entry
-                .map(|e| e.series_key.clone())
-                .unwrap_or_default();
-            let detail_genre = current_entry
-                .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
-                .or(genre_fallback)
-                .unwrap_or_default();
+            let base_title = base_title_cl;
+            let detail_genre = detail_genre_cl;
 
             // Series siblings: prefer Wikidata (has ordering), fall back to algorithmic series_key.
             //
@@ -173,7 +189,6 @@ pub async fn get_related_games(
             };
 
             // Same-title cross-system entries and series entries are distinct sections.
-            let is_primary = current_entry.is_none_or(|e| !e.is_clone && !e.is_hack);
             let cross_system_raw = if is_primary {
                 LibraryDb::cross_system_availability(
                     conn,
@@ -237,8 +252,7 @@ pub async fn get_related_games(
             .unwrap_or_default();
 
             // Other games on the same arcade board (excluding this title).
-            let same_board_raw = current_entry
-                .and_then(|e| e.board)
+            let same_board_raw = board
                 .map(|board| {
                     let tag = board.as_tag();
                     let games = LibraryDb::games_by_board(

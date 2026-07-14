@@ -316,22 +316,6 @@ impl LibraryDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Look up `genre` for a single ROM from `game_library`. Returns the
-    /// stored value (which enrichment populates from catalog at scan-time
-    /// and from LaunchBox at fill-empty time) or empty when nothing is set.
-    pub fn rom_genre(conn: &Connection, system: &str, rom_filename: &str) -> Result<String> {
-        use rusqlite::OptionalExtension;
-        let genre: Option<Option<String>> = conn
-            .query_row(
-                "SELECT genre FROM game_library WHERE system = ?1 AND rom_filename = ?2",
-                rusqlite::params![system, rom_filename],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| Error::Other(format!("rom_genre: {e}")))?;
-        Ok(genre.flatten().unwrap_or_default())
-    }
-
     /// All `(system, rom_filename) → rating` pairs across the library.
     /// Used by the favorites organizer to rank entries; reads from
     /// `game_library.rating` (which enrichment populates from LaunchBox).

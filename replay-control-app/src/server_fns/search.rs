@@ -83,9 +83,13 @@ pub struct GlobalSearchResults {
     pub total_systems: usize,
 }
 
-/// Look up the normalized genre for a ROM on a given system.
+/// Look up a ROM's normalized genre in the bundled catalog (arcade or
+/// console). Catalog-only on purpose: the library row's own `genre` column
+/// (written by enrichment) is the caller's first choice — this is the
+/// fallback for rows enrichment hasn't filled yet, so it takes no state and
+/// touches no pools beyond the catalog.
 #[cfg(feature = "ssr")]
-pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
+pub(crate) async fn catalog_genre(system: &str, rom_filename: &str) -> String {
     use replay_control_core::systems;
     use replay_control_core_server::arcade_db;
     use replay_control_core_server::game_db;
@@ -93,7 +97,7 @@ pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
     let is_arcade = systems::is_arcade_system(system);
 
     let stem = replay_control_core::title_utils::filename_stem(rom_filename);
-    let baked_genre = if is_arcade {
+    if is_arcade {
         arcade_db::lookup_arcade_game(system, stem)
             .await
             .map(|info| info.normalized_genre.to_string())
@@ -109,31 +113,7 @@ pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
         };
         game.map(|g| g.normalized_genre.to_string())
             .unwrap_or_default()
-    };
-
-    if !baked_genre.is_empty() {
-        return baked_genre;
     }
-
-    // Fallback: read the genre that enrichment already wrote to
-    // `game_library.genre` (populated from LaunchBox when the catalog had
-    // nothing). Single library-pool acquire — no cross-pool launchbox
-    // lookup needed.
-    let state = leptos::prelude::expect_context::<crate::api::AppState>();
-    let system = system.to_string();
-    let rom_filename = rom_filename.to_string();
-    state
-        .library_reader
-        .read(move |conn| {
-            replay_control_core_server::library_db::LibraryDb::rom_genre(
-                conn,
-                &system,
-                &rom_filename,
-            )
-            .unwrap_or_default()
-        })
-        .await
-        .unwrap_or_default()
 }
 
 // clippy::too_many_arguments — Leptos server functions require flat parameter lists
