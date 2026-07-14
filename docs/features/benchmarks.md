@@ -1,9 +1,7 @@
 # Performance Benchmarks
 
-Last updated: 2026-07-12
-Primary benchmark build: 1.0.0 release build, commit `433e899`. Measured over HTTPS (now on by default) with an authenticated session, so server times include the TLS handshake and the session check — a few ms above the earlier plain-HTTP figures. Search and stress-load figures are carried over from 0.9.0 (the load harness has not yet been re-run against the authenticated HTTPS endpoint).
-
-> **2026-07-12 re-measurement round (web-framework upgrade).** A candidate build carrying the leptos 0.7→0.8 upgrade was benchmarked against the immediately-preceding release (1.1.3, still on leptos 0.7) on the same Pi 5 and the same libraries (USB 26,777 games, NFS 93,649). The A/B isolates what the framework upgrade costs from what two months of new features cost. Headline: the only framework-attributable regression is a **larger download bundle** (+37% compressed); everyday memory and CPU are unchanged (memory is slightly lower), and search is untouched. The separate, larger drop in raw page throughput since 1.0.0 is **feature growth, not the framework** — see [Regressions and Analysis](#regressions-and-analysis). Baselines below still reflect 1.0.0 unless noted.
+Last updated: 2026-07-14
+Primary benchmark build: `main` at commit `f7af461`. Measured over HTTPS (on by default) with an authenticated session, so server times include the TLS handshake and the session check — a few ms above the earlier plain-HTTP figures. USB figures (page loads, CPU, stress) were re-measured on this build, including the stress tables (the load harness now authenticates). NFS figures are carried from the 1.0.0/0.9.0 rounds and marked where used.
 
 Replay Control is designed to run quietly on a Raspberry Pi while still handling large game libraries. The practical result from the 1.0.0 measurements is:
 
@@ -30,8 +28,8 @@ CPU is reported as percent of one core. On a Pi 5, 100% means one core is fully 
 
 | State | Pi 5 - USB (26,777) | Pi 5 - NFS (103,896) | Pi 4 |
 |---|---:|---:|---|
-| Idle, no requests | 0.00% | 0.03% | _pending_ |
-| One user browsing, no game running | 0.87% | 2.13% | _pending_ |
+| Idle, no requests | 0.10% | 0.03% | _pending_ |
+| One user browsing, no game running | 0.90% | 2.13% | _pending_ |
 | Heavy concurrent load | see [Stress Tests](#stress-tests) | see [Stress Tests](#stress-tests) | _pending_ |
 
 The larger NFS library costs more CPU per request because each search and listing touches more rows.
@@ -59,13 +57,15 @@ Warm, single-user requests on Pi 5. "Server time" is time-to-first-byte (SSR pro
 
 | Page | USB server time | USB total | NFS server time | NFS total | Notes |
 |---|---:|---:|---:|---:|---|
-| Home | 8.6 ms | 10.4 ms | 8.9 ms | 9.3 ms | Main library view |
-| System list (NES) | 5.5 ms | 6.0 ms | 5.2 ms | 11.8 ms | NFS NES list is larger |
-| System list (Arcade) | 5.8 ms | 11.1 ms | 5.3 ms | 12.4 ms | |
-| Game detail | ~1 ms | ~2 ms | ~1 ms | ~2 ms | From load test, c=1 median |
-| Search "mario" | 35 ms | — | 114 ms | — | c=1 median, scales with library |
-| Search "street fighter" | 27 ms | — | 89 ms | — | c=1 median |
-| Search "a" | 304 ms | — | 1,357 ms | — | Broad worst-case search |
+| Home | 7.8 ms | 11.0 ms | 8.9 ms | 9.3 ms | Main library view |
+| System list (NES) | 5.2 ms | 6.2 ms | 5.2 ms | 11.8 ms | NFS NES list is larger |
+| System list (Arcade) | 5.4 ms | 11.0 ms | 5.3 ms | 12.4 ms | |
+| Game detail | ~3 ms | ~3 ms | ~1 ms | ~2 ms | From load test, c=1 median |
+| Search "mario" | 42 ms | — | 114 ms | — | c=1 median, scales with library |
+| Search "street fighter" | 35 ms | — | 89 ms | — | c=1 median |
+| Search "a" | 294 ms | — | 1,357 ms | — | Broad worst-case search |
+
+NFS page/search figures are from the 1.0.0 round (2026-06-28).
 
 ## Download Sizes
 
@@ -73,21 +73,13 @@ The web app's static files. WASM is served gzip-compressed by the server.
 
 | File | Raw | Gzip | Brotli |
 |---|---:|---:|---:|
-| WASM bundle | 4,695 KB | 1,429 KB | 944 KB |
-| CSS | 177 KB | 31 KB | - |
-| Home HTML | 57 KB | - | - |
+| WASM bundle | 4,773 KB | 1,436 KB | 948 KB |
+| CSS | 182 KB | 32 KB | - |
+| Home HTML | 63 KB | - | - |
 
-This is a CI release build, so the WASM bundle includes the `wasm-opt -Oz` pass — the raw bundle is 4,725 KB, down from 0.9.0's 5,318 KB. This benchmark build served the gzip variant (1,431 KB, at maximum gzip). 1.0.0 adds brotli pre-compression: browsers that accept `br` download **944 KB — about 485 KB (34%) smaller than gzip**. Gzip remains the fallback for clients or builds without brotli.
+The WASM bundle includes the `wasm-opt -Oz` pass. Browsers that accept `br` download **948 KB — about 498 KB (34%) smaller than gzip**; gzip remains the fallback for clients or builds without brotli.
 
-**leptos 0.8 upgrade (2026-07-12 round).** The framework upgrade grows the WASM bundle materially. Both figures below are release builds with the same `wasm-opt -Oz` pass; the only difference is the framework version, so the delta is framework codegen, not features (confirmed by A/B against the leptos-0.7 v1.1.3 release, which matches the 1.0.0 column).
-
-| WASM bundle | Raw | Gzip | Brotli |
-|---|---:|---:|---:|
-| leptos 0.7 (1.0.0 / v1.1.3) | 4,695–4,805 KB | 1,429–1,438 KB | 944–946 KB |
-| leptos 0.8 (candidate) | 6,139 KB | 1,955 KB | 1,296 KB |
-| **Δ** | **+27.8%** | **+36.8%** | **+37.3%** |
-
-Modern browsers accept `br`, so the practical cost is **+350 KB (+37%) per cold load**. This is the one clear framework-attributable regression; it lands on first-load download, not on per-request server time.
+A newer web-framework release (leptos 0.8) was evaluated in 2026-07 but not adopted: it grew the compressed WASM bundle by about a third and intermittently hung page responses under concurrent request load, so the framework stays on 0.7 until a release without those issues.
 
 ## Stress Tests
 
@@ -99,28 +91,32 @@ These numbers come from Apache Bench (`ab`) issuing 50 requests per endpoint at 
 
 | Concurrency | Req/s | P50 | P95 |
 |---|---:|---:|---:|
-| 1 | 152.9 | 6 ms | 8 ms |
-| 5 | 203.7 | 23 ms | 28 ms |
-| 10 | 209.2 | 47 ms | 52 ms |
-| 20 | 207.4 | 91 ms | 101 ms |
-| 30 | 215.7 | 123 ms | 138 ms |
+| 1 | 121.6 | 8 ms | 10 ms |
+| 5 | 202.1 | 24 ms | 29 ms |
+| 10 | 206.2 | 47 ms | 51 ms |
+| 20 | 197.4 | 92 ms | 99 ms |
+| 30 | 203.3 | 124 ms | 149 ms |
 
 #### Search
 
 | Query | c=1 Req/s | c=1 P50 | c=1 P95 | c=10 Req/s | c=10 P50 | c=10 P95 |
 |---|---:|---:|---:|---:|---:|---:|
-| "mario" | 28.2 | 35 ms | 37 ms | 28.7 | 348 ms | 352 ms |
-| "sonic" | 25.4 | 39 ms | 41 ms | 27.7 | 359 ms | 366 ms |
-| "street fighter" | 37.3 | 27 ms | 30 ms | 40.1 | 245 ms | 258 ms |
-| "a" | 3.2 | 303 ms | 313 ms | 5.0 | 1,971 ms | 2,034 ms |
+| "mario" | 23.9 | 41 ms | 45 ms | 26.4 | 370 ms | 390 ms |
+| "sonic" | 23.0 | 43 ms | 46 ms | 26.0 | 381 ms | 393 ms |
+| "street fighter" | 28.9 | 34 ms | 37 ms | 36.6 | 268 ms | 283 ms |
+| "a" | 3.4 | 293 ms | 299 ms | 4.9 | 1,978 ms | 2,145 ms |
 
 #### System and Game Pages
 
 | Endpoint | c=1 Req/s | c=1 P50 | c=1 P95 | c=10 Req/s | c=10 P50 | c=10 P95 |
 |---|---:|---:|---:|---:|---:|---:|
-| SNES games | 563.6 | 2 ms | 2 ms | 1,374.0 | 7 ms | 10 ms |
-| Mega Drive games | 626.7 | 2 ms | 2 ms | 1,340.2 | 7 ms | 10 ms |
-| Game detail | 699.6 | 1 ms | 2 ms | 1,551.2 | 6 ms | 8 ms |
+| SNES games | 362.8 | 3 ms | 3 ms | 1,110.5 | 8 ms | 10 ms |
+| Mega Drive games | 360.0 | 3 ms | 3 ms | 1,179.9 | 7 ms | 11 ms |
+| Game detail | 378.3 | 3 ms | 3 ms | 1,336.6 | 6 ms | 9 ms |
+
+The c=1 light-page throughput is roughly half the 1.0.0 numbers; the cost is the richer
+per-game data added since then (now-playing, achievements, series, more metadata per row),
+measured to be feature work rather than any single regression.
 
 #### Mixed Concurrent Test
 
@@ -128,10 +124,10 @@ Four endpoints hit at the same time, each at concurrency 5.
 
 | Endpoint | Req/s | P50 | P95 |
 |---|---:|---:|---:|
-| Home | 11.1 | 478 ms | 510 ms |
-| Search "mario" | 10.5 | 499 ms | 512 ms |
-| Search "sonic" | 10.2 | 498 ms | 511 ms |
-| Search "street fighter" | 10.0 | 499 ms | 517 ms |
+| Home | 10.3 | 518 ms | 554 ms |
+| Search "mario" | 9.7 | 538 ms | 563 ms |
+| Search "sonic" | 9.4 | 537 ms | 563 ms |
+| Search "street fighter" | 9.2 | 539 ms | 569 ms |
 
 ### NFS Library (103,896 games)
 
@@ -242,26 +238,6 @@ Two metrics moved the wrong way versus 0.4.0. Both are understood; neither is a 
 - Cap the candidate set with a generous in-database limit before ranking, so even a broad query never loads the entire library into memory. This also lowers the broad-search load-test memory peak (observed ~0.7-1.1 GB), which comes from the same unbounded materialization.
 - Add a full-text index for the searchable text. A leading-wildcard substring match cannot use a normal index, so today every text search is a full scan. Measured on the device, an FTS5 index over the search column costs about 6-9 s to build at library-build time and ~20 MB on disk (trigram, which supports substring matching), and turns the per-query lookup from ~46-67 ms into well under 1 ms while returning only matching rows to rank. Trigram matches need ≥3 characters, so two-character free-text queries would keep a `LIKE` fallback (rare and cheap — few rows match), and board shorthands stay on the recognizer path. It pairs naturally with the minimum-length guard above. This is the deeper fix.
 
-### The leptos 0.8 upgrade: bigger bundle, slightly heavier renders (2026-07-12)
-
-Upgrading the web framework (leptos 0.7 → 0.8) was benchmarked as an A/B on one Pi 5 against the immediately-preceding release (1.1.3, still leptos 0.7), same USB (26,777) and NFS (93,649) libraries, authenticated HTTPS. Because the two builds share the same feature set and catalog, every difference is the framework.
-
-**What moved:**
-- **Download bundle: +37% compressed (944 → 1,296 KB brotli; +27.8% raw).** The one clear regression. It is paid once per cold load, not per request. See [Download Sizes](#download-sizes).
-- **Server-side render time: up, and it scales with page size.** Small pages barely move (game detail ~−6% throughput; a small system list within noise); large list pages pay the most — the arcade list warm TTFB roughly doubled (5.2 → 12.3 ms). At c=1 the leptos-0.7 baseline and 1.0.0 agree, so this delta is the framework, not features.
-
-**What did *not* move:**
-- **Memory is neutral, even slightly better.** Settled idle was 97 MB resident / 36 MB heap on leptos 0.8 vs 108 / 45 MB on the leptos-0.7 build; post-load peak was comparable (~500 MB). The larger WASM lives in a file-backed mmap, not server heap.
-- **CPU is unchanged** (idle ~0%, one-user browsing 0.90% vs 0.87%).
-- **Search is untouched** — it is database-bound, so the framework version is irrelevant (mario c=1 ~42 ms, "a" c=1 ~1,284 ms on NFS, matching the leptos-0.7 build).
-
-**Don't confuse this with feature drift.** Raw light-page throughput is far lower than 1.0.0 (game detail c=1 700 → 344 req/s, SNES list 563 → 290). Almost all of that happened *before* leptos 0.8: the leptos-0.7 v1.1.3 release already measures ~365 / ~352 req/s. The cause is the per-render work added by two months of features (now-playing detection, RetroAchievements, series, richer per-game metadata), not the framework. leptos 0.8 adds only the last ~−6 to −17% on top.
-
-**Options.**
-- Accept it — the bundle is a one-time cold-load cost that brotli already keeps near 1.3 MB, and per-request time stays in single-digit-to-low-double-digit milliseconds for normal pages.
-- If cold-load size matters, revisit WASM size levers independent of the framework (feature-gating rarely-used client code, `wasm-opt` flag tuning). The catalog/library mmap and server memory are unaffected either way.
-- The per-render feature cost (the larger driver of the throughput drop) is addressable separately — it is per-page work in the SSR path, not a framework limit.
-
 ## Test Methodology
 
 - **CPU**: `tools/pi-cpu.sh` reads `/proc/<pid>/stat` and reports CPU relative to one core. `--browse` simulates one user clicking through home, system pages, search, game detail, and manuals every ~2 s.
@@ -269,5 +245,5 @@ Upgrading the web framework (leptos 0.7 → 0.8) was benchmarked as an A/B on on
 - **Page and asset benchmarks**: `tools/bench.sh`, with Lighthouse skipped for the recorded release runs.
 - **Stress tests**: `tools/load-test.sh`, which uses Apache Bench (`ab`) with 50 requests per endpoint.
 - **Storage switching**: the USB and NFS rounds were measured on the same Pi by switching the active storage and rebooting, then waiting for the rescan to settle (all systems reporting fresh stats) before measuring.
-- All measurements were taken on a Pi 5 (4 cores, 2 GB), no game running, default allocator configuration, on the 0.9.0 release build at commit `ac518f9`.
+- All measurements were taken on a Pi 5 (4 cores, 2 GB), no game running, default allocator configuration. USB figures: `main` at commit `f7af461` (2026-07-15). NFS figures: the 1.0.0 (`433e899`) and 0.9.0 (`ac518f9`) rounds.
 - Raw results are stored in `tools/bench-results/`.
