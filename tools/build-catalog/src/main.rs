@@ -14,6 +14,7 @@ use replay_control_core::arcade_board::ArcadeBoard;
 use replay_control_core::developer;
 use replay_control_core::genre;
 use replay_control_core::library::resource_kind;
+use replay_control_core::systems::SYSTEMS;
 use replay_control_core::title_utils;
 use rusqlite::{Connection, params};
 
@@ -3068,12 +3069,12 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
 fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
     let mut out = Vec::new();
     let dir = upstream(sources_dir).join("retrokit-manuals");
-    // folder -> systems, derived from the centralized SYSTEMS table (BTreeMap
-    // keeps the previous alphabetical folder order for deterministic output).
+    // Source folder -> systems, from the explicit retrokit key mapping
+    // (BTreeMap keeps alphabetical folder order for deterministic output).
     let mut folders: std::collections::BTreeMap<&str, Vec<&str>> =
         std::collections::BTreeMap::new();
-    for sys in replay_control_core::systems::SYSTEMS {
-        if let Some(folder) = sys.manuals_folder {
+    for sys in SYSTEMS {
+        if let Some(folder) = sys.retrokit_manuals_folder {
             folders.entry(folder).or_default().push(sys.folder_name);
         }
     }

@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::retrokit_manuals::manual_folder_name;
+use replay_control_core::systems::manual_scan_folders;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::game_docs::scan_game_documents;
 #[cfg(feature = "ssr")]
@@ -134,65 +134,79 @@ pub(crate) async fn local_manuals_inner(
         .filter_map(|entry| local_manual_from_user_entry(&owned_root, entry))
         .collect();
 
-    let folder = manual_folder_name(system).to_string();
-    let manuals_dir = state.storage().manuals_dir().join(&folder);
+    // Current layout folder plus, while it still exists, the legacy
+    // retrokit-named folder (startup-migration leftovers stay visible).
+    let folders: Vec<String> = manual_scan_folders(system)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let manuals_root = state.storage().manuals_dir();
 
     // Run all blocking filesystem I/O off the async runtime to avoid stalling
     // the tokio worker pool on slow USB or NFS storage.
     let legacy_manuals = tokio::task::spawn_blocking(move || {
-        if !manuals_dir.is_dir() {
-            return Vec::new();
-        }
-
-        let entries = match std::fs::read_dir(&manuals_dir) {
-            Ok(e) => e,
-            Err(_) => return Vec::new(),
-        };
-
         let mut manuals = Vec::new();
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
+        // The primary folder is scanned first; a same-named legacy leftover
+        // (the migration's merge-conflict case) is shadowed by it.
+        let mut seen_filenames = std::collections::HashSet::new();
+        for folder in &folders {
+            let manuals_dir = manuals_root.join(folder);
+            if !manuals_dir.is_dir() {
                 continue;
             }
-            let filename = match entry.file_name().to_str() {
-                Some(f) => f.to_string(),
-                None => continue,
+
+            let entries = match std::fs::read_dir(&manuals_dir) {
+                Ok(e) => e,
+                Err(_) => continue,
             };
-            if !filename.to_lowercase().ends_with(".pdf") {
-                continue;
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let filename = match entry.file_name().to_str() {
+                    Some(f) => f.to_string(),
+                    None => continue,
+                };
+                if !filename.to_lowercase().ends_with(".pdf") {
+                    continue;
+                }
+                if !seen_filenames.insert(filename.to_lowercase()) {
+                    continue;
+                }
+
+                // Check if this manual matches any of the base_titles
+                let stem = filename
+                    .strip_suffix(".pdf")
+                    .or_else(|| filename.strip_suffix(".PDF"))
+                    .unwrap_or(&filename);
+                let file_base = extract_manual_base_title(stem);
+
+                let matches = all_titles
+                    .iter()
+                    .any(|bt| bt.eq_ignore_ascii_case(&file_base));
+
+                if !matches {
+                    continue;
+                }
+
+                let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let language = extract_language_from_filename(stem);
+                let label = stem.to_string();
+                let url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
+
+                manuals.push(LocalManual {
+                    filename,
+                    label,
+                    size_bytes,
+                    language,
+                    url,
+                    source_url: None,
+                    provider: None,
+                    delete_id: None,
+                });
             }
-
-            // Check if this manual matches any of the base_titles
-            let stem = filename
-                .strip_suffix(".pdf")
-                .or_else(|| filename.strip_suffix(".PDF"))
-                .unwrap_or(&filename);
-            let file_base = extract_manual_base_title(stem);
-
-            let matches = all_titles
-                .iter()
-                .any(|bt| bt.eq_ignore_ascii_case(&file_base));
-
-            if !matches {
-                continue;
-            }
-
-            let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            let language = extract_language_from_filename(stem);
-            let label = stem.to_string();
-            let url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
-
-            manuals.push(LocalManual {
-                filename,
-                label,
-                size_bytes,
-                language,
-                url,
-                source_url: None,
-                provider: None,
-                delete_id: None,
-            });
         }
 
         manuals

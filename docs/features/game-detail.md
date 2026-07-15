@@ -44,6 +44,8 @@ Manuals can come from several places:
 - **Uploaded manuals** -- PDF and plain-text files can be uploaded from the detail page and are stored under `<storage>/.replay-control/manuals`
 - **Legacy local manuals** -- existing manuals in `<storage>/manuals` or ROM-folder side files are displayed read-only when detected
 
+Hand-placed manuals under `<storage>/manuals` are organized per system using the same folder names as the ROM folders (for example `manuals/nintendo_snes`), with two shared folders: `manuals/arcade` for all arcade systems and `manuals/pc` for DOS and ScummVM. Manuals placed under the older shorthand folder names (such as `manuals/snes`) are moved to the current names automatically on startup, so nothing needs to be reorganized by hand.
+
 Language preferences from Settings are respected when multiple manual languages are available, but other languages can still be shown. Saved manuals can be removed from Replay Control later; read-only legacy files are left untouched.
 
 ## Box Art Swap

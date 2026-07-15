@@ -1,6 +1,7 @@
 use replay_control_core::systems::system_thumbnail_repos;
 use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::game_entry_builder::HashIdentificationMethod;
+use replay_control_core_server::library::manuals::legacy_layout;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::roms::{RomEntry, StorageProbe};
 use replay_control_core_server::storage::StorageLocation;
@@ -243,6 +244,12 @@ pub(crate) async fn run_pipeline(state: &AppState) -> bool {
     }
     drop(storage);
 
+    // Phase 0.3: one-time move of legacy retrokit-named manuals dirs to the
+    // per-system layout (e.g. manuals/snes -> manuals/nintendo_snes), so
+    // manuals placed under the old names keep resolving. Runs after the
+    // storage-ready probe so a slow mount isn't mistaken for "no legacy dirs".
+    phase_migrate_manuals_layout(state).await;
+
     // Phase 0.5: On first boot, fetch optional source metadata before the
     // library scan. This is a one-time cost, and waiting avoids building a
     // partial first library that needs immediate re-enrichment.
@@ -448,6 +455,24 @@ async fn phase_title_norm_reconcile(state: &AppState) {
 ///
 /// Any network failure is warn-logged and the pipeline continues normally.
 /// Phase 1 will detect and parse the downloaded XML via its usual hash check.
+/// Migrate legacy retrokit-named manuals dirs to the per-system layout.
+/// Cheap when there is nothing to do (a few directory stats); filesystem
+/// work runs on the blocking pool since the manuals root can sit on NFS.
+async fn phase_migrate_manuals_layout(state: &AppState) {
+    let manuals_root = state.storage().manuals_dir();
+    let migrated = tokio::task::spawn_blocking(move || {
+        legacy_layout::migrate_legacy_manuals_layout(&manuals_root)
+    })
+    .await;
+    match migrated {
+        Ok(0) => {}
+        Ok(count) => {
+            tracing::info!("phase_migrate_manuals_layout: migrated {count} legacy manuals dirs")
+        }
+        Err(e) => tracing::warn!("phase_migrate_manuals_layout: task panicked: {e}"),
+    }
+}
+
 async fn phase_first_run_seed(state: &AppState) {
     use replay_control_core_server::external_metadata::{self, meta_keys};
     use replay_control_core_server::library_db::resolve_launchbox_xml;

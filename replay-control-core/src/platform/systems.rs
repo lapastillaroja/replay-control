@@ -4,12 +4,22 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct System {
     pub folder_name: &'static str,
-    /// Manuals source-folder name — the retrokit-manuals collection layout,
-    /// also used for local `<storage>/manuals/<folder>/` paths. `None` means
-    /// no manuals source exists for the system; local manuals fall back to
-    /// `folder_name` (see `retrokit_manuals::manual_folder_name`).
+    /// Local manuals folder override, for systems that pool their manuals
+    /// into one shared `<storage>/manuals/<folder>/` dir: the arcade sets
+    /// share "arcade", DOS and ScummVM share "pc". `None` — the default —
+    /// means manuals live under the system's own `folder_name`. Resolve via
+    /// [`System::manuals_folder`] / [`manual_folder_name`]. (Manual *source*
+    /// keys are separate per-source fields — see
+    /// [`Self::retrokit_manuals_folder`].)
     #[serde(skip)]
-    pub manuals_folder: Option<&'static str>,
+    pub shared_manuals_folder: Option<&'static str>,
+    /// Folder key in the retrokit-manuals source (the Archive.org collection
+    /// layout), used by catalog builds to ingest its per-folder TSVs and by
+    /// the legacy manuals-layout migration (local manuals historically lived
+    /// under these names). `None` means the source has no manuals for the
+    /// system. A source property, unrelated to the local manuals layout.
+    #[serde(skip)]
+    pub retrokit_manuals_folder: Option<&'static str>,
     pub display_name: &'static str,
     pub manufacturer: &'static str,
     pub category: SystemCategory,
@@ -105,7 +115,8 @@ pub enum SystemCategory {
 pub static SYSTEMS: &[System] = &[
     System {
         folder_name: "arcade_fbneo",
-        manuals_folder: Some("arcade"),
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
         display_name: "Arcade (FBNeo)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -123,7 +134,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "arcade_mame",
-        manuals_folder: Some("arcade"),
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
         display_name: "Arcade (MAME)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -142,7 +154,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "arcade_mame_2k3p",
-        manuals_folder: Some("arcade"),
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
         display_name: "Arcade (MAME 2003+)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -162,7 +175,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "arcade_dc",
-        manuals_folder: Some("arcade"),
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
         display_name: "Arcade (Atomiswave/Naomi)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -179,7 +193,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "arcade_stv",
-        manuals_folder: Some("arcade"),
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
         display_name: "Sega Titan Video (ST-V)",
         manufacturer: "Sega",
         category: SystemCategory::Arcade,
@@ -201,7 +216,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "atari_2600",
-        manuals_folder: Some("atari2600"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atari2600"),
         display_name: "Atari 2600",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -217,7 +233,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "atari_5200",
-        manuals_folder: Some("atari5200"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atari5200"),
         display_name: "Atari 5200",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -233,7 +250,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "atari_7800",
-        manuals_folder: Some("atari7800"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atari7800"),
         display_name: "Atari 7800",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -251,7 +269,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "atari_jaguar",
-        manuals_folder: Some("atarijaguar"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atarijaguar"),
         display_name: "Atari Jaguar",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -267,7 +286,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "atari_lynx",
-        manuals_folder: Some("atarilynx"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atarilynx"),
         display_name: "Atari Lynx",
         manufacturer: "Atari",
         category: SystemCategory::Handheld,
@@ -283,7 +303,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "amstrad_cpc",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "Amstrad CPC",
         manufacturer: "Amstrad",
         category: SystemCategory::Computer,
@@ -299,7 +320,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "commodore_ami",
-        manuals_folder: Some("amiga"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("amiga"),
         display_name: "Commodore Amiga",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -318,7 +340,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "commodore_amicd",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "Commodore Amiga CD",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -335,7 +358,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "commodore_c64",
-        manuals_folder: Some("c64"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("c64"),
         display_name: "Commodore 64",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -354,7 +378,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "ibm_pc",
-        manuals_folder: Some("pc"),
+        shared_manuals_folder: Some("pc"),
+        retrokit_manuals_folder: Some("pc"),
         display_name: "IBM PC (DOS)",
         manufacturer: "IBM",
         category: SystemCategory::Computer,
@@ -372,7 +397,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "microsoft_msx",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "MSX",
         manufacturer: "Microsoft",
         category: SystemCategory::Computer,
@@ -390,7 +416,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nec_pce",
-        manuals_folder: Some("pcengine"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("pcengine"),
         display_name: "PC Engine / TurboGrafx-16",
         manufacturer: "NEC",
         category: SystemCategory::Console,
@@ -407,7 +434,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nec_pcecd",
-        manuals_folder: Some("pce-cd"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("pce-cd"),
         display_name: "PC Engine CD",
         manufacturer: "NEC",
         category: SystemCategory::Console,
@@ -423,7 +451,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_ds",
-        manuals_folder: Some("nds"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("nds"),
         display_name: "Nintendo DS",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -440,7 +469,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_gb",
-        manuals_folder: Some("gb"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("gb"),
         display_name: "Game Boy",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -456,7 +486,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_gba",
-        manuals_folder: Some("gba"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("gba"),
         display_name: "Game Boy Advance",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -472,7 +503,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_gbc",
-        manuals_folder: Some("gbc"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("gbc"),
         display_name: "Game Boy Color",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -488,7 +520,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_n64",
-        manuals_folder: Some("n64"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("n64"),
         display_name: "Nintendo 64",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -504,7 +537,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_nes",
-        manuals_folder: Some("nes"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("nes"),
         display_name: "NES / Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -520,7 +554,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_snes",
-        manuals_folder: Some("snes"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("snes"),
         display_name: "Super Nintendo / Super Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -536,7 +571,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "panasonic_3do",
-        manuals_folder: Some("3do"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("3do"),
         display_name: "3DO",
         manufacturer: "Panasonic",
         category: SystemCategory::Console,
@@ -552,7 +588,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "philips_cdi",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "Philips CD-i",
         manufacturer: "Philips",
         category: SystemCategory::Console,
@@ -570,7 +607,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "scummvm",
-        manuals_folder: Some("pc"),
+        shared_manuals_folder: Some("pc"),
+        retrokit_manuals_folder: Some("pc"),
         display_name: "ScummVM",
         manufacturer: "Various",
         category: SystemCategory::Computer,
@@ -586,7 +624,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_32x",
-        manuals_folder: Some("sega32x"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("sega32x"),
         display_name: "Sega 32X",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -602,7 +641,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_cd",
-        manuals_folder: Some("segacd"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("segacd"),
         display_name: "Sega CD / Mega-CD",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -618,7 +658,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_dc",
-        manuals_folder: Some("dreamcast"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("dreamcast"),
         display_name: "Sega Dreamcast",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -634,7 +675,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_gg",
-        manuals_folder: Some("gamegear"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("gamegear"),
         display_name: "Sega Game Gear",
         manufacturer: "Sega",
         category: SystemCategory::Handheld,
@@ -650,7 +692,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_sg",
-        manuals_folder: Some("sg-1000"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("sg-1000"),
         display_name: "Sega SG-1000",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -666,7 +709,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_smd",
-        manuals_folder: Some("megadrive"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("megadrive"),
         display_name: "Sega Mega Drive / Genesis",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -682,7 +726,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_sms",
-        manuals_folder: Some("mastersystem"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("mastersystem"),
         display_name: "Sega Master System",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -698,7 +743,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sega_st",
-        manuals_folder: Some("saturn"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("saturn"),
         display_name: "Sega Saturn",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -714,7 +760,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sharp_x68k",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "Sharp X68000",
         manufacturer: "Sharp",
         category: SystemCategory::Computer,
@@ -732,7 +779,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sinclair_zx",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "ZX Spectrum",
         manufacturer: "Sinclair",
         category: SystemCategory::Computer,
@@ -750,7 +798,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "snk_ng",
-        manuals_folder: Some("neogeo"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("neogeo"),
         display_name: "Neo Geo",
         manufacturer: "SNK",
         category: SystemCategory::Arcade,
@@ -767,7 +816,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "snk_ngcd",
-        manuals_folder: Some("neogeocd"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("neogeocd"),
         display_name: "Neo Geo CD",
         manufacturer: "SNK",
         category: SystemCategory::Console,
@@ -783,7 +833,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "snk_ngp",
-        manuals_folder: Some("ngp"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("ngp"),
         display_name: "Neo Geo Pocket",
         manufacturer: "SNK",
         category: SystemCategory::Handheld,
@@ -799,7 +850,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "sony_psx",
-        manuals_folder: Some("psx"),
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("psx"),
         display_name: "PlayStation",
         manufacturer: "Sony",
         category: SystemCategory::Console,
@@ -817,7 +869,8 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "alpha_player",
-        manuals_folder: None,
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
         display_name: "Alpha Player",
         manufacturer: "RePlayOS",
         category: SystemCategory::Utility,
@@ -842,6 +895,12 @@ pub static SYSTEMS: &[System] = &[
 ];
 
 impl System {
+    /// Local manuals folder under `<storage>/manuals/` — the shared pooled
+    /// folder when set, otherwise the system's own folder name.
+    pub fn manuals_folder(&self) -> &'static str {
+        self.shared_manuals_folder.unwrap_or(self.folder_name)
+    }
+
     /// Whether this system should be excluded from UI-facing lists.
     pub fn is_hidden(&self) -> bool {
         self.hidden
@@ -940,6 +999,31 @@ pub fn launchbox_platform_map_fingerprint() -> String {
 /// Look up a system by its folder name.
 pub fn find_system(folder_name: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.folder_name == folder_name)
+}
+
+/// Local manuals folder name for a system id (`<storage>/manuals/<folder>/`).
+/// Unknown systems fall back to the id itself.
+pub fn manual_folder_name(system: &str) -> &str {
+    match find_system(system) {
+        Some(sys) => sys.manuals_folder(),
+        None => system,
+    }
+}
+
+/// Local manuals folders to scan for a system: the current layout folder
+/// first, then the legacy retrokit-named folder when it differs. The legacy
+/// dir normally disappears via the startup migration, but files it leaves
+/// behind (merge conflicts, mid-move failures, skipped symlinks) must stay
+/// visible until it is gone.
+pub fn manual_scan_folders(system: &str) -> Vec<&str> {
+    let primary = manual_folder_name(system);
+    let mut folders = vec![primary];
+    if let Some(legacy) = find_system(system).and_then(|sys| sys.retrokit_manuals_folder)
+        && legacy != primary
+    {
+        folders.push(legacy);
+    }
+    folders
 }
 
 /// Resolve a system folder name to its user-facing display name.
@@ -1093,6 +1177,52 @@ mod tests {
     #[test]
     fn find_unknown_system() {
         assert!(find_system("unknown_system").is_none());
+    }
+
+    #[test]
+    fn manuals_folder_defaults_to_folder_name() {
+        assert_eq!(manual_folder_name("nintendo_snes"), "nintendo_snes");
+        assert_eq!(manual_folder_name("sega_smd"), "sega_smd");
+        // Unknown systems fall back to the id itself.
+        assert_eq!(manual_folder_name("unknown_system"), "unknown_system");
+    }
+
+    #[test]
+    fn manuals_folder_pools_arcade_and_pc() {
+        assert_eq!(manual_folder_name("arcade_mame"), "arcade");
+        assert_eq!(manual_folder_name("arcade_stv"), "arcade");
+        assert_eq!(manual_folder_name("ibm_pc"), "pc");
+        assert_eq!(manual_folder_name("scummvm"), "pc");
+    }
+
+    #[test]
+    fn manual_scan_folders_include_surviving_legacy_dir() {
+        // Renamed systems scan the legacy retrokit-named folder too, so
+        // migration leftovers stay visible.
+        assert_eq!(
+            manual_scan_folders("nintendo_snes"),
+            vec!["nintendo_snes", "snes"]
+        );
+        // Pooled folders never moved; nothing legacy to scan.
+        assert_eq!(manual_scan_folders("arcade_mame"), vec!["arcade"]);
+        assert_eq!(manual_scan_folders("scummvm"), vec!["pc"]);
+        // No retrokit source, no legacy dir.
+        assert_eq!(manual_scan_folders("sharp_x68k"), vec!["sharp_x68k"]);
+        assert_eq!(
+            manual_scan_folders("unknown_system"),
+            vec!["unknown_system"]
+        );
+    }
+
+    #[test]
+    fn retrokit_manuals_keys_are_source_specific() {
+        let key = |id: &str| find_system(id).unwrap().retrokit_manuals_folder;
+        assert_eq!(key("nintendo_snes"), Some("snes"));
+        assert_eq!(key("sega_smd"), Some("megadrive"));
+        assert_eq!(key("scummvm"), Some("pc"));
+        assert_eq!(key("arcade_stv"), Some("arcade"));
+        // No retrokit manuals for these systems.
+        assert_eq!(key("sharp_x68k"), None);
     }
 
     #[test]

@@ -14,6 +14,21 @@ BackgroundManager::start(state)
 
 If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `reload_config_and_redetect_storage()`), the full pipeline starts.
 
+## Phase 0.3: Legacy Manuals-Layout Migration
+
+**Method**: `phase_migrate_manuals_layout()` →
+`library::manuals::legacy_layout::migrate_legacy_manuals_layout()` (core-server)
+
+Local manuals under `<storage>/manuals/` historically used retrokit-source
+folder names (`manuals/snes/`, `manuals/megadrive/`, ...). The layout now
+follows the system folder names (`manuals/nintendo_snes/`), with two pooled
+folders shared across systems: `arcade` (all arcade sets) and `pc` (DOS +
+ScummVM). This phase renames any legacy dirs to the new names — merging into
+an existing target without overwriting, and never touching pooled or unknown
+folders — so manuals placed under the old names keep resolving. It runs after
+the Phase 0 storage-ready probe (a slow mount must not look like "no legacy
+dirs") and is idempotent: steady-state cost is a few directory stats.
+
 ## Phase 0.5: First-Run Source Fetch
 
 **Method**: `phase_first_run_seed()`
