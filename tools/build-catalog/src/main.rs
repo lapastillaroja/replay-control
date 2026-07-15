@@ -2878,49 +2878,6 @@ const MISTER_MANUAL_REPOS: &[(&str, &str)] = &[
     ("manualsdb-turbografxcd", "nec_pcecd"),
 ];
 
-const RETROKIT_MANUAL_FOLDERS: &[(&str, &[&str])] = &[
-    ("3do", &["panasonic_3do"]),
-    ("amiga", &["commodore_ami"]),
-    (
-        "arcade",
-        &[
-            "arcade_mame",
-            "arcade_fbneo",
-            "arcade_mame_2k3p",
-            "arcade_dc",
-            "arcade_stv",
-        ],
-    ),
-    ("atari2600", &["atari_2600"]),
-    ("atari5200", &["atari_5200"]),
-    ("atari7800", &["atari_7800"]),
-    ("atarijaguar", &["atari_jaguar"]),
-    ("atarilynx", &["atari_lynx"]),
-    ("c64", &["commodore_c64"]),
-    ("dreamcast", &["sega_dc"]),
-    ("gamegear", &["sega_gg"]),
-    ("gb", &["nintendo_gb"]),
-    ("gba", &["nintendo_gba"]),
-    ("gbc", &["nintendo_gbc"]),
-    ("mastersystem", &["sega_sms"]),
-    ("megadrive", &["sega_smd"]),
-    ("n64", &["nintendo_n64"]),
-    ("nds", &["nintendo_ds"]),
-    ("neogeo", &["snk_ng"]),
-    ("neogeocd", &["snk_ngcd"]),
-    ("nes", &["nintendo_nes"]),
-    ("ngp", &["snk_ngp"]),
-    ("pc", &["ibm_pc", "scummvm"]),
-    ("pcengine", &["nec_pce"]),
-    ("pce-cd", &["nec_pcecd"]),
-    ("psx", &["sony_psx"]),
-    ("saturn", &["sega_st"]),
-    ("sega32x", &["sega_32x"]),
-    ("segacd", &["sega_cd"]),
-    ("sg-1000", &["sega_sg"]),
-    ("snes", &["nintendo_snes"]),
-];
-
 struct CatalogResourceBuild {
     system: String,
     normalized_title: String,
@@ -3111,7 +3068,16 @@ fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild>
 fn load_retrokit_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
     let mut out = Vec::new();
     let dir = upstream(sources_dir).join("retrokit-manuals");
-    for &(folder, systems) in RETROKIT_MANUAL_FOLDERS {
+    // folder -> systems, derived from the centralized SYSTEMS table (BTreeMap
+    // keeps the previous alphabetical folder order for deterministic output).
+    let mut folders: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for sys in replay_control_core::systems::SYSTEMS {
+        if let Some(folder) = sys.manuals_folder {
+            folders.entry(folder).or_default().push(sys.folder_name);
+        }
+    }
+    for (folder, systems) in &folders {
         let path = dir.join(format!("{folder}-sources.tsv"));
         if !path.exists() {
             continue;
