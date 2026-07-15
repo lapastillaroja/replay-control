@@ -43,7 +43,7 @@ pub struct SetupStatus {
 // its own setup module, e.g. server_fns/setup.rs.
 #[server(prefix = "/sfn")]
 pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let is_device = state.mode.is_device();
     let admin_access = super::auth::current_auth_role(&state).await? == AuthRole::Admin;
 
@@ -133,7 +133,7 @@ async fn setup_metadata_status(state: &crate::api::AppState) -> (bool, bool) {
 /// immediately.
 #[server(prefix = "/sfn")]
 pub async fn start_setup_metadata_downloads() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "set up metadata").await?;
 
     let (has_metadata, has_thumbnail_index) = setup_metadata_status(&state).await;
@@ -152,7 +152,7 @@ pub async fn start_setup_metadata_downloads() -> Result<(), ServerFnError> {
 /// updates the in-memory cached prefs so subsequent SSR renders skip the DB check.
 #[server(prefix = "/sfn")]
 pub async fn dismiss_setup() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     write_setup_dismissed(&state.settings, true).map_err(|e| ServerFnError::new(e.to_string()))?;
     state
         .prefs
@@ -203,7 +203,7 @@ pub struct MetadataLibraryOverview {
 
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_library_overview() -> Result<MetadataLibraryOverview, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage_kind = format!("{:?}", state.storage().kind).to_lowercase();
     let overview = match state
         .library_reader
@@ -238,7 +238,7 @@ pub async fn get_metadata_library_overview() -> Result<MetadataLibraryOverview, 
 /// snapshot.
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(crate::api::library::metadata_snapshot::compute(&state).await)
 }
 
@@ -263,7 +263,7 @@ pub struct BuiltinDbStats {
 /// boot re-parses LaunchBox metadata from disk.
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "clear metadata").await?;
 
     let _guard = state
@@ -286,7 +286,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 /// The XML hash stamp is wiped so the next pipeline tick re-parses.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "regenerate metadata").await?;
     state
         .external_metadata_writer
@@ -302,7 +302,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 /// the standard refresh path.
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "download metadata").await?;
     crate::api::background::spawn_external_metadata_download_and_refresh(state.clone());
     Ok(())
@@ -325,7 +325,7 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "rescan the game library").await?;
 
     let guard = state
@@ -347,7 +347,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "rebuild the game library").await?;
 
     let guard = state
@@ -385,7 +385,7 @@ pub struct CorruptionStatus {
 /// The library DB is rebuildable — no data loss.
 #[server(prefix = "/sfn")]
 pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "rebuild the corrupt library").await?;
     if !state.library_reader.is_corrupt() {
         return Err(ServerFnError::new("Library database is not corrupt"));
@@ -414,7 +414,7 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
 /// Warning: box art overrides and saved videos will be lost.
 #[server(prefix = "/sfn")]
 pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "repair user data").await?;
     if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));
@@ -435,7 +435,7 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
 /// Falls back to repair (fresh DB) if the backup is also corrupt.
 #[server(prefix = "/sfn")]
 pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "restore user data").await?;
     if !state.user_data_reader.is_corrupt() {
         return Err(ServerFnError::new("User data database is not corrupt"));

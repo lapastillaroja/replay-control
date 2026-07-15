@@ -50,6 +50,20 @@ pub use replay_control_core::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
+/// Fetch the per-request [`crate::api::AppState`] provided by the server-fn
+/// handler.
+///
+/// Call this ONCE at the top of a `#[server]` fn body and thread `&AppState`
+/// into everything below. Never call it from helpers or after an `.await`:
+/// the reactive owner can be disposed mid-request (client disconnect), in
+/// which case this returns an error instead of panicking the way
+/// `expect_context` would.
+#[cfg(feature = "ssr")]
+pub(crate) fn app_state() -> Result<crate::api::AppState, ServerFnError> {
+    use_context::<crate::api::AppState>()
+        .ok_or_else(|| ServerFnError::new("request state unavailable"))
+}
+
 /// Extract region preference strings from AppState for SQL queries.
 #[cfg(feature = "ssr")]
 pub(crate) fn region_strings(state: &crate::api::AppState) -> (String, String) {

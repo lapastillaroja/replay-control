@@ -53,7 +53,7 @@ pub struct RecommendationData {
 /// Returns empty data gracefully if game_library is not yet populated.
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations() -> Result<RecommendationData, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(state.library.recommendations_snapshot(&state).await)
 }
 

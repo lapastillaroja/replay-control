@@ -10,7 +10,7 @@ pub async fn get_game_resource_links(
     system: String,
     base_title: String,
 ) -> Result<Vec<ResourceEntry>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
     resource_links_for_titles(&state, &system, all_titles).await
 }
@@ -47,7 +47,7 @@ pub async fn add_game_resource_link(
     source: Option<String>,
     resource_type: String,
 ) -> Result<ResourceEntry, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "add resources").await?;
 
     if base_title.contains("..") || base_title.contains('/') || base_title.contains('\\') {
@@ -110,7 +110,7 @@ pub async fn remove_game_resource_link(
     rom_filename: String,
     resource_id: String,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "remove resources").await?;
 
     state

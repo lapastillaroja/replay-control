@@ -85,7 +85,7 @@ pub async fn get_related_games(
     system: String,
     filename: String,
 ) -> Result<RelatedGamesData, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
 
     let is_arcade = replay_control_core::systems::is_arcade_system(&system);
 

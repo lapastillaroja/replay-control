@@ -49,7 +49,7 @@ pub async fn get_game_documents(
     system: String,
     rom_filename: String,
 ) -> Result<Vec<GameDocument>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
 
     // Resolve the ROM's directory path
@@ -91,7 +91,7 @@ pub async fn get_local_manuals(
     system: String,
     base_title: String,
 ) -> Result<Vec<LocalManual>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
     let saved_manuals = fetch_saved_manuals(&state, &system, all_titles.clone()).await;
     local_manuals_inner(&state, &system, all_titles, saved_manuals).await
@@ -225,7 +225,7 @@ pub async fn get_game_manual_suggestions(
     rom_filename: String,
     base_title: String,
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
     let saved_keys: std::collections::HashSet<String> =
         fetch_saved_manuals(&state, &system, all_titles)
@@ -295,7 +295,7 @@ pub async fn download_manual(
     title: Option<String>,
     source: Option<String>,
 ) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "download manuals").await?;
 
     // Validate inputs
@@ -438,7 +438,7 @@ pub async fn delete_manual(system: String, manual_id: String) -> Result<(), Serv
         return Err(ServerFnError::new("Invalid manual id"));
     }
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "delete manuals").await?;
 
     let removed = state

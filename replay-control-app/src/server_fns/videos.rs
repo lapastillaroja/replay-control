@@ -24,7 +24,7 @@ pub async fn get_game_videos(
     system: String,
     base_title: String,
 ) -> Result<Vec<VideoEntry>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let all_titles = super::resolve_shared_titles(&state, &system, &base_title).await;
     videos_for_titles(&state, &system, all_titles).await
 }
@@ -56,7 +56,7 @@ pub async fn get_provider_game_videos(
     system: String,
     rom_filename: String,
 ) -> Result<Vec<VideoRecommendation>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let rows =
         super::game_resource_rows(&state, &system, &rom_filename, resource_kind::VIDEO).await?;
     Ok(provider_videos_from_links(rows))
@@ -102,7 +102,7 @@ pub async fn add_game_video(
     from_recommendation: bool,
     tag: Option<String>,
 ) -> Result<VideoEntry, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "add videos").await?;
 
     let parsed =
@@ -147,7 +147,7 @@ pub async fn remove_game_video(
     rom_filename: String,
     video_id: String,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "remove videos").await?;
     state
         .user_data_writer

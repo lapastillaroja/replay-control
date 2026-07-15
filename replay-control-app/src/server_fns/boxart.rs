@@ -20,7 +20,7 @@ pub async fn get_boxart_variants(
     system: String,
     rom_filename: String,
 ) -> Result<Vec<BoxArtVariant>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
 
     let arcade_display =
@@ -83,7 +83,7 @@ pub async fn set_boxart_override(
     use replay_control_core_server::thumbnail_manifest;
     use replay_control_core_server::thumbnails::ThumbnailKind;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "set box art").await?;
     let storage = state.storage();
 
@@ -220,7 +220,7 @@ pub async fn reset_boxart_override(
     system: String,
     rom_filename: String,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "reset box art").await?;
 
     let sys_for_db = system.clone();

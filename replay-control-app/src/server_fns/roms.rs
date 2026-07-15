@@ -183,7 +183,7 @@ pub async fn get_roms_page(
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::systems as sys_db;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let system_display = sys_db::system_display_name(&system);
     let is_arcade = sys_db::is_arcade_system(&system);
     let region_pref = state.region_preference();
@@ -269,7 +269,7 @@ pub async fn get_roms_page(
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
 
     // Fetch the full GameEntry from game_library (source of truth for all metadata).
@@ -573,7 +573,7 @@ pub async fn get_rom_file_group(
     relative_path: String,
 ) -> Result<RomFileGroup, ServerFnError> {
     validate_path_safe(&relative_path)?;
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
 
     // The group is built entirely from synchronous storage reads (read_dir,
@@ -672,7 +672,7 @@ fn build_rom_file_group(
 #[server(prefix = "/sfn")]
 pub async fn delete_rom(system: String, relative_path: String) -> Result<(), ServerFnError> {
     validate_path_safe(&relative_path)?;
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "delete ROMs").await?;
     let storage = state.storage();
 
@@ -735,7 +735,7 @@ pub async fn get_user_captures(
     system: String,
     rom_filename: String,
 ) -> Result<Vec<ScreenshotUrl>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
     // Reads the captures directory (read_dir), which can stall on slow storage;
     // keep it off the async runtime.
@@ -750,7 +750,7 @@ pub async fn delete_user_capture(
     rom_filename: String,
     screenshot_filename: String,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "delete captures").await?;
     let storage = state.storage();
 
@@ -941,7 +941,7 @@ pub async fn rename_rom(
 ) -> Result<String, ServerFnError> {
     validate_path_safe(&relative_path)?;
     validate_path_safe(&new_filename)?;
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "rename ROMs").await?;
     let storage = state.storage();
 
@@ -1091,7 +1091,7 @@ fn rename_fav_recursive(
 
 #[server(prefix = "/sfn")]
 pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         #[cfg(feature = "ssr")]
         redirect_after_progressive_form(&return_to);

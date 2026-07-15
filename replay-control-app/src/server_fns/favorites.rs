@@ -22,7 +22,7 @@ pub struct OrganizeResult {
 
 #[server(prefix = "/sfn", endpoint = "/get_favorites")]
 pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let favs = replay_control_core_server::favorites::list_favorites(&state.storage())
         .await
         .map_err(|e| super::to_user_error("Failed to load favorites", e))?;
@@ -31,7 +31,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let favs =
         replay_control_core_server::favorites::list_favorites_for_system(&state.storage(), &system)
             .await
@@ -90,7 +90,7 @@ pub async fn add_favorite(
     rom_path: String,
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "add favorites").await?;
     let result = replay_control_core_server::favorites::add_favorite(
         &state.storage(),
@@ -110,7 +110,7 @@ pub async fn remove_favorite(
     filename: String,
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "remove favorites").await?;
     let storage = state.storage();
 
@@ -140,7 +140,7 @@ pub async fn organize_favorites(
     secondary: Option<OrganizeCriteria>,
     keep_originals: bool,
 ) -> Result<OrganizeResult, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "organize favorites").await?;
     let needs_ratings =
         primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
@@ -177,7 +177,7 @@ pub async fn organize_favorites(
 
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "group favorites").await?;
     let result = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|e| super::to_user_error("Failed to group favorites", e))?;
@@ -188,7 +188,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "flatten favorites").await?;
     let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|e| super::to_user_error("Failed to flatten favorites", e))?;
@@ -208,7 +208,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     let fn_start = std::time::Instant::now();
     use super::{GameSection, RecommendedGame};
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
 
     if let Some(cached) = state.response_cache.favorites_recommendations.get() {
         #[cfg(feature = "ssr")]

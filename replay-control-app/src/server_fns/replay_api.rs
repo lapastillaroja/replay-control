@@ -104,7 +104,7 @@ impl ReplayPlayerCommand {
 
 #[server(prefix = "/sfn")]
 pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let kiosk_mode = state
         .replay_config
         .read()
@@ -123,7 +123,7 @@ pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> 
 /// changed on the TV via SYSTEM > LOG LEVEL.
 #[server(prefix = "/sfn")]
 pub async fn get_replayos_log_level() -> Result<Option<ReplayLogLevel>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Ok(None);
     };
@@ -143,7 +143,7 @@ pub async fn get_replayos_log_level() -> Result<Option<ReplayLogLevel>, ServerFn
 /// the default (`NotConfigured`); UI surfaces gate on `get_mode` anyway.
 #[server(prefix = "/sfn")]
 pub async fn get_replay_api_status() -> Result<ReplayApiStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(state
         .replay_api
         .as_ref()
@@ -159,7 +159,7 @@ pub async fn get_replay_api_status() -> Result<ReplayApiStatus, ServerFnError> {
 /// Both render the placeholder.
 #[server(prefix = "/sfn")]
 pub async fn get_library_playtime() -> Result<PlaytimeSummary, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Ok(PlaytimeSummary::default());
     };
@@ -203,7 +203,7 @@ pub async fn get_game_playtime(
     system: String,
     game_file: String,
 ) -> Result<GamePlaytime, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Ok(GamePlaytime::default());
     };
@@ -249,7 +249,7 @@ pub async fn get_game_playtime(
 /// "Retry" actions on the Net Control settings page.
 #[server(prefix = "/sfn")]
 pub async fn reprobe_replay_api() -> Result<ReplayApiStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     match state.replay_api.as_ref() {
         Some(api) => Ok(api.probe().await),
         None => Ok(ReplayApiStatus::default()),
@@ -261,7 +261,7 @@ pub async fn reprobe_replay_api() -> Result<ReplayApiStatus, ServerFnError> {
 /// surface is wired through this endpoint.
 #[server(prefix = "/sfn")]
 pub async fn send_replay_player_command(command: ReplayPlayerCommand) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Err(ServerFnError::new(
             "RePlayOS Net Control is only available on the device",
@@ -315,7 +315,7 @@ pub async fn send_replayos_message(
     text: String,
     duration_secs: u8,
 ) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let api = require_active_replay_api(&state, "send an on-screen message")?;
     let text = text.trim();
     if text.is_empty() {
@@ -338,7 +338,7 @@ pub async fn send_replayos_message(
 
 #[server(prefix = "/sfn")]
 pub async fn restart_replayos_game() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let api = require_active_replay_api(&state, "restart the current game")?;
 
     if let Err(error) = api.client().set_cmd(SetCommand::GameRestart).await {
@@ -351,7 +351,7 @@ pub async fn restart_replayos_game() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn power_off_replayos_device() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let api = require_active_replay_api(&state, "power off the device")?;
 
     if let Err(error) = api.client().set_cmd(SetCommand::PowerOff).await {
@@ -364,7 +364,7 @@ pub async fn power_off_replayos_device() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn save_replayos_kiosk_mode(enabled: bool) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let api = require_active_replay_api(&state, "change kiosk mode")?;
     let value = if enabled { "true" } else { "false" };
 
@@ -386,7 +386,7 @@ pub async fn save_replayos_kiosk_mode(enabled: bool) -> Result<String, ServerFnE
 /// never clobbers a working stored token.
 #[server(prefix = "/sfn")]
 pub async fn verify_replay_api_token(code: String) -> Result<ReplayApiStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Err(ServerFnError::new(
             "RePlayOS Net Control is only available on the device",
@@ -448,7 +448,7 @@ pub async fn verify_replay_api_token(code: String) -> Result<ReplayApiStatus, Se
 /// and stored directly.
 #[server(prefix = "/sfn")]
 pub async fn enable_replay_api_assisted() -> Result<ReplayApiStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let Some(api) = state.replay_api.clone() else {
         return Err(ServerFnError::new(
             "RePlayOS Net Control setup is only available on the device",

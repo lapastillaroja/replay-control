@@ -138,7 +138,7 @@ pub async fn global_search(
     use replay_control_core::systems::{self as sys_db};
     use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
 
@@ -268,7 +268,7 @@ pub async fn global_search(
 
 #[server(prefix = "/sfn")]
 pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
@@ -286,7 +286,7 @@ pub async fn get_system_genres(
     system: String,
     #[server(default)] only_mature: bool,
 ) -> Result<Vec<String>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
@@ -312,7 +312,7 @@ pub async fn search_by_developer(
         return Ok(None);
     }
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let (region_str, region_secondary_str) = super::region_strings(&state);
     let limit = limit.clamp(1, 30);
 
@@ -416,7 +416,7 @@ pub async fn get_developer_genres(
     developer: String,
     #[server(default)] system: String,
 ) -> Result<Vec<String>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(facet_genres(&state, Facet::Developer(developer), system).await)
 }
 
@@ -565,7 +565,7 @@ pub async fn get_developer_games(
     #[server(default)] max_year: Option<u16>,
     #[server(default)] has_achievements: bool,
 ) -> Result<DeveloperPageData, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let filters = FacetFilters {
         hide_hacks,
         hide_translations,
@@ -626,7 +626,7 @@ pub async fn search_by_board(
         return Ok(None);
     }
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let (region_str, region_secondary_str) = super::region_strings(&state);
     let limit = limit.clamp(1, 30);
 
@@ -726,7 +726,7 @@ pub async fn get_board_genres(
     #[server(default)] system: String,
 ) -> Result<Vec<String>, ServerFnError> {
     use replay_control_core::arcade_board::ArcadeBoard;
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     // Unknown tag → no genres (an unresolvable board has no games either).
     match ArcadeBoard::from_tag(&board_tag) {
         Some(board) => Ok(facet_genres(&state, Facet::Board(board), system).await),
@@ -757,7 +757,7 @@ pub async fn get_board_games(
 ) -> Result<BoardPageData, ServerFnError> {
     use replay_control_core::arcade_board::ArcadeBoard;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
 
     // Resolve tag → enum once, up front. Unknown tag → empty page (the UI
     // shows the "no games" empty state with the raw tag as the title).
@@ -826,7 +826,7 @@ pub async fn get_board_games(
 /// Returns (system_folder_name, rom_filename).
 #[server(prefix = "/sfn")]
 pub async fn random_game() -> Result<(String, String), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let random = state
         .library_reader
         .read(LibraryDb::random_library_rom)
@@ -844,7 +844,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 /// Pick a random game from one system.
 #[server(prefix = "/sfn")]
 pub async fn random_game_for_system(system: String) -> Result<(String, String), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let random = state
         .library_reader
         .read(move |conn| LibraryDb::random_library_rom_for_system(conn, &system))

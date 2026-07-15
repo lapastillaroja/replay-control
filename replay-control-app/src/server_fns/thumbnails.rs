@@ -17,7 +17,7 @@ pub struct DataSourceSummary {
 #[server(prefix = "/sfn")]
 pub async fn update_thumbnails() -> Result<(), ServerFnError> {
     tracing::info!("update_thumbnails: handler entered");
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "update thumbnails").await?;
     if !state.thumbnails.start_thumbnail_update(&state) {
         return Err(ServerFnError::new(
@@ -30,7 +30,7 @@ pub async fn update_thumbnails() -> Result<(), ServerFnError> {
 /// Cancel the current thumbnail update.
 #[server(prefix = "/sfn")]
 pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     state.request_cancel();
     Ok(())
 }
@@ -38,7 +38,7 @@ pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
 /// Clear the thumbnail index (all thumbnail_index rows + libretro data_sources).
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "clear thumbnail index").await?;
 
     let _guard = state

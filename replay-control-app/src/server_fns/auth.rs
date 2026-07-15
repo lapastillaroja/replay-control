@@ -32,7 +32,7 @@ const USER_MAX_AGE_SECONDS: u64 = 720 * 60 * 60;
 
 #[server(prefix = "/sfn")]
 pub async fn get_auth_status() -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
@@ -43,7 +43,7 @@ pub async fn get_auth_status() -> Result<AuthStatus, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn login_with_replay_code(code: String) -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
@@ -87,7 +87,7 @@ pub async fn login_with_replay_code(code: String) -> Result<AuthStatus, ServerFn
 
 #[server(prefix = "/sfn")]
 pub async fn login_admin(password: String) -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
@@ -115,7 +115,7 @@ pub async fn login_admin(password: String) -> Result<AuthStatus, ServerFnError> 
 
 #[server(prefix = "/sfn")]
 pub async fn complete_first_setup(password: String) -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
@@ -226,7 +226,7 @@ pub(crate) fn reissue_admin_session(
 
 #[server(prefix = "/sfn")]
 pub async fn get_admin_session_timeout() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Ok(AdminSessionTimeout::default().as_str().to_string());
@@ -242,7 +242,7 @@ pub async fn get_admin_session_timeout() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn set_admin_session_timeout(value: String) -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
@@ -284,7 +284,7 @@ pub async fn set_admin_session_timeout(value: String) -> Result<AuthStatus, Serv
 
 #[server(prefix = "/sfn")]
 pub async fn downgrade_admin_to_user() -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
@@ -318,14 +318,14 @@ pub async fn downgrade_admin_to_user() -> Result<AuthStatus, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn logout() -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     clear_session_cookie()?;
     Ok(auth_status_from_session(&state, None))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn logout_all_browsers() -> Result<AuthStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
@@ -519,7 +519,11 @@ fn clear_session_cookie() -> Result<(), ServerFnError> {
 
 #[cfg(feature = "ssr")]
 fn append_cookie_header(cookie: String) -> Result<(), ServerFnError> {
-    let response = expect_context::<ResponseOptions>();
+    // Fallible on purpose: the reactive owner (and its ResponseOptions) can
+    // be disposed mid-request when the client disconnects; erroring beats
+    // the panic expect_context would raise.
+    let response = use_context::<ResponseOptions>()
+        .ok_or_else(|| ServerFnError::new("response context unavailable"))?;
     let value = HeaderValue::from_str(&cookie)
         .map_err(|e| ServerFnError::new(format!("invalid session cookie: {e}")))?;
     response.append_header(SET_COOKIE, value);

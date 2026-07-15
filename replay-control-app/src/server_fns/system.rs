@@ -90,7 +90,7 @@ async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
     let system_meta = state
         .library_reader
@@ -134,7 +134,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 /// fields that change at runtime: disk usage, network IPs, CPU temp, RAM.
 #[server(prefix = "/sfn")]
 pub async fn get_live_stats() -> Result<SystemLiveStats, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(gather_live_stats(&state).await)
 }
 
@@ -183,7 +183,7 @@ fn read_uptime_seconds() -> u64 {
 /// but don't load full `SystemInfo`. No DB/disk access.
 #[server(prefix = "/sfn")]
 pub async fn get_mode() -> Result<Mode, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(state.mode.clone())
 }
 
@@ -264,7 +264,7 @@ async fn get_network_macs() -> (Option<String>, Option<String>) {
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let result = crate::api::library_systems::system_summaries(&state.library_reader).await;
     #[cfg(feature = "ssr")]
     tracing::debug!(
@@ -278,7 +278,7 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
 pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let storage = state.storage();
     let entries = state
         .library
@@ -331,7 +331,7 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn delete_recent(marker_filename: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "delete recents").await?;
     let storage = state.storage();
     recents::delete_recent(&storage, &marker_filename)
@@ -407,7 +407,7 @@ pub async fn save_log_level_config(level: String) -> Result<LogLevelSaveResult, 
     // Read the request context before any await: a mid-flight read
     // panics if the client disconnects and the reactive owner is
     // disposed while the env file is being read/written.
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     #[cfg(feature = "ssr")]
     {
         let rust_log = match level.as_str() {
@@ -579,7 +579,7 @@ async fn read_log_file_tail(path: &str, lines: usize) -> String {
 
 #[server(prefix = "/sfn")]
 pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let changed = state
         .reload_config_and_redetect_storage()
         .await

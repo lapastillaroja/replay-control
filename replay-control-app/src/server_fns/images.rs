@@ -9,7 +9,7 @@ use replay_control_core_server::thumbnails;
 /// Clear all images.
 #[server(prefix = "/sfn")]
 pub async fn clear_images() -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "clear images").await?;
 
     let _guard = state
@@ -48,7 +48,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 /// hard-coded 0.
 #[server(prefix = "/sfn")]
 pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "cleanup orphaned images").await?;
 
     let _guard = state

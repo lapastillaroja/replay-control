@@ -107,7 +107,7 @@ fn config_unavailable() -> ServerFnError {
 
 #[server(prefix = "/sfn")]
 pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let guard = state
         .replay_config
         .read()
@@ -129,7 +129,7 @@ pub async fn save_wifi_config(
     auth_mode: String,
     hidden: bool,
 ) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let (ssid, password, country, auth_mode) =
         validate_wifi_config(&ssid, &password, &country, &auth_mode)?;
     apply_replay_api_config_change(
@@ -150,7 +150,7 @@ pub async fn save_wifi_config(
 
 #[server(prefix = "/sfn")]
 pub async fn get_nfs_config() -> Result<NfsConfig, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let guard = state
         .replay_config
         .read()
@@ -169,7 +169,7 @@ pub async fn save_nfs_config(
     share: String,
     version: String,
 ) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let (server, share, version) = validate_nfs_config(&server, &share, &version)?;
     apply_replay_api_config_change(
         &state,
@@ -184,7 +184,7 @@ pub async fn save_nfs_config(
 
 #[server(prefix = "/sfn")]
 pub async fn get_retroachievements_config() -> Result<RetroAchievementsConfig, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let config_path = state.config_file_path();
 
     // Prefer reading fresh from disk so credentials changed out-of-band
@@ -239,7 +239,7 @@ pub async fn save_retroachievements_config_and_restart(
             "RetroAchievements username and password must be provided together",
         ));
     }
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let username = username.trim().to_string();
     let password = password.trim().to_string();
     apply_replay_api_config_change(
@@ -465,7 +465,7 @@ impl Drop for StartReplayOnDrop {
 
 #[server(prefix = "/sfn")]
 pub async fn reboot_system() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         return Ok("Reboot skipped (standalone mode)".to_string());
     }
@@ -515,7 +515,7 @@ pub async fn get_hostname() -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         return Ok("Hostname change skipped (standalone mode)".to_string());
     }
@@ -586,13 +586,13 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn get_tls_certificate_info() -> Result<TlsCertificateInfo, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(tls_status_to_info(tls_certificate_status(&state.data_dir)))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     regenerate_self_signed_certificate(&state.data_dir)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let info = tls_status_to_info(tls_certificate_status(&state.data_dir));
@@ -683,7 +683,7 @@ fn civil_from_unix_days(days: i64) -> (i32, u32, u32) {
 /// Skin page data: (active_skin_index, sync_enabled, skins_list).
 #[server(prefix = "/sfn")]
 pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let skin_pref = state.prefs.read().expect("prefs lock poisoned").skin;
     let current = skin_pref.unwrap_or_else(|| {
         state
@@ -725,7 +725,7 @@ pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     // Persist to settings.cfg (not replay.cfg).
     replay_control_core_server::settings::write_skin(&state.settings, Some(index))
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -741,7 +741,7 @@ pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
 
 #[server(prefix = "/sfn")]
 pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if enabled {
         // Clear the skin from settings.cfg so we defer to replay.cfg.
         replay_control_core_server::settings::write_skin(&state.settings, None)
@@ -766,7 +766,7 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
 /// Get the font size preference from cached preferences.
 #[server(prefix = "/sfn")]
 pub async fn get_font_size() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(state
         .prefs
         .read()
@@ -778,7 +778,7 @@ pub async fn get_font_size() -> Result<String, ServerFnError> {
 /// Save the font size preference to `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn save_font_size(size: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_font_size(&state.settings, &size)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.prefs.write().expect("prefs lock poisoned").font_size = size;
@@ -788,7 +788,7 @@ pub async fn save_font_size(size: String) -> Result<(), ServerFnError> {
 /// Get the GitHub API key from `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn get_github_api_key() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(
         replay_control_core_server::settings::read_github_api_key(&state.settings)
             .unwrap_or_default(),
@@ -798,7 +798,7 @@ pub async fn get_github_api_key() -> Result<String, ServerFnError> {
 /// Save the GitHub API key to `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn save_github_api_key(key: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_github_api_key(&state.settings, key.trim())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
@@ -806,7 +806,7 @@ pub async fn save_github_api_key(key: String) -> Result<(), ServerFnError> {
 /// Get the current region preference from `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn get_region_preference() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let pref = state.region_preference();
     Ok(pref.as_str().to_string())
 }
@@ -815,7 +815,7 @@ pub async fn get_region_preference() -> Result<String, ServerFnError> {
 /// Invalidates in-memory library views so lists are re-sorted with the new preference.
 #[server(prefix = "/sfn")]
 pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let pref = replay_control_core::rom_tags::RegionPreference::from_str_value(&value);
     replay_control_core_server::settings::write_region_preference(&state.settings, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -852,7 +852,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
 /// Returns empty string if not set.
 #[server(prefix = "/sfn")]
 pub async fn get_region_preference_secondary() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let pref = state.region_preference_secondary();
     Ok(pref.map(|p| p.as_str().to_string()).unwrap_or_default())
 }
@@ -861,7 +861,7 @@ pub async fn get_region_preference_secondary() -> Result<String, ServerFnError> 
 /// Pass empty string to clear. Invalidates in-memory library views.
 #[server(prefix = "/sfn")]
 pub async fn save_region_preference_secondary(value: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let pref = if value.is_empty() {
         None
     } else {
@@ -906,7 +906,7 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
 /// Returns (primary, secondary) where each is empty string if not set.
 #[server(prefix = "/sfn")]
 pub async fn get_language_preference() -> Result<(String, String), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let settings = state.settings.load();
     let primary = settings.language_primary().unwrap_or_default().to_string();
     let secondary = settings
@@ -923,7 +923,7 @@ pub async fn save_language_preference(
     primary: String,
     secondary: String,
 ) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_language_preferences(
         &state.settings,
         primary.trim(),
@@ -942,7 +942,7 @@ pub async fn change_root_password(
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     if !state.mode.is_device() {
         return Ok("Password change skipped (standalone mode)".to_string());
     }
@@ -1006,7 +1006,7 @@ fn is_safe_chpasswd_password(password: &str) -> bool {
 /// Returns the stored locale preference code (including "auto").
 #[server(prefix = "/sfn")]
 pub async fn get_locale() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     use replay_control_core::locale::Locale;
     let locale = state
         .prefs
@@ -1027,7 +1027,7 @@ pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
         return Err(ServerFnError::new("Unsupported locale"));
     }
     let parsed = Locale::from_code(&locale);
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_locale(&state.settings, parsed)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.prefs.write().expect("prefs lock poisoned").locale = parsed.effective();
@@ -1038,7 +1038,7 @@ pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
 /// Used by manual search to sort results by language relevance.
 #[server(prefix = "/sfn")]
 pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let settings = state.settings.load();
     let primary = settings.language_primary();
     let secondary = settings.language_secondary();
@@ -1052,14 +1052,14 @@ pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
 /// Returns `true` if analytics is enabled (default).
 #[server(prefix = "/sfn")]
 pub async fn get_analytics_preference() -> Result<bool, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(replay_control_core_server::settings::read_analytics_enabled(&state.settings))
 }
 
 /// Save the analytics preference to `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn save_analytics_preference(enabled: bool) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_analytics(&state.settings, enabled)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
@@ -1069,7 +1069,7 @@ pub async fn save_analytics_preference(enabled: bool) -> Result<(), ServerFnErro
 #[server(prefix = "/sfn")]
 pub async fn check_for_updates()
 -> Result<Option<replay_control_core::update::AvailableUpdate>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     crate::api::updates::perform_update_check(&state)
         .await
         .map_err(|e| ServerFnError::new(format!("Update check failed: {e}")))
@@ -1078,7 +1078,7 @@ pub async fn check_for_updates()
 /// Read the current update channel from settings.cfg.
 #[server(prefix = "/sfn")]
 pub async fn get_update_channel() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     Ok(
         replay_control_core_server::settings::read_update_channel(&state.settings)
             .as_str()
@@ -1089,7 +1089,7 @@ pub async fn get_update_channel() -> Result<String, ServerFnError> {
 /// Save the update channel. Nukes the update dir and triggers an immediate re-check.
 #[server(prefix = "/sfn")]
 pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let channel_val = replay_control_core::update::UpdateChannel::from_str_value(&channel);
     replay_control_core_server::settings::write_update_channel(&state.settings, channel_val)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1108,7 +1108,7 @@ pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
 /// Mark a version as skipped in settings.cfg.
 #[server(prefix = "/sfn")]
 pub async fn skip_version(version: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     replay_control_core_server::settings::write_skipped_version(&state.settings, &version)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
@@ -1138,7 +1138,7 @@ static CHANGELOG_CACHE: std::sync::LazyLock<TtlSlot<CachedChangelog>> =
 pub async fn get_update_changelog() -> Result<UpdateChangelog, ServerFnError> {
     use replay_control_core_server::update as update_io;
 
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     let settings = state.settings.load();
     let channel = UpdateChannel::from_str_value(settings.update_channel());
     let github_key = settings.github_api_key().map(|s| s.to_string());
@@ -1238,7 +1238,7 @@ mod tests {
 /// Returns Ok after spawning the helper script (server will restart shortly).
 #[server(prefix = "/sfn")]
 pub async fn start_update(tag: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
+    let state = super::app_state()?;
     crate::api::updates::start_update(&state, &tag)
         .await
         .map_err(|e| ServerFnError::new(format!("Update failed: {e}")))
