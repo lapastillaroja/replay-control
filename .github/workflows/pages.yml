@@ -33,7 +33,7 @@ jobs:
           sudo tar -C /usr/local/bin -xf "hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz" hugo
           hugo version
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
