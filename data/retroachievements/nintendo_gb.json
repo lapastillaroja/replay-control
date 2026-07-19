@@ -1960,6 +1960,7 @@
  },
  {
   "hashes": [
+   "17f81a2f027eb006aebea338b82ef918",
    "24cd3bdf490ef2e1aa6a8af380eccd78"
   ],
   "num_achievements": 50,
@@ -2585,8 +2586,8 @@
  {
   "hashes": [
    "309fc69d5ab1d2b17d0bbc127faf04c1",
+   "3337431936a2fab939142b4d32a01f82",
    "b53fe06db30ab689153135990354dd5a",
-   "b98ce4d1606c2fd533557b3cd16de789",
    "ceb17d831b410d91aa41bf2819cbed82"
   ],
   "num_achievements": 43,
@@ -4077,23 +4078,6 @@
  },
  {
   "hashes": [
-   "14d6a5e430452dca394bd3e641dc327b"
-  ],
-  "num_achievements": 32,
-  "ra_id": "5464",
-  "title": "Wizardry Gaiden 1: Suffering of the Queen"
- },
- {
-  "hashes": [
-   "177f5fc642f650e45bae33b10ba1fe48",
-   "1919c1597fa158092c159230df1f6349"
-  ],
-  "num_achievements": 32,
-  "ra_id": "5465",
-  "title": "Wizardry Gaiden 2: Curse of the Ancient Emperor"
- },
- {
-  "hashes": [
    "2be59d4c20728300c84a71fcfcb565f9",
    "e1f712b4d9d4496e679c736c15895772"
   ],
@@ -4103,11 +4087,36 @@
  },
  {
   "hashes": [
+   "14d6a5e430452dca394bd3e641dc327b"
+  ],
+  "num_achievements": 32,
+  "ra_id": "5464",
+  "title": "Wizardry Gaiden I: Joou no Junan"
+ },
+ {
+  "hashes": [
+   "177f5fc642f650e45bae33b10ba1fe48",
+   "1919c1597fa158092c159230df1f6349"
+  ],
+  "num_achievements": 32,
+  "ra_id": "5465",
+  "title": "Wizardry Gaiden II: Kodai Koutei no Noroi"
+ },
+ {
+  "hashes": [
    "f9445b104ebb70d8fb91c8c64452c0a4"
   ],
   "num_achievements": 22,
   "ra_id": "6983",
   "title": "Wizards & Warriors X: The Fortress of Fear"
+ },
+ {
+  "hashes": [
+   "e8d2a7833fd082f8cc62277d02e84a30"
+  ],
+  "num_achievements": 15,
+  "ra_id": "6520",
+  "title": "World Bowling"
  },
  {
   "hashes": [

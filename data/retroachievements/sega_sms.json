@@ -349,8 +349,7 @@
  },
  {
   "hashes": [
-   "0feb52e9b0a8cd378fb38902eb4b4100",
-   "e89d852af39993740ad0259a4a5f726f"
+   "0feb52e9b0a8cd378fb38902eb4b4100"
   ],
   "num_achievements": 83,
   "ra_id": "10750",
@@ -811,6 +810,14 @@
  },
  {
   "hashes": [
+   "2a0717f014b2fd99decd92308175658f"
+  ],
+  "num_achievements": 28,
+  "ra_id": "30460",
+  "title": "Olympic Gold: Barcelona '92"
+ },
+ {
+  "hashes": [
    "029ee92155247f8a282d63b8a6dd23c4"
   ],
   "num_achievements": 16,
@@ -953,7 +960,7 @@
   ],
   "num_achievements": 13,
   "ra_id": "11612",
-  "title": "Snail Maze | Sega Master System BIOS"
+  "title": "Snail Maze"
  },
  {
   "hashes": [
@@ -1215,7 +1222,6 @@
  },
  {
   "hashes": [
-   "7eb06aca73a5119ac95a75c01ad7b720",
    "8f8aaac492de96f2cfddb9d1a57dd979",
    "d649ce52d05d88efdaca81d2ccc57d2d"
   ],

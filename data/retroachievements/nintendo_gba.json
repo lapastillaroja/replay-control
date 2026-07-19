@@ -358,7 +358,8 @@
  },
  {
   "hashes": [
-   "12d05fec1eec00f1697b9daf9915048f"
+   "12d05fec1eec00f1697b9daf9915048f",
+   "4808c4cbf3f0c29bd71ddb641dec1329"
   ],
   "num_achievements": 59,
   "ra_id": "17723",
@@ -366,7 +367,8 @@
  },
  {
   "hashes": [
-   "07c8effe6aa97a4625a0e1ff9e35c63f"
+   "07c8effe6aa97a4625a0e1ff9e35c63f",
+   "7d95ca9534ddc53c176154a696e13242"
   ],
   "num_achievements": 172,
   "ra_id": "38619",
@@ -2488,6 +2490,14 @@
  },
  {
   "hashes": [
+   "aee29c76808d8debcfb3b7945270861b"
+  ],
+  "num_achievements": 23,
+  "ra_id": "12788",
+  "title": "Dora the Explorer: Super Star Adventures"
+ },
+ {
+  "hashes": [
    "e23047fcf278ca962b8e95690490cc1c"
   ],
   "num_achievements": 37,
@@ -3739,6 +3749,22 @@
   "num_achievements": 50,
   "ra_id": "16684",
   "title": "Lilo and Stitch 2: Hamsterviel Havoc"
+ },
+ {
+  "hashes": [
+   "5f98ec175e2c67d3ba28504c1706dc07"
+  ],
+  "num_achievements": 15,
+  "ra_id": "7330",
+  "title": "Lizzie McGuire 2: Lizzie Diaries"
+ },
+ {
+  "hashes": [
+   "d6b12981296a8e3c67796f94e2d7aff3"
+  ],
+  "num_achievements": 15,
+  "ra_id": "7068",
+  "title": "Lizzie McGuire: On the Go"
  },
  {
   "hashes": [
@@ -5031,7 +5057,7 @@
   "hashes": [
    "1e3fd614dc43edbbf9df51262057f2cc"
   ],
-  "num_achievements": 38,
+  "num_achievements": 35,
   "ra_id": "6770",
   "title": "Scooby-Doo and the Cyber Chase"
  },
