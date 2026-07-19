@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::game_db;
+use replay_control_core::systems::{CartHashRule, RcHashKind, find_system};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HashOptions {
@@ -35,99 +36,13 @@ pub struct HashIdentifyResult {
     pub stats: HashStats,
 }
 
-/// Systems eligible for CRC32 hash-based identification.
-///
-/// These are cartridge-based systems with single-file ROMs that have
-/// corresponding No-Intro DAT data compiled into the binary (i.e., they
-/// appear in `GAME_DB_SYSTEMS` in build.rs and have a `_CRC_INDEX` PHF map).
-///
-/// Excluded categories:
-/// - CD systems (PSX, Saturn, Sega CD, PCE-CD, Dreamcast, 3DO, CD-i, Neo Geo CD)
-/// - Computer/folder systems (ScummVM, DOS/IBM PC, Sharp X68000, C64, Amstrad)
-///   except MSX cartridge images (small single-file ROMs with No-Intro CRC) and
-///   Amiga disk images (.adf/.adz/.dms/.ipf carry stable TOSEC crc32).
-/// - Arcade (MAME, FBNeo — identified by romset name, not file content)
-/// - Nintendo DS (excluded for now — ROMs average 64 MB, first-scan too slow)
-struct HashSystemRule {
-    system: &'static str,
-    extensions: &'static [&'static str],
-    excluded_name_markers: &'static [&'static str],
-}
-
-const HASH_SYSTEM_RULES: &[HashSystemRule] = &[
-    HashSystemRule {
-        system: "nintendo_nes",
-        extensions: &["nes", "unif", "unf", "fds"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "nintendo_snes",
-        extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "nintendo_gb",
-        extensions: &["gb", "sgb"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "nintendo_gbc",
-        extensions: &["gbc", "sgbc"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "nintendo_gba",
-        extensions: &["gba"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "nintendo_n64",
-        extensions: &["z64", "n64", "v64", "bin", "u1"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "sega_sms",
-        extensions: &["sms"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "sega_smd",
-        extensions: &["md", "bin", "gen", "smd"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "sega_gg",
-        extensions: &["gg"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "sega_sg",
-        extensions: &["sg"],
-        excluded_name_markers: &[],
-    },
-    HashSystemRule {
-        system: "sega_32x",
-        extensions: &["32x", "bin"],
-        excluded_name_markers: &["sega cd 32x", "mega-cd 32x"],
-    },
-    HashSystemRule {
-        system: "microsoft_msx",
-        extensions: &["rom", "mx1", "mx2"],
-        excluded_name_markers: &[],
-    },
-    // Amiga has no No-Intro DAT; identification comes from libretro's WHDLoad
-    // (.lha), No-Intro (.ipf), and TOSEC (.adf) DATs, all carrying crc32. These
-    // whole-file formats are CRC-hashed (WHDLoad .lha is the RePlayOS default);
-    // anything else (.hdf/.m3u) still resolves by filename via `by_stem`.
-    HashSystemRule {
-        system: "commodore_ami",
-        extensions: &["lha", "adf", "adz", "dms", "ipf"],
-        excluded_name_markers: &[],
-    },
-];
-
-fn hash_rule(system: &str) -> Option<&'static HashSystemRule> {
-    HASH_SYSTEM_RULES.iter().find(|rule| rule.system == system)
+/// CRC identification rule for a system, from the `SYSTEMS` registry
+/// ([`System::cart_hash`]). Systems with a rule are cartridge-based with
+/// single-file ROMs and compiled-in No-Intro DAT data; discs, arcade romsets,
+/// and folder/computer systems (beyond the listed MSX/Amiga formats) carry
+/// `None`.
+fn hash_rule(system: &str) -> Option<&'static CartHashRule> {
+    find_system(system).and_then(|sys| sys.cart_hash.as_ref())
 }
 
 /// Check whether a system is eligible for CRC32 hash-based identification.
@@ -225,15 +140,11 @@ fn detect_header_skip(path: &Path) -> usize {
 /// the read cap. Every header-cart system (NES/SNES/N64) fits well under this.
 const RC_HASH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Systems whose RetroAchievements hash must be computed from the raw ROM bytes
-/// at scan time (header-stripped / byte-order-normalized), then resolved via the
-/// catalog `ra_hash` table. Whole-file carts are excluded — their RA hash equals
-/// the No-Intro md5, matched at build time onto `rom_entry.ra_id`.
-const RC_HASH_SYSTEMS: &[&str] = &["nintendo_nes", "nintendo_snes", "nintendo_n64"];
-
 /// Whether `system` needs a runtime `rc_hash` (header carts only).
 pub fn needs_rc_hash(system: &str) -> bool {
-    RC_HASH_SYSTEMS.contains(&system)
+    find_system(system)
+        .and_then(|sys| sys.rc_hash_kind)
+        .is_some_and(RcHashKind::is_cart)
 }
 
 /// Lowercase hex of a 16-byte MD5 digest. Shared by the cart (`md5_hex`) and disc
@@ -301,10 +212,10 @@ fn rc_hash_n64(buf: &[u8]) -> Option<String> {
 
 /// Compute the RetroAchievements rc_hash for a header cart from its raw bytes.
 fn rc_hash_from_buffer(system: &str, buf: &[u8]) -> Option<String> {
-    match system {
-        "nintendo_nes" => Some(rc_hash_nes(buf)),
-        "nintendo_snes" => Some(rc_hash_snes(buf)),
-        "nintendo_n64" => rc_hash_n64(buf),
+    match find_system(system)?.rc_hash_kind? {
+        RcHashKind::Nes => Some(rc_hash_nes(buf)),
+        RcHashKind::Snes => Some(rc_hash_snes(buf)),
+        RcHashKind::N64 => rc_hash_n64(buf),
         _ => None,
     }
 }

@@ -1060,203 +1060,6 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
 // Console data structures
 // =============================================================================
 
-struct SystemConfig {
-    folder_name: &'static str,
-    nointro_dats: &'static [&'static str],
-    tgdb_platform_ids: &'static [u32],
-}
-
-const GAME_DB_SYSTEMS: &[SystemConfig] = &[
-    // Nintendo cartridge/handheld
-    SystemConfig {
-        folder_name: "nintendo_nes",
-        nointro_dats: &["Nintendo - Nintendo Entertainment System.dat"],
-        tgdb_platform_ids: &[7],
-    },
-    SystemConfig {
-        folder_name: "nintendo_snes",
-        nointro_dats: &["Nintendo - Super Nintendo Entertainment System.dat"],
-        tgdb_platform_ids: &[6],
-    },
-    SystemConfig {
-        folder_name: "nintendo_gb",
-        nointro_dats: &["Nintendo - Game Boy.dat"],
-        tgdb_platform_ids: &[4],
-    },
-    SystemConfig {
-        folder_name: "nintendo_gbc",
-        nointro_dats: &["Nintendo - Game Boy Color.dat"],
-        tgdb_platform_ids: &[41],
-    },
-    SystemConfig {
-        folder_name: "nintendo_gba",
-        nointro_dats: &["Nintendo - Game Boy Advance.dat"],
-        tgdb_platform_ids: &[5],
-    },
-    SystemConfig {
-        folder_name: "nintendo_n64",
-        nointro_dats: &["Nintendo - Nintendo 64.dat"],
-        tgdb_platform_ids: &[3],
-    },
-    // Sega cartridge/handheld
-    SystemConfig {
-        folder_name: "sega_sms",
-        nointro_dats: &["Sega - Master System - Mark III.dat"],
-        tgdb_platform_ids: &[35],
-    },
-    SystemConfig {
-        folder_name: "sega_smd",
-        nointro_dats: &["Sega - Mega Drive - Genesis.dat"],
-        tgdb_platform_ids: &[18, 36],
-    },
-    SystemConfig {
-        folder_name: "sega_gg",
-        nointro_dats: &["Sega - Game Gear.dat"],
-        tgdb_platform_ids: &[20],
-    },
-    SystemConfig {
-        folder_name: "sega_sg",
-        nointro_dats: &["Sega - SG-1000.dat"],
-        tgdb_platform_ids: &[4949],
-    },
-    SystemConfig {
-        folder_name: "sega_32x",
-        nointro_dats: &["Sega - 32X.dat"],
-        tgdb_platform_ids: &[33],
-    },
-    // Atari
-    SystemConfig {
-        folder_name: "atari_2600",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[22],
-    },
-    SystemConfig {
-        folder_name: "atari_5200",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[26],
-    },
-    SystemConfig {
-        folder_name: "atari_7800",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[27],
-    },
-    SystemConfig {
-        folder_name: "atari_jaguar",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[28],
-    },
-    SystemConfig {
-        folder_name: "atari_lynx",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4924],
-    },
-    // NEC
-    SystemConfig {
-        folder_name: "nec_pce",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[34],
-    },
-    SystemConfig {
-        folder_name: "nec_pcecd",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4955],
-    },
-    // Nintendo (no DAT yet)
-    SystemConfig {
-        folder_name: "nintendo_ds",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[8],
-    },
-    // SNK
-    SystemConfig {
-        folder_name: "snk_ng",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[24],
-    },
-    SystemConfig {
-        folder_name: "snk_ngcd",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4956],
-    },
-    SystemConfig {
-        folder_name: "snk_ngp",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4922, 4923],
-    },
-    // Disc-based consoles
-    SystemConfig {
-        folder_name: "sony_psx",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[10],
-    },
-    SystemConfig {
-        folder_name: "sega_dc",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[16],
-    },
-    SystemConfig {
-        folder_name: "sega_st",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[17],
-    },
-    SystemConfig {
-        folder_name: "sega_cd",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[21],
-    },
-    SystemConfig {
-        folder_name: "panasonic_3do",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[25],
-    },
-    SystemConfig {
-        folder_name: "philips_cdi",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4917],
-    },
-    // Computer systems
-    SystemConfig {
-        folder_name: "amstrad_cpc",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4914],
-    },
-    SystemConfig {
-        folder_name: "commodore_ami",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4911],
-    },
-    SystemConfig {
-        folder_name: "commodore_amicd",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4947],
-    },
-    SystemConfig {
-        folder_name: "commodore_c64",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[40],
-    },
-    SystemConfig {
-        folder_name: "ibm_pc",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[1],
-    },
-    SystemConfig {
-        folder_name: "microsoft_msx",
-        nointro_dats: &["Microsoft - MSX.dat", "Microsoft - MSX2.dat"],
-        tgdb_platform_ids: &[4929],
-    },
-    SystemConfig {
-        folder_name: "sharp_x68k",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4931],
-    },
-    SystemConfig {
-        folder_name: "sinclair_zx",
-        nointro_dats: &[],
-        tgdb_platform_ids: &[4913],
-    },
-];
-
 struct NoIntroEntry {
     name: String,
     rom_filename: String,
@@ -2391,7 +2194,10 @@ fn insert_console_games(
         "INSERT INTO rom_alternate (canonical_game_id, system, alternate_name) VALUES (?1, ?2, ?3)",
     )?;
 
-    for sys in GAME_DB_SYSTEMS {
+    // Per-system catalog sources come from the central SYSTEMS registry;
+    // systems with neither a No-Intro DAT nor TGDB ids fall through the
+    // empty-dats skip below.
+    for sys in SYSTEMS {
         if sys.nointro_dats.is_empty() {
             // No No-Intro DAT for this system — insert TGDB-only canonical games
             // so that supported_systems() returns them and release dates work.
@@ -2847,38 +2653,6 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
 // Catalog game resources
 // =============================================================================
 
-const MISTER_MANUAL_REPOS: &[(&str, &str)] = &[
-    ("manualsdb-3do", "panasonic_3do"),
-    ("manualsdb-atari2600", "atari_2600"),
-    ("manualsdb-atari5200", "atari_5200"),
-    ("manualsdb-atari7800", "atari_7800"),
-    ("manualsdb-atarilynx", "atari_lynx"),
-    ("manualsdb-cdi", "philips_cdi"),
-    ("manualsdb-fds", "nintendo_nes"),
-    ("manualsdb-gameboy", "nintendo_gb"),
-    ("manualsdb-gamegear", "sega_gg"),
-    ("manualsdb-gba", "nintendo_gba"),
-    ("manualsdb-gbc", "nintendo_gbc"),
-    ("manualsdb-jaguar", "atari_jaguar"),
-    ("manualsdb-jaguarcd", "atari_jaguar"),
-    ("manualsdb-megadrive", "sega_smd"),
-    ("manualsdb-n64", "nintendo_n64"),
-    ("manualsdb-neogeoaes", "snk_ng"),
-    ("manualsdb-neogeocd", "snk_ngcd"),
-    ("manualsdb-nes", "nintendo_nes"),
-    ("manualsdb-ngp", "snk_ngp"),
-    ("manualsdb-ngpc", "snk_ngp"),
-    ("manualsdb-psx", "sony_psx"),
-    ("manualsdb-sega32x", "sega_32x"),
-    ("manualsdb-segasaturn", "sega_st"),
-    ("manualsdb-segasg1000", "sega_sg"),
-    ("manualsdb-segacd", "sega_cd"),
-    ("manualsdb-sms", "sega_sms"),
-    ("manualsdb-snes", "nintendo_snes"),
-    ("manualsdb-turbografx16", "nec_pce"),
-    ("manualsdb-turbografxcd", "nec_pcecd"),
-];
-
 struct CatalogResourceBuild {
     system: String,
     normalized_title: String,
@@ -2993,7 +2767,18 @@ fn insert_catalog_resources(conn: &Connection, sources_dir: &Path) -> rusqlite::
 fn load_mister_manual_resources(sources_dir: &Path) -> Vec<CatalogResourceBuild> {
     let mut out = Vec::new();
     let dir = upstream(sources_dir).join("mister-manuals");
-    for &(repo, system) in MISTER_MANUAL_REPOS {
+    // (repo, system) pairs from the SYSTEMS registry, sorted by repo key to
+    // keep the previous alphabetical iteration order deterministic.
+    let mut repos: Vec<(&str, &str)> = SYSTEMS
+        .iter()
+        .flat_map(|sys| {
+            sys.mister_manual_repos
+                .iter()
+                .map(move |&repo| (repo, sys.folder_name))
+        })
+        .collect();
+    repos.sort_unstable();
+    for (repo, system) in repos {
         let path = dir.join(format!("{repo}.csv"));
         if !path.exists() {
             continue;
@@ -3448,17 +3233,19 @@ const REQUIRED_SOURCES: &[RequiredSource] = &[
 ];
 
 /// Return `Some(reason)` if the source is missing/empty, else `None`.
+fn missing_file_reason(sources_dir: &Path, rel: &str) -> Option<String> {
+    let path = sources_dir.join(rel);
+    match std::fs::metadata(&path) {
+        Ok(meta) if meta.is_file() && meta.len() > 0 => None,
+        Ok(meta) if meta.len() == 0 => Some(format!("{rel} (empty)")),
+        Ok(_) => Some(format!("{rel} (not a file)")),
+        Err(_) => Some(format!("{rel} (missing)")),
+    }
+}
+
 fn missing_source_reason(sources_dir: &Path, source: &RequiredSource) -> Option<String> {
     match source {
-        RequiredSource::File(rel) => {
-            let path = sources_dir.join(rel);
-            match std::fs::metadata(&path) {
-                Ok(meta) if meta.is_file() && meta.len() > 0 => None,
-                Ok(meta) if meta.len() == 0 => Some(format!("{rel} (empty)")),
-                Ok(_) => Some(format!("{rel} (not a file)")),
-                Err(_) => Some(format!("{rel} (missing)")),
-            }
-        }
+        RequiredSource::File(rel) => missing_file_reason(sources_dir, rel),
         RequiredSource::Dir { path, suffix } => {
             let dir = sources_dir.join(path);
             let has_entry = std::fs::read_dir(&dir).ok().is_some_and(|mut entries| {
@@ -3474,16 +3261,51 @@ fn missing_source_reason(sources_dir: &Path, source: &RequiredSource) -> Option<
     }
 }
 
+/// Per-file source expectations derived from the `SYSTEMS` registry: every
+/// registered No-Intro DAT, MiSTer manuals CSV, and retrokit manuals TSV must
+/// be present and non-empty. The static `Dir` checks above only prove the
+/// collections aren't empty; this closes the gap where a system added to the
+/// registry silently builds without its identification/manual rows because
+/// the downloader was never taught about it.
+fn registry_source_reasons(sources_dir: &Path) -> Vec<String> {
+    let mut expected: Vec<String> = Vec::new();
+    let mut retrokit_folders = std::collections::BTreeSet::new();
+    for sys in SYSTEMS {
+        for dat in sys.nointro_dats {
+            expected.push(format!("upstream/no-intro/{dat}"));
+        }
+        for repo in sys.mister_manual_repos {
+            expected.push(format!("upstream/mister-manuals/{repo}.csv"));
+        }
+        if let Some(folder) = sys.retrokit_manuals_folder {
+            retrokit_folders.insert(folder);
+        }
+    }
+    expected.extend(
+        retrokit_folders
+            .iter()
+            .map(|folder| format!("upstream/retrokit-manuals/{folder}-sources.tsv")),
+    );
+    expected
+        .iter()
+        .filter_map(|rel| {
+            missing_file_reason(sources_dir, rel)
+                .map(|reason| format!("{reason} [from SYSTEMS registry]"))
+        })
+        .collect()
+}
+
 /// Check that every required source is present and non-empty.
 ///
 /// When `allow_partial` is set, missing sources are logged as warnings and the
 /// build proceeds (producing a partial catalog); otherwise the first missing
 /// source aborts the build.
 fn preflight_check(sources_dir: &Path, allow_partial: bool) -> Result<(), String> {
-    let missing: Vec<String> = REQUIRED_SOURCES
+    let mut missing: Vec<String> = REQUIRED_SOURCES
         .iter()
         .filter_map(|source| missing_source_reason(sources_dir, source))
         .collect();
+    missing.extend(registry_source_reasons(sources_dir));
     if missing.is_empty() {
         return Ok(());
     }
@@ -3674,6 +3496,28 @@ mod tests {
                 }
             }
         }
+        // The registry preflight expects every per-system source file too.
+        for sys in SYSTEMS {
+            for dat in sys.nointro_dats {
+                fs::write(dir.join("upstream/no-intro").join(dat), b"x").unwrap();
+            }
+            for repo in sys.mister_manual_repos {
+                fs::write(
+                    dir.join("upstream/mister-manuals")
+                        .join(format!("{repo}.csv")),
+                    b"x",
+                )
+                .unwrap();
+            }
+            if let Some(folder) = sys.retrokit_manuals_folder {
+                fs::write(
+                    dir.join("upstream/retrokit-manuals")
+                        .join(format!("{folder}-sources.tsv")),
+                    b"x",
+                )
+                .unwrap();
+            }
+        }
     }
 
     #[test]
@@ -3695,6 +3539,23 @@ mod tests {
         assert!(err.contains("tgdb-developers.json"), "{err}");
 
         // …and --allow-partial downgrades it to a warning.
+        assert!(preflight_check(&dir, true).is_ok());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preflight_fails_on_missing_registry_source() {
+        let dir = temp_sources_dir();
+        materialize_required_sources(&dir);
+
+        // A registry-expected per-system file (not in REQUIRED_SOURCES) is
+        // enforced too: the static Dir check still passes (other entries
+        // exist), but the registry pass names the exact missing file.
+        fs::remove_file(dir.join("upstream/no-intro/Sega - 32X.dat")).unwrap();
+        let err = preflight_check(&dir, false).unwrap_err();
+        assert!(err.contains("Sega - 32X.dat"), "{err}");
+        assert!(err.contains("[from SYSTEMS registry]"), "{err}");
         assert!(preflight_check(&dir, true).is_ok());
 
         fs::remove_dir_all(&dir).ok();
@@ -4217,5 +4078,50 @@ mod tests {
         assert_eq!(clean_display_name("Lemmings (Europe)"), "Lemmings");
         // Lowercase 'v' not preceded by space — not treated as version
         assert_eq!(clean_display_name("v-rally (Europe)"), "v-rally");
+    }
+}
+
+#[cfg(test)]
+mod registry_drift_tests {
+    use super::SYSTEMS;
+
+    /// The downloader is bash and can't read the Rust registry, so guard the
+    /// two lists against drift: every No-Intro DAT, MiSTer manuals repo, and
+    /// retrokit folder registered in `SYSTEMS` must appear in
+    /// `scripts/download-metadata.sh`, or a catalog build on freshly
+    /// downloaded sources will hard-fail the registry preflight.
+    #[test]
+    fn download_script_covers_registry_sources() {
+        let script_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../scripts/download-metadata.sh"
+        );
+        let script = std::fs::read_to_string(script_path)
+            .expect("scripts/download-metadata.sh readable from the repo");
+        let mut missing = Vec::new();
+        for sys in SYSTEMS {
+            for dat in sys.nointro_dats {
+                // Plain substring: the script pipe-joins multiple DATs into
+                // one value ("Microsoft - MSX.dat|Microsoft - MSX2.dat").
+                if !script.contains(dat) {
+                    missing.push(format!("{}: No-Intro DAT {dat}", sys.folder_name));
+                }
+            }
+            for repo in sys.mister_manual_repos {
+                if !script.contains(repo) {
+                    missing.push(format!("{}: MiSTer repo {repo}", sys.folder_name));
+                }
+            }
+            if let Some(folder) = sys.retrokit_manuals_folder {
+                if !script.contains(folder) {
+                    missing.push(format!("{}: retrokit folder {folder}", sys.folder_name));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "download-metadata.sh is missing registry sources:\n{}",
+            missing.join("\n")
+        );
     }
 }

@@ -33,6 +33,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::library::rom_hash;
 use crate::library::rom_hash::md5_digest_hex;
+use replay_control_core::systems::{RcHashKind, find_system};
 
 /// rcheevos caps the bytes it MD5s at 64 MiB; mirror it for the PSX exe body.
 const MAX_BUFFER_SIZE: usize = 64 * 1024 * 1024;
@@ -821,32 +822,40 @@ fn find_file_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
 /// disc (e.g. missing magic / boot file). Supported: PSX, Sega CD (Mega-CD),
 /// Saturn, Dreamcast (.gdi), 3DO, PC Engine CD, Neo Geo CD.
 pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<String>> {
+    let Some(kind) = disc_rc_hash_kind(system) else {
+        return Ok(None);
+    };
     // Dreamcast addresses GD-ROM track 3 (a .gdi), so it picks its own track
     // rather than the generic first-track reader.
-    if system == "sega_dc" {
+    if kind == RcHashKind::Dreamcast {
         return dreamcast_hash_path(path);
     }
     let Some(mut reader) = open_reader(path)? else {
         return Ok(None);
     };
-    match system {
-        "sony_psx" => psx_hash(reader.as_mut()),
+    match kind {
+        RcHashKind::Psx => psx_hash(reader.as_mut()),
         // Saturn shares rc_hash_sega_cd (one fn, also accepts "SEGA SEGASATURN ").
-        "sega_cd" | "sega_st" => sega_cd_hash(reader.as_mut()),
-        "panasonic_3do" => three_do_hash(reader.as_mut()),
-        "nec_pcecd" => pce_cd_hash(reader.as_mut()),
-        "snk_ngcd" => neogeo_cd_hash(reader.as_mut()),
+        RcHashKind::SegaCd => sega_cd_hash(reader.as_mut()),
+        RcHashKind::ThreeDo => three_do_hash(reader.as_mut()),
+        RcHashKind::PceCd => pce_cd_hash(reader.as_mut()),
+        RcHashKind::NeoGeoCd => neogeo_cd_hash(reader.as_mut()),
         _ => Ok(None),
     }
 }
 
+/// The system's disc rc_hash recipe from the `SYSTEMS` registry, or `None`
+/// for cart recipes and systems without RA hashing.
+fn disc_rc_hash_kind(system: &str) -> Option<RcHashKind> {
+    find_system(system)
+        .and_then(|sys| sys.rc_hash_kind)
+        .filter(|kind| kind.is_disc())
+}
+
 /// Systems with a runtime disc-`rc_hash` recipe wired up (see
-/// [`compute_disc_rc_hash`]). Mirror of the `match` above.
+/// [`compute_disc_rc_hash`]), from the `SYSTEMS` registry.
 pub fn is_disc_rc_hash_system(system: &str) -> bool {
-    matches!(
-        system,
-        "sony_psx" | "sega_cd" | "sega_st" | "sega_dc" | "panasonic_3do" | "nec_pcecd" | "snk_ngcd"
-    )
+    disc_rc_hash_kind(system).is_some()
 }
 
 fn looks_like_m3u_reference(line: &str) -> bool {

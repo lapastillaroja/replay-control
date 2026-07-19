@@ -20,6 +20,29 @@ pub struct System {
     /// system. A source property, unrelated to the local manuals layout.
     #[serde(skip)]
     pub retrokit_manuals_folder: Option<&'static str>,
+    /// No-Intro CRC identification rule for cart-shaped files, or `None` for
+    /// systems that aren't CRC-identified (disc-based, folder/computer images
+    /// beyond the listed formats, arcade romsets — those identify by other
+    /// means; see `rom_hash` in core-server).
+    #[serde(skip)]
+    pub cart_hash: Option<CartHashRule>,
+    /// Runtime RetroAchievements hash recipe, or `None` when no runtime hash
+    /// is needed (whole-file carts match by No-Intro md5 at catalog build;
+    /// other systems have no RA hashing wired up).
+    #[serde(skip)]
+    pub rc_hash_kind: Option<RcHashKind>,
+    /// No-Intro DAT filenames ingested by catalog builds for this system's
+    /// `canonical_game`/`rom_entry` rows. Empty means no DAT ingestion.
+    #[serde(skip)]
+    pub nointro_dats: &'static [&'static str],
+    /// TheGamesDB platform ids providing catalog metadata (year, genre,
+    /// developer, ratings, release dates). Empty means no TGDB source.
+    #[serde(skip)]
+    pub tgdb_platform_ids: &'static [u32],
+    /// MiSTer Manual Downloader repo keys (the `manualsdb-*` CSVs) ingested
+    /// by catalog builds as manual resources. Empty means no MiSTer source.
+    #[serde(skip)]
+    pub mister_manual_repos: &'static [&'static str],
     pub display_name: &'static str,
     pub manufacturer: &'static str,
     pub category: SystemCategory,
@@ -110,6 +133,53 @@ pub enum SystemCategory {
     Utility,
 }
 
+/// No-Intro CRC identification rule for cartridge-shaped ROM files.
+/// Carried per system as [`System::cart_hash`]; the streaming hasher and
+/// eligibility checks live in `replay_control_core_server::rom_hash`.
+#[derive(Debug, Clone, Copy)]
+pub struct CartHashRule {
+    /// File extensions (lowercase) streamed for CRC matching.
+    pub extensions: &'static [&'static str],
+    /// Lowercased filename markers that exclude a file despite its extension
+    /// (e.g. "sega cd 32x" disc images inside the 32x folder).
+    pub excluded_name_markers: &'static [&'static str],
+}
+
+/// Runtime RetroAchievements hash recipe for a system's ROMs, carried per
+/// system as [`System::rc_hash_kind`].
+///
+/// Cart variants (NES/SNES/N64) hash header-stripped / byte-order-normalized
+/// ROM bytes at scan time; whole-file carts need no recipe because their RA
+/// hash equals the No-Intro md5, matched onto `rom_entry.ra_id` at catalog
+/// build. Disc variants read the boot file / disc structures. The recipe
+/// implementations live in `replay_control_core_server::{rom_hash,
+/// rc_hash_disc}`; this enum is only the per-system dispatch key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RcHashKind {
+    Nes,
+    Snes,
+    N64,
+    Psx,
+    /// Shared by Sega CD (Mega-CD) and Saturn — one recipe accepts both magics.
+    SegaCd,
+    Dreamcast,
+    ThreeDo,
+    PceCd,
+    NeoGeoCd,
+}
+
+impl RcHashKind {
+    /// Header carts whose rc_hash is computed from ROM bytes at scan time.
+    pub fn is_cart(self) -> bool {
+        matches!(self, Self::Nes | Self::Snes | Self::N64)
+    }
+
+    /// Disc systems whose rc_hash reads the boot file / disc structures.
+    pub fn is_disc(self) -> bool {
+        !self.is_cart()
+    }
+}
+
 /// All systems supported by RePlayOS, mapped from the actual folder names
 /// found on the SD card / USB drive.
 pub static SYSTEMS: &[System] = &[
@@ -117,6 +187,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "arcade_fbneo",
         shared_manuals_folder: Some("arcade"),
         retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Arcade (FBNeo)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -136,6 +211,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "arcade_mame",
         shared_manuals_folder: Some("arcade"),
         retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Arcade (MAME)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -156,6 +236,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "arcade_mame_2k3p",
         shared_manuals_folder: Some("arcade"),
         retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Arcade (MAME 2003+)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -177,6 +262,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "arcade_dc",
         shared_manuals_folder: Some("arcade"),
         retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Arcade (Atomiswave/Naomi)",
         manufacturer: "Various",
         category: SystemCategory::Arcade,
@@ -195,6 +285,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "arcade_stv",
         shared_manuals_folder: Some("arcade"),
         retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Sega Titan Video (ST-V)",
         manufacturer: "Sega",
         category: SystemCategory::Arcade,
@@ -218,6 +313,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "atari_2600",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atari2600"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[22],
+        mister_manual_repos: &["manualsdb-atari2600"],
         display_name: "Atari 2600",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -235,6 +335,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "atari_5200",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atari5200"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[26],
+        mister_manual_repos: &["manualsdb-atari5200"],
         display_name: "Atari 5200",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -252,6 +357,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "atari_7800",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atari7800"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[27],
+        mister_manual_repos: &["manualsdb-atari7800"],
         display_name: "Atari 7800",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -271,6 +381,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "atari_jaguar",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atarijaguar"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[28],
+        mister_manual_repos: &["manualsdb-jaguar", "manualsdb-jaguarcd"],
         display_name: "Atari Jaguar",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -288,6 +403,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "atari_lynx",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atarilynx"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4924],
+        mister_manual_repos: &["manualsdb-atarilynx"],
         display_name: "Atari Lynx",
         manufacturer: "Atari",
         category: SystemCategory::Handheld,
@@ -305,6 +425,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "amstrad_cpc",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4914],
+        mister_manual_repos: &[],
         display_name: "Amstrad CPC",
         manufacturer: "Amstrad",
         category: SystemCategory::Computer,
@@ -322,6 +447,19 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "commodore_ami",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("amiga"),
+        // Amiga has no No-Intro DAT; identification comes from libretro's
+        // WHDLoad (.lha), No-Intro (.ipf), and TOSEC (.adf) DATs, all
+        // carrying crc32. These whole-file formats are CRC-hashed (WHDLoad
+        // .lha is the RePlayOS default); anything else (.hdf/.m3u) still
+        // resolves by filename via `by_stem`.
+        cart_hash: Some(CartHashRule {
+            extensions: &["lha", "adf", "adz", "dms", "ipf"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4911],
+        mister_manual_repos: &[],
         display_name: "Commodore Amiga",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -342,6 +480,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "commodore_amicd",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4947],
+        mister_manual_repos: &[],
         display_name: "Commodore Amiga CD",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -360,6 +503,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "commodore_c64",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("c64"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[40],
+        mister_manual_repos: &[],
         display_name: "Commodore 64",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
@@ -380,6 +528,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "ibm_pc",
         shared_manuals_folder: Some("pc"),
         retrokit_manuals_folder: Some("pc"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[1],
+        mister_manual_repos: &[],
         display_name: "IBM PC (DOS)",
         manufacturer: "IBM",
         category: SystemCategory::Computer,
@@ -399,6 +552,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "microsoft_msx",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: Some(CartHashRule {
+            extensions: &["rom", "mx1", "mx2"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Microsoft - MSX.dat", "Microsoft - MSX2.dat"],
+        tgdb_platform_ids: &[4929],
+        mister_manual_repos: &[],
         display_name: "MSX",
         manufacturer: "Microsoft",
         category: SystemCategory::Computer,
@@ -418,6 +579,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nec_pce",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("pcengine"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[34],
+        mister_manual_repos: &["manualsdb-turbografx16"],
         display_name: "PC Engine / TurboGrafx-16",
         manufacturer: "NEC",
         category: SystemCategory::Console,
@@ -436,6 +602,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nec_pcecd",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("pce-cd"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::PceCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4955],
+        mister_manual_repos: &["manualsdb-turbografxcd"],
         display_name: "PC Engine CD",
         manufacturer: "NEC",
         category: SystemCategory::Console,
@@ -453,6 +624,13 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_ds",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("nds"),
+        // DS is deliberately not CRC-identified: ROMs average 64 MB and
+        // first-scan hashing would be too slow.
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[8],
+        mister_manual_repos: &[],
         display_name: "Nintendo DS",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -471,6 +649,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_gb",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("gb"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["gb", "sgb"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Nintendo - Game Boy.dat"],
+        tgdb_platform_ids: &[4],
+        mister_manual_repos: &["manualsdb-gameboy"],
         display_name: "Game Boy",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -488,6 +674,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_gba",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("gba"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["gba"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Nintendo - Game Boy Advance.dat"],
+        tgdb_platform_ids: &[5],
+        mister_manual_repos: &["manualsdb-gba"],
         display_name: "Game Boy Advance",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -505,6 +699,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_gbc",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("gbc"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["gbc", "sgbc"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Nintendo - Game Boy Color.dat"],
+        tgdb_platform_ids: &[41],
+        mister_manual_repos: &["manualsdb-gbc"],
         display_name: "Game Boy Color",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
@@ -522,6 +724,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_n64",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("n64"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["z64", "n64", "v64", "bin", "u1"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: Some(RcHashKind::N64),
+        nointro_dats: &["Nintendo - Nintendo 64.dat"],
+        tgdb_platform_ids: &[3],
+        mister_manual_repos: &["manualsdb-n64"],
         display_name: "Nintendo 64",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -539,6 +749,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_nes",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("nes"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["nes", "unif", "unf", "fds"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: Some(RcHashKind::Nes),
+        nointro_dats: &["Nintendo - Nintendo Entertainment System.dat"],
+        tgdb_platform_ids: &[7],
+        mister_manual_repos: &["manualsdb-fds", "manualsdb-nes"],
         display_name: "NES / Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -556,6 +774,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "nintendo_snes",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("snes"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: Some(RcHashKind::Snes),
+        nointro_dats: &["Nintendo - Super Nintendo Entertainment System.dat"],
+        tgdb_platform_ids: &[6],
+        mister_manual_repos: &["manualsdb-snes"],
         display_name: "Super Nintendo / Super Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
@@ -573,6 +799,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "panasonic_3do",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("3do"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::ThreeDo),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[25],
+        mister_manual_repos: &["manualsdb-3do"],
         display_name: "3DO",
         manufacturer: "Panasonic",
         category: SystemCategory::Console,
@@ -590,6 +821,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "philips_cdi",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4917],
+        mister_manual_repos: &["manualsdb-cdi"],
         display_name: "Philips CD-i",
         manufacturer: "Philips",
         category: SystemCategory::Console,
@@ -609,6 +845,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "scummvm",
         shared_manuals_folder: Some("pc"),
         retrokit_manuals_folder: Some("pc"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "ScummVM",
         manufacturer: "Various",
         category: SystemCategory::Computer,
@@ -626,6 +867,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_32x",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("sega32x"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["32x", "bin"],
+            excluded_name_markers: &["sega cd 32x", "mega-cd 32x"],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Sega - 32X.dat"],
+        tgdb_platform_ids: &[33],
+        mister_manual_repos: &["manualsdb-sega32x"],
         display_name: "Sega 32X",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -643,6 +892,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_cd",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("segacd"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::SegaCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[21],
+        mister_manual_repos: &["manualsdb-segacd"],
         display_name: "Sega CD / Mega-CD",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -660,6 +914,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_dc",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("dreamcast"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Dreamcast),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[16],
+        mister_manual_repos: &[],
         display_name: "Sega Dreamcast",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -677,6 +936,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_gg",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("gamegear"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["gg"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Sega - Game Gear.dat"],
+        tgdb_platform_ids: &[20],
+        mister_manual_repos: &["manualsdb-gamegear"],
         display_name: "Sega Game Gear",
         manufacturer: "Sega",
         category: SystemCategory::Handheld,
@@ -694,6 +961,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_sg",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("sg-1000"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["sg"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Sega - SG-1000.dat"],
+        tgdb_platform_ids: &[4949],
+        mister_manual_repos: &["manualsdb-segasg1000"],
         display_name: "Sega SG-1000",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -711,6 +986,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_smd",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("megadrive"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["md", "bin", "gen", "smd"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Sega - Mega Drive - Genesis.dat"],
+        tgdb_platform_ids: &[18, 36],
+        mister_manual_repos: &["manualsdb-megadrive"],
         display_name: "Sega Mega Drive / Genesis",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -728,6 +1011,14 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_sms",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("mastersystem"),
+        cart_hash: Some(CartHashRule {
+            extensions: &["sms"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: None,
+        nointro_dats: &["Sega - Master System - Mark III.dat"],
+        tgdb_platform_ids: &[35],
+        mister_manual_repos: &["manualsdb-sms"],
         display_name: "Sega Master System",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -745,6 +1036,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sega_st",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("saturn"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::SegaCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[17],
+        mister_manual_repos: &["manualsdb-segasaturn"],
         display_name: "Sega Saturn",
         manufacturer: "Sega",
         category: SystemCategory::Console,
@@ -762,6 +1058,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sharp_x68k",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4931],
+        mister_manual_repos: &[],
         display_name: "Sharp X68000",
         manufacturer: "Sharp",
         category: SystemCategory::Computer,
@@ -781,6 +1082,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sinclair_zx",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4913],
+        mister_manual_repos: &[],
         display_name: "ZX Spectrum",
         manufacturer: "Sinclair",
         category: SystemCategory::Computer,
@@ -800,6 +1106,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "snk_ng",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("neogeo"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[24],
+        mister_manual_repos: &["manualsdb-neogeoaes"],
         display_name: "Neo Geo",
         manufacturer: "SNK",
         category: SystemCategory::Arcade,
@@ -818,6 +1129,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "snk_ngcd",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("neogeocd"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::NeoGeoCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4956],
+        mister_manual_repos: &["manualsdb-neogeocd"],
         display_name: "Neo Geo CD",
         manufacturer: "SNK",
         category: SystemCategory::Console,
@@ -835,6 +1151,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "snk_ngp",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("ngp"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[4922, 4923],
+        mister_manual_repos: &["manualsdb-ngp", "manualsdb-ngpc"],
         display_name: "Neo Geo Pocket",
         manufacturer: "SNK",
         category: SystemCategory::Handheld,
@@ -852,6 +1173,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "sony_psx",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("psx"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Psx),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[10],
+        mister_manual_repos: &["manualsdb-psx"],
         display_name: "PlayStation",
         manufacturer: "Sony",
         category: SystemCategory::Console,
@@ -871,6 +1197,11 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "alpha_player",
         shared_manuals_folder: None,
         retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
         display_name: "Alpha Player",
         manufacturer: "RePlayOS",
         category: SystemCategory::Utility,
@@ -1212,6 +1543,54 @@ mod tests {
             manual_scan_folders("unknown_system"),
             vec!["unknown_system"]
         );
+    }
+
+    #[test]
+    fn mister_manual_repo_keys_are_unique() {
+        // A repo key appearing under two systems would ingest its CSV twice.
+        let mut seen = std::collections::HashSet::new();
+        for sys in SYSTEMS {
+            for repo in sys.mister_manual_repos {
+                assert!(repo.starts_with("manualsdb-"), "{repo}");
+                assert!(seen.insert(repo), "duplicate MiSTer repo key {repo}");
+            }
+        }
+        assert_eq!(seen.len(), 29);
+    }
+
+    #[test]
+    fn catalog_source_fields_spot_checks() {
+        let sys = |id: &str| find_system(id).unwrap();
+        assert_eq!(
+            sys("nintendo_snes").nointro_dats,
+            &["Nintendo - Super Nintendo Entertainment System.dat"]
+        );
+        assert_eq!(sys("sega_smd").tgdb_platform_ids, &[18, 36]);
+        assert_eq!(
+            sys("snk_ngp").mister_manual_repos,
+            &["manualsdb-ngp", "manualsdb-ngpc"]
+        );
+        // Arcade and utility systems have no per-system catalog sources.
+        for id in ["arcade_mame", "scummvm", "alpha_player"] {
+            assert!(sys(id).nointro_dats.is_empty());
+            assert!(sys(id).tgdb_platform_ids.is_empty());
+            assert!(sys(id).mister_manual_repos.is_empty());
+            assert!(sys(id).cart_hash.is_none());
+            assert!(sys(id).rc_hash_kind.is_none());
+        }
+    }
+
+    #[test]
+    fn rc_hash_kinds_split_carts_and_discs() {
+        use super::RcHashKind::*;
+        let kind = |id: &str| find_system(id).unwrap().rc_hash_kind;
+        assert_eq!(kind("nintendo_snes"), Some(Snes));
+        assert!(kind("nintendo_snes").unwrap().is_cart());
+        // Saturn shares the Sega CD recipe.
+        assert_eq!(kind("sega_st"), Some(SegaCd));
+        assert!(kind("sega_dc").unwrap().is_disc());
+        // Whole-file carts have no runtime recipe (RA hash = No-Intro md5).
+        assert_eq!(kind("nintendo_gba"), None);
     }
 
     #[test]
