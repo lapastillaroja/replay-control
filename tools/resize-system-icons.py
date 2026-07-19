@@ -60,6 +60,7 @@ MAPPING = {
     "NEOCD": "snk_ngcd",
     "NGP": "snk_ngp",
     "PS": "sony_psx",
+    "PSP": "sony_psp",
 }
 
 # Icons that use a different source (fallback or alias)

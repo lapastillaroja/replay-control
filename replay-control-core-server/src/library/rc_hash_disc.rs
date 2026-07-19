@@ -401,6 +401,13 @@ impl SectorReader for GdiReader {
 /// `(start_sector, size_bytes)`. Case-insensitive, ignores the `;1` version
 /// suffix — like rcheevos.
 fn iso_find_file(r: &mut dyn SectorReader, name: &str) -> io::Result<Option<(u32, u32)>> {
+    iso_find_path(r, &[name])
+}
+
+/// Walk an ISO9660 path (directories then a final file), starting at the
+/// primary volume descriptor's root record. Returns the final component's
+/// `(start_sector, size_bytes)`.
+fn iso_find_path(r: &mut dyn SectorReader, path: &[&str]) -> io::Result<Option<(u32, u32)>> {
     let mut sec = [0u8; SECTOR_USER];
     // PVD at first_track_sector + 16 (absolute LBA), per rcheevos
     // rc_cd_find_file_sector. For a track starting at LBA 0 this is 16.
@@ -411,12 +418,34 @@ fn iso_find_file(r: &mut dyn SectorReader, name: &str) -> io::Result<Option<(u32
         return Ok(None);
     }
     let root = &sec[156..156 + 34];
-    let root_lba = u32::from_le_bytes([root[2], root[3], root[4], root[5]]);
-    let root_len = u32::from_le_bytes([root[10], root[11], root[12], root[13]]);
+    let mut lba = u32::from_le_bytes([root[2], root[3], root[4], root[5]]);
+    let mut len = u32::from_le_bytes([root[10], root[11], root[12], root[13]]);
+    let mut found = None;
+    for component in path {
+        found = iso_dir_find(r, lba, len, component)?;
+        match found {
+            Some((next_lba, next_len)) => {
+                lba = next_lba;
+                len = next_len;
+            }
+            None => return Ok(None),
+        }
+    }
+    Ok(found)
+}
+
+/// Scan one directory extent for an entry by name (file or subdirectory).
+fn iso_dir_find(
+    r: &mut dyn SectorReader,
+    dir_lba: u32,
+    dir_len: u32,
+    name: &str,
+) -> io::Result<Option<(u32, u32)>> {
+    let mut sec = [0u8; SECTOR_USER];
     let want = name.trim_start_matches('\\').to_ascii_uppercase();
-    let sectors = root_len.div_ceil(SECTOR_USER as u32);
+    let sectors = dir_len.div_ceil(SECTOR_USER as u32);
     for i in 0..sectors {
-        if r.read_sector(root_lba + i, &mut sec)? == 0 {
+        if r.read_sector(dir_lba + i, &mut sec)? == 0 {
             break;
         }
         let mut off = 0usize;
@@ -486,6 +515,44 @@ fn read_file_bytes(r: &mut dyn SectorReader, start: u32, size: u32) -> io::Resul
         s += 1;
     }
     Ok(out)
+}
+
+/// PSP rc_hash over an opened UMD ISO reader: `PSP_GAME/PARAM.SFO` followed
+/// by `PSP_GAME/SYSDIR/EBOOT.BIN`, one MD5 over both (rcheevos rc_hash_psp).
+fn psp_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
+    let Some((sfo_lba, sfo_size)) = iso_find_path(r, &["PSP_GAME", "PARAM.SFO"])? else {
+        return Ok(None);
+    };
+    let Some((eboot_lba, eboot_size)) = iso_find_path(r, &["PSP_GAME", "SYSDIR", "EBOOT.BIN"])?
+    else {
+        return Ok(None);
+    };
+    // rcheevos caps each hashed file at MAX_BUFFER_SIZE (64 MiB) in
+    // rc_hash_cd_file; mirror it so oversized executables hash identically.
+    const RC_HASH_FILE_CAP: u32 = 64 * 1024 * 1024;
+    let mut md5 = Md5::new();
+    md5.update(read_file_bytes(r, sfo_lba, sfo_size.min(RC_HASH_FILE_CAP))?);
+    md5.update(read_file_bytes(
+        r,
+        eboot_lba,
+        eboot_size.min(RC_HASH_FILE_CAP),
+    )?);
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
+}
+
+/// Whole-file MD5 for PSP `.pbp` eboots (rcheevos hashes the entire file).
+fn whole_file_md5(path: &Path) -> io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut md5 = Md5::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        md5.update(&buf[..n]);
+    }
+    Ok(md5_digest_hex(md5.finalize().into()))
 }
 
 /// PSX rc_hash over an opened data-track sector reader.
@@ -830,11 +897,21 @@ pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<Stri
     if kind == RcHashKind::Dreamcast {
         return dreamcast_hash_path(path);
     }
+    // PSP `.pbp` eboots are container files, not disc images: whole-file MD5.
+    if kind == RcHashKind::Psp
+        && path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("pbp"))
+    {
+        return whole_file_md5(path).map(Some);
+    }
     let Some(mut reader) = open_reader(path)? else {
         return Ok(None);
     };
     match kind {
         RcHashKind::Psx => psx_hash(reader.as_mut()),
+        RcHashKind::Psp => psp_hash(reader.as_mut()),
         // Saturn shares rc_hash_sega_cd (one fn, also accepts "SEGA SEGASATURN ").
         RcHashKind::SegaCd => sega_cd_hash(reader.as_mut()),
         RcHashKind::ThreeDo => three_do_hash(reader.as_mut()),
@@ -1123,6 +1200,68 @@ mod tests {
         let mut exp = Md5::new();
         exp.update(b"SLUS_007.55");
         let body: Vec<u8> = (0..100u8).map(|i| i.wrapping_mul(7)).collect();
+        exp.update(&body);
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
+    }
+
+    #[test]
+    fn psp_recipe_walks_nested_dirs() {
+        let mut sectors = vec![[0u8; SECTOR_USER]; 40];
+        sectors[16][1..6].copy_from_slice(b"CD001");
+        let root = dir_record("\u{0}", 20, SECTOR_USER as u32);
+        sectors[16][156..156 + root.len()].copy_from_slice(&root);
+        // root: PSP_GAME dir at 21
+        let psp_game = dir_record("PSP_GAME", 21, SECTOR_USER as u32);
+        sectors[20][..psp_game.len()].copy_from_slice(&psp_game);
+        // PSP_GAME: PARAM.SFO at 22 (48 bytes), SYSDIR at 23
+        let mut off = 0;
+        for r in [
+            dir_record("PARAM.SFO;1", 22, 48),
+            dir_record("SYSDIR", 23, SECTOR_USER as u32),
+        ] {
+            sectors[21][off..off + r.len()].copy_from_slice(&r);
+            off += r.len();
+        }
+        // SYSDIR: EBOOT.BIN at 24 (100 bytes)
+        let eboot = dir_record("EBOOT.BIN;1", 24, 100);
+        sectors[23][..eboot.len()].copy_from_slice(&eboot);
+        for (i, b) in sectors[22].iter_mut().take(48).enumerate() {
+            *b = (i as u8).wrapping_mul(5);
+        }
+        for (i, b) in sectors[24].iter_mut().take(100).enumerate() {
+            *b = (i as u8).wrapping_mul(11);
+        }
+        let got = psp_hash(&mut MemDisc { sectors }).unwrap().unwrap();
+
+        let mut exp = Md5::new();
+        let sfo: Vec<u8> = (0..48u8).map(|i| i.wrapping_mul(5)).collect();
+        let eboot_body: Vec<u8> = (0..100u8).map(|i| i.wrapping_mul(11)).collect();
+        exp.update(&sfo);
+        exp.update(&eboot_body);
+        assert_eq!(got, md5_digest_hex(exp.finalize().into()));
+    }
+
+    #[test]
+    fn psp_recipe_missing_structure_is_none() {
+        // Valid ISO with no PSP_GAME dir (e.g. a PSX disc scanned as PSP).
+        let mut sectors = vec![[0u8; SECTOR_USER]; 22];
+        sectors[16][1..6].copy_from_slice(b"CD001");
+        let root = dir_record("\u{0}", 20, SECTOR_USER as u32);
+        sectors[16][156..156 + root.len()].copy_from_slice(&root);
+        let other = dir_record("SYSTEM.CNF;1", 21, 10);
+        sectors[20][..other.len()].copy_from_slice(&other);
+        assert_eq!(psp_hash(&mut MemDisc { sectors }).unwrap(), None);
+    }
+
+    #[test]
+    fn psp_pbp_hashes_whole_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Homebrew Game.pbp");
+        let body: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&path, &body).unwrap();
+
+        let got = compute_disc_rc_hash("sony_psp", &path).unwrap().unwrap();
+        let mut exp = Md5::new();
         exp.update(&body);
         assert_eq!(got, md5_digest_hex(exp.finalize().into()));
     }

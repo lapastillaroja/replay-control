@@ -3278,7 +3278,13 @@ fn registry_source_reasons(sources_dir: &Path) -> Vec<String> {
             expected.push(format!("upstream/mister-manuals/{repo}.csv"));
         }
         if let Some(folder) = sys.retrokit_manuals_folder {
-            retrokit_folders.insert(folder);
+            // Folders the upstream retrokit-manuals collection genuinely lacks
+            // (the key still names the legacy local manuals dir for the
+            // startup migration, so it must stay on the System entry).
+            const RETROKIT_SOURCE_GAPS: &[&str] = &["neogeo"];
+            if !RETROKIT_SOURCE_GAPS.contains(&folder) {
+                retrokit_folders.insert(folder);
+            }
         }
     }
     expected.extend(

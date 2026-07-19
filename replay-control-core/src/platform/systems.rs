@@ -160,6 +160,9 @@ pub enum RcHashKind {
     Snes,
     N64,
     Psx,
+    /// PSP UMD image: `PSP_GAME/PARAM.SFO` + `PSP_GAME/SYSDIR/EBOOT.BIN`
+    /// hashed together (`.pbp` files hash as a whole file instead).
+    Psp,
     /// Shared by Sega CD (Mega-CD) and Saturn — one recipe accepts both magics.
     SegaCd,
     Dreamcast,
@@ -1168,6 +1171,30 @@ pub static SYSTEMS: &[System] = &[
         thumbnail_repos: &["SNK - Neo Geo Pocket"],
         has_retroachievements: false,
         core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "sony_psp",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("psp"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Psp),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[13],
+        mister_manual_repos: &[],
+        display_name: "PlayStation Portable",
+        manufacturer: "Sony",
+        category: SystemCategory::Handheld,
+        abbreviation: "PSP",
+        placeholder_color: "#2d2d2d",
+        extensions: &["iso", "cso", "pbp", "chd"],
+        launchbox_platforms: &["Sony PSP"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sony - PlayStation Portable"],
+        has_retroachievements: true,
+        // PPSSPP is on RA's supported-core list; confirm against the
+        // device's /opt/replay/cores/cores.cfg once a build ships PSP.
+        core_supports_retroachievements: true,
     },
     System {
         folder_name: "sony_psx",

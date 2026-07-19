@@ -239,8 +239,8 @@ done
 RETROKIT_FOLDERS=(
     3do amiga arcade atari2600 atari5200 atari7800 atarijaguar atarilynx
     c64 dreamcast gamegear gb gba gbc mastersystem megadrive n64 nds
-    neogeo neogeocd nes ngp pc pcengine pce-cd psx saturn sega32x segacd
-    sg-1000 snes
+    neogeo neogeocd nes ngp pc pcengine pce-cd psp psx saturn sega32x
+    segacd sg-1000 snes
 )
 
 for folder in "${RETROKIT_FOLDERS[@]}"; do

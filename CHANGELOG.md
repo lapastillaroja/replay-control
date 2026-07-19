@@ -4,16 +4,24 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [Unreleased]
+## [1.2.0-beta.1]
+
+> Sony PSP support — browse your PSP library with box art, metadata, manuals, and RetroAchievements — plus a cleaner manuals folder layout that migrates itself.
 
 ### Added
 
+- **Sony PlayStation Portable support (experimental).** Put UMD dumps (`.iso`, plus `.cso`/`.pbp`/`.chd`) in a `sony_psp` ROM folder and they appear like any other system: box art from the PlayStation Portable thumbnail collection, release dates, genres, developers, and descriptions from the metadata sources, over 500 linked instruction manuals, and the PSP system icon alongside the other consoles. **Note:** PSP support is new and experimental — it has not yet been validated on RePlayOS hardware, and some features (including launching games and earning achievements on-device) might not fully work.
+- **RetroAchievements for PSP (experimental).** Clean UMD dumps are identified at scan time using RetroAchievements' own hashing recipe (verified against their published hashes), so PSP games show their RetroAchievements status like cart systems do. Modified dumps (for example decrypted rips) don't match — the same result the device itself would get.
 - A read-only library-status endpoint (`GET /api/core/status`) reporting whether the library is ready, still scanning, or empty — so on-device clients can tell a still-loading library apart from a genuinely empty one during startup.
+- Internal: a persona-based load-test harness (`tools/user-load-test.sh`) that simulates several concurrent real users against a deployed device — per-persona throughput/latency plus device CPU/RSS — and doubles as a regression gate with saved baselines and thresholded verdicts.
 
 ### Changed
 
+- Hand-placed manuals under `manuals/` now use the same folder names as the ROM folders (for example `manuals/nintendo_snes`), with two shared folders: `manuals/arcade` for all arcade systems and `manuals/pc` for DOS and ScummVM. Manuals stored under the older shorthand names (such as `manuals/snes`) are moved to the new layout automatically on startup — nothing needs reorganizing by hand, and nothing is ever overwritten.
 - Internal (no behavior change): reorganized the background-work subsystem — dissolved the stateless `BackgroundManager` and the scattered `impl AppState` blocks into free functions grouped by concern (startup pipeline, ROM identity matching, external-metadata download/refresh, device watchers, self-update).
-- Internal (no behavior change): trimmed per-request work in the game-library render paths — the session auth check reads the cookie signing key once per request instead of 2-3 times, the game-detail page loads its independent data concurrently, and the favorites overlay tests membership without cloning the per-system set.
+- Internal (no behavior change): trimmed per-request work in the game-library render paths — the session auth check reads the cookie signing key once per request instead of 2-3 times, the game-detail page loads its independent data concurrently, the detail page's bundled sections share their reads instead of re-querying (about 7 fewer database round-trips per view), and the favorites overlay tests membership without cloning the per-system set.
+- Internal (no behavior change): every per-system configuration — hash rules, RetroAchievements recipes, catalog sources, manual sources, thumbnails — now lives on one registry entry per system, so adding a system is a single entry; catalog builds fail loudly if a registered source was never downloaded instead of silently omitting it.
+- Internal hardening: server request handlers read their context through one fallible accessor, so a browser disconnecting mid-request can no longer crash the request task.
 
 ---
 
