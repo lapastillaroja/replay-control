@@ -1377,6 +1377,15 @@
  },
  {
   "hashes": [
+   "25f2ad2da5d07b05c7bbdbea2b902056",
+   "e93e6c75a5e3f58dc59e94825a65f72e"
+  ],
+  "num_achievements": 63,
+  "ra_id": "17503",
+  "title": "~Hack~ Star Revenge 4: The Kedama Takeover"
+ },
+ {
+  "hashes": [
    "c122a32d0abba1a8e8f24d1caa79594e"
   ],
   "num_achievements": 48,
@@ -3308,6 +3317,15 @@
   "num_achievements": 34,
   "ra_id": "10871",
   "title": "Magical Tetris Challenge"
+ },
+ {
+  "hashes": [
+   "8485643e5830cd67ed4c0a5fd49e2491",
+   "b17771664daf95d7e61d8549a8ceacc6"
+  ],
+  "num_achievements": 6,
+  "ra_id": "15381",
+  "title": "Mario Artist: Paint Studio (64DD)"
  },
  {
   "hashes": [

@@ -1494,6 +1494,14 @@
  },
  {
   "hashes": [
+   "0ece18fca31c1253f1a845e132b60e73"
+  ],
+  "num_achievements": 33,
+  "ra_id": "17195",
+  "title": "Championship Motocross featuring Ricky Carmichael"
+ },
+ {
+  "hashes": [
    "073ba7f7776e176c0bf3f6cde27dbd0d",
    "0936344c9483a81120c7648d388d3795",
    "148b7066501e7e147418f3f6bb609ae5",
@@ -2783,7 +2791,7 @@
   "hashes": [
    "0472783e8d29390bc144b9fd987f3de6"
   ],
-  "num_achievements": 26,
+  "num_achievements": 27,
   "ra_id": "17815",
   "title": "Floating Runner: Quest for the 7 Crystals"
  },
@@ -2794,6 +2802,14 @@
   "num_achievements": 29,
   "ra_id": "16328",
   "title": "Fluid"
+ },
+ {
+  "hashes": [
+   "5f6a8f84896eef0d062a9f12fda5c9f9"
+  ],
+  "num_achievements": 55,
+  "ra_id": "21403",
+  "title": "Formula 1"
  },
  {
   "hashes": [
@@ -6047,7 +6063,7 @@
   "hashes": [
    "3a7a93118b19168f25bd6b16b7259f3a"
   ],
-  "num_achievements": 100,
+  "num_achievements": 22,
   "ra_id": "17776",
   "title": "Street Fighter Alpha: Warriors' Dreams"
  },
