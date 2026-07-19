@@ -5,9 +5,21 @@ name: Refresh Upstream Data Cache
 # per key, so a unique key gives a fresh cache each run; consumers restore the
 # most recent via the data-upstream- prefix. Keeps the cache current regardless
 # of release cadence.
+#
+# Also refreshes when a download script changes on main: a commit that adds a
+# new source (e.g. a new system's DATs or manuals index) would otherwise leave
+# the cache stale until the weekly run, and the release build restores the
+# cache without re-downloading — its catalog preflight then fails on the
+# missing source (this broke the 1.2.0-beta.1 release when PSP was added).
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/download-arcade-data.sh'
+      - 'scripts/download-metadata.sh'
+      - 'scripts/download-tgdb-lookups.sh'
   schedule:
     # Weekly, Mondays 05:00 UTC.
     - cron: '0 5 * * 1'
