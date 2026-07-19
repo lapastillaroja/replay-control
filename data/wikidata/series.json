@@ -3392,6 +3392,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "BlazBlue: Continuum Shift Extend",
+    "series_name": "BlazBlue",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "BlazBlue: Continuum Shift II",
+    "series_name": "BlazBlue",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Bleach DS 4th: Flame Bringer",
     "series_name": "Bleach DS",
     "system": "nintendo_ds",
@@ -5121,7 +5137,7 @@
   },
   {
     "game_title": "Catz",
-    "series_name": "Nakayoshi Pet",
+    "series_name": "Petz",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -5129,8 +5145,16 @@
   },
   {
     "game_title": "Catz",
+    "series_name": "Nakayoshi Pet",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Catz",
     "series_name": "Petz",
-    "system": "nintendo_ds",
+    "system": "nintendo_gba",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -6398,6 +6422,14 @@
     "series_order": 2,
     "follows": "Crazy Taxi",
     "followed_by": "Crazy Taxi 3: High Roller"
+  },
+  {
+    "game_title": "Crazy Taxi 3: High Roller",
+    "series_name": "Crazy Taxi",
+    "system": "arcade_fbneo",
+    "series_order": 3,
+    "follows": "Crazy Taxi 2",
+    "followed_by": ""
   },
   {
     "game_title": "Crazy Taxi: Catch a Ride",
@@ -8024,6 +8056,30 @@
     "followed_by": ""
   },
   {
+    "game_title": "Die Hard Arcade",
+    "series_name": "Die Hard",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Dynamite Cop"
+  },
+  {
+    "game_title": "Die Hard Arcade",
+    "series_name": "Die Hard",
+    "system": "arcade_stv",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Dynamite Cop"
+  },
+  {
+    "game_title": "Die Hard Arcade",
+    "series_name": "Die Hard",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Dynamite Cop"
+  },
+  {
     "game_title": "Dig Dug",
     "series_name": "",
     "system": "arcade_fbneo",
@@ -8387,7 +8443,7 @@
     "game_title": "Disney's Magical Quest 3 Starring Mickey & Donald",
     "series_name": "Disney's Magical Quest",
     "system": "nintendo_snes",
-    "series_order": null,
+    "series_order": 3,
     "follows": "",
     "followed_by": ""
   },
@@ -10333,6 +10389,22 @@
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Dynamite Cop",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "Die Hard Arcade",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Dynamite Cop",
+    "series_name": "",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "Die Hard Arcade",
     "followed_by": ""
   },
   {
@@ -14352,6 +14424,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Goal Storm",
+    "series_name": "eFootball",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Godzilla",
     "series_name": "Godzilla",
     "system": "arcade_fbneo",
@@ -14644,7 +14724,7 @@
     "series_name": "Gradius",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Gradius",
+    "follows": "Gradius III",
     "followed_by": "Gradius III"
   },
   {
@@ -14652,7 +14732,7 @@
     "series_name": "Gradius",
     "system": "nec_pce",
     "series_order": null,
-    "follows": "Gradius",
+    "follows": "Gradius III",
     "followed_by": "Gradius III"
   },
   {
@@ -14660,7 +14740,7 @@
     "series_name": "Gradius",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "Gradius",
+    "follows": "Gradius III",
     "followed_by": "Gradius III"
   },
   {
@@ -14947,14 +15027,6 @@
     "game_title": "Guilty Gear X",
     "series_name": "Guilty Gear",
     "system": "sega_dc",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Guilty Gear X",
-    "series_name": "Guilty Gear",
-    "system": "sony_psx",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -16080,6 +16152,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "ISS Pro Evolution",
+    "series_name": "eFootball",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "ISS Pro Evolution 2",
+    "series_name": "eFootball",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Ikari III: The Rescue",
     "series_name": "Ikari Warriors",
     "system": "arcade_fbneo",
@@ -16416,8 +16504,24 @@
     "followed_by": ""
   },
   {
+    "game_title": "International Superstar Soccer Pro",
+    "series_name": "eFootball",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "International Superstar Soccer Pro 98",
     "series_name": "FIFA World Cup",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "International Superstar Soccer Pro 98",
+    "series_name": "eFootball",
     "system": "sony_psx",
     "series_order": null,
     "follows": "",
@@ -22077,7 +22181,7 @@
     "system": "arcade_fbneo",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22085,7 +22189,7 @@
     "system": "nintendo_gb",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22093,7 +22197,7 @@
     "system": "nintendo_snes",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22101,7 +22205,7 @@
     "system": "panasonic_3do",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22109,7 +22213,7 @@
     "system": "sega_smd",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22117,7 +22221,7 @@
     "system": "sega_sms",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22125,7 +22229,7 @@
     "system": "sony_psx",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Mortal Kombat 4"
+    "followed_by": "Ultimate Mortal Kombat 3"
   },
   {
     "game_title": "Mortal Kombat 4",
@@ -30960,6 +31064,30 @@
     "followed_by": ""
   },
   {
+    "game_title": "Sensible Soccer",
+    "series_name": "",
+    "system": "nintendo_snes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Sensible Soccer: European Champions 92/93"
+  },
+  {
+    "game_title": "Sensible Soccer",
+    "series_name": "",
+    "system": "sega_gg",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Sensible Soccer: European Champions 92/93"
+  },
+  {
+    "game_title": "Sensible Soccer",
+    "series_name": "",
+    "system": "sega_smd",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Sensible Soccer: European Champions 92/93"
+  },
+  {
     "game_title": "Sentinel Returns",
     "series_name": "",
     "system": "sony_psx",
@@ -31132,14 +31260,6 @@
     "series_name": "Shantae",
     "system": "nintendo_gba",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Shantae: Risky's Revenge",
-    "series_name": "Shantae",
-    "system": "nintendo_ds",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -33120,6 +33240,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "Soulcalibur II",
+    "series_name": "Soulcalibur",
+    "system": "arcade_fbneo",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Soulcalibur III",
+    "series_name": "Soulcalibur",
+    "system": "arcade_fbneo",
+    "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Sound Voltex",
     "series_name": "Sound Voltex",
     "system": "arcade_fbneo",
@@ -34390,6 +34526,22 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Freelancer"
+  },
+  {
+    "game_title": "Steel Gunner",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Steel Gunner 2"
+  },
+  {
+    "game_title": "Steel Gunner 2",
+    "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "Steel Gunner",
+    "followed_by": ""
   },
   {
     "game_title": "Steep Slope Sliders",
@@ -36944,6 +37096,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Tekken 5",
+    "series_name": "Tekken",
+    "system": "arcade_fbneo",
+    "series_order": 5,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Tekken 5: Dark Resurrection",
     "series_name": "Tekken",
     "system": "arcade_fbneo",
@@ -37752,6 +37912,30 @@
     "followed_by": ""
   },
   {
+    "game_title": "The Great Circus Mystery Starring Mickey & Minnie",
+    "series_name": "Disney's Magical Quest",
+    "system": "nintendo_gba",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Great Circus Mystery Starring Mickey & Minnie",
+    "series_name": "Disney's Magical Quest",
+    "system": "nintendo_snes",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Great Circus Mystery Starring Mickey & Minnie",
+    "series_name": "Disney's Magical Quest",
+    "system": "sega_smd",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "The Great Giana Sisters",
     "series_name": "Giana Sisters",
     "system": "microsoft_msx",
@@ -38364,6 +38548,22 @@
     "series_name": "The Lost Vikings",
     "system": "sony_psx",
     "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Magical Quest starring Mickey Mouse",
+    "series_name": "Disney's Magical Quest",
+    "system": "nintendo_gba",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Magical Quest starring Mickey Mouse",
+    "series_name": "Disney's Magical Quest",
+    "system": "nintendo_snes",
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -39012,6 +39212,22 @@
     "series_name": "Cobra",
     "system": "sega_smd",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Sword of Hope",
+    "series_name": "The Sword of Hope",
+    "system": "nintendo_gb",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The Sword of Hope II",
+    "series_name": "The Sword of Hope",
+    "system": "nintendo_gb",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -39701,7 +39917,7 @@
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Tom Clancy's Splinter Cell: Pandora Tomorrow",
-    "followed_by": "Tom Clancy's Splinter Cell: Essentials"
+    "followed_by": "Tom Clancy's Splinter Cell: Double Agent"
   },
   {
     "game_title": "Tom Clancy's Splinter Cell: Pandora Tomorrow",
