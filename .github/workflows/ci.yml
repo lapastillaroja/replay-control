@@ -141,7 +141,7 @@ jobs:
         run: chmod +x target/release/replay-control-app
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
