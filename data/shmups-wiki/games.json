@@ -23,6 +23,10 @@
     "video_index": true
   },
   {
+    "normalized_title": "abagames",
+    "page_title": "ABA Games"
+  },
+  {
     "normalized_title": "aeonzenith",
     "page_title": "Aeon Zenith"
   },
@@ -100,6 +104,10 @@
     "normalized_title": "armedpolicebatrider",
     "page_title": "Armed Police Batrider",
     "video_index": true
+  },
+  {
+    "normalized_title": "arteusvictus",
+    "page_title": "Arteus Victus"
   },
   {
     "normalized_title": "assaultshell",
@@ -1021,6 +1029,10 @@
     "page_title": "∀kashicverse -Malicious Wake-"
   },
   {
+    "normalized_title": "kentacho",
+    "page_title": "ABA Games"
+  },
+  {
     "normalized_title": "ketsui",
     "page_title": "Ketsui: Kizuna Jigoku Tachi",
     "video_index": true
@@ -1807,7 +1819,8 @@
   },
   {
     "normalized_title": "tatsujin",
-    "page_title": "Tatsujin"
+    "page_title": "Tatsujin",
+    "video_index": true
   },
   {
     "normalized_title": "tatsujinou",
@@ -1911,7 +1924,9 @@
   },
   {
     "normalized_title": "truxton",
-    "page_title": "Tatsujin"
+    "page_title": "Tatsujin",
+    "video_index_inherits_from": "Tatsujin",
+    "video_index_anchor": "Truxton"
   },
   {
     "normalized_title": "truxton2",
