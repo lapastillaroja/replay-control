@@ -4134,9 +4134,7 @@
  },
  {
   "hashes": [
-   "d0d14e031b6a62c733414e1039a51df3",
-   "e82c84434552a2f4d0db073b23cf669c",
-   "ef2dc6223949eaf84f14e270874a5fff"
+   "d0d14e031b6a62c733414e1039a51df3"
   ],
   "num_achievements": 20,
   "ra_id": "66",
@@ -4510,6 +4508,14 @@
   "num_achievements": 21,
   "ra_id": "2382",
   "title": "The Death and Return of Superman"
+ },
+ {
+  "hashes": [
+   "135e1eb555ef5cf661b8c9ae953985c3"
+  ],
+  "num_achievements": 37,
+  "ra_id": "9771",
+  "title": "The Faery Tale Adventure"
  },
  {
   "hashes": [

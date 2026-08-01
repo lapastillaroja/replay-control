@@ -639,6 +639,14 @@
  },
  {
   "hashes": [
+   "a35f069f57eac92b4289b6cb45376963"
+  ],
+  "num_achievements": 6,
+  "ra_id": "41178",
+  "title": "~Homebrew~ Friend Of The Void"
+ },
+ {
+  "hashes": [
    "a079653cbee238c70ca3a35601822b82"
   ],
   "num_achievements": 8,
@@ -725,6 +733,14 @@
   "num_achievements": 19,
   "ra_id": "37578",
   "title": "~Homebrew~ Helichoppy"
+ },
+ {
+  "hashes": [
+   "9a7359abaaddedb18902fbaaf3e25db7"
+  ],
+  "num_achievements": 20,
+  "ra_id": "23801",
+  "title": "~Homebrew~ Hey You, Pikachu! Demake"
  },
  {
   "hashes": [
@@ -1263,6 +1279,14 @@
   "num_achievements": 21,
   "ra_id": "7421",
   "title": "Amida"
+ },
+ {
+  "hashes": [
+   "ecddc5d1fc1322b647ca9df260fca225"
+  ],
+  "num_achievements": 16,
+  "ra_id": "7808",
+  "title": "Animal Breeder"
  },
  {
   "hashes": [

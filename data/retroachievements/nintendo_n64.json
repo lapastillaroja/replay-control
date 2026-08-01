@@ -489,7 +489,7 @@
   "hashes": [
    "3eba56d724a9b0c540ed62b9c878425a"
   ],
-  "num_achievements": 48,
+  "num_achievements": 47,
   "ra_id": "34006",
   "title": "~Hack~ Hero of Law"
  },
@@ -2939,6 +2939,14 @@
  },
  {
   "hashes": [
+   "77684f6725229401042ca907b691f875"
+  ],
+  "num_achievements": 70,
+  "ra_id": "22104",
+  "title": "Diddy Kong Racing [Subset - Multiplayer]"
+ },
+ {
+  "hashes": [
    "8dd8a709f8c7eb756fede77829720977"
   ],
   "num_achievements": 94,
@@ -4330,6 +4338,14 @@
   "num_achievements": 40,
   "ra_id": "10531",
   "title": "Wetrix"
+ },
+ {
+  "hashes": [
+   "2abe36754e866b9b6c4bdcffc1d11abf"
+  ],
+  "num_achievements": 20,
+  "ra_id": "11736",
+  "title": "Wheel of Fortune"
  },
  {
   "hashes": [

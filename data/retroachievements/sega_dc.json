@@ -254,6 +254,17 @@
  },
  {
   "hashes": [
+   "06b1fdf66f2ad1eddaa7f9c2c67c4cc9",
+   "37fa0e0793addfcadf743c6a2a172e38",
+   "91010f0cc57f3fa5600c9d0c4feee1a4",
+   "f79a7f1c6f45934f9bb0ada289d8708e"
+  ],
+  "num_achievements": 31,
+  "ra_id": "3503",
+  "title": "D2"
+ },
+ {
+  "hashes": [
    "3f437b40e6e64b93c288a193292b910b"
   ],
   "num_achievements": 114,
@@ -993,6 +1004,15 @@
   "num_achievements": 73,
   "ra_id": "10850",
   "title": "Street Fighter III: Double Impact"
+ },
+ {
+  "hashes": [
+   "cef3e8a90d9bc6e88cd58408e0d4a36e",
+   "f44b6e2e99f6f6a9ae5c502ee8f26edc"
+  ],
+  "num_achievements": 27,
+  "ra_id": "3765",
+  "title": "Stupid Invaders"
  },
  {
   "hashes": [

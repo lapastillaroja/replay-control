@@ -13,6 +13,14 @@
  },
  {
   "hashes": [
+   "2ff839aacdfc865161eb47ad226c71d8"
+  ],
+  "num_achievements": 9,
+  "ra_id": "38489",
+  "title": "~Hack~ Alex Kidd in Mushroom World"
+ },
+ {
+  "hashes": [
    "1a0d27b65bc0aaec8853db5c4ecdfa50"
   ],
   "num_achievements": 19,
@@ -26,6 +34,14 @@
   "num_achievements": 16,
   "ra_id": "10922",
   "title": "~Hack~ Sonic the Hedgehog: Triple Trouble"
+ },
+ {
+  "hashes": [
+   "1cb7af2abb3e667db89a4b65784ed336"
+  ],
+  "num_achievements": 38,
+  "ra_id": "22067",
+  "title": "~Hack~ Voyage: A Sorceress Vacation"
  },
  {
   "hashes": [
@@ -69,6 +85,14 @@
  },
  {
   "hashes": [
+   "de2993e4dbb8298c82cf442545031ce1"
+  ],
+  "num_achievements": 32,
+  "ra_id": "11827",
+  "title": "~Homebrew~ Goblin Kart Rescue"
+ },
+ {
+  "hashes": [
    "c61595a365ac3a92410220d868ca0564"
   ],
   "num_achievements": 22,
@@ -82,6 +106,14 @@
   "num_achievements": 6,
   "ra_id": "14729",
   "title": "~Homebrew~ Lucky Penguin"
+ },
+ {
+  "hashes": [
+   "78103820408ecf3affd27baadc003dda"
+  ],
+  "num_achievements": 9,
+  "ra_id": "10713",
+  "title": "~Homebrew~ Minesweeper"
  },
  {
   "hashes": [
@@ -106,6 +138,14 @@
   "num_achievements": 21,
   "ra_id": "14469",
   "title": "~Homebrew~ Picross"
+ },
+ {
+  "hashes": [
+   "7206f1e903f6b0749cccd779d63464c0"
+  ],
+  "num_achievements": 9,
+  "ra_id": "36734",
+  "title": "~Homebrew~ Ring Dash SMS"
  },
  {
   "hashes": [
@@ -181,6 +221,14 @@
  },
  {
   "hashes": [
+   "01764008734841830623b43c6e3a528b"
+  ],
+  "num_achievements": 19,
+  "ra_id": "32662",
+  "title": "~Unlicensed~ Suho Jeonsa"
+ },
+ {
+  "hashes": [
    "eb7d7db5ab98b0b7812552644fb95fe8"
   ],
   "num_achievements": 15,
@@ -202,6 +250,14 @@
   "num_achievements": 10,
   "ra_id": "24004",
   "title": "~Unlicensed~ The Dinosaur Dooley"
+ },
+ {
+  "hashes": [
+   "2c8d7ad9c6484f161dd9574670b598a4"
+  ],
+  "num_achievements": 14,
+  "ra_id": "38435",
+  "title": "~Unlicensed~ Toto World 3"
  },
  {
   "hashes": [
@@ -447,12 +503,28 @@
  },
  {
   "hashes": [
+   "db41b17f3268d9076e0928911a2791e0"
+  ],
+  "num_achievements": 25,
+  "ra_id": "10759",
+  "title": "Buggy Run"
+ },
+ {
+  "hashes": [
    "182b179a1226fb5b1e1cf6bb2f351c50",
    "f90e2f4a29838d22ec8aec48b7c9ab48"
   ],
   "num_achievements": 45,
   "ra_id": "10691",
   "title": "California Games"
+ },
+ {
+  "hashes": [
+   "ccb76c009e52e32e2dcc528481f0e039"
+  ],
+  "num_achievements": 22,
+  "ra_id": "11615",
+  "title": "Captain Silver"
  },
  {
   "hashes": [
@@ -472,11 +544,27 @@
  },
  {
   "hashes": [
+   "2c709ba8cdc3a1b7adc5bc838eabf6f3"
+  ],
+  "num_achievements": 20,
+  "ra_id": "11638",
+  "title": "Chapolim x Dracula: Um Duelo Assustador"
+ },
+ {
+  "hashes": [
    "747a206eaaadf48714695e8b4ccead7e"
   ],
   "num_achievements": 27,
   "ra_id": "10020",
   "title": "Choplifter"
+ },
+ {
+  "hashes": [
+   "2594f33f210ee4cf6356ac7b2ab8c4e7"
+  ],
+  "num_achievements": 26,
+  "ra_id": "11819",
+  "title": "Chuck Rock"
  },
  {
   "hashes": [
@@ -513,6 +601,14 @@
  },
  {
   "hashes": [
+   "8fe55ade7b34aa4e42c5f63f4368497f"
+  ],
+  "num_achievements": 28,
+  "ra_id": "10428",
+  "title": "Desert Speedtrap Starring Road Runner and Wile E. Coyote"
+ },
+ {
+  "hashes": [
    "fe9aa8044951b10f876b15f4456161a9"
   ],
   "num_achievements": 18,
@@ -534,6 +630,14 @@
   "num_achievements": 64,
   "ra_id": "11586",
   "title": "Dragon Crystal"
+ },
+ {
+  "hashes": [
+   "5cb7ebaee5952ebfcdc42e7093072063"
+  ],
+  "num_achievements": 20,
+  "ra_id": "10767",
+  "title": "Dynamite Düx"
  },
  {
   "hashes": [
@@ -559,6 +663,14 @@
   "num_achievements": 32,
   "ra_id": "10698",
   "title": "Enduro Racer"
+ },
+ {
+  "hashes": [
+   "b8eb0cb6a9d16cfd08d9c03297fcd445"
+  ],
+  "num_achievements": 29,
+  "ra_id": "11578",
+  "title": "Fantastic Dizzy"
  },
  {
   "hashes": [
@@ -588,6 +700,23 @@
  },
  {
   "hashes": [
+   "907bc842dece97cef44afff0c9ada770"
+  ],
+  "num_achievements": 6,
+  "ra_id": "26281",
+  "title": "FIFA International Soccer"
+ },
+ {
+  "hashes": [
+   "3573a65921b0506f7124f1f9ffb30974",
+   "b1fdee70f3fce9638e1f5292481783f9"
+  ],
+  "num_achievements": 126,
+  "ra_id": "10758",
+  "title": "Final Bubble Bobble"
+ },
+ {
+  "hashes": [
    "85acf93edba54485466aeb840966082b"
   ],
   "num_achievements": 36,
@@ -601,6 +730,22 @@
   "num_achievements": 82,
   "ra_id": "11659",
   "title": "Gain Ground"
+ },
+ {
+  "hashes": [
+   "3396259ca032ed4f1499d1f737e75e0d"
+  ],
+  "num_achievements": 25,
+  "ra_id": "10704",
+  "title": "Gangster Town"
+ },
+ {
+  "hashes": [
+   "85707b3a74483910699ccc4ba20c64ff"
+  ],
+  "num_achievements": 37,
+  "ra_id": "10889",
+  "title": "Ghouls 'n Ghosts"
  },
  {
   "hashes": [
@@ -628,6 +773,14 @@
  },
  {
   "hashes": [
+   "5c9815b45b5cb3d9b3436c56c6fcadaf"
+  ],
+  "num_achievements": 8,
+  "ra_id": "19001",
+  "title": "Great Soccer"
+ },
+ {
+  "hashes": [
    "03d6e8450a74ac09e47ae9bf210cfe17",
    "382b627efa06c958b8ec5c85e964bf10"
   ],
@@ -650,6 +803,14 @@
   "num_achievements": 28,
   "ra_id": "17799",
   "title": "James Bond 007: The Duel"
+ },
+ {
+  "hashes": [
+   "0ece8f9c0fde2eba92bbe9a500116ff0"
+  ],
+  "num_achievements": 14,
+  "ra_id": "10708",
+  "title": "Joe Montana Football"
  },
  {
   "hashes": [
@@ -761,6 +922,14 @@
  },
  {
   "hashes": [
+   "b17ca24555cc79c5f7d89f156b99e452"
+  ],
+  "num_achievements": 24,
+  "ra_id": "10818",
+  "title": "Missile Defense 3-D"
+ },
+ {
+  "hashes": [
    "b887836983fccb5ec706630cf835939f"
   ],
   "num_achievements": 32,
@@ -790,6 +959,15 @@
   "num_achievements": 47,
   "ra_id": "20289",
   "title": "Mortal Kombat 3"
+ },
+ {
+  "hashes": [
+   "bcf5272aacc2cbf6e5768cb481e2d01b",
+   "c60f62f13a60bc585822bfd2d68ba75c"
+  ],
+  "num_achievements": 25,
+  "ra_id": "10738",
+  "title": "Mortal Kombat II"
  },
  {
   "hashes": [
@@ -871,6 +1049,14 @@
  },
  {
   "hashes": [
+   "c13dab68a85fef5ba28ae0f5ba4fd05f"
+  ],
+  "num_achievements": 17,
+  "ra_id": "26904",
+  "title": "Putt & Putter"
+ },
+ {
+  "hashes": [
    "63af7fce5106cc3de1e1b116c112095b"
   ],
   "num_achievements": 29,
@@ -886,6 +1072,14 @@
   "num_achievements": 31,
   "ra_id": "10058",
   "title": "R-Type"
+ },
+ {
+  "hashes": [
+   "4fce4e3247639d0ef54eb54d0ef21153"
+  ],
+  "num_achievements": 17,
+  "ra_id": "14366",
+  "title": "Rambo III"
  },
  {
   "hashes": [
@@ -938,11 +1132,27 @@
  },
  {
   "hashes": [
+   "abc8a9e43c588c7d0535cc8305bdbf94"
+  ],
+  "num_achievements": 21,
+  "ra_id": "11602",
+  "title": "Shadow of the Beast"
+ },
+ {
+  "hashes": [
    "3dd2c025185e19ac9bf1ed16b695c629"
   ],
   "num_achievements": 39,
   "ra_id": "10034",
   "title": "Shinobi"
+ },
+ {
+  "hashes": [
+   "85ea52a2cbcae078dc3a04f8db1304a9"
+  ],
+  "num_achievements": 18,
+  "ra_id": "11589",
+  "title": "Sítio do Picapau Amarelo"
  },
  {
   "hashes": [
@@ -1025,11 +1235,27 @@
  },
  {
   "hashes": [
+   "0e1449dd7df4fd0995ccf802bb74cba0"
+  ],
+  "num_achievements": 36,
+  "ra_id": "13233",
+  "title": "SpellCaster"
+ },
+ {
+  "hashes": [
    "fa10ee70e43385e88e5d1a008716668b"
   ],
   "num_achievements": 17,
   "ra_id": "14849",
   "title": "Spider-Man vs. The Kingpin"
+ },
+ {
+  "hashes": [
+   "2012a00d2ef01285e7bf077f78e975f5"
+  ],
+  "num_achievements": 21,
+  "ra_id": "11497",
+  "title": "Star Wars"
  },
  {
   "hashes": [
@@ -1094,6 +1320,14 @@
   "num_achievements": 26,
   "ra_id": "14726",
   "title": "The Addams Family"
+ },
+ {
+  "hashes": [
+   "9878c298077be78b765ac2264815100b"
+  ],
+  "num_achievements": 30,
+  "ra_id": "10764",
+  "title": "The Cyber Shinobi"
  },
  {
   "hashes": [
@@ -1162,6 +1396,14 @@
  },
  {
   "hashes": [
+   "87d44f3416d4f31959b583d0d460c7fb"
+  ],
+  "num_achievements": 8,
+  "ra_id": "11584",
+  "title": "Trivial Pursuit"
+ },
+ {
+  "hashes": [
    "c54c1a2559cec189f53e794177d002af"
   ],
   "num_achievements": 70,
@@ -1191,6 +1433,14 @@
   "num_achievements": 18,
   "ra_id": "10723",
   "title": "Virtua Fighter Animation"
+ },
+ {
+  "hashes": [
+   "0070737ddb0a2e5e822f1d8f46437b07"
+  ],
+  "num_achievements": 28,
+  "ra_id": "10719",
+  "title": "Wanted"
  },
  {
   "hashes": [
@@ -1239,6 +1489,14 @@
  },
  {
   "hashes": [
+   "758a1e837e51669700c0a2379e90d993"
+  ],
+  "num_achievements": 8,
+  "ra_id": "11957",
+  "title": "X-Men: Mojo World"
+ },
+ {
+  "hashes": [
    "77d2ff054429f7970134e67800539a78",
    "dd5d01d4e1fe7d275f95ac95dc63b04f"
   ],
@@ -1253,5 +1511,13 @@
   "num_achievements": 34,
   "ra_id": "10969",
   "title": "Zillion"
+ },
+ {
+  "hashes": [
+   "605b0c360075876b4a0be479679d1075"
+  ],
+  "num_achievements": 29,
+  "ra_id": "10716",
+  "title": "Zillion II: The Tri Formation"
  }
 ]

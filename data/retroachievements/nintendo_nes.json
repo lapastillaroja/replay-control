@@ -1744,6 +1744,14 @@
  },
  {
   "hashes": [
+   "00368948f69106dd06977da4e7903a24"
+  ],
+  "num_achievements": 50,
+  "ra_id": "41176",
+  "title": "~Homebrew~ Lights Out"
+ },
+ {
+  "hashes": [
    "41176d6896683e3a91eff284b5875233"
   ],
   "num_achievements": 14,
@@ -6387,6 +6395,14 @@
  },
  {
   "hashes": [
+   "a29f3ded81c9745c2db0997838db788a"
+  ],
+  "num_achievements": 16,
+  "ra_id": "1811",
+  "title": "M.U.L.E."
+ },
+ {
+  "hashes": [
    "0b557396d4c093c20a7dfa0a7fdd8abd",
    "3a6a9a20a017880eebb71d3f9c93d919",
    "5bd5aeac6a4f3023afd9516d4c8ed050"
@@ -7267,6 +7283,16 @@
   "num_achievements": 26,
   "ra_id": "7513",
   "title": "Parallel World"
+ },
+ {
+  "hashes": [
+   "4e455bfdc991a1e4c4a597eff6b0ded6",
+   "c62f35a9ad197979c76028fc44a324bb",
+   "fc3e650230c93c3540711738d2d2f951"
+  ],
+  "num_achievements": 44,
+  "ra_id": "7737",
+  "title": "Paris-Dakar Rally Special"
  },
  {
   "hashes": [
@@ -8918,7 +8944,6 @@
  {
   "hashes": [
    "078fec49cb744846855594e3775dc8ed",
-   "0b32851acecf93212b198e074c5e59bc",
    "2b57302585bdae3abe633e696e88b008",
    "48e2e4493149fb481852f9ca9e70315f",
    "51246446cda2cd349f6c2cd425ca0aa9",
