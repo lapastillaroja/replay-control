@@ -161,7 +161,7 @@
   },
   {
     "game_title": "3-D Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "Bomberman",
@@ -1640,6 +1640,30 @@
     "followed_by": ""
   },
   {
+    "game_title": "Aretha",
+    "series_name": "Aretha",
+    "system": "nintendo_snes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Aretha II: Ariel no Fushigi na Tabi",
+    "series_name": "Aretha",
+    "system": "nintendo_gb",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Aretha II: Ariel no Fushigi na Tabi",
+    "series_name": "Aretha",
+    "system": "nintendo_snes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Armored Core",
     "series_name": "Armored Core",
     "system": "sony_psx",
@@ -1993,7 +2017,7 @@
   },
   {
     "game_title": "Atomic Punk",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -2001,7 +2025,7 @@
   },
   {
     "game_title": "Atomic Punk",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -3569,7 +3593,7 @@
   },
   {
     "game_title": "Bomber Man World",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Atomic Punk",
@@ -3585,7 +3609,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3593,7 +3617,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "3-D Bomberman",
@@ -3601,7 +3625,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3609,7 +3633,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3617,7 +3641,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
@@ -3625,7 +3649,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -3633,7 +3657,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "microsoft_msx",
     "series_order": null,
     "follows": "",
@@ -3641,7 +3665,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nec_pce",
     "series_order": null,
     "follows": "3-D Bomberman",
@@ -3649,7 +3673,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "",
@@ -3657,7 +3681,7 @@
   },
   {
     "game_title": "Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "",
@@ -3665,7 +3689,7 @@
   },
   {
     "game_title": "Bomberman '93",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nec_pce",
     "series_order": null,
     "follows": "Bomber Man World",
@@ -3673,7 +3697,7 @@
   },
   {
     "game_title": "Bomberman '94",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nec_pce",
     "series_order": null,
     "follows": "Super Bomberman",
@@ -3681,7 +3705,7 @@
   },
   {
     "game_title": "Bomberman '94",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sega_smd",
     "series_order": null,
     "follows": "Super Bomberman",
@@ -3689,7 +3713,7 @@
   },
   {
     "game_title": "Bomberman 2 DS",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -3697,7 +3721,7 @@
   },
   {
     "game_title": "Bomberman 64",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_n64",
     "series_order": null,
     "follows": "Atomic Bomberman",
@@ -3705,7 +3729,7 @@
   },
   {
     "game_title": "Bomberman 64",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_n64",
     "series_order": null,
     "follows": "",
@@ -3713,7 +3737,7 @@
   },
   {
     "game_title": "Bomberman 64: The Second Attack",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_n64",
     "series_order": null,
     "follows": "Bomberman Party Edition",
@@ -3721,7 +3745,7 @@
   },
   {
     "game_title": "Bomberman DS",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
@@ -3729,7 +3753,7 @@
   },
   {
     "game_title": "Bomberman Fantasy Race",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "Bomberman Wars",
@@ -3737,7 +3761,7 @@
   },
   {
     "game_title": "Bomberman GB 2",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -3753,7 +3777,7 @@
   },
   {
     "game_title": "Bomberman Hero",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_n64",
     "series_order": null,
     "follows": "Bomberman Wars",
@@ -3761,7 +3785,7 @@
   },
   {
     "game_title": "Bomberman II",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "Bomberman",
@@ -3769,7 +3793,7 @@
   },
   {
     "game_title": "Bomberman Jetters",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "Bomberman Generation",
@@ -3777,7 +3801,7 @@
   },
   {
     "game_title": "Bomberman Land",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "Bomberman 64: The Second Attack",
@@ -3785,7 +3809,7 @@
   },
   {
     "game_title": "Bomberman Land Touch!",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Bomberman PSP",
@@ -3801,7 +3825,7 @@
   },
   {
     "game_title": "Bomberman Max",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gbc",
     "series_order": null,
     "follows": "Bomberman Quest",
@@ -3809,7 +3833,7 @@
   },
   {
     "game_title": "Bomberman Max 2",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "Bomberman Tournament",
@@ -3817,7 +3841,7 @@
   },
   {
     "game_title": "Bomberman Online",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sega_dc",
     "series_order": null,
     "follows": "",
@@ -3825,7 +3849,7 @@
   },
   {
     "game_title": "Bomberman Party Edition",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "",
@@ -3833,7 +3857,7 @@
   },
   {
     "game_title": "Bomberman Quest",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gbc",
     "series_order": null,
     "follows": "Bomberman: Panic Bomber",
@@ -3841,7 +3865,7 @@
   },
   {
     "game_title": "Bomberman Story DS",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_ds",
     "series_order": null,
     "follows": "Bomberman Land Touch!",
@@ -3849,7 +3873,7 @@
   },
   {
     "game_title": "Bomberman Tournament",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gba",
     "series_order": null,
     "follows": "Bomberman Max",
@@ -3857,7 +3881,7 @@
   },
   {
     "game_title": "Bomberman Wars",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "Bomberman World",
@@ -3865,7 +3889,7 @@
   },
   {
     "game_title": "Bomberman World",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "",
@@ -3873,7 +3897,7 @@
   },
   {
     "game_title": "Bomberman: Panic Bomber",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Bomberman GB 3",
@@ -3881,7 +3905,7 @@
   },
   {
     "game_title": "Bomberman: Panic Bomber",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nec_pce",
     "series_order": null,
     "follows": "Bomberman GB 3",
@@ -3889,7 +3913,7 @@
   },
   {
     "game_title": "Bomberman: Panic Bomber",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "Bomberman GB 3",
@@ -3897,7 +3921,7 @@
   },
   {
     "game_title": "Bomberman: Panic Bomber",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sony_psx",
     "series_order": null,
     "follows": "Bomberman GB 3",
@@ -4970,6 +4994,22 @@
   {
     "game_title": "Castlevania",
     "series_name": "Castlevania",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Castlevania",
+    "series_name": "Castlevania",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Castlevania",
+    "series_name": "Castlevania",
     "system": "nintendo_n64",
     "series_order": null,
     "follows": "",
@@ -4981,7 +5021,7 @@
     "system": "nintendo_nes",
     "series_order": null,
     "follows": "",
-    "followed_by": "Castlevania II: Simon's Quest"
+    "followed_by": ""
   },
   {
     "game_title": "Castlevania Chronicles",
@@ -5010,18 +5050,26 @@
   {
     "game_title": "Castlevania II: Simon's Quest",
     "series_name": "Castlevania",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Castlevania II: Simon's Quest",
+    "series_name": "Castlevania",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "Castlevania",
-    "followed_by": "Castlevania III: Dracula's Curse"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Castlevania III: Dracula's Curse",
     "series_name": "Castlevania",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "Castlevania II: Simon's Quest",
-    "followed_by": "Super Castlevania IV"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Castlevania Legends",
@@ -6900,16 +6948,16 @@
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "follows": "Dance Dance Revolution X3",
+    "followed_by": "Dance Dance Revolution A"
   },
   {
     "game_title": "Dance Dance Revolution",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Dance Dance Revolution X3",
-    "followed_by": "Dance Dance Revolution A"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Dance Dance Revolution",
@@ -14724,7 +14772,7 @@
     "series_name": "Gradius",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -14732,7 +14780,7 @@
     "series_name": "Gradius",
     "system": "nec_pce",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -14740,7 +14788,7 @@
     "series_name": "Gradius",
     "system": "nintendo_nes",
     "series_order": null,
-    "follows": "Gradius III",
+    "follows": "Gradius",
     "followed_by": "Gradius III"
   },
   {
@@ -18267,6 +18315,14 @@
     "game_title": "Legacy of Kain: Soul Reaver",
     "series_name": "Legacy of Kain",
     "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Legacy of Ys: Books I & II",
+    "series_name": "Ys",
+    "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -22181,7 +22237,7 @@
     "system": "arcade_fbneo",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22189,7 +22245,7 @@
     "system": "nintendo_gb",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22197,7 +22253,7 @@
     "system": "nintendo_snes",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22205,7 +22261,7 @@
     "system": "panasonic_3do",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22213,7 +22269,7 @@
     "system": "sega_smd",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22221,7 +22277,7 @@
     "system": "sega_sms",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 3",
@@ -22229,7 +22285,7 @@
     "system": "sony_psx",
     "series_order": 3,
     "follows": "Mortal Kombat II",
-    "followed_by": "Ultimate Mortal Kombat 3"
+    "followed_by": "Mortal Kombat 4"
   },
   {
     "game_title": "Mortal Kombat 4",
@@ -24537,7 +24593,7 @@
   },
   {
     "game_title": "Neo Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Bomberman 64",
@@ -26385,7 +26441,7 @@
   },
   {
     "game_title": "Pocket Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -26393,7 +26449,7 @@
   },
   {
     "game_title": "Pocket Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
@@ -28688,7 +28744,7 @@
     "followed_by": ""
   },
   {
-    "game_title": "Rastan",
+    "game_title": "Rastan Saga",
     "series_name": "Rastan",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -28696,7 +28752,7 @@
     "followed_by": ""
   },
   {
-    "game_title": "Rastan",
+    "game_title": "Rastan Saga",
     "series_name": "Rastan",
     "system": "sega_gg",
     "series_order": null,
@@ -28704,7 +28760,7 @@
     "followed_by": ""
   },
   {
-    "game_title": "Rastan",
+    "game_title": "Rastan Saga",
     "series_name": "Rastan",
     "system": "sega_sms",
     "series_order": null,
@@ -28723,6 +28779,14 @@
     "game_title": "Rayman",
     "series_name": "Rayman",
     "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Rayman 2: The Great Escape"
+  },
+  {
+    "game_title": "Rayman",
+    "series_name": "Rayman",
+    "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
     "followed_by": "Rayman 2: The Great Escape"
@@ -30312,6 +30376,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Rygar",
+    "series_name": "Rygar",
+    "system": "sega_sms",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Ryukyu II",
     "series_name": "Ryukyu",
     "system": "arcade_fbneo",
@@ -30816,6 +30888,102 @@
     "followed_by": ""
   },
   {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Eiketsuden",
+    "system": "nintendo_snes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Rékoeition",
+    "system": "nintendo_snes",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Eiketsuden",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Rékoeition",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Eiketsuden",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Eiketsuden",
+    "series_name": "Rékoeition",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Eiketsuden",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Rékoeition",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Eiketsuden",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Rékoeition",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Eiketsuden",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Sangokushi Koumeiden",
+    "series_name": "Rékoeition",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Sansara Naga",
     "series_name": "Sansara Naga",
     "system": "nintendo_gba",
@@ -30841,7 +31009,7 @@
   },
   {
     "game_title": "Saturn Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sega_saturn",
     "series_order": null,
     "follows": "Super Bomberman 4",
@@ -30849,7 +31017,7 @@
   },
   {
     "game_title": "Saturn Bomberman Fight!",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "sega_saturn",
     "series_order": null,
     "follows": "Neo Bomberman",
@@ -35225,7 +35393,7 @@
   },
   {
     "game_title": "Super Bomberman",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "Bomberman '93",
@@ -35233,7 +35401,7 @@
   },
   {
     "game_title": "Super Bomberman 2",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "Bomberman '94",
@@ -35241,7 +35409,7 @@
   },
   {
     "game_title": "Super Bomberman 3",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "",
@@ -35249,7 +35417,7 @@
   },
   {
     "game_title": "Super Bomberman 4",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "Super Bomberman 3",
@@ -35257,7 +35425,7 @@
   },
   {
     "game_title": "Super Bomberman 5",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_snes",
     "series_order": null,
     "follows": "Saturn Bomberman",
@@ -35308,7 +35476,7 @@
     "series_name": "Castlevania",
     "system": "nintendo_snes",
     "series_order": null,
-    "follows": "Castlevania III: Dracula's Curse",
+    "follows": "",
     "followed_by": ""
   },
   {
@@ -36963,7 +37131,7 @@
     "game_title": "Teenage Mutant Ninja Turtles II: Back from the Sewers",
     "series_name": "Teenage Mutant Ninja Turtles",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -36971,7 +37139,7 @@
     "game_title": "Teenage Mutant Ninja Turtles III: Radical Rescue",
     "series_name": "Teenage Mutant Ninja Turtles",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -37003,7 +37171,7 @@
     "game_title": "Teenage Mutant Ninja Turtles: Fall of the Foot Clan",
     "series_name": "Teenage Mutant Ninja Turtles",
     "system": "nintendo_gb",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -42585,7 +42753,7 @@
   },
   {
     "game_title": "Wario Blast",
-    "series_name": "Saga Bomberman",
+    "series_name": "Bomberman",
     "system": "nintendo_gb",
     "series_order": null,
     "follows": "",
@@ -43912,6 +44080,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Xanadu",
+    "series_name": "Xanadu",
+    "system": "microsoft_msx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Xenogears",
     "series_name": "Xeno",
     "system": "sony_psx",
@@ -44184,6 +44360,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Ys DS",
+    "series_name": "Ys",
+    "system": "nintendo_ds",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Ys I: Ancient Ys Vanished",
     "series_name": "Ys",
     "system": "microsoft_msx",
@@ -44228,6 +44412,14 @@
     "series_name": "Ys",
     "system": "sega_sms",
     "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Ys II DS",
+    "series_name": "Ys",
+    "system": "nintendo_ds",
+    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
