@@ -8,16 +8,18 @@ use std::io::BufRead;
 use std::path::Path;
 
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, Event};
 
 use crate::library_db::DatePrecision;
 use replay_control_core::error::{Error, Result};
+use replay_control_core::systems::launchbox_platform_map;
 
 /// Build the LaunchBox platform → system folder mapping from the centralized
 /// system definitions in `systems.rs`. Adding a new system with
 /// `launchbox_platforms` automatically enables LaunchBox import for it.
 pub(crate) fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
-    replay_control_core::systems::launchbox_platform_map()
+    launchbox_platform_map()
 }
 
 /// Parsed game entry from LaunchBox XML.
@@ -99,12 +101,12 @@ fn resolve_general_ref(e: &BytesRef) -> String {
     if let Ok(Some(ch)) = e.resolve_char_ref() {
         return ch.to_string();
     }
-    match e.decode().as_deref() {
-        Ok("amp") => "&",
-        Ok("lt") => "<",
-        Ok("gt") => ">",
-        Ok("quot") => "\"",
-        Ok("apos") => "'",
+    match e.as_ref() {
+        "amp" => "&",
+        "lt" => "<",
+        "gt" => ">",
+        "quot" => "\"",
+        "apos" => "'",
         _ => "",
     }
     .to_string()
@@ -162,7 +164,7 @@ pub(crate) fn parse_xml<R: BufRead>(
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
                 let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                let tag = qname.as_ref();
                 match tag {
                     "Game" => {
                         ctx = Context::Game;
@@ -195,7 +197,7 @@ pub(crate) fn parse_xml<R: BufRead>(
                 }
             }
             Ok(Event::Text(ref e)) => {
-                let text = e.decode().unwrap_or_default();
+                let text = e.xml_content(XmlVersion::Implicit1_0);
                 match ctx {
                     Context::Game => match current_tag.as_str() {
                         "Name" => name.push_str(&text),
@@ -265,7 +267,7 @@ pub(crate) fn parse_xml<R: BufRead>(
             }
             Ok(Event::End(ref e)) => {
                 let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                let tag = qname.as_ref();
                 match tag {
                     "Game" if ctx == Context::Game => {
                         ctx = Context::None;

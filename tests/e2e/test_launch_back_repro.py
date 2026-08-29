@@ -72,7 +72,9 @@ def test_browser_back_keeps_search_in_same_document(page, seeded_game):
     # Regression for iOS/WebKit: Back from another route must restore the SPA
     # document instead of forcing a full page load. A reload drops this marker.
     goto_hydrated(page, "/search?q=Seed")
-    page.evaluate("window.__replayBackMarker = crypto.randomUUID()")
+    page.evaluate(
+        "window.__replayBackMarker = Date.now().toString(36) + ':' + Math.random().toString(36)"
+    )
     marker = page.evaluate("window.__replayBackMarker")
 
     page.locator('.bottom-nav a[href="/favorites"]').click()
@@ -89,7 +91,9 @@ def test_favorites_launch_after_browser_back(page, seeded_game):
     # and launch-after-Back coverage aligned with the shared game list row.
     seed_favorite(seeded_game["system"], seeded_game["rom_filename"])
     goto_hydrated(page, "/favorites")
-    page.evaluate("window.__replayBackMarker = crypto.randomUUID()")
+    page.evaluate(
+        "window.__replayBackMarker = Date.now().toString(36) + ':' + Math.random().toString(36)"
+    )
     marker = page.evaluate("window.__replayBackMarker")
 
     page.locator('.bottom-nav a[href="/search"]').click()

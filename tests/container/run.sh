@@ -9,6 +9,8 @@
 #
 # Environment variables:
 #   CONTAINER_ENGINE  - "podman" or "docker" (auto-detected if unset)
+#   CONTAINER_PLATFORM - optional image/runtime platform override. If unset,
+#                       inferred from the app binary when possible.
 #   SKIP_BUILD        - set to "1" to skip app build (use existing artifacts)
 #   BUILD_PROFILE     - "release" (default) or "debug" for faster local e2e
 #   MOCK_PORT         - port for mock GitHub server (default: 9999)
@@ -157,6 +159,24 @@ for required_path in "$APP_BINARY" "$SITE_DIR" "$PROJECT_ROOT/catalog.sqlite"; d
     fi
 done
 
+CONTAINER_PLATFORM="${CONTAINER_PLATFORM:-}"
+if [[ -z "$CONTAINER_PLATFORM" ]] && command -v readelf &>/dev/null; then
+    APP_MACHINE="$(readelf -h "$APP_BINARY" 2>/dev/null | awk -F: '/Machine:/ { sub(/^[[:space:]]+/, "", $2); print $2; exit }')"
+    case "$APP_MACHINE" in
+        "Advanced Micro Devices X86-64")
+            CONTAINER_PLATFORM="linux/amd64"
+            ;;
+        "AArch64")
+            CONTAINER_PLATFORM="linux/arm64"
+            ;;
+    esac
+fi
+PLATFORM_ARGS=()
+if [[ -n "$CONTAINER_PLATFORM" ]]; then
+    PLATFORM_ARGS+=(--platform "$CONTAINER_PLATFORM")
+    echo "Using container platform: $CONTAINER_PLATFORM"
+fi
+
 BUILD_CONTEXT="$(mktemp -d "${TMPDIR:-/tmp}/replay-control-container.XXXXXX")"
 APP_CONTEXT_BINARY="target/$APP_PROFILE_DIR/replay-control-app"
 mkdir -p \
@@ -171,6 +191,7 @@ cp -R "$SITE_DIR" "$BUILD_CONTEXT/target/site"
 cp "$PROJECT_ROOT/catalog.sqlite" "$BUILD_CONTEXT/catalog.sqlite"
 
 $ENGINE build \
+    "${PLATFORM_ARGS[@]}" \
     --build-arg "APP_BINARY=$APP_CONTEXT_BINARY" \
     -f "$BUILD_CONTEXT/Containerfile.replayos" \
     -t "$IMAGE_NAME" \
@@ -203,11 +224,12 @@ if [[ "$DIRECT_BRIDGE" == "true" ]]; then
         printf 'COPY replay-control-app/Cargo.toml replay-control-app/Cargo.toml\n'
         printf 'ENTRYPOINT ["python3", "tests/container/mock_github.py"]\n'
     } > "$MOCK_BUILD_CONTEXT/Containerfile"
-    $ENGINE build -f "$MOCK_BUILD_CONTEXT/Containerfile" \
+    $ENGINE build "${PLATFORM_ARGS[@]}" -f "$MOCK_BUILD_CONTEXT/Containerfile" \
         -t "$MOCK_IMAGE_NAME" "$MOCK_BUILD_CONTEXT"
 
     echo "Starting mock GitHub container at $PODMAN_MOCK_IP:$MOCK_PORT..."
     $ENGINE run -d \
+        "${PLATFORM_ARGS[@]}" \
         --network podman \
         --ip "$PODMAN_MOCK_IP" \
         --name "$MOCK_CONTAINER_NAME" \
@@ -275,6 +297,7 @@ else
 fi
 
 $ENGINE run -d \
+    "${PLATFORM_ARGS[@]}" \
     --name "$CONTAINER_NAME" \
     "${PUBLISH_ARGS[@]}" \
     -e "REPLAY_GITHUB_API_URL=${APP_MOCK_URL}" \

@@ -194,13 +194,13 @@ fn rc_hash_n64(buf: &[u8]) -> Option<String> {
         0x80 | 0xE8 | 0x22 => {} // z64 / ndd: already native big-endian
         0x37 => {
             // v64: 16-bit byteswap
-            for c in data.chunks_exact_mut(2) {
+            for c in data.as_chunks_mut::<2>().0 {
                 c.swap(0, 1);
             }
         }
         0x40 => {
             // n64: 32-bit byteswap
-            for c in data.chunks_exact_mut(4) {
+            for c in data.as_chunks_mut::<4>().0 {
                 c.swap(0, 3);
                 c.swap(1, 2);
             }
@@ -718,7 +718,7 @@ mod tests {
     fn rc_hash_n64_v64_byteswap_matches_z64() {
         let z64 = vec![0x80u8, 0x37, 0x12, 0x40, 0xAB, 0xCD, 0x00, 0x00];
         let mut v64 = z64.clone();
-        for c in v64.chunks_exact_mut(2) {
+        for c in v64.as_chunks_mut::<2>().0 {
             c.swap(0, 1);
         }
         assert_eq!(v64[0], 0x37); // now a v64 ROM

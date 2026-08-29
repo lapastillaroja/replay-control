@@ -338,12 +338,12 @@ fn resolve_general_ref(e: &BytesRef) -> String {
     if let Ok(Some(ch)) = e.resolve_char_ref() {
         return ch.to_string();
     }
-    match e.decode().as_deref() {
-        Ok("amp") => "&",
-        Ok("lt") => "<",
-        Ok("gt") => ">",
-        Ok("quot") => "\"",
-        Ok("apos") => "'",
+    match e.as_ref() {
+        "amp" => "&",
+        "lt" => "<",
+        "gt" => ">",
+        "quot" => "\"",
+        "apos" => "'",
         _ => "",
     }
     .to_string()
@@ -401,7 +401,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
-                b"game" => {
+                "game" => {
                     in_game = true;
                     current_name.clear();
                     current_cloneof.clear();
@@ -412,32 +412,23 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                     current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
-                            b"name" => {
-                                current_name = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"cloneof" => {
-                                current_cloneof = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"isbios" => {
-                                current_is_bios = String::from_utf8_lossy(&attr.value) == "yes"
-                            }
-                            b"sourcefile" => {
-                                current_sourcefile =
-                                    String::from_utf8_lossy(&attr.value).into_owned()
-                            }
+                            "name" => current_name = attr.value.into_owned(),
+                            "cloneof" => current_cloneof = attr.value.into_owned(),
+                            "isbios" => current_is_bios = attr.value.as_ref() == "yes",
+                            "sourcefile" => current_sourcefile = attr.value.into_owned(),
                             _ => {}
                         }
                     }
                 }
-                b"description" | b"year" | b"manufacturer" if in_game => {
-                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                "description" | "year" | "manufacturer" if in_game => {
+                    current_element = e.local_name().as_ref().to_string();
                 }
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_game => {
                 append_arcade_text(
                     &current_element,
-                    &e.decode().unwrap_or_default(),
+                    e.xml_content(XmlVersion::Implicit1_0).as_ref(),
                     &mut current_description,
                     &mut current_year,
                     &mut current_manufacturer,
@@ -453,7 +444,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                 );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
-                b"game" if in_game => {
+                "game" if in_game => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
@@ -472,7 +463,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<ArcadeEntry> {
                     }
                     in_game = false;
                 }
-                b"description" | b"year" | b"manufacturer" => current_element.clear(),
+                "description" | "year" | "manufacturer" => current_element.clear(),
                 _ => {}
             },
             Ok(Event::Eof) => break,
@@ -524,7 +515,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
-                b"game" => {
+                "game" => {
                     in_game = true;
                     current_name.clear();
                     current_cloneof.clear();
@@ -538,34 +529,26 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                     current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
-                            b"name" => {
-                                current_name = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"cloneof" => {
-                                current_cloneof = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"runnable" if String::from_utf8_lossy(&attr.value) == "no" => {
+                            "name" => current_name = attr.value.into_owned(),
+                            "cloneof" => current_cloneof = attr.value.into_owned(),
+                            "runnable" if attr.value.as_ref() == "no" => {
                                 current_is_bios = true;
                             }
-                            b"sourcefile" => {
-                                current_sourcefile =
-                                    String::from_utf8_lossy(&attr.value).into_owned()
-                            }
+                            "sourcefile" => current_sourcefile = attr.value.into_owned(),
                             _ => {}
                         }
                     }
                 }
-                b"description" | b"year" | b"manufacturer" if in_game => {
-                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                "description" | "year" | "manufacturer" if in_game => {
+                    current_element = e.local_name().as_ref().to_string();
                 }
                 _ => {}
             },
             Ok(Event::Empty(ref e)) if in_game => match e.local_name().as_ref() {
-                b"video" => {
+                "video" => {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.local_name().as_ref() == b"orientation" {
-                            let val = String::from_utf8_lossy(&attr.value).into_owned();
-                            current_orientation = match val.as_str() {
+                        if attr.key.local_name().as_ref() == "orientation" {
+                            current_orientation = match attr.value.as_ref() {
                                 "horizontal" => "0".to_string(),
                                 "vertical" => "90".to_string(),
                                 _ => "unknown".to_string(),
@@ -573,18 +556,17 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                         }
                     }
                 }
-                b"input" => {
+                "input" => {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.local_name().as_ref() == b"players" {
-                            current_players =
-                                String::from_utf8_lossy(&attr.value).parse().unwrap_or(0);
+                        if attr.key.local_name().as_ref() == "players" {
+                            current_players = attr.value.parse().unwrap_or(0);
                         }
                     }
                 }
-                b"driver" => {
+                "driver" => {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.local_name().as_ref() == b"status" {
-                            current_status = String::from_utf8_lossy(&attr.value).into_owned();
+                        if attr.key.local_name().as_ref() == "status" {
+                            current_status = attr.value.into_owned();
                         }
                     }
                 }
@@ -593,7 +575,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
             Ok(Event::Text(ref e)) if in_game => {
                 append_arcade_text(
                     &current_element,
-                    &e.decode().unwrap_or_default(),
+                    e.xml_content(XmlVersion::Implicit1_0).as_ref(),
                     &mut current_description,
                     &mut current_year,
                     &mut current_manufacturer,
@@ -609,7 +591,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                 );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
-                b"game" if in_game => {
+                "game" if in_game => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
@@ -628,7 +610,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<ArcadeEntry> {
                     }
                     in_game = false;
                 }
-                b"description" | b"year" | b"manufacturer" => current_element.clear(),
+                "description" | "year" | "manufacturer" => current_element.clear(),
                 _ => {}
             },
             Ok(Event::Eof) => break,
@@ -679,7 +661,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
-                b"m" => {
+                "m" => {
                     in_machine = true;
                     current_name.clear();
                     current_cloneof.clear();
@@ -692,39 +674,25 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                     current_sourcefile.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
-                            b"name" => {
-                                current_name = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"cloneof" => {
-                                current_cloneof = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"rotate" => {
-                                current_rotate = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"players" => {
-                                current_players =
-                                    String::from_utf8_lossy(&attr.value).parse().unwrap_or(0)
-                            }
-                            b"status" => {
-                                current_status = String::from_utf8_lossy(&attr.value).into_owned()
-                            }
-                            b"sourcefile" => {
-                                current_sourcefile =
-                                    String::from_utf8_lossy(&attr.value).into_owned()
-                            }
+                            "name" => current_name = attr.value.into_owned(),
+                            "cloneof" => current_cloneof = attr.value.into_owned(),
+                            "rotate" => current_rotate = attr.value.into_owned(),
+                            "players" => current_players = attr.value.parse().unwrap_or(0),
+                            "status" => current_status = attr.value.into_owned(),
+                            "sourcefile" => current_sourcefile = attr.value.into_owned(),
                             _ => {}
                         }
                     }
                 }
-                b"d" | b"y" | b"f" if in_machine => {
-                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                "d" | "y" | "f" if in_machine => {
+                    current_element = e.local_name().as_ref().to_string();
                 }
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_machine => {
                 append_arcade_text(
                     &current_element,
-                    &e.decode().unwrap_or_default(),
+                    e.xml_content(XmlVersion::Implicit1_0).as_ref(),
                     &mut current_description,
                     &mut current_year,
                     &mut current_manufacturer,
@@ -740,7 +708,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                 );
             }
             Ok(Event::End(ref e)) => match e.local_name().as_ref() {
-                b"m" if in_machine => {
+                "m" if in_machine => {
                     if !current_name.is_empty() {
                         entries.push(ArcadeEntry {
                             rom_name: current_name.clone(),
@@ -759,7 +727,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<ArcadeEntry> {
                     }
                     in_machine = false;
                 }
-                b"d" | b"y" | b"f" => current_element.clear(),
+                "d" | "y" | "f" => current_element.clear(),
                 _ => {}
             },
             Ok(Event::Eof) => break,
@@ -1483,35 +1451,33 @@ fn parse_whdload_db(path: &Path) -> HashMap<String, String> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match e.local_name().as_ref() {
-                b"game" => {
+                "game" => {
                     current_filename.clear();
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.local_name().as_ref() == b"filename" {
+                        if attr.key.local_name().as_ref() == "filename" {
                             // Unescape so an entity in the archive name (e.g.
                             // "4th&amp;Inches_..." for "4th&Inches_....lha") keys
                             // under the literal "&" the WHDLoad DAT stem uses.
                             current_filename = attr
                                 .normalized_value(XmlVersion::Implicit1_0)
                                 .map(|v| v.into_owned())
-                                .unwrap_or_else(|_| {
-                                    String::from_utf8_lossy(&attr.value).into_owned()
-                                });
+                                .unwrap_or_else(|_| attr.value.into_owned());
                         }
                     }
                 }
-                b"name" if !current_filename.is_empty() => {
+                "name" if !current_filename.is_empty() => {
                     in_name = true;
                     current_name.clear();
                 }
                 _ => {}
             },
             Ok(Event::Text(ref e)) if in_name => {
-                current_name.push_str(&e.decode().unwrap_or_default());
+                current_name.push_str(e.xml_content(XmlVersion::Implicit1_0).as_ref());
             }
             Ok(Event::GeneralRef(ref e)) if in_name => {
                 current_name.push_str(&resolve_general_ref(e));
             }
-            Ok(Event::End(ref e)) if e.local_name().as_ref() == b"name" => {
+            Ok(Event::End(ref e)) if e.local_name().as_ref() == "name" => {
                 if in_name {
                     let name = current_name.trim();
                     if !name.is_empty() {

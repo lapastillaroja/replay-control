@@ -60,10 +60,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.125
+        run: cargo install wasm-bindgen-cli@0.2.127
 
-      - name: Install binaryen (wasm-opt)
-        run: sudo apt-get install -y binaryen
+      - name: Install WASM compression tools
+        run: sudo apt-get install -y binaryen brotli
 
       - name: Build (x86_64)
         # Builds the catalog from replay-control-core/fixtures/ (BUILD_CATALOG_STUB=1)
