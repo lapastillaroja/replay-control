@@ -1,7 +1,7 @@
 //! Image resolution: build per-system image indexes and resolve box art paths.
 //!
 //! Extracted from `enrichment.rs` — contains `ImageIndex`, `BoxArtResult`,
-//! `build_image_index`, `resolve_box_art_with_hash`, and URL formatting helpers.
+//! `build_image_index`, `resolve_box_art`, and URL formatting helpers.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,7 +9,8 @@ use std::path::Path;
 use crate::external_metadata::ThumbnailManifestEntry;
 use crate::image_matching::{self, DirIndex};
 use crate::thumbnail_manifest::{self, ManifestFuzzyIndex, ManifestMatch};
-use crate::thumbnails::ThumbnailKind;
+use crate::thumbnails::{ThumbnailKind, thumbnail_filename};
+use replay_control_core::{systems, title_utils};
 
 /// Per-system image directory index for batch box art resolution.
 ///
@@ -102,12 +103,12 @@ pub struct ArcadeInfoLookup {
 impl ArcadeInfoLookup {
     /// Build from a list of filename stems by issuing one batch query.
     pub async fn build(system: &str, rom_filenames: &[String]) -> Self {
-        if !replay_control_core::systems::is_arcade_system(system) || rom_filenames.is_empty() {
+        if !systems::is_arcade_system(system) || rom_filenames.is_empty() {
             return Self::default();
         }
         let mut stems: Vec<&str> = rom_filenames
             .iter()
-            .map(|f| replay_control_core::title_utils::filename_stem(f.as_str()))
+            .map(|f| title_utils::filename_stem(f.as_str()))
             .collect();
         // Include parent stems via a second pass (follow-up batch below).
         stems.sort();
@@ -153,21 +154,58 @@ fn try_resolve_candidate<'a>(
     None
 }
 
-/// Resolve box art with an optional `hash_matched_name` fallback.
+/// Resolve a catalog title conservatively. Unlike filename and verified-hash
+/// candidates, this final fallback intentionally does not use tag stripping,
+/// version stripping, or aggressive punctuation/whitespace normalization.
+/// Those broader tiers could turn a metadata-only hint into a false-positive
+/// cover on another title. Case-insensitive exact matching is enough for
+/// compact archive names whose catalog title matches the upstream image name.
+fn try_resolve_catalog_title<'a>(
+    index: &'a ImageIndex,
+    resolved_base_title: &str,
+) -> Option<BoxArtResult<'a>> {
+    let key = thumbnail_filename(resolved_base_title);
+    if let Some(path) = index
+        .dir_index
+        .exact
+        .get(&key)
+        .or_else(|| index.dir_index.exact_ci.get(&key.to_lowercase()))
+    {
+        return Some(BoxArtResult::Found(path.clone()));
+    }
+    if let Some(manifest) = &index.manifest
+        && let Some(matched) = manifest
+            .exact
+            .get(&key)
+            .or_else(|| manifest.exact_ci.get(&key.to_lowercase()))
+    {
+        return Some(BoxArtResult::ManifestHit(matched));
+    }
+    None
+}
+
+/// Resolve box art with optional canonical-name fallbacks.
 ///
 /// When the filename-based lookup fails but a No-Intro `hash_matched_name` is available,
 /// retries the lookup using that name. This works well because libretro-thumbnails repos
 /// use No-Intro naming, so the hash_matched_name will often match directly.
-pub fn resolve_box_art_with_hash<'a>(
+///
+/// `resolved_base_title` is the final, non-arcade fallback. It comes from the
+/// system-specific catalog title selected during the library scan, so compact
+/// filenames such as Amiga WHDLoad archives can match human-readable thumbnail
+/// names. Keeping it last guarantees that it cannot replace an existing direct
+/// or content-hash match.
+pub fn resolve_box_art<'a>(
     index: &'a ImageIndex,
     arcade_lookup: &ArcadeInfoLookup,
     system: &str,
     rom_filename: &str,
     hash_matched_name: Option<&str>,
+    resolved_base_title: Option<&str>,
 ) -> BoxArtResult<'a> {
-    let stem = replay_control_core::title_utils::filename_stem(rom_filename);
-    let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
-    let is_arcade = replay_control_core::systems::is_arcade_system(system);
+    let stem = title_utils::filename_stem(rom_filename);
+    let stem = title_utils::strip_n64dd_prefix(stem);
+    let is_arcade = systems::is_arcade_system(system);
     let arcade_info = if is_arcade {
         arcade_lookup.get(stem)
     } else {
@@ -236,6 +274,17 @@ pub fn resolve_box_art_with_hash<'a>(
         }
     }
 
+    // 5. System-specific catalog title. Arcade systems deliberately do not use
+    // this path: their curated display-name, alternate-name, and clone-parent
+    // handling above is more precise. This is deliberately exact-only; broader
+    // filename fuzzy tiers are not safe for an unverified metadata hint.
+    if !is_arcade
+        && let Some(title) = resolved_base_title.filter(|title| !title.is_empty())
+        && let Some(result) = try_resolve_catalog_title(index, title)
+    {
+        return result;
+    }
+
     BoxArtResult::NotFound
 }
 
@@ -300,7 +349,7 @@ mod tests {
         let index = build_image_index(system, storage_root, HashMap::new(), Vec::new());
 
         let arcade = ArcadeInfoLookup::default();
-        let result = resolve_box_art_with_hash(&index, &arcade, system, "Doom 2.zip", None);
+        let result = resolve_box_art(&index, &arcade, system, "Doom 2.zip", None, None);
         assert!(
             matches!(&result, BoxArtResult::Found(p) if p == "boxart/Real Cover.png"),
             "Doom 2 should resolve the fake-symlinked \"Doom II\" art via the aggressive fold"
@@ -336,7 +385,7 @@ mod tests {
         let path = format!("boxart/{parent_thumb}.png");
         let index = image_index_from(&[(&parent_thumb, &path)]);
 
-        let result = resolve_box_art_with_hash(&index, &batch, "arcade_mame", "pacman.zip", None);
+        let result = resolve_box_art(&index, &batch, "arcade_mame", "pacman.zip", None, None);
         match result {
             BoxArtResult::Found(found_path) => {
                 assert_eq!(found_path, path);
@@ -355,11 +404,12 @@ mod tests {
 
         // Without hash: no match.
         let batch = ArcadeInfoLookup::default();
-        let result = resolve_box_art_with_hash(
+        let result = resolve_box_art(
             &index,
             &batch,
             "sega_smd",
             "Dong Gu Ri Te Chi Jak Jeon (Korea).md",
+            None,
             None,
         );
         assert!(
@@ -368,12 +418,13 @@ mod tests {
         );
 
         // With hash: finds art via fallback.
-        let result = resolve_box_art_with_hash(
+        let result = resolve_box_art(
             &index,
             &batch,
             "sega_smd",
             "Dong Gu Ri Te Chi Jak Jeon (Korea).md",
             Some("Dongguri Techi Jakjeon (Korea)"),
+            None,
         );
         match result {
             BoxArtResult::Found(found_path) => assert_eq!(found_path, path),
@@ -386,20 +437,114 @@ mod tests {
         // When the filename already matches, the hash fallback shouldn't change the result.
         let thumb_stem = "Sonic the Hedgehog (USA)";
         let path = format!("boxart/{thumb_stem}.png");
-        let index = image_index_from(&[(thumb_stem, &path)]);
+        let wrong_path = "boxart/Wrong Game.png";
+        let index = image_index_from(&[(thumb_stem, &path), ("Wrong Game", wrong_path)]);
         let batch = ArcadeInfoLookup::default();
 
-        let result = resolve_box_art_with_hash(
+        let result = resolve_box_art(
             &index,
             &batch,
             "sega_smd",
             "Sonic the Hedgehog (USA).md",
             Some("Sonic the Hedgehog (USA)"),
+            Some("Wrong Game"),
         );
         match result {
             BoxArtResult::Found(found_path) => assert_eq!(found_path, path),
             _ => panic!("Direct filename match should still work"),
         }
+    }
+
+    #[test]
+    fn resolved_base_title_matches_compact_non_arcade_filename() {
+        let path = "boxart/3D Construction Kit.png";
+        let index = image_index_from(&[("3D Construction Kit", path)]);
+        let arcade = ArcadeInfoLookup::default();
+
+        let without_title = resolve_box_art(
+            &index,
+            &arcade,
+            "commodore_ami",
+            "3DConstructionKit_v1.0_1765.lha",
+            None,
+            None,
+        );
+        assert!(matches!(without_title, BoxArtResult::NotFound));
+
+        let with_title = resolve_box_art(
+            &index,
+            &arcade,
+            "commodore_ami",
+            "3DConstructionKit_v1.0_1765.lha",
+            None,
+            Some("3d construction kit"),
+        );
+        assert!(
+            matches!(with_title, BoxArtResult::Found(found) if found == path),
+            "the system catalog title should resolve the Amiga cover"
+        );
+    }
+
+    #[test]
+    fn verified_hash_match_precedes_resolved_base_title() {
+        let hash_path = "boxart/Canonical Hash Title.png";
+        let title_path = "boxart/Catalog Display Title.png";
+        let index = image_index_from(&[
+            ("Canonical Hash Title", hash_path),
+            ("Catalog Display Title", title_path),
+        ]);
+        let arcade = ArcadeInfoLookup::default();
+
+        let result = resolve_box_art(
+            &index,
+            &arcade,
+            "sega_smd",
+            "renamed-file.md",
+            Some("Canonical Hash Title"),
+            Some("Catalog Display Title"),
+        );
+        assert!(
+            matches!(result, BoxArtResult::Found(found) if found == hash_path),
+            "a content-verified identity must keep priority over title metadata"
+        );
+    }
+
+    #[test]
+    fn arcade_does_not_use_non_arcade_title_fallback() {
+        let index = image_index_from(&[("Unrelated Catalog Title", "boxart/wrong.png")]);
+        let arcade = ArcadeInfoLookup::default();
+
+        let result = resolve_box_art(
+            &index,
+            &arcade,
+            "arcade_mame",
+            "unknown.zip",
+            None,
+            Some("Unrelated Catalog Title"),
+        );
+        assert!(
+            matches!(result, BoxArtResult::NotFound),
+            "arcade matching must remain on its existing curated-name paths"
+        );
+    }
+
+    #[test]
+    fn resolved_base_title_does_not_use_aggressive_matching() {
+        let index = image_index_from(&[("Galaga '88", "boxart/Galaga 88.png")]);
+        let arcade = ArcadeInfoLookup::default();
+
+        let result = resolve_box_art(
+            &index,
+            &arcade,
+            "sega_smd",
+            "unmatched-file.md",
+            None,
+            Some("Galaga88"),
+        );
+        assert!(
+            matches!(result, BoxArtResult::NotFound),
+            "catalog-title fallback must not make aggressive punctuation guesses"
+        );
     }
 
     #[tokio::test]
@@ -408,8 +553,14 @@ mod tests {
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
         let batch = ArcadeInfoLookup::default();
 
-        let result =
-            resolve_box_art_with_hash(&index, &batch, "sega_smd", "Unknown ROM (Korea).md", None);
+        let result = resolve_box_art(
+            &index,
+            &batch,
+            "sega_smd",
+            "Unknown ROM (Korea).md",
+            None,
+            None,
+        );
         assert!(matches!(result, BoxArtResult::NotFound));
     }
 
@@ -431,7 +582,7 @@ mod tests {
         // Index has art for an unrelated game only.
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
 
-        let result = resolve_box_art_with_hash(&index, &batch, "arcade_mame", "puckman.zip", None);
+        let result = resolve_box_art(&index, &batch, "arcade_mame", "puckman.zip", None, None);
         assert!(
             matches!(result, BoxArtResult::NotFound),
             "Non-clone should not find art via parent fallback"

@@ -169,6 +169,7 @@ pub enum RcHashKind {
     ThreeDo,
     PceCd,
     NeoGeoCd,
+    JaguarCd,
 }
 
 impl RcHashKind {
@@ -388,7 +389,7 @@ pub static SYSTEMS: &[System] = &[
         rc_hash_kind: None,
         nointro_dats: &[],
         tgdb_platform_ids: &[28],
-        mister_manual_repos: &["manualsdb-jaguar", "manualsdb-jaguarcd"],
+        mister_manual_repos: &["manualsdb-jaguar"],
         display_name: "Atari Jaguar",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -401,6 +402,30 @@ pub static SYSTEMS: &[System] = &[
         thumbnail_repos: &["Atari - Jaguar"],
         has_retroachievements: false,
         core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "atari_jaguarcd",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atarijaguar"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::JaguarCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[29],
+        mister_manual_repos: &["manualsdb-jaguarcd"],
+        display_name: "Atari Jaguar CD",
+        manufacturer: "Atari",
+        category: SystemCategory::Console,
+        abbreviation: "JCD",
+        placeholder_color: "#8b4513",
+        extensions: &["cue", "cdi"],
+        launchbox_platforms: &["Atari Jaguar CD"],
+        hidden: false,
+        uses_megabit: false,
+        // libretro-thumbnails keeps Jaguar CD artwork in the shared Jaguar
+        // repository; there is no separate "Atari - Jaguar CD" repository.
+        thumbnail_repos: &["Atari - Jaguar"],
+        has_retroachievements: true,
+        core_supports_retroachievements: true,
     },
     System {
         folder_name: "atari_lynx",
@@ -1619,6 +1644,7 @@ mod tests {
         // Saturn shares the Sega CD recipe.
         assert_eq!(kind("sega_st"), Some(SegaCd));
         assert!(kind("sega_dc").unwrap().is_disc());
+        assert_eq!(kind("atari_jaguarcd"), Some(JaguarCd));
         // Whole-file carts have no runtime recipe (RA hash = No-Intro md5).
         assert_eq!(kind("nintendo_gba"), None);
     }
@@ -1717,6 +1743,7 @@ mod tests {
         assert!(!find_system("sega_dc").unwrap().uses_megabit());
         assert!(!find_system("sega_cd").unwrap().uses_megabit());
         assert!(!find_system("sega_st").unwrap().uses_megabit());
+        assert!(!find_system("atari_jaguarcd").unwrap().uses_megabit());
         assert!(!find_system("nec_pcecd").unwrap().uses_megabit());
         assert!(!find_system("snk_ngcd").unwrap().uses_megabit());
         // Computer / floppy-based
@@ -1782,6 +1809,23 @@ mod tests {
         assert_eq!(psp.thumbnail_repos, &["Sony - PlayStation Portable"]);
         assert!(psp.has_retroachievements);
         assert!(psp.core_supports_retroachievements);
+    }
+
+    #[test]
+    fn jaguar_cd_is_registered_as_a_disc_system() {
+        let jaguar = find_system("atari_jaguar").expect("atari_jaguar must be in SYSTEMS");
+        let jaguar_cd = find_system("atari_jaguarcd").expect("atari_jaguarcd must be in SYSTEMS");
+        assert_eq!(jaguar_cd.display_name, "Atari Jaguar CD");
+        assert_eq!(jaguar_cd.category, SystemCategory::Console);
+        assert_eq!(jaguar_cd.extensions, &["cue", "cdi"]);
+        assert_eq!(jaguar_cd.tgdb_platform_ids, &[29]);
+        assert_eq!(jaguar_cd.launchbox_platforms, &["Atari Jaguar CD"]);
+        assert_eq!(jaguar_cd.thumbnail_repos, &["Atari - Jaguar"]);
+        assert_eq!(jaguar_cd.thumbnail_repos, jaguar.thumbnail_repos);
+        assert!(!jaguar_cd.uses_megabit);
+
+        assert_eq!(jaguar.mister_manual_repos, &["manualsdb-jaguar"]);
+        assert_eq!(jaguar_cd.mister_manual_repos, &["manualsdb-jaguarcd"]);
     }
 
     #[test]

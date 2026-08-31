@@ -5,8 +5,8 @@ use replay_control_core_server::library::manuals::legacy_layout;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::roms::{RomEntry, StorageProbe};
 use replay_control_core_server::storage::StorageLocation;
+use replay_control_core_server::thumbnail_manifest;
 use replay_control_core_server::{game_db, game_entry_builder, rc_hash_disc, rom_hash};
-use replay_control_core_server::{thumbnail_manifest, thumbnails};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -498,16 +498,7 @@ async fn phase_first_run_seed(state: &AppState) -> bool {
         .read(|conn| {
             let has_crc32 =
                 external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32).is_some();
-            let missing_thumbnail_repo =
-                thumbnail_manifest::collect_all_repos()
-                    .into_iter()
-                    .any(|repo| {
-                        let source_name = thumbnails::libretro_source_name(&repo.display_name);
-                        external_metadata::get_data_source(conn, &source_name)
-                            .ok()
-                            .flatten()
-                            .is_none()
-                    });
+            let missing_thumbnail_repo = !thumbnail_manifest::all_repos_imported(conn);
             (has_crc32, missing_thumbnail_repo)
         })
         .await;
@@ -898,15 +889,18 @@ async fn phase_reresolve_rc_hash_ra_ids(state: &AppState) {
             tracing::warn!("reresolve_rc_hash: {system}: catalog lookup failed; skipping");
             continue;
         };
-        let updates: Vec<(String, String)> = pairs
+        let updates: Vec<(String, String, String)> = pairs
             .into_iter()
-            .map(|(rom, h)| (rom, ra_map.get(&h).cloned().unwrap_or_default()))
+            .map(|(rom, hash)| {
+                let ra_id = ra_map.get(&hash).cloned().unwrap_or_default();
+                (rom, hash, ra_id)
+            })
             .collect();
         let sys_write = system.clone();
         let result = state
             .library_writer
             .try_write_with_timeout(LIBRARY_MAINTENANCE_WRITE_TIMEOUT, move |conn| {
-                let changed = LibraryDb::set_ra_ids(conn, &sys_write, &updates)?;
+                let changed = LibraryDb::apply_rc_hash_ra_ids(conn, &sys_write, &updates)?;
                 // This phase runs AFTER the startup stats refresh, so when it
                 // changes ra_id it must re-refresh the system's stats — the
                 // metadata page reads RA coverage from game_library_system_stats.

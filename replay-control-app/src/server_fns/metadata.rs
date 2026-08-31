@@ -4,13 +4,13 @@ use replay_control_core::auth::AuthRole;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::auth::{PasswordSubject, verify_os_password};
 #[cfg(feature = "ssr")]
-use replay_control_core_server::external_metadata::{
-    clear_launchbox, get_data_source_stats, launchbox_game_count,
-};
+use replay_control_core_server::external_metadata::{clear_launchbox, launchbox_game_count};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::settings::write_setup_dismissed;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::thumbnail_manifest;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,11 +117,7 @@ async fn setup_metadata_status(state: &crate::api::AppState) -> (bool, bool) {
 
     let has_thumbnail_index = state
         .external_metadata_reader
-        .read(|conn| {
-            get_data_source_stats(conn, "libretro-thumbnails")
-                .map(|s| s.total_entries > 0)
-                .unwrap_or(false)
-        })
+        .read(thumbnail_manifest::all_repos_imported)
         .await
         .unwrap_or(false);
 

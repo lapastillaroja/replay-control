@@ -19,6 +19,9 @@
 //!  - **PC Engine CD** (`rc_hash_pce_track`): `md5(22-byte title ++ N boot
 //!    sectors)`, else `BOOT.BIN`.
 //!  - **Neo Geo CD** (`rc_hash_neogeo_cd`): `IPL.TXT` → `md5` of each `.PRG`.
+//!  - **Atari Jaguar CD** (`rc_hash_jaguar_cd`): boot executable from the first
+//!    track of the second session, with rcheevos' KART executable fallback for
+//!    homebrew discs.
 //!
 //! All yield the same MD5 the RA Web API ships in `ra_hash`, so the result is
 //! resolved through the catalog `ra_hash` table exactly like header-cart rc_hash.
@@ -243,6 +246,86 @@ impl SectorReader for ChdReader {
         let skip = self.header_skip;
         out[..SECTOR_USER].copy_from_slice(&raw[skip..skip + SECTOR_USER]);
         Ok(SECTOR_USER)
+    }
+}
+
+trait RawFrameReader {
+    fn read_frame(&mut self, frame: u32, out: &mut [u8; CD_FRAME_SIZE]) -> io::Result<bool>;
+}
+
+impl RawFrameReader for ChdReader {
+    fn read_frame(&mut self, frame: u32, out: &mut [u8; CD_FRAME_SIZE]) -> io::Result<bool> {
+        self.frame_raw(self.frame_base + frame, out)
+    }
+}
+
+struct RawFrameFileReader {
+    file: std::fs::File,
+    physical_frame_size: u64,
+    payload_offset: u64,
+    payload_size: u64,
+    base_offset: u64,
+}
+
+impl RawFrameFileReader {
+    fn open(path: &Path, frame_size: u64) -> io::Result<Self> {
+        Self::open_at(path, frame_size, 0)
+    }
+
+    fn open_at(path: &Path, frame_size: u64, base_offset: u64) -> io::Result<Self> {
+        Self::open_layout(path, frame_size, 0, frame_size, base_offset)
+    }
+
+    fn open_layout(
+        path: &Path,
+        physical_frame_size: u64,
+        payload_offset: u64,
+        payload_size: u64,
+        base_offset: u64,
+    ) -> io::Result<Self> {
+        if payload_size == 0 || payload_offset.saturating_add(payload_size) > physical_frame_size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid raw frame layout",
+            ));
+        }
+        Ok(Self {
+            file: std::fs::File::open(path)?,
+            physical_frame_size,
+            payload_offset,
+            payload_size,
+            base_offset,
+        })
+    }
+}
+
+impl RawFrameReader for RawFrameFileReader {
+    fn read_frame(&mut self, frame: u32, out: &mut [u8; CD_FRAME_SIZE]) -> io::Result<bool> {
+        let mut got = 0;
+        let mut logical_offset = frame as u64 * CD_FRAME_SIZE as u64;
+        while got < out.len() {
+            let physical_frame = logical_offset / self.payload_size;
+            let within_payload = logical_offset % self.payload_size;
+            let physical_offset = self
+                .base_offset
+                .checked_add(physical_frame.saturating_mul(self.physical_frame_size))
+                .and_then(|offset| offset.checked_add(self.payload_offset + within_payload))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "frame overflow"))?;
+            self.file.seek(SeekFrom::Start(physical_offset))?;
+            let available = (self.payload_size - within_payload) as usize;
+            let want = available.min(out.len() - got);
+            let mut read = 0;
+            while read < want {
+                let count = self.file.read(&mut out[got + read..got + want])?;
+                if count == 0 {
+                    return Ok(false);
+                }
+                read += count;
+            }
+            got += want;
+            logical_offset += want as u64;
+        }
+        Ok(true)
     }
 }
 
@@ -825,6 +908,499 @@ fn neogeo_cd_hash(r: &mut dyn SectorReader) -> io::Result<Option<String>> {
     Ok(Some(md5_digest_hex(md5.finalize().into())))
 }
 
+fn byteswap16(frame: &mut [u8]) {
+    for pair in frame.as_chunks_mut::<2>().0 {
+        pair.swap(0, 1);
+    }
+}
+
+fn jaguar_cd_executable(
+    reader: &mut dyn RawFrameReader,
+    start_offset: usize,
+    size: usize,
+    byteswapped: bool,
+) -> io::Result<Option<String>> {
+    let mut remaining = size.min(MAX_BUFFER_SIZE);
+    let mut frame_num = 0u32;
+    let mut offset = start_offset;
+    let mut md5 = Md5::new();
+    while remaining > 0 {
+        let mut frame = [0u8; CD_FRAME_SIZE];
+        if !reader.read_frame(frame_num, &mut frame)? {
+            return Ok(None);
+        }
+        if byteswapped {
+            byteswap16(&mut frame);
+        }
+        let available = CD_FRAME_SIZE.saturating_sub(offset);
+        let take = remaining.min(available);
+        md5.update(&frame[offset..offset + take]);
+        remaining -= take;
+        offset = 0;
+        frame_num += 1;
+    }
+    Ok(Some(md5_digest_hex(md5.finalize().into())))
+}
+
+/// Atari Jaguar CD rc_hash, ported from rcheevos `rc_hash_jaguar_cd`.
+fn jaguar_cd_hash(reader: &mut dyn RawFrameReader) -> io::Result<Option<String>> {
+    const HEADER: &[u8; 32] = b"ATARI APPROVED DATA HEADER ATRI ";
+    const SWAPPED_HEADER: &[u8; 32] = b"TARA IPARPVODED TA AEHDAREA RT I";
+    const HOMEBREW_BOOT_HASH: &str = "254487b59ab21bc005338e85cbf9fd2f";
+
+    let mut first = [0u8; CD_FRAME_SIZE];
+    if !reader.read_frame(0, &mut first)? {
+        return Ok(None);
+    }
+    let Some((header_offset, byteswapped)) = (64..CD_FRAME_SIZE - 44).find_map(|offset| {
+        if &first[offset..offset + HEADER.len()] == HEADER {
+            Some((offset, false))
+        } else if &first[offset..offset + SWAPPED_HEADER.len()] == SWAPPED_HEADER {
+            Some((offset, true))
+        } else {
+            None
+        }
+    }) else {
+        return Ok(None);
+    };
+
+    let size_offset = header_offset + HEADER.len() + 4;
+    let size = if byteswapped {
+        u32::from_be_bytes([
+            first[size_offset + 1],
+            first[size_offset],
+            first[size_offset + 3],
+            first[size_offset + 2],
+        ])
+    } else {
+        u32::from_be_bytes(first[size_offset..size_offset + 4].try_into().unwrap())
+    } as usize;
+    if size == 0 {
+        return Ok(None);
+    }
+    let boot = jaguar_cd_executable(reader, size_offset + 4, size, byteswapped)?;
+    if boot.as_deref() != Some(HOMEBREW_BOOT_HASH) || !byteswapped {
+        return Ok(boot);
+    }
+
+    // Homebrew discs share a loader. rcheevos identifies the actual KART
+    // executable embedded later in the same data track instead.
+    if &first[0x5E..0x66] != b"RT!IRTKA" {
+        return Ok(None);
+    }
+    let kart_size =
+        u32::from_be_bytes([first[0xA7], first[0xA6], first[0xA9], first[0xA8]]) as usize;
+    jaguar_cd_executable(reader, 0xAA, kart_size, true)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CueFrameLayout {
+    physical_size: u64,
+    payload_offset: u64,
+    payload_size: u64,
+}
+
+impl CueFrameLayout {
+    fn from_track_kind(kind: &str) -> Option<Self> {
+        if kind.eq_ignore_ascii_case("AUDIO") {
+            return Some(Self {
+                physical_size: 2352,
+                payload_offset: 0,
+                payload_size: 2352,
+            });
+        }
+        let (mode, size) = kind.split_once('/')?;
+        let physical_size = size.parse().ok()?;
+        let (payload_offset, payload_size) =
+            match (mode.to_ascii_uppercase().as_str(), physical_size) {
+                ("MODE1", 2048) => (0, 2048),
+                ("MODE1", 2352) => (16, 2048),
+                ("MODE2", 2336) => (8, 2048),
+                ("MODE2", 2352) => (24, 2048),
+                _ => return None,
+            };
+        Some(Self {
+            physical_size,
+            payload_offset,
+            payload_size,
+        })
+    }
+}
+
+struct CueTrackLocation {
+    path: PathBuf,
+    layout: CueFrameLayout,
+    data_offset: u64,
+}
+
+#[derive(Debug)]
+struct CueTrack {
+    file_name: String,
+    layout: CueFrameLayout,
+    session: u32,
+    first_index: Option<u64>,
+    file_offset: u64,
+}
+
+fn cue_command<'a>(line: &'a str, command: &str) -> Option<&'a str> {
+    let prefix = line.get(..command.len())?;
+    if !prefix.eq_ignore_ascii_case(command) {
+        return None;
+    }
+    let rest = &line[command.len()..];
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim_start())
+}
+
+fn cue_file_name(rest: &str) -> Option<String> {
+    let rest = rest.trim();
+    if let Some(quoted) = rest.strip_prefix('"') {
+        return quoted.split_once('"').map(|(name, _)| name.to_string());
+    }
+    rest.split_whitespace().next().map(str::to_string)
+}
+
+fn cue_msf_frames(value: &str) -> Option<u64> {
+    let mut parts = value.split(':');
+    let minutes: u64 = parts.next()?.parse().ok()?;
+    let seconds: u64 = parts.next()?.parse().ok()?;
+    let frames: u64 = parts.next()?.parse().ok()?;
+    (parts.next().is_none() && seconds < 60 && frames < 75)
+        .then_some((minutes * 60 + seconds) * 75 + frames)
+}
+
+/// Locate the first track of Jaguar CD's second session, matching rcheevos'
+/// `RC_HASH_CDTRACK_FIRST_OF_SECOND_SESSION` selection. Jaguar dumps commonly
+/// declare the boot track as AUDIO even though it contains the console header.
+fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation> {
+    let parent = cue.parent().unwrap_or(Path::new("."));
+    let mut current_file: Option<String> = None;
+    let mut session = 1u32;
+    let mut previous_track: Option<CueTrack> = None;
+    let mut current_track: Option<CueTrack> = None;
+    for line in std::fs::read_to_string(cue)?.lines() {
+        let line = line.trim();
+        if let Some(rest) = cue_command(line, "REM") {
+            if let Some(value) = cue_command(rest, "SESSION") {
+                session = value
+                    .split_whitespace()
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "invalid CUE session")
+                    })?;
+            }
+            continue;
+        }
+        if let Some(rest) = cue_command(line, "FILE") {
+            current_track = None;
+            previous_track = None;
+            current_file = cue_file_name(rest);
+            continue;
+        }
+        if let Some(rest) = cue_command(line, "TRACK") {
+            if current_track
+                .as_ref()
+                .is_some_and(|track| track.session == 2)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "second-session track has no INDEX 01",
+                ));
+            }
+            previous_track = current_track.take();
+            let mut fields = rest.split_whitespace();
+            let _number = fields.next();
+            let kind = fields.next().unwrap_or("");
+            let file_name = current_file
+                .clone()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "TRACK before FILE"))?;
+            let layout = CueFrameLayout::from_track_kind(kind).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "unsupported CUE track mode")
+            })?;
+            current_track = Some(CueTrack {
+                file_name,
+                layout,
+                session,
+                first_index: None,
+                file_offset: 0,
+            });
+            continue;
+        }
+        if let Some(rest) = cue_command(line, "INDEX") {
+            let Some(track) = current_track.as_mut() else {
+                continue;
+            };
+            let mut fields = rest.split_whitespace();
+            let index = fields.next().and_then(|value| value.parse::<u8>().ok());
+            let frames = fields
+                .next()
+                .and_then(cue_msf_frames)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid CUE INDEX"))?;
+            let first_index = *track.first_index.get_or_insert(frames);
+            if track.first_index == Some(frames)
+                && let Some(previous) = &previous_track
+                && previous.file_name == track.file_name
+            {
+                let previous_first = previous.first_index.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "previous CUE track has no INDEX",
+                    )
+                })?;
+                let previous_frames = frames.checked_sub(previous_first).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "CUE track indexes go backwards")
+                })?;
+                track.file_offset = previous
+                    .file_offset
+                    .checked_add(
+                        previous_frames
+                            .checked_mul(previous.layout.physical_size)
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "CUE track offset overflow",
+                                )
+                            })?,
+                    )
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "CUE track offset overflow")
+                    })?;
+            }
+            if index != Some(1) || track.session != 2 {
+                continue;
+            }
+            let pregap_frames = frames.checked_sub(first_index).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "CUE INDEX 01 precedes INDEX 00")
+            })?;
+            let data_offset = track
+                .file_offset
+                .checked_add(
+                    pregap_frames
+                        .checked_mul(track.layout.physical_size)
+                        .ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::InvalidData, "CUE track offset overflow")
+                        })?,
+                )
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "CUE track offset overflow")
+                })?;
+            let path = find_file_case_insensitive(parent, &track.file_name)
+                .unwrap_or_else(|| parent.join(&track.file_name));
+            return Ok(CueTrackLocation {
+                path,
+                layout: track.layout,
+                data_offset,
+            });
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "no second-session track in cue",
+    ))
+}
+
+const CDI_V2_ID: u32 = 0x8000_0004;
+const CDI_V3_ID: u32 = 0x8000_0005;
+const CDI_V35_ID: u32 = 0x8000_0006;
+const CDI_TRACK_MARKER: [u8; 20] = [
+    0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0xFF, 0xFF, 0xFF, 0xFF,
+];
+
+fn read_le_u16(file: &mut std::fs::File) -> io::Result<u16> {
+    let mut bytes = [0u8; 2];
+    file.read_exact(&mut bytes)?;
+    Ok(u16::from_le_bytes(bytes))
+}
+
+fn read_le_u32(file: &mut std::fs::File) -> io::Result<u32> {
+    let mut bytes = [0u8; 4];
+    file.read_exact(&mut bytes)?;
+    Ok(u32::from_le_bytes(bytes))
+}
+
+fn cdi_sector_size(mode: u32, code: u32) -> u64 {
+    match (mode, code) {
+        (0, 2) => 2352,
+        (1 | 2, 0) => 2048,
+        (2, 1) => 2336,
+        _ => 2352,
+    }
+}
+
+/// Locate the first track in Jaguar CD's second session inside a DiscJuggler
+/// image. The descriptor layout follows the parser used by Virtual Jaguar.
+fn cdi_boot_track(path: &Path) -> io::Result<(u64, u64)> {
+    let mut file = std::fs::File::open(path)?;
+    let file_size = file.metadata()?.len();
+    if file_size < 8 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "CDI trailer missing",
+        ));
+    }
+    file.seek(SeekFrom::End(-8))?;
+    let version = read_le_u32(&mut file)?;
+    let header_offset = read_le_u32(&mut file)? as u64;
+    if !matches!(version, CDI_V2_ID | CDI_V3_ID | CDI_V35_ID) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsupported CDI version",
+        ));
+    }
+    let header_position = if version == CDI_V35_ID {
+        file_size.checked_sub(header_offset)
+    } else {
+        Some(header_offset)
+    }
+    .filter(|position| *position < file_size - 8)
+    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid CDI header offset"))?;
+    file.seek(SeekFrom::Start(header_position))?;
+
+    let session_count = read_le_u16(&mut file)?;
+    let mut byte_offset = 0u64;
+    let mut fallback = None;
+    let mut boot_track = None;
+    for session in 0..session_count {
+        let track_count = read_le_u16(&mut file)?;
+        for _ in 0..track_count {
+            let new_format = read_le_u32(&mut file)?;
+            if new_format != 0 {
+                file.seek(SeekFrom::Current(8))?;
+            }
+            let mut marker = [0u8; 20];
+            file.read_exact(&mut marker)?;
+            if marker != CDI_TRACK_MARKER {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid CDI track marker",
+                ));
+            }
+            file.seek(SeekFrom::Current(4))?;
+            let mut filename_length = [0u8; 1];
+            file.read_exact(&mut filename_length)?;
+            file.seek(SeekFrom::Current(i64::from(filename_length[0]) + 19))?;
+            let index_format = read_le_u32(&mut file)?;
+            file.seek(SeekFrom::Current(if index_format == 0x8000_0000 {
+                10
+            } else {
+                2
+            }))?;
+
+            let mut track_data = [0u8; 0x57];
+            file.read_exact(&mut track_data)?;
+            let field = |offset: usize| {
+                u32::from_le_bytes(track_data[offset..offset + 4].try_into().unwrap())
+            };
+            let pregap = field(0x00) as u64;
+            let length = field(0x04) as u64;
+            let mode = field(0x0E);
+            let total_length = field(0x22) as u64;
+            let sector_size = cdi_sector_size(mode, field(0x36));
+
+            if version != CDI_V2_ID {
+                file.seek(SeekFrom::Current(5))?;
+                if read_le_u32(&mut file)? == u32::MAX {
+                    file.seek(SeekFrom::Current(78))?;
+                }
+            }
+
+            let data_offset = byte_offset
+                .checked_add(pregap.saturating_mul(sector_size))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "CDI track overflow"))?;
+            fallback.get_or_insert((data_offset, sector_size));
+            if session == 1 && boot_track.is_none() {
+                boot_track = Some((data_offset, sector_size));
+            }
+            let frames = if total_length != 0 {
+                total_length
+            } else {
+                pregap.saturating_add(length)
+            };
+            byte_offset = byte_offset
+                .checked_add(frames.saturating_mul(sector_size))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "CDI image overflow"))?;
+        }
+        file.seek(SeekFrom::Current(if version == CDI_V2_ID {
+            12
+        } else {
+            13
+        }))?;
+    }
+
+    let (declared_offset, sector_size) = boot_track
+        .or(fallback)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "CDI contains no tracks"))?;
+    Ok((
+        cdi_corrected_boot_offset(&mut file, file_size, declared_offset)?,
+        sector_size,
+    ))
+}
+
+/// Some widely circulated CDI images have a small, undescribed global data
+/// shift. The fixed 32-byte Jaguar boot signature provides a safe landmark.
+fn cdi_corrected_boot_offset(
+    file: &mut std::fs::File,
+    file_size: u64,
+    declared_offset: u64,
+) -> io::Result<u64> {
+    const WINDOW: u64 = 65_536;
+    const HEADER_DELTA: u64 = 0x42;
+    const HEADER: &[u8; 32] = b"ATARI APPROVED DATA HEADER ATRI ";
+    const SWAPPED_HEADER: &[u8; 32] = b"TARA IPARPVODED TA AEHDAREA RT I";
+
+    let start = declared_offset.saturating_sub(WINDOW);
+    let end = declared_offset.saturating_add(WINDOW).min(file_size);
+    let mut bytes = vec![0u8; end.saturating_sub(start) as usize];
+    file.seek(SeekFrom::Start(start))?;
+    file.read_exact(&mut bytes)?;
+    let mut best: Option<(u64, u64)> = None;
+    for (index, candidate) in bytes.windows(HEADER.len()).enumerate() {
+        if candidate != HEADER && candidate != SWAPPED_HEADER {
+            continue;
+        }
+        let absolute = start + index as u64;
+        let Some(content_start) = absolute.checked_sub(HEADER_DELTA) else {
+            continue;
+        };
+        let distance = content_start.abs_diff(declared_offset);
+        if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+            best = Some((content_start, distance));
+        }
+    }
+    Ok(best.map_or(declared_offset, |(offset, _)| offset))
+}
+
+fn jaguar_cd_hash_path(path: &Path) -> io::Result<Option<String>> {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "chd" => jaguar_cd_hash(&mut ChdReader::open(path)?),
+        "cue" => {
+            let track = cue_first_track_of_second_session(path)?;
+            if !track.path.is_file() {
+                return Ok(None);
+            }
+            jaguar_cd_hash(&mut RawFrameFileReader::open_layout(
+                &track.path,
+                track.layout.physical_size,
+                track.layout.payload_offset,
+                track.layout.payload_size,
+                track.data_offset,
+            )?)
+        }
+        "cdi" => {
+            let (offset, frame_size) = cdi_boot_track(path)?;
+            jaguar_cd_hash(&mut RawFrameFileReader::open_at(path, frame_size, offset)?)
+        }
+        "bin" | "img" => jaguar_cd_hash(&mut RawFrameFileReader::open(path, CD_FRAME_SIZE as u64)?),
+        _ => Ok(None),
+    }
+}
+
 /// Open the data track of a disc image (CHD or cue/bin/iso) as a sector reader.
 fn open_reader(path: &Path) -> io::Result<Option<Box<dyn SectorReader>>> {
     let ext = path
@@ -887,7 +1463,7 @@ fn find_file_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
 /// Compute the disc `rc_hash` for `path` per the given RePlayOS system. Returns
 /// `None` for unsupported systems/formats or when the recipe can't identify the
 /// disc (e.g. missing magic / boot file). Supported: PSX, Sega CD (Mega-CD),
-/// Saturn, Dreamcast (.gdi), 3DO, PC Engine CD, Neo Geo CD.
+/// Saturn, Dreamcast (.gdi), 3DO, PC Engine CD, Neo Geo CD, Atari Jaguar CD.
 pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<String>> {
     let Some(kind) = disc_rc_hash_kind(system) else {
         return Ok(None);
@@ -896,6 +1472,9 @@ pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<Stri
     // rather than the generic first-track reader.
     if kind == RcHashKind::Dreamcast {
         return dreamcast_hash_path(path);
+    }
+    if kind == RcHashKind::JaguarCd {
+        return jaguar_cd_hash_path(path);
     }
     // PSP `.pbp` eboots are container files, not disc images: whole-file MD5.
     if kind == RcHashKind::Psp
@@ -917,6 +1496,7 @@ pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<Stri
         RcHashKind::ThreeDo => three_do_hash(reader.as_mut()),
         RcHashKind::PceCd => pce_cd_hash(reader.as_mut()),
         RcHashKind::NeoGeoCd => neogeo_cd_hash(reader.as_mut()),
+        RcHashKind::JaguarCd => unreachable!("handled by jaguar_cd_hash_path"),
         _ => Ok(None),
     }
 }
@@ -1164,6 +1744,20 @@ mod tests {
         }
     }
 
+    struct MemRawFrames {
+        frames: Vec<[u8; CD_FRAME_SIZE]>,
+    }
+
+    impl RawFrameReader for MemRawFrames {
+        fn read_frame(&mut self, frame: u32, out: &mut [u8; CD_FRAME_SIZE]) -> io::Result<bool> {
+            let Some(source) = self.frames.get(frame as usize) else {
+                return Ok(false);
+            };
+            out.copy_from_slice(source);
+            Ok(true)
+        }
+    }
+
     fn dir_record(name: &str, lba: u32, size: u32) -> Vec<u8> {
         let nlen = name.len();
         let rlen = 33 + nlen + (1 - (nlen & 1)); // pad to even
@@ -1302,6 +1896,221 @@ mod tests {
         let mut exp = Md5::new();
         exp.update(&sectors[0][0..512]);
         assert_eq!(got, md5_digest_hex(exp.finalize().into()));
+    }
+
+    #[test]
+    fn jaguar_cd_recipe_hashes_boot_executable_across_frames() {
+        let body: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
+        let mut raw = vec![0u8; CD_FRAME_SIZE * 2];
+        let header_offset = 64;
+        raw[header_offset..header_offset + 32].copy_from_slice(b"ATARI APPROVED DATA HEADER ATRI ");
+        let size_offset = header_offset + 36;
+        raw[size_offset..size_offset + 4].copy_from_slice(&(body.len() as u32).to_be_bytes());
+        raw[size_offset + 4..size_offset + 4 + body.len()].copy_from_slice(&body);
+        let frames = raw.as_chunks::<CD_FRAME_SIZE>().0.to_vec();
+
+        let got = jaguar_cd_hash(&mut MemRawFrames { frames })
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
+    }
+
+    fn jaguar_cd_boot_track(body: &[u8], minimum_size: usize) -> Vec<u8> {
+        let header_offset = 64;
+        let size_offset = header_offset + 36;
+        let mut track = vec![0u8; minimum_size.max(size_offset + 4 + body.len())];
+        track[header_offset..header_offset + 32]
+            .copy_from_slice(b"ATARI APPROVED DATA HEADER ATRI ");
+        track[size_offset..size_offset + 4].copy_from_slice(&(body.len() as u32).to_be_bytes());
+        track[size_offset + 4..size_offset + 4 + body.len()].copy_from_slice(body);
+        track
+    }
+
+    #[test]
+    fn jaguar_cd_cue_uses_first_audio_track_of_second_session() {
+        let body: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("game.cue");
+        std::fs::write(dir.path().join("track01.bin"), vec![0u8; CD_FRAME_SIZE]).unwrap();
+        std::fs::write(
+            dir.path().join("track02.bin"),
+            jaguar_cd_boot_track(&body, CD_FRAME_SIZE * 2),
+        )
+        .unwrap();
+        std::fs::write(
+            &cue,
+            "REM SESSION 01\n\
+             FILE \"track01.bin\" BINARY\n\
+               TRACK 01 AUDIO\n\
+                 INDEX 01 00:00:00\n\
+             REM SESSION 02\n\
+             FILE \"track02.bin\" BINARY\n\
+               TRACK 02 AUDIO\n\
+                 INDEX 01 00:00:00\n",
+        )
+        .unwrap();
+
+        let got = compute_disc_rc_hash("atari_jaguarcd", &cue)
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
+    }
+
+    #[test]
+    fn jaguar_cd_cue_honors_shared_file_index_offset() {
+        let body: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("game.cue");
+        let mut shared = vec![0x55; CD_FRAME_SIZE * 2];
+        shared.extend_from_slice(&jaguar_cd_boot_track(&body, CD_FRAME_SIZE * 2));
+        std::fs::write(dir.path().join("shared.bin"), shared).unwrap();
+        std::fs::write(
+            &cue,
+            "REM SESSION 01\n\
+             FILE \"shared.bin\" BINARY\n\
+               TRACK 01 AUDIO\n\
+                 INDEX 01 00:00:00\n\
+             REM SESSION 02\n\
+               TRACK 02 AUDIO\n\
+                 INDEX 00 00:00:01\n\
+                 INDEX 01 00:00:02\n",
+        )
+        .unwrap();
+
+        let location = cue_first_track_of_second_session(&cue).unwrap();
+        assert_eq!(location.data_offset, (CD_FRAME_SIZE * 2) as u64);
+        let got = compute_disc_rc_hash("atari_jaguarcd", &cue)
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
+    }
+
+    #[test]
+    fn jaguar_cd_cue_shared_file_uses_each_tracks_physical_frame_size() {
+        let body: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("game.cue");
+        let mut shared = vec![0x55; CD_FRAME_SIZE * 2];
+        shared.extend_from_slice(&vec![0x66; 2048]);
+        let mut boot = jaguar_cd_boot_track(&body, 2 * CD_FRAME_SIZE);
+        boot.resize(boot.len().div_ceil(2048) * 2048, 0);
+        shared.extend_from_slice(&boot);
+        std::fs::write(dir.path().join("shared.bin"), shared).unwrap();
+        std::fs::write(
+            &cue,
+            "REM SESSION 01\n\
+             FILE \"shared.bin\" BINARY\n\
+               TRACK 01 AUDIO\n\
+                 INDEX 01 00:00:00\n\
+             REM SESSION 02\n\
+               TRACK 02 MODE1/2048\n\
+                 INDEX 00 00:00:02\n\
+                 INDEX 01 00:00:03\n",
+        )
+        .unwrap();
+
+        let location = cue_first_track_of_second_session(&cue).unwrap();
+        assert_eq!(location.data_offset, (CD_FRAME_SIZE * 2 + 2048) as u64);
+        let got = compute_disc_rc_hash("atari_jaguarcd", &cue)
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
+    }
+
+    #[test]
+    fn jaguar_cd_cue_mode1_2048_hashes_contiguous_payload() {
+        let body: Vec<u8> = (0..5000u32).map(|i| (i % 251) as u8).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("game.cue");
+        let track = jaguar_cd_boot_track(&body, 3 * CD_FRAME_SIZE);
+        let padded_size = track.len().div_ceil(2048) * 2048;
+        let mut cooked = track;
+        cooked.resize(padded_size, 0);
+        std::fs::write(dir.path().join("track02.bin"), cooked).unwrap();
+        std::fs::write(
+            &cue,
+            "REM SESSION 01\n\
+             FILE \"track01.bin\" BINARY\n\
+               TRACK 01 AUDIO\n\
+                 INDEX 01 00:00:00\n\
+             REM SESSION 02\n\
+             FILE \"track02.bin\" BINARY\n\
+               TRACK 02 MODE1/2048\n\
+                 INDEX 01 00:00:00\n",
+        )
+        .unwrap();
+
+        let got = compute_disc_rc_hash("atari_jaguarcd", &cue)
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
+    }
+
+    fn append_cdi_track_descriptor(header: &mut Vec<u8>) {
+        header.extend_from_slice(&0u32.to_le_bytes());
+        header.extend_from_slice(&CDI_TRACK_MARKER);
+        header.extend_from_slice(&[0; 4]);
+        header.push(0);
+        header.extend_from_slice(&[0; 19]);
+        header.extend_from_slice(&0u32.to_le_bytes());
+        header.extend_from_slice(&0u16.to_le_bytes());
+        let mut track_data = [0u8; 0x57];
+        track_data[0x04..0x08].copy_from_slice(&1u32.to_le_bytes());
+        track_data[0x22..0x26].copy_from_slice(&1u32.to_le_bytes());
+        track_data[0x36..0x3A].copy_from_slice(&2u32.to_le_bytes());
+        header.extend_from_slice(&track_data);
+        header.extend_from_slice(&[0; 5]);
+        header.extend_from_slice(&0u32.to_le_bytes());
+    }
+
+    #[test]
+    fn jaguar_cd_cdi_locates_shifted_second_session_boot_track() {
+        let body: Vec<u8> = (0..700u32).map(|i| (i % 251) as u8).collect();
+        let mut boot_frame = [0u8; CD_FRAME_SIZE];
+        let header_offset = 66;
+        boot_frame[header_offset..header_offset + 32]
+            .copy_from_slice(b"ATARI APPROVED DATA HEADER ATRI ");
+        let size_offset = header_offset + 36;
+        boot_frame[size_offset..size_offset + 4]
+            .copy_from_slice(&(body.len() as u32).to_be_bytes());
+        boot_frame[size_offset + 4..size_offset + 4 + body.len()].copy_from_slice(&body);
+
+        // Model a common CDI quirk: image payload starts later than the
+        // descriptor's cumulative track lengths claim.
+        let mut image = vec![0u8; 128];
+        image.extend_from_slice(&[0u8; CD_FRAME_SIZE]);
+        image.extend_from_slice(&boot_frame);
+        let header_offset = image.len() as u32;
+        let mut descriptor = Vec::new();
+        descriptor.extend_from_slice(&2u16.to_le_bytes());
+        for _ in 0..2 {
+            descriptor.extend_from_slice(&1u16.to_le_bytes());
+            append_cdi_track_descriptor(&mut descriptor);
+            descriptor.extend_from_slice(&[0; 13]);
+        }
+        image.extend_from_slice(&descriptor);
+        image.extend_from_slice(&CDI_V3_ID.to_le_bytes());
+        image.extend_from_slice(&header_offset.to_le_bytes());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("synthetic.cdi");
+        std::fs::write(&path, image).unwrap();
+        let got = compute_disc_rc_hash("atari_jaguarcd", &path)
+            .unwrap()
+            .unwrap();
+        let mut expected = Md5::new();
+        expected.update(body);
+        assert_eq!(got, md5_digest_hex(expected.finalize().into()));
     }
 
     #[test]

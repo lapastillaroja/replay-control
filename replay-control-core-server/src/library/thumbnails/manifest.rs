@@ -67,6 +67,19 @@ pub fn collect_all_repos() -> Vec<RepoInfo> {
     repos
 }
 
+/// Whether every thumbnail repository required by the current system registry
+/// has been imported. This is the shared completeness check for startup and
+/// setup UI status, so adding a system cannot leave those paths disagreeing.
+pub fn all_repos_imported(conn: &Connection) -> bool {
+    collect_all_repos().into_iter().all(|repo| {
+        let source_name = thumbnails::libretro_source_name(&repo.display_name);
+        external_metadata::get_data_source(conn, &source_name)
+            .ok()
+            .flatten()
+            .is_some()
+    })
+}
+
 #[cfg(test)]
 mod collect_all_repos_tests {
     use super::*;
@@ -78,6 +91,44 @@ mod collect_all_repos_tests {
                 .iter()
                 .any(|repo| repo.display_name == "Sony - PlayStation Portable")
         );
+    }
+
+    #[test]
+    fn shared_jaguar_repo_is_collected_once() {
+        assert_eq!(
+            collect_all_repos()
+                .iter()
+                .filter(|repo| repo.display_name == "Atari - Jaguar")
+                .count(),
+            1
+        );
+        assert!(
+            collect_all_repos()
+                .iter()
+                .all(|repo| repo.display_name != "Atari - Jaguar CD")
+        );
+    }
+
+    #[test]
+    fn completeness_requires_every_registered_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = external_metadata::open_at(&dir.path().join("external.db")).unwrap();
+        assert!(!all_repos_imported(&conn));
+
+        for repo in collect_all_repos() {
+            let source_name = thumbnails::libretro_source_name(&repo.display_name);
+            external_metadata::upsert_data_source(
+                &conn,
+                &source_name,
+                "libretro-thumbnails",
+                "test-version",
+                default_branch(&repo.display_name),
+                1,
+            )
+            .unwrap();
+        }
+
+        assert!(all_repos_imported(&conn));
     }
 }
 

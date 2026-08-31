@@ -10,8 +10,8 @@ use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::search_scoring::{search_score, split_into_words};
 
 use super::{
-    DpSql, GameEntry, LibraryDb, PhaseState, SystemMeta, ThumbnailDownloadJob, ThumbnailJobState,
-    ThumbnailPhaseState, library_meta, unix_now,
+    DpSql, GameEntry, IdentityState, LibraryDb, PhaseState, SystemMeta, ThumbnailDownloadJob,
+    ThumbnailJobState, ThumbnailPhaseState, library_meta, unix_now,
 };
 
 const MAX_THUMBNAIL_JOB_ATTEMPTS: i64 = 5;
@@ -1364,18 +1364,29 @@ impl LibraryDb {
         Ok(updated)
     }
 
-    /// `(rom_filename, rc_hash)` for every row carrying a runtime `rc_hash`
-    /// (header carts: NES/SNES/N64). Lets a catalog refresh re-resolve `ra_id`
-    /// from the persisted hash without re-reading the ROM.
+    /// `(rom_filename, rc_hash)` for every terminal row carrying a valid runtime
+    /// `rc_hash` (header carts and disc systems). Pending/running/failed rows are
+    /// excluded because catalog re-resolution must not complete interrupted or
+    /// stale identity work without hashing the file again.
     pub fn rc_hash_pairs(conn: &Connection, system: &str) -> Result<Vec<(String, String)>> {
         let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, rc_hash FROM game_library
-                 WHERE system = ?1 AND rc_hash IS NOT NULL AND rc_hash != ''",
+                 WHERE system = ?1
+                   AND rc_hash IS NOT NULL
+                   AND rc_hash != ''
+                   AND identity_state IN (?2, ?3)",
             )
             .map_err(|e| Error::Other(format!("Prepare rc_hash_pairs: {e}")))?;
         let rows = stmt
-            .query_map(params![system], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(
+                params![
+                    system,
+                    IdentityState::CompleteMatched.as_i64(),
+                    IdentityState::CompleteUnmatched.as_i64()
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .map_err(|e| Error::Other(format!("Query rc_hash_pairs: {e}")))?;
         let mut out = Vec::new();
         for row in rows {
@@ -1384,14 +1395,17 @@ impl LibraryDb {
         Ok(out)
     }
 
-    /// Set `ra_id` for the given `(rom_filename, ra_id)` pairs, writing only rows
-    /// whose value actually changes. Used to re-resolve header-cart `ra_id` from
-    /// `rc_hash` after a catalog refresh, independent of scan-time hash reuse. Returns
-    /// the number of rows changed.
-    pub fn set_ra_ids(
+    /// Apply current-catalog `ra_id` values and their corresponding terminal
+    /// identity state for the given
+    /// `(rom_filename, rc_hash, ra_id)` tuples, writing only terminal rows whose
+    /// hash still matches and whose value actually changes. The hash/state guards
+    /// make the write tolerate a watcher changing the row between the library
+    /// read and the catalog lookup. Used after a catalog refresh, independent of
+    /// scan-time hash reuse. Returns the number of rows changed.
+    pub fn apply_rc_hash_ra_ids(
         conn: &mut Connection,
         system: &str,
-        pairs: &[(String, String)],
+        pairs: &[(String, String, String)],
     ) -> Result<usize> {
         if pairs.is_empty() {
             return Ok(0);
@@ -1403,14 +1417,36 @@ impl LibraryDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "UPDATE game_library SET ra_id = ?3
-                     WHERE system = ?1 AND rom_filename = ?2 AND ra_id != ?3",
+                    "UPDATE game_library
+                     SET ra_id = ?4,
+                         identity_state = CASE
+                             WHEN ?4 != '' OR hash_matched_name IS NOT NULL THEN ?5
+                             ELSE ?6
+                         END
+                     WHERE system = ?1
+                       AND rom_filename = ?2
+                       AND rc_hash = ?3
+                       AND identity_state IN (?5, ?6)
+                       AND (
+                           ra_id != ?4 OR
+                           identity_state != CASE
+                               WHEN ?4 != '' OR hash_matched_name IS NOT NULL THEN ?5
+                               ELSE ?6
+                           END
+                       )",
                 )
-                .map_err(|e| Error::Other(format!("Prepare set_ra_ids: {e}")))?;
-            for (rom_filename, ra_id) in pairs {
+                .map_err(|e| Error::Other(format!("Prepare apply_rc_hash_ra_ids: {e}")))?;
+            for (rom_filename, rc_hash, ra_id) in pairs {
                 changed += stmt
-                    .execute(params![system, rom_filename, ra_id])
-                    .map_err(|e| Error::Other(format!("set_ra_ids update: {e}")))?;
+                    .execute(params![
+                        system,
+                        rom_filename,
+                        rc_hash,
+                        ra_id,
+                        IdentityState::CompleteMatched.as_i64(),
+                        IdentityState::CompleteUnmatched.as_i64()
+                    ])
+                    .map_err(|e| Error::Other(format!("apply_rc_hash_ra_ids update: {e}")))?;
             }
         }
         tx.commit()
@@ -5113,7 +5149,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_hash_pairs_and_set_ra_ids_reresolve() {
+    fn rc_hash_pairs_and_apply_ra_ids_reresolve() {
         let (mut conn, _dir) = open_temp_db();
 
         // A header cart with a persisted rc_hash but no ra_id yet (the stale
@@ -5121,9 +5157,15 @@ mod tests {
         let mut nes = make_game_entry("nes", "MegaMan2.nes", false);
         nes.rc_hash = Some("0527a0ee512f69e08b8db6dc97964632".into());
         nes.ra_id = String::new();
+        nes.identity_state = IdentityState::CompleteUnmatched;
         // A row with no rc_hash must be ignored by rc_hash_pairs.
         let plain = make_game_entry("nes", "NoHash.nes", false);
-        LibraryDb::save_system_entries(&mut conn, "nes", &[nes, plain], None).unwrap();
+        // A non-terminal row must also be ignored even if it carries a stale
+        // hash from interrupted work.
+        let mut pending = make_game_entry("nes", "Pending.nes", false);
+        pending.rc_hash = Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
+        pending.identity_state = IdentityState::Pending;
+        LibraryDb::save_system_entries(&mut conn, "nes", &[nes, plain, pending], None).unwrap();
 
         let pairs = LibraryDb::rc_hash_pairs(&conn, "nes").unwrap();
         assert_eq!(
@@ -5134,10 +5176,42 @@ mod tests {
             )]
         );
 
+        // A catalog result for an older hash, or for a row still awaiting
+        // identity work, must not mutate the row.
+        let stale = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "MegaMan2.nes".into(),
+                "ffffffffffffffffffffffffffffffff".into(),
+                "1451".into(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(stale, 0);
+        let pending_update = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "Pending.nes".into(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                "1234".into(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(pending_update, 0);
+
         // Re-resolve: write the ra_id back (only the changed row).
-        let changed =
-            LibraryDb::set_ra_ids(&mut conn, "nes", &[("MegaMan2.nes".into(), "1451".into())])
-                .unwrap();
+        let changed = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "MegaMan2.nes".into(),
+                "0527a0ee512f69e08b8db6dc97964632".into(),
+                "1451".into(),
+            )],
+        )
+        .unwrap();
         assert_eq!(changed, 1);
 
         let loaded = LibraryDb::lookup_game_entries(&conn, &[("nes", "MegaMan2.nes")]).unwrap();
@@ -5148,11 +5222,72 @@ mod tests {
                 .ra_id,
             "1451"
         );
+        assert_eq!(
+            loaded
+                .get(&("nes".to_string(), "MegaMan2.nes".to_string()))
+                .unwrap()
+                .identity_state,
+            IdentityState::CompleteMatched
+        );
         // Idempotent: re-applying the same value changes nothing.
-        let again =
-            LibraryDb::set_ra_ids(&mut conn, "nes", &[("MegaMan2.nes".into(), "1451".into())])
-                .unwrap();
+        let again = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "MegaMan2.nes".into(),
+                "0527a0ee512f69e08b8db6dc97964632".into(),
+                "1451".into(),
+            )],
+        )
+        .unwrap();
         assert_eq!(again, 0);
+
+        // Removing a catalog mapping clears the RA id and restores the
+        // completed-but-unmatched state in the same write.
+        let cleared = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "MegaMan2.nes".into(),
+                "0527a0ee512f69e08b8db6dc97964632".into(),
+                String::new(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(cleared, 1);
+        let loaded = LibraryDb::lookup_game_entries(&conn, &[("nes", "MegaMan2.nes")]).unwrap();
+        let stored = loaded
+            .get(&("nes".to_string(), "MegaMan2.nes".to_string()))
+            .unwrap();
+        assert!(stored.ra_id.is_empty());
+        assert_eq!(stored.identity_state, IdentityState::CompleteUnmatched);
+
+        // Header carts can remain canonically identified through No-Intro even
+        // when their RA mapping is removed. Re-resolution must not downgrade
+        // that independent match.
+        let mut known = make_game_entry("nes", "Known.nes", false);
+        known.rc_hash = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into());
+        known.hash_matched_name = Some("Known (USA).nes".into());
+        known.ra_id = "999".into();
+        known.identity_state = IdentityState::CompleteMatched;
+        LibraryDb::save_system_entries(&mut conn, "nes", &[known], None).unwrap();
+        let cleared = LibraryDb::apply_rc_hash_ra_ids(
+            &mut conn,
+            "nes",
+            &[(
+                "Known.nes".into(),
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                String::new(),
+            )],
+        )
+        .unwrap();
+        assert_eq!(cleared, 1);
+        let loaded = LibraryDb::lookup_game_entries(&conn, &[("nes", "Known.nes")]).unwrap();
+        let stored = loaded
+            .get(&("nes".to_string(), "Known.nes".to_string()))
+            .unwrap();
+        assert!(stored.ra_id.is_empty());
+        assert_eq!(stored.identity_state, IdentityState::CompleteMatched);
     }
 
     #[test]

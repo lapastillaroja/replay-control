@@ -61,13 +61,10 @@ MAX_ATTEMPTS = 5
 # case-insensitively as a substring against API_GetConsoleIDs names, so we don't
 # depend on exact RA spelling or hardcoded numeric ids.
 #
-# Scope: the systems the catalog actually builds metadata for — the same set
-# `scripts/download-metadata.sh` fetches No-Intro DATs for — plus a single
-# `arcade` entry. The catalog has no `canonical_game` rows for disc systems
-# (PSX, PS2, DS, Saturn, Dreamcast, …), Atari, NEC, SNK, or 3DO, so RA data for
-# those could never be ingested and is deliberately not fetched. The catalog's
-# `commodore_ami` is also omitted: RA has no Amiga console (it exposes Amstrad
-# CPC, which we don't catalog).
+# Scope: cartridge systems with catalog identities, arcade, and disc systems
+# with runtime `rc_hash` recipes. Disc hashes populate the catalog's `ra_hash`
+# table without requiring `canonical_game` rows. The catalog's `commodore_ami`
+# is omitted because RA has no Amiga console.
 #
 # Arcade is matched differently from the console systems. RA's "Arcade" console
 # identifies games by `md5(lowercase romset_name)` (rc_hash hashes the ROM set
@@ -99,6 +96,7 @@ SYSTEM_TO_RA_CONSOLE = {
     "sega_cd": ["Sega CD"],
     "sega_dc": ["Dreamcast"],
     "panasonic_3do": ["3DO Interactive Multiplayer"],
+    "atari_jaguarcd": ["Atari Jaguar CD"],
     "nec_pcecd": ["PC Engine CD/TurboGrafx-CD"],
     "snk_ngcd": ["Neo Geo CD"],
 }
