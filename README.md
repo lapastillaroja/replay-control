@@ -99,9 +99,11 @@ Planned, not yet available (in no particular order):
 - Favorites export and import for sharing
 - DMDos integration
 
-## Quick Install
+## Quick Start
 
-Works on **Windows 10+, macOS, and Linux** — all three ship with SSH built in. SSH into your Pi, then run the installer:
+You need a Raspberry Pi running [RePlayOS](https://www.replayos.com/) and a computer, phone, or tablet on the same network.
+
+1. From Windows 10+, macOS, or Linux, SSH into your Pi and run the installer:
 
 ```bash
 ssh root@replay.local
@@ -109,40 +111,25 @@ ssh root@replay.local
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-If `replay.local` doesn't resolve (common on Windows and in VMs), find the Pi's IP in your router's connected-devices list and use `ssh root@<ip>` instead.
+2. On a device connected to the same network, open **[https://replay.local:8443](https://replay.local:8443)** in a browser.
 
-<details>
-<summary>More install options</summary>
+Your browser will show a security warning because Replay Control uses a local self-signed certificate. Approve the exception to continue, then follow the first-time setup screen.
 
-**Run from another computer (Linux/macOS only, no SSH session):**
+If `replay.local` does not resolve, find the Pi's IP address in your router's connected-devices list and use it for both SSH and the browser: `ssh root@<ip>` and `https://<ip>:8443`.
+
+For setup help and what to do next, see the [Getting Started guide](https://lapastillaroja.github.io/replay-control/docs/features/getting-started/).
+
+## Install, Update, and Uninstall
+
+The Quick Start command installs the latest stable release. Run the same command again on the Pi to update Replay Control.
+
+To uninstall while preserving settings and downloaded library data, run on the Pi:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
-```
-The installer auto-discovers your Pi via mDNS and SSHes in for you. Doesn't work on Windows — use the SSH-first flow above.
-
-**Specific version (run on the Pi after SSHing in):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --version v0.2.0
-```
-
-**Skip discovery from another computer (specify Pi address):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip 192.168.1.50
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --uninstall
 ```
 
-**Custom SSH password (when running from another computer):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword
-```
-
-**Dry run (preview without changes):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --dry-run
-```
-
-See [GitHub Releases](https://github.com/lapastillaroja/replay-control/releases) for all versions.
-
-</details>
+For specific versions, remote installation, a complete data purge, and other options, see the [Installation guide](https://lapastillaroja.github.io/replay-control/docs/features/installation/).
 
 ## About RePlayOS
 
@@ -202,7 +189,7 @@ replay-control/
 - **TheGamesDB** — game metadata (year, genre, developer, publisher, players, coop, rating), via [TheGamesDB](https://thegamesdb.net/) (GPLv3 codebase). Name lookups fetched via API at build time.
 - **MAME / FBNeo** — arcade databases, via [libretro-database](https://github.com/libretro/libretro-database) (MIT/MAME License)
 - **Wikidata** — game series relationships (CC0)
-- **MiSTer Manual Downloader** — bundled manual link indexes ([GitHub](https://github.com/antiKk/MiSTer_ManualDownloader)); only URLs are redistributed, PDFs download on demand when a user saves a manual
+- **MiSTer manuals databases** — bundled manual link indexes from [ajgowans' manualsdb repositories](https://github.com/ajgowans?tab=repositories&q=manualsdb&type=source); only URLs are redistributed, PDFs download on demand when a user saves a manual
 - **Retrokit manuals** — bundled manual link indexes from the [retrokit-manuals Archive.org collection](https://archive.org/download/retrokit-manuals); only URLs are redistributed, PDFs download on demand when a user saves a manual
 
 ### Runtime Data (user-initiated downloads)
