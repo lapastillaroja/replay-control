@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
-    "@changesets/cli": "^3.0.0",
+    "@changesets/cli": "^3.0.1",
     "prettier": "^3.9.6",
     "vite": "^7.3.6"
   },
