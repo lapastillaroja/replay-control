@@ -164,4 +164,4 @@ Uses `notify::recommended_watcher` in recursive mode on the `roms/` directory. E
 Two `BackgroundManager` static methods cover the user-triggered refresh paths:
 
 - **`spawn_external_metadata_refresh(state)`** — fire-and-forget task that re-runs `phase_auto_import`. Used by the "Regenerate metadata" UI button (after wiping the stamp) and by `rebuild_corrupt_library` after the library DB is recreated.
-- **`spawn_external_metadata_download_and_refresh(state)`** — claims `Activity::RefreshExternalMetadata { phase: Downloading }`, downloads `Metadata.zip` into the host-global download directory via the curl/unzip flow (with throttled byte-progress callback), then hands the guard to `phase_auto_import_inner` to parse the just-downloaded XML.
+- **`spawn_external_metadata_download_and_refresh(state)`** — claims `Activity::RefreshExternalMetadata { phase: Downloading }`, streams `Metadata.zip` into the host-global download directory with throttled byte progress, extracts `Metadata.xml` in-process with Deflate-only ZIP support, atomically installs the completed XML, then hands the guard to `phase_auto_import_inner` to parse it. No OS archive utility is required.
