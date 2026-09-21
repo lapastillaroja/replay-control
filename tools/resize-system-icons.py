@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Resize and center system controller icons from 300x300 originals.
+"""Resize and center system controller icons from source artwork.
 
 Source: KyleBing/retro-game-console-icons (GPLv3)
         series_trimui/300w@1x/ directory
 
 Usage:
-    python3 tools/resize-system-icons.py [source_dir]
+    python3 tools/resize-system-icons.py [source_dir] [--only system_folder]
 
     source_dir: directory containing the 300x300 PNGs (default: /tmp/arcade-icons/png-options)
+    Generated PS2/GameCube sources: private repo design/assets/system-icons/
 
 Output: replay-control-app/static/icons/systems/ (112x112 PNGs, trimmed + centered)
 
@@ -16,10 +17,10 @@ Requires: ImageMagick 7 (`magick` command)
 
 import subprocess
 import os
-import shutil
 import sys
+import argparse
 
-# Source → destination filename mapping (KyleBing name → app folder_name)
+# Source → destination filename mapping (source artwork name → app folder_name)
 MAPPING = {
     "ARCADE_FBNEO": "arcade_fbneo",  # FBNeo-branded cabinet (was the generic ARCADE)
     "ARCADE": "arcade_stv",          # generic cabinet for Sega Titan Video
@@ -32,12 +33,14 @@ MAPPING = {
     "LYNX": "atari_lynx",
     "CPC": "amstrad_cpc",
     "AMIGA": "commodore_ami",
+    "AMIGACD": "commodore_amicd",
     "C64": "commodore_c64",
     "DOS": "ibm_pc",
     "MSX": "microsoft_msx",
     "PCE": "nec_pce",
     "PCECD": "nec_pcecd",
     "NDS": "nintendo_ds",
+    "GAMECUBE": "nintendo_gc",  # generated controller; KyleBing NGC is Neo Geo Color
     "GB": "nintendo_gb",
     "GBA": "nintendo_gba",
     "GBC": "nintendo_gbc",
@@ -60,20 +63,13 @@ MAPPING = {
     "NEOCD": "snk_ngcd",
     "NGP": "snk_ngp",
     "PS": "sony_psx",
+    "PS2": "sony_ps2",  # approved generated DualShock 2, archived in private repo
     "PSP": "sony_psp",
+    "VIDEOS": "alpha_player",
 }
 
-# Icons that use a different source (fallback or alias)
-FALLBACKS = {
-    "commodore_amicd": "commodore_ami",  # copy from Amiga
-}
-
-# Icons generated from non-KyleBing sources
-EXTERNAL_FALLBACKS = {
-    "atari_jaguar": "atari-jaguar-solid-56px.png",  # Controllercons
-    "philips_cdi": "generic-gamepad-56px.png",       # Phosphor
-    "alpha_player": "generic-gamepad-56px.png",      # Phosphor
-}
+# Atari Jaguar, Atari Jaguar CD, and Philips CD-i use project-local generated
+# icons because the KyleBing source collection has no artwork for those systems.
 
 SIZE = 112       # output canvas size (2x retina for ~56px display)
 CONTENT = 100    # content area after trim (leaves padding for centering)
@@ -94,12 +90,15 @@ def process_icon(src_path, dst_path):
         "-background", "none",
         "-extent", f"{SIZE}x{SIZE}",
         dst_path,
-    ], capture_output=True)
+    ], check=True, capture_output=True)
 
 
 def main():
-    src_dir = sys.argv[1] if len(sys.argv) > 1 else "/tmp/arcade-icons/png-options"
-    fallback_dir = os.path.join(os.path.dirname(src_dir), "missing")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source_dir", nargs="?", default="/tmp/arcade-icons/png-options")
+    parser.add_argument("--only", choices=sorted(MAPPING.values()), help="Regenerate only this system")
+    args = parser.parse_args()
+    src_dir = args.source_dir
     dest = os.path.join(os.path.dirname(__file__), "..",
                         "replay-control-app", "static", "icons", "systems")
     dest = os.path.normpath(dest)
@@ -110,6 +109,8 @@ def main():
 
     # Main mapping
     for src_name, dst_name in MAPPING.items():
+        if args.only and dst_name != args.only:
+            continue
         src_path = os.path.join(src_dir, f"{src_name}.png")
         dst_path = os.path.join(dest, f"{dst_name}.png")
         if os.path.exists(src_path):
@@ -117,24 +118,6 @@ def main():
             ok += 1
         else:
             missing.append(src_name)
-
-    # External fallbacks
-    for dst_name, fallback_file in EXTERNAL_FALLBACKS.items():
-        src_path = os.path.join(fallback_dir, fallback_file)
-        dst_path = os.path.join(dest, f"{dst_name}.png")
-        if os.path.exists(src_path):
-            process_icon(src_path, dst_path)
-            ok += 1
-        else:
-            missing.append(dst_name)
-
-    # Copy-based fallbacks (after main icons are generated)
-    for dst_name, src_name in FALLBACKS.items():
-        src_path = os.path.join(dest, f"{src_name}.png")
-        dst_path = os.path.join(dest, f"{dst_name}.png")
-        if os.path.exists(src_path):
-            shutil.copy(src_path, dst_path)
-            ok += 1
 
     # Verify
     errors = 0
@@ -152,6 +135,8 @@ def main():
     print(f"Done: {ok} icons at {SIZE}x{SIZE}")
     if missing:
         print(f"Missing sources: {', '.join(missing)}")
+        if args.only:
+            sys.exit(1)
     if errors:
         print(f"Errors: {errors}")
         sys.exit(1)
