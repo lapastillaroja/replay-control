@@ -388,7 +388,7 @@ cat > /etc/systemd/system/replay-control.service <<'UNIT'
 [Unit]
 Description=Replay Control
 After=network.target
-After=media-sd.mount media-usb.mount
+After=media-sd.mount
 
 [Service]
 Type=simple
