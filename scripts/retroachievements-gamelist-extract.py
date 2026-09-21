@@ -91,6 +91,7 @@ SYSTEM_TO_RA_CONSOLE = {
     # here), independent of disc identification/cataloguing. See plan §10.6.
     "sony_psx": ["PlayStation"],
     "sony_ps2": ["PlayStation 2"],
+    "nintendo_gc": ["GameCube"],
     "sony_psp": ["PlayStation Portable"],
     "sega_st": ["Saturn"],
     "sega_cd": ["Sega CD"],

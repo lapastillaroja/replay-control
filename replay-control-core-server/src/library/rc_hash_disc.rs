@@ -38,6 +38,10 @@ use crate::library::rom_hash;
 use crate::library::rom_hash::md5_digest_hex;
 use replay_control_core::systems::{RcHashKind, find_system};
 
+mod containers;
+mod gamecube;
+mod ps2;
+
 /// rcheevos caps the bytes it MD5s at 64 MiB; mirror it for the PSX exe body.
 const MAX_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 const MAX_M3U_BYTES: u64 = 8192;
@@ -139,6 +143,7 @@ const CD_TRACK_PADDING: u32 = 4;
 
 struct ChdReader {
     chd: chd::Chd<std::fs::File>,
+    unit_bytes: usize,
     frames_per_hunk: usize,
     cmpbuf: Vec<u8>,
     hunk_cache: Vec<u8>,
@@ -154,6 +159,16 @@ impl ChdReader {
             chd::Chd::open(f, None).map_err(|e| io::Error::other(format!("chd open: {e:?}")))?;
         let hunk_bytes = chd.header().hunk_size() as usize;
         let unit_bytes = chd.header().unit_bytes() as usize;
+        if !matches!(unit_bytes, SECTOR_USER | CD_UNIT)
+            || hunk_bytes == 0
+            || hunk_bytes > 16 * 1024 * 1024
+            || !hunk_bytes.is_multiple_of(unit_bytes)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported CHD geometry",
+            ));
+        }
         let frames_per_hunk = hunk_bytes
             .checked_div(unit_bytes)
             .unwrap_or(hunk_bytes / CD_UNIT);
@@ -165,6 +180,7 @@ impl ChdReader {
         let frame_base = first_data_track_chd_offset(path, chd.header().meta_offset())?;
         let mut me = Self {
             chd,
+            unit_bytes,
             frames_per_hunk: frames_per_hunk.max(1),
             cmpbuf,
             hunk_cache: vec![0u8; hunk_bytes],
@@ -172,7 +188,11 @@ impl ChdReader {
             header_skip: 16,
             frame_base,
         };
-        me.header_skip = me.detect_header_skip()?;
+        me.header_skip = if unit_bytes == SECTOR_USER {
+            0
+        } else {
+            me.detect_header_skip()?
+        };
         Ok(me)
     }
 
@@ -191,6 +211,12 @@ impl ChdReader {
     }
 
     fn frame_raw(&mut self, frame: u32, out: &mut [u8; CD_FRAME_SIZE]) -> io::Result<bool> {
+        if self.unit_bytes != CD_UNIT {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "raw CD frame requested from DVD CHD",
+            ));
+        }
         let hunk = frame / self.frames_per_hunk as u32;
         if hunk as usize >= self.chd.header().hunk_count() as usize {
             return Ok(false);
@@ -238,6 +264,15 @@ impl ChdReader {
 
 impl SectorReader for ChdReader {
     fn read_sector(&mut self, sector: u32, out: &mut [u8]) -> io::Result<usize> {
+        if self.unit_bytes == SECTOR_USER {
+            if u64::from(sector) * SECTOR_USER as u64 >= self.chd.header().logical_bytes() {
+                return Ok(0);
+            }
+            self.load_hunk(sector / self.frames_per_hunk as u32)?;
+            let start = (sector as usize % self.frames_per_hunk) * SECTOR_USER;
+            out[..SECTOR_USER].copy_from_slice(&self.hunk_cache[start..start + SECTOR_USER]);
+            return Ok(SECTOR_USER);
+        }
         let mut raw = [0u8; CD_FRAME_SIZE];
         // Sectors are addressed relative to the first data track (frame_base).
         if !self.frame_raw(self.frame_base + sector, &mut raw)? {
@@ -537,7 +572,7 @@ fn iso_dir_find(
             if rlen == 0 {
                 break; // rest of sector is padding
             }
-            if off + rlen > SECTOR_USER {
+            if rlen < 33 || off + rlen > SECTOR_USER {
                 break;
             }
             let rec = &sec[off..off + rlen];
@@ -1038,6 +1073,7 @@ struct CueTrack {
     file_name: String,
     layout: CueFrameLayout,
     session: u32,
+    number: u32,
     first_index: Option<u64>,
     file_offset: u64,
 }
@@ -1072,6 +1108,13 @@ fn cue_msf_frames(value: &str) -> Option<u64> {
 /// `RC_HASH_CDTRACK_FIRST_OF_SECOND_SESSION` selection. Jaguar dumps commonly
 /// declare the boot track as AUDIO even though it contains the console header.
 fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation> {
+    cue_selected_track(cue, |track| track.session == 2)
+}
+
+fn cue_selected_track(
+    cue: &Path,
+    selected: impl Fn(&CueTrack) -> bool,
+) -> io::Result<CueTrackLocation> {
     let parent = cue.parent().unwrap_or(Path::new("."));
     let mut current_file: Option<String> = None;
     let mut session = 1u32;
@@ -1098,10 +1141,7 @@ fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation>
             continue;
         }
         if let Some(rest) = cue_command(line, "TRACK") {
-            if current_track
-                .as_ref()
-                .is_some_and(|track| track.session == 2)
-            {
+            if current_track.as_ref().is_some_and(&selected) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "second-session track has no INDEX 01",
@@ -1109,7 +1149,12 @@ fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation>
             }
             previous_track = current_track.take();
             let mut fields = rest.split_whitespace();
-            let _number = fields.next();
+            let number = fields
+                .next()
+                .and_then(|value| value.parse().ok())
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "invalid CUE track number")
+                })?;
             let kind = fields.next().unwrap_or("");
             let file_name = current_file
                 .clone()
@@ -1121,6 +1166,7 @@ fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation>
                 file_name,
                 layout,
                 session,
+                number,
                 first_index: None,
                 file_offset: 0,
             });
@@ -1137,6 +1183,13 @@ fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation>
                 .and_then(cue_msf_frames)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid CUE INDEX"))?;
             let first_index = *track.first_index.get_or_insert(frames);
+            if previous_track.is_none() {
+                track.file_offset = first_index
+                    .checked_mul(track.layout.physical_size)
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "CUE offset overflow")
+                    })?;
+            }
             if track.first_index == Some(frames)
                 && let Some(previous) = &previous_track
                 && previous.file_name == track.file_name
@@ -1166,7 +1219,7 @@ fn cue_first_track_of_second_session(cue: &Path) -> io::Result<CueTrackLocation>
                         io::Error::new(io::ErrorKind::InvalidData, "CUE track offset overflow")
                     })?;
             }
-            if index != Some(1) || track.session != 2 {
+            if index != Some(1) || !selected(track) {
                 continue;
             }
             let pregap_frames = frames.checked_sub(first_index).ok_or_else(|| {
@@ -1475,6 +1528,12 @@ pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<Stri
     }
     if kind == RcHashKind::JaguarCd {
         return jaguar_cd_hash_path(path);
+    }
+    if kind == RcHashKind::GameCube {
+        return gamecube::hash_path(path);
+    }
+    if kind == RcHashKind::Ps2 {
+        return ps2::hash_path(path);
     }
     // PSP `.pbp` eboots are container files, not disc images: whole-file MD5.
     if kind == RcHashKind::Psp

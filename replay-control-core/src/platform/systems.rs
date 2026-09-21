@@ -170,6 +170,8 @@ pub enum RcHashKind {
     PceCd,
     NeoGeoCd,
     JaguarCd,
+    GameCube,
+    Ps2,
 }
 
 impl RcHashKind {
@@ -671,6 +673,28 @@ pub static SYSTEMS: &[System] = &[
         uses_megabit: false,
         thumbnail_repos: &["Nintendo - Nintendo DS"],
         has_retroachievements: false,
+        core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "nintendo_gc",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::GameCube),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[2],
+        mister_manual_repos: &[],
+        display_name: "Nintendo GameCube",
+        manufacturer: "Nintendo",
+        category: SystemCategory::Console,
+        abbreviation: "GC",
+        placeholder_color: "#6355a5",
+        extensions: &["rvz", "iso"],
+        launchbox_platforms: &["Nintendo GameCube"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Nintendo - GameCube"],
+        has_retroachievements: true,
         core_supports_retroachievements: false,
     },
     System {
@@ -1195,6 +1219,30 @@ pub static SYSTEMS: &[System] = &[
         uses_megabit: true,
         thumbnail_repos: &["SNK - Neo Geo Pocket"],
         has_retroachievements: false,
+        core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "sony_ps2",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Ps2),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[11],
+        mister_manual_repos: &[],
+        display_name: "PlayStation 2",
+        manufacturer: "Sony",
+        category: SystemCategory::Console,
+        abbreviation: "PS2",
+        placeholder_color: "#003791",
+        extensions: &[
+            "elf", "iso", "ciso", "cue", "gz", "chd", "cso", "zso", "m3u",
+        ],
+        launchbox_platforms: &["Sony Playstation 2"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sony - PlayStation 2"],
+        has_retroachievements: true,
         core_supports_retroachievements: false,
     },
     System {
@@ -1826,6 +1874,39 @@ mod tests {
 
         assert_eq!(jaguar.mister_manual_repos, &["manualsdb-jaguar"]);
         assert_eq!(jaguar_cd.mister_manual_repos, &["manualsdb-jaguarcd"]);
+    }
+
+    #[test]
+    fn gamecube_and_ps2_use_beta_system_names_and_formats() {
+        for (folder, extensions, platform, repo, tgdb_id) in [
+            (
+                "nintendo_gc",
+                &["rvz", "iso"][..],
+                "Nintendo GameCube",
+                "Nintendo - GameCube",
+                2,
+            ),
+            (
+                "sony_ps2",
+                &[
+                    "elf", "iso", "ciso", "cue", "gz", "chd", "cso", "zso", "m3u",
+                ][..],
+                "Sony Playstation 2",
+                "Sony - PlayStation 2",
+                11,
+            ),
+        ] {
+            let system = find_system(folder).unwrap();
+            assert_eq!(system.extensions, extensions);
+            assert_eq!(system.category, SystemCategory::Console);
+            assert_eq!(system.launchbox_platforms, &[platform]);
+            assert_eq!(system.thumbnail_repos, &[repo]);
+            assert_eq!(system.tgdb_platform_ids, &[tgdb_id]);
+            assert!(!system.hidden);
+            assert!(!system.uses_megabit);
+            assert!(system.rc_hash_kind.is_some_and(RcHashKind::is_disc));
+            assert!(system.has_retroachievements);
+        }
     }
 
     #[test]

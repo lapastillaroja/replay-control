@@ -259,7 +259,20 @@ fn is_disc_identity_candidate(rom_filename: &str) -> bool {
         .to_ascii_lowercase();
     matches!(
         ext.as_str(),
-        "m3u" | "chd" | "cue" | "bin" | "iso" | "img" | "gdi"
+        "m3u"
+            | "chd"
+            | "cue"
+            | "bin"
+            | "iso"
+            | "img"
+            | "gdi"
+            | "cdi"
+            | "pbp"
+            | "rvz"
+            | "gz"
+            | "ciso"
+            | "cso"
+            | "zso"
     )
 }
 
@@ -730,6 +743,26 @@ fn disambiguate_by_format(entries: &mut [GameEntry]) {
 mod tests {
     use super::*;
     use replay_control_core::game_ref::GameRef;
+
+    #[test]
+    fn compressed_disc_formats_participate_in_identity() {
+        for (system, extension) in [
+            ("nintendo_gc", "rvz"),
+            ("nintendo_gc", "iso"),
+            ("sony_ps2", "cso"),
+            ("sony_ps2", "ciso"),
+            ("sony_ps2", "zso"),
+            ("sony_ps2", "gz"),
+            ("sony_ps2", "chd"),
+            ("sony_ps2", "cue"),
+            ("sony_ps2", "m3u"),
+            ("atari_jaguarcd", "cdi"),
+            ("sony_psp", "pbp"),
+        ] {
+            assert!(is_identity_applicable(system, &format!("Game.{extension}")));
+        }
+        assert!(!is_identity_applicable("sony_ps2", "homebrew.elf"));
+    }
 
     fn rom_entry(system: &str, filename: &str, display_name: Option<&str>) -> RomEntry {
         RomEntry {
