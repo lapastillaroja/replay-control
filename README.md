@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 
 Your browser will show a security warning because Replay Control uses a local self-signed certificate. Approve the exception to continue, then follow the first-time setup screen.
 
-If `replay.local` does not resolve, find the Pi's IP address in your router's connected-devices list and use it for both SSH and the browser: `ssh root@<ip>` and `https://<ip>:8443`.
+If `replay.local` does not resolve, find the Pi's IP address in RePlayOS or your router's connected-devices list, then use it for both SSH and the browser: `ssh root@<ip>` and `https://<ip>:8443`.
 
 For setup help and what to do next, see the [Getting Started guide](https://lapastillaroja.github.io/replay-control/docs/features/getting-started/).
 
