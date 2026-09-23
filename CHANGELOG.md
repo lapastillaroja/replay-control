@@ -6,6 +6,34 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [Unreleased]
 
+### Added
+
+- **Atari Jaguar CD support.** A separate `atari_jaguarcd` library for `.cue` and `.cdi` games, with metadata, artwork, manuals, a dedicated icon, and RetroAchievements identification. Launching requires a RePlayOS build that supports the system.
+- **Nintendo GameCube and PlayStation 2 support.** Browse GameCube games in `nintendo_gc` (`.rvz`, `.iso`) and PS2 games in `sony_ps2` (`.elf`, `.iso`, `.ciso`, `.cue`, `.gz`, `.chd`, `.cso`, `.zso`, `.m3u`), with metadata, artwork, and system icons. PS2 playlists group their discs and include their combined size. Launching requires a compatible RePlayOS build.
+- **RetroAchievements identification for GameCube and PS2 disc images**, including supported compressed formats, with bundled achievement catalogs. Library identification does not imply that the RePlayOS core supports earning achievements on-device.
+- **Running-game settings on the game detail page.** Adjust Ambiscan, integer scaling, filtering, gamma, screen position, and volume with compact controls and readable, translated values. Screen position moves in steps of two with press-and-hold support. Changes require **Apply Game Settings**; Replay Control checks that the same game is still running before saving.
+- **RePlayOS Insider settings.** Eligible beta users can save or clear their Insider token from Settings. The token is write-only, and applying it reboots RePlayOS.
+- **Link Play settings.** Configure disabled, host, or client mode, host address, port, and LAN discovery together. Changes apply immediately without rebooting RePlayOS.
+- Expanded playtime summaries show lifetime, current-session and current-week totals, unique games played, and the longest session when supported by RePlayOS.
+
+### Changed
+
+- Updated the RePlayOS integration for the 2.x API, including configuration responses, public version discovery, and expanded playtime fields.
+- Unified compact playback and settings controls, with more consistent spacing, mobile layout, and separation between the connection indicator and its text.
+- Installed and development-deployed services keep Replay Control off CPU 0, leaving it available for RePlayOS and using the remaining detected CPUs. Installation now requires at least two CPUs.
+- Added or refreshed controller artwork for Atari Jaguar, Jaguar CD, Philips CD-i, GameCube, and PS2, and simplified the system-icon generation script.
+- Simplified the README quick start and clarified where to find the device IP address.
+- Internal: added archive and disc-image reader dependencies for built-in ZIP extraction and the newly supported disc formats.
+
+### Fixed
+
+- Net Control now verifies credentials against authenticated status rather than the public version endpoint, and distinguishes rate limiting from other connection failures without repeatedly retrying rejected setup requests.
+- Service startup no longer waits specifically for a USB mount when the library uses SD, NFS, or NVMe storage.
+- LaunchBox metadata extraction no longer depends on a system `unzip` executable. Extraction failures are reported instead of silently leaving metadata unavailable.
+- Metadata setup and startup checks now agree on whether all required artwork sources have been imported, including newly added systems.
+- Box art can fall back to an exact catalog-title match for non-arcade games such as Amiga WHDLoad archives, without replacing existing filename or hash matches.
+- Thumbnail-source download errors now include useful HTTP, GitHub request, and rate-limit diagnostics while redacting credentials and avoiding arbitrary response-body logging.
+
 ---
 
 ## [1.2.0]
