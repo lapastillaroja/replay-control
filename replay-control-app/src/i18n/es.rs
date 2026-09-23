@@ -382,6 +382,41 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
         Key::GameDetailPlaytime => "Tiempo de juego",
+        Key::GameSettingsTitle => "Ajustes del juego activo",
+        Key::GameSettingsHint => {
+            "Sobrescribe los ajustes de vídeo y audio de RePlay para este juego. Pulsa Aplicar ajustes del juego para guardar y aplicar. Predeterminado hereda los ajustes del núcleo o globales."
+        }
+        Key::GameSettingsInherit => "Predeterminado",
+        Key::GameSettingsOff => "Desactivado",
+        Key::GameSettingsAmbiscan => "Ambiscan",
+        Key::GameSettingsAmbiscanFlat => "Plano",
+        Key::GameSettingsAmbiscanRadial => "Radial",
+        Key::GameSettingsAmbiscanSmart => "Inteligente",
+        Key::GameSettingsIntegerScale => "Escala entera",
+        Key::GameSettingsScaleVertical => "Vertical",
+        Key::GameSettingsScaleHorizontal => "Horizontal",
+        Key::GameSettingsScaleFull => "Completa",
+        Key::GameSettingsScaleFullOverscan => "Overscan completo",
+        Key::GameSettingsScaleVerticalOverscan => "Overscan vertical",
+        Key::GameSettingsVideoFilter => "Filtro de vídeo",
+        Key::GameSettingsFilterLight => "Ligero",
+        Key::GameSettingsFilterMedium => "Medio",
+        Key::GameSettingsFilterStrong => "Fuerte",
+        Key::GameSettingsFilterBlack => "Negro",
+        Key::GameSettingsGamma => "Gamma",
+        Key::GameSettingsMonitorX => "Posición horizontal",
+        Key::GameSettingsMonitorY => "Posición vertical",
+        Key::GameSettingsVolume => "Volumen del sistema",
+        Key::GameSettingsApply => "Aplicar ajustes del juego",
+        Key::GameSettingsUnavailable => {
+            "Los ajustes no están disponibles. Comprueba la conexión e inténtalo de nuevo."
+        }
+        Key::GameSettingsChanged => {
+            "El juego activo ha cambiado. No se aplicaron los ajustes; se ha actualizado el panel."
+        }
+        Key::GameSettingsInvalid => {
+            "Algunos valores no son válidos. Vuelve a cargar los ajustes e inténtalo de nuevo."
+        }
         Key::LinkPlayApplied => "Ajustes de Juego enlazado aplicados",
         Key::LinkPlayInvalidPort => "El puerto debe estar entre 1 y 65535",
         Key::LinkPlayInvalidMode => "Selecciona un modo de Juego enlazado válido",
@@ -393,6 +428,7 @@ pub fn translate(key: Key) -> &'static str {
             "No se pudo completar la solicitud. Comprueba la conexión y los ajustes guardados antes de reintentar."
         }
         Key::ReplayInsiderInvalid => "Token Insider no válido",
+        Key::GameSettingsApplied => "Ajustes del juego aplicados",
 
         Key::GameDetailEmulation => "Compatibilidad",
         Key::GameDetailRawCategory => "Categoría MAME",

@@ -378,6 +378,41 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
         Key::GameDetailPlaytime => "Play time",
+        Key::GameSettingsTitle => "Running Game Settings",
+        Key::GameSettingsHint => {
+            "Override RePlay video and audio settings for this game. Press Apply Game Settings to save and apply changes. Default inherits the core or global setting."
+        }
+        Key::GameSettingsInherit => "Default",
+        Key::GameSettingsOff => "Off",
+        Key::GameSettingsAmbiscan => "Ambiscan",
+        Key::GameSettingsAmbiscanFlat => "Flat",
+        Key::GameSettingsAmbiscanRadial => "Radial",
+        Key::GameSettingsAmbiscanSmart => "Smart",
+        Key::GameSettingsIntegerScale => "Integer scale",
+        Key::GameSettingsScaleVertical => "Vertical",
+        Key::GameSettingsScaleHorizontal => "Horizontal",
+        Key::GameSettingsScaleFull => "Full",
+        Key::GameSettingsScaleFullOverscan => "Full overscan",
+        Key::GameSettingsScaleVerticalOverscan => "Vertical overscan",
+        Key::GameSettingsVideoFilter => "Video filter",
+        Key::GameSettingsFilterLight => "Light",
+        Key::GameSettingsFilterMedium => "Medium",
+        Key::GameSettingsFilterStrong => "Strong",
+        Key::GameSettingsFilterBlack => "Black",
+        Key::GameSettingsGamma => "Gamma",
+        Key::GameSettingsMonitorX => "Horizontal position",
+        Key::GameSettingsMonitorY => "Vertical position",
+        Key::GameSettingsVolume => "System volume",
+        Key::GameSettingsApply => "Apply Game Settings",
+        Key::GameSettingsUnavailable => {
+            "Settings are unavailable. Check the connection and try again."
+        }
+        Key::GameSettingsChanged => {
+            "The running game changed. Settings were not applied; the panel has been refreshed."
+        }
+        Key::GameSettingsInvalid => {
+            "Some setting values are invalid. Reload the settings and try again."
+        }
         Key::LinkPlayApplied => "Link Play settings applied",
         Key::LinkPlayInvalidPort => "Port must be between 1 and 65535",
         Key::LinkPlayInvalidMode => "Select a valid Link Play mode",
@@ -387,6 +422,7 @@ pub fn translate(key: Key) -> &'static str {
             "The request could not be completed. Check the connection and saved settings before retrying."
         }
         Key::ReplayInsiderInvalid => "Invalid insider token",
+        Key::GameSettingsApplied => "Game settings applied",
 
         Key::GameDetailEmulation => "Compatibility",
         Key::GameDetailRawCategory => "MAME Category",

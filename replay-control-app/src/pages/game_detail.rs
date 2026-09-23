@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::active_game_settings::ActiveGameSettings;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
@@ -143,7 +144,7 @@ fn GameDetailContent(
     let base_title_sv = StoredValue::new(detail.base_title.clone());
 
     // Total play time for this game. Browser-only fetch so a slow or
-    // unimplemented `get_playtime` endpoint never blocks the SSR response.
+    // unavailable `get_playtime` endpoint never blocks the SSR response.
     #[cfg(feature = "hydrate")]
     let game_playtime = LocalResource::new(move || {
         server_fns::get_game_playtime(system_sv.get_value(), filename_sv.get_value())
@@ -598,6 +599,10 @@ fn GameDetailContent(
                 </button>
             </div>
         </section>
+
+        <Show when=move || is_now_playing.get() fallback=|| ()>
+            <ActiveGameSettings system=system_sv.get_value() rom_path=relative_path_sv.get_value() />
+        </Show>
 
         // Game Info Card
         <section class="section">

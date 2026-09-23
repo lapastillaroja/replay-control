@@ -1,3 +1,4 @@
+pub mod active_game_settings;
 pub mod asset_health_banner;
 pub mod boxart_picker;
 pub mod boxart_placeholder;

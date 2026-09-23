@@ -27,6 +27,10 @@ A summary card displays:
 
 A "Play" button sends the game to RePlayOS for immediate launch on the connected TV. Available when the Pi is running RePlayOS with a supported core.
 
+While the game is running, its detail page also exposes RePlay-owned video and audio overrides. Ambiscan, integer scaling, video filtering, gamma, monitor position, and system volume can be changed for that game. Use **Apply Game Settings** to save and apply your changes; adjusting a control does not save it. A value shown as **Default** inherits the active core or global RePlay setting. Screen position moves in steps of two and supports press-and-hold, starting from the inherited position.
+
+Replay Control checks that the same game is still running before applying settings. If it changed, the save is rejected and the panel refreshes. Avoid switching games on the TV while saving: a switch at the exact moment of application cannot yet be prevented. A settings connection error stays inside this panel; the rest of the detail page remains available.
+
 ## User Screenshots
 
 Screenshots captured on RePlayOS are matched to games by filename and displayed in a dedicated section. Tap any screenshot to view it in a fullscreen lightbox.

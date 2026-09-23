@@ -380,6 +380,39 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
         Key::GameDetailPlaytime => "プレイ時間",
+        Key::GameSettingsTitle => "実行中のゲーム設定",
+        Key::GameSettingsHint => {
+            "このゲームのRePlay映像・音声設定を上書きします。「ゲーム設定を適用」で保存・適用します。デフォルトはコアまたは全体設定を継承します。"
+        }
+        Key::GameSettingsInherit => "デフォルト",
+        Key::GameSettingsOff => "オフ",
+        Key::GameSettingsAmbiscan => "アンビスキャン",
+        Key::GameSettingsAmbiscanFlat => "フラット",
+        Key::GameSettingsAmbiscanRadial => "ラジアル",
+        Key::GameSettingsAmbiscanSmart => "スマート",
+        Key::GameSettingsIntegerScale => "整数スケール",
+        Key::GameSettingsScaleVertical => "垂直",
+        Key::GameSettingsScaleHorizontal => "水平",
+        Key::GameSettingsScaleFull => "フル",
+        Key::GameSettingsScaleFullOverscan => "フルオーバースキャン",
+        Key::GameSettingsScaleVerticalOverscan => "垂直オーバースキャン",
+        Key::GameSettingsVideoFilter => "映像フィルター",
+        Key::GameSettingsFilterLight => "弱",
+        Key::GameSettingsFilterMedium => "中",
+        Key::GameSettingsFilterStrong => "強",
+        Key::GameSettingsFilterBlack => "黒",
+        Key::GameSettingsGamma => "ガンマ",
+        Key::GameSettingsMonitorX => "水平位置",
+        Key::GameSettingsMonitorY => "垂直位置",
+        Key::GameSettingsVolume => "システム音量",
+        Key::GameSettingsApply => "ゲーム設定を適用",
+        Key::GameSettingsUnavailable => "設定を取得できません。接続を確認して再試行してください。",
+        Key::GameSettingsChanged => {
+            "実行中のゲームが変わりました。設定は適用されていません。パネルを更新しました。"
+        }
+        Key::GameSettingsInvalid => {
+            "無効な設定値があります。設定を再読み込みして再試行してください。"
+        }
         Key::LinkPlayApplied => "リンクプレイ設定を適用しました",
         Key::LinkPlayInvalidPort => "ポートは1〜65535で指定してください",
         Key::LinkPlayInvalidMode => "有効なリンクプレイモードを選択してください",
@@ -391,6 +424,7 @@ pub fn translate(key: Key) -> &'static str {
             "操作を完了できませんでした。再試行する前に接続と保存済み設定を確認してください。"
         }
         Key::ReplayInsiderInvalid => "Insiderトークンが無効です",
+        Key::GameSettingsApplied => "ゲーム設定を適用しました",
 
         Key::GameDetailEmulation => "互換性",
         Key::GameDetailRawCategory => "MAMEカテゴリ",

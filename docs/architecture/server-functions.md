@@ -65,6 +65,19 @@ let recents = Resource::new(|| (), |_| server_fns::get_recents());
 let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
 ```
 
+### Live device panels and nested streaming
+
+The active-game overrides, Link Play, and Insider panels use `LocalResource`
+inside a shared `ClientOnly` boundary. The page shell is server-rendered; these
+panels mount after hydration and contain their own loading/error boundaries.
+
+This is also a workaround for the current Leptos 0.7 nested streaming path:
+when these panels were built inside the page's async `Suspend`, the server
+emitted a nested loading fallback without the markers expected by hydration.
+Merely changing `Resource` to `LocalResource` did not fix it. Revisit the
+client-only boundary when upgrading the rendering framework, with both direct
+loads and SPA navigation covered by the device browser regression test.
+
 ### Skeleton Loaders
 
 Non-blocking resources use `<Suspense>` with skeleton fallbacks. The pattern:
