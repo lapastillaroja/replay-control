@@ -23,6 +23,7 @@ pub mod search_controls;
 pub mod setup_checklist;
 pub mod stat_card;
 pub mod status_message;
+pub mod step_button;
 pub mod storage_status_banner;
 pub mod system_card;
 pub mod system_filter_chips;

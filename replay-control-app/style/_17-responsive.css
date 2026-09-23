@@ -26,7 +26,7 @@
         gap: var(--control-gap-compact);
     }
 
-    .now-playing-control {
+    .compact-control {
         flex: 1 1 0;
         min-width: 0;
         min-height: var(--control-height);
@@ -34,7 +34,7 @@
         font-size: var(--tiny-text-font-size-default);
     }
 
-    .now-playing-control-icon-only {
+    .compact-control-icon {
         flex: 0 0 var(--control-height-large);
         min-width: var(--control-height-large);
         min-height: var(--control-height);
@@ -46,13 +46,22 @@
     }
 
     .now-playing-more-panel,
-    .now-playing-save-states {
+    .compact-controls-panel {
+        width: 100%;
+    }
+
+    .active-game-overrides-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .active-game-settings-apply {
+        flex: 1 1 100%;
         width: 100%;
     }
 }
 
 @media (max-width: 520px) and (orientation: portrait) {
-    .now-playing-control-icon-only {
+    .compact-control-icon {
         flex: 1 1 var(--control-height);
         min-width: var(--control-height);
         max-width: 54px;
@@ -64,33 +73,33 @@
         gap: var(--control-gap-tight);
     }
 
-    .now-playing-control-icon-only {
+    .compact-control-icon {
         flex-basis: var(--icon-button-size-touch);
         min-width: var(--icon-button-size-touch);
     }
 }
 
 @media (min-width: 560px) {
-    .now-playing-save-states {
+    .compact-controls-panel {
         --grid-columns:
-            var(--save-states-column-width-default)
+            var(--compact-control-column-width)
             minmax(0, 1fr)
-            minmax(var(--save-states-column-width-default), auto);
+            minmax(var(--compact-control-column-width), auto);
     }
 
-    .save-states-actions {
+    .compact-control-actions {
         --grid-columns:
             minmax(var(--save-states-actions-column-min-default), 1fr)
             minmax(var(--save-states-actions-column-min-default), 1fr);
     }
 
-    .save-states-action {
+    .compact-control-action {
         width: auto;
         min-width: 0;
         --button-padding: var(--control-padding-compact);
     }
 
-    .save-states-action .visually-hidden {
+    .compact-control-action .visually-hidden {
         position: static;
         width: auto;
         height: auto;
@@ -114,17 +123,17 @@
         width: auto;
     }
 
-    .now-playing-control {
+    .compact-control {
         flex: 0 0 auto;
     }
 
-    .now-playing-control-icon-only {
+    .compact-control-icon {
         flex: 0 0 var(--control-height);
         min-width: var(--control-height);
         min-height: var(--icon-button-size-touch);
     }
 
-    .now-playing-save-states {
+    .compact-controls-panel {
         --grid-columns:
             var(--save-states-summary-column-width-spacious)
             minmax(0, 1fr)
@@ -139,12 +148,12 @@
         grid-row: 1;
     }
 
-    .save-states-slot {
+    .compact-control-summary {
         grid-column: 2;
         grid-row: 1;
     }
 
-    .save-states-actions {
+    .compact-control-actions {
         grid-column: 3;
         grid-row: 1;
         --grid-columns:
@@ -153,7 +162,7 @@
     }
 
     .save-states-step,
-    .save-states-action {
+    .compact-control-action {
         min-height: var(--control-height);
     }
 
@@ -162,13 +171,13 @@
         min-width: var(--control-height);
     }
 
-    .save-states-action {
+    .compact-control-action {
         width: auto;
         min-width: 0;
         --button-padding: var(--control-padding-compact);
     }
 
-    .save-states-action .visually-hidden {
+    .compact-control-action .visually-hidden {
         position: static;
         width: auto;
         height: auto;

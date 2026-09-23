@@ -307,7 +307,7 @@ html {
     --extent-large-default: 10rem;
     --recommendation-thumb-width-default: 7.5rem;
     --recommendation-thumb-height-default: 4.25rem;
-    --save-states-column-width-default: 94px;
+    --compact-control-column-width: 94px;
     --save-states-summary-column-width-spacious: 96px;
     --save-states-detail-column-width-spacious: 156px;
     --save-states-actions-column-min-default: 76px;

@@ -219,7 +219,7 @@ fn PlayerControls(
                 />
                 <button
                     type="button"
-                    class="now-playing-control now-playing-control-more now-playing-control-icon-only"
+                    class="compact-control now-playing-control-more compact-control-icon"
                     class:is-open=move || more_open.get()
                     title=move || t(i18n.locale.get(), Key::PlayerControlMore)
                     aria-label=move || t(i18n.locale.get(), Key::PlayerControlMore)
@@ -279,7 +279,7 @@ fn SaveStatesPanel(
     let loading_state = move || t(i18n.locale.get(), Key::SaveStatesStatusPreview).to_string();
 
     view! {
-        <div class="now-playing-save-states">
+        <div class="compact-controls-panel">
             <SaveStatesSlotStepper selected_slot=slot decrement increment control_feedback />
             <Suspense fallback=move || view! {
                 <SaveStatesSlotSummary selected_slot=slot state=Signal::derive(loading_state) />
@@ -393,10 +393,10 @@ fn SaveStatesLoadedControls(
 
     view! {
         <SaveStatesSlotSummary selected_slot state=Signal::derive(slot_state) />
-        <div class="save-states-actions">
+        <div class="compact-control-actions">
             <button
                 type="button"
-                class="now-playing-control save-states-action"
+                class="compact-control compact-control-action"
                 class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::Save)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesSave)
                 prop:disabled=move || pending.get()
@@ -407,7 +407,7 @@ fn SaveStatesLoadedControls(
             </button>
             <button
                 type="button"
-                class="now-playing-control save-states-action"
+                class="compact-control compact-control-action"
                 class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::Load)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesLoad)
                 prop:disabled=move || pending.get() || slot_is_empty()
@@ -433,7 +433,7 @@ fn SaveStatesSlotStepper(
         <div class="save-states-step-group">
             <button
                 type="button"
-                class="now-playing-control now-playing-control-icon-only save-states-step"
+                class="compact-control compact-control-icon save-states-step"
                 class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::PreviousSlot)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesPreviousSlot)
                 on:click=move |ev| {
@@ -446,7 +446,7 @@ fn SaveStatesSlotStepper(
             </button>
             <button
                 type="button"
-                class="now-playing-control now-playing-control-icon-only save-states-step"
+                class="compact-control compact-control-icon save-states-step"
                 class:is-feedback=move || control_feedback.get() == Some(PlayerControlFeedback::NextSlot)
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesNextSlot)
                 on:click=move |ev| {
@@ -469,12 +469,12 @@ fn SaveStatesSlotSummary(
     let i18n = use_i18n();
 
     view! {
-        <div class="save-states-slot">
-            <span class="save-states-slot-label">
+        <div class="compact-control-summary">
+            <span class="compact-control-label">
                 {move || format!("{} {}/18", t(i18n.locale.get(), Key::SaveStatesSlot), selected_slot.get())}
             </span>
             <span class="save-states-slot-separator">{"-"}</span>
-            <span class="save-states-slot-state">
+            <span class="compact-control-value">
                 {move || state.get()}
             </span>
         </div>
@@ -486,10 +486,10 @@ fn SaveStatesActionsLoading() -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
-        <div class="save-states-actions">
+        <div class="compact-control-actions">
             <button
                 type="button"
-                class="now-playing-control save-states-action"
+                class="compact-control compact-control-action"
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesSave)
                 prop:disabled=true
             >
@@ -498,7 +498,7 @@ fn SaveStatesActionsLoading() -> impl IntoView {
             </button>
             <button
                 type="button"
-                class="now-playing-control save-states-action"
+                class="compact-control compact-control-action"
                 aria-label=move || t(i18n.locale.get(), Key::SaveStatesLoad)
                 prop:disabled=true
             >
@@ -625,8 +625,8 @@ fn PlayerControlButton(
     view! {
         <button
             type="button"
-            class=move || format!("now-playing-control {extra_class}")
-            class:now-playing-control-icon-only=move || icon.is_some()
+            class=move || format!("compact-control {extra_class}")
+            class:compact-control-icon=move || icon.is_some()
             class:is-feedback=move || control_feedback.get() == Some(feedback_id)
             title=move || t(i18n.locale.get(), label_key)
             aria-label=move || t(i18n.locale.get(), label_key)

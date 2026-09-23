@@ -1,0 +1,251 @@
+/* Shared compact controls used by playback, media, and game overrides. */
+.compact-control-error { color: var(--error); }
+.compact-control {
+    --button-padding: var(--control-padding-compact);
+    border: var(--control-border-accent);
+    background: var(--control-bg-hover);
+    color: var(--text);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .compact-control:hover,
+    .save-states-step:hover:not(:disabled) {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+    }
+}
+
+.compact-control:active:not(:disabled) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, var(--surface-hover));
+    box-shadow: var(--shadow-inset-bottom);
+    transform: scale(0.94);
+}
+
+.compact-control-icon {
+    width: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    color: var(--accent);
+}
+
+:where(.compact-control-icon, .compact-control-action) {
+    --button-padding: var(--control-padding-y);
+}
+
+.now-playing-control-icon {
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
+    stroke: currentColor;
+    stroke-width: 2.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.compact-control:disabled {
+    cursor: wait;
+    opacity: 0.86;
+    transform: none;
+}
+
+.compact-control.is-feedback,
+.compact-control.is-feedback:disabled {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 22%, var(--surface-hover));
+    box-shadow:
+        var(--shadow-inset-bottom),
+        0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
+    color: var(--accent);
+}
+
+.now-playing-control-reset {
+    border-color: color-mix(in srgb, var(--star) 45%, var(--border));
+    color: color-mix(in srgb, var(--star) 78%, var(--text));
+    margin-left: var(--control-gap-mini);
+}
+
+.now-playing-control-reset:hover {
+    border-color: var(--star);
+    background: color-mix(in srgb, var(--star) 10%, var(--surface-hover));
+}
+
+.now-playing-control-reset:active:not(:disabled) {
+    border-color: var(--star);
+    background: color-mix(in srgb, var(--star) 18%, var(--surface-hover));
+}
+
+.now-playing-control-reset.is-feedback,
+.now-playing-control-reset.is-feedback:disabled {
+    border-color: var(--star);
+    background: color-mix(in srgb, var(--star) 22%, var(--surface-hover));
+    box-shadow:
+        var(--shadow-inset-bottom),
+        0 0 0 2px color-mix(in srgb, var(--star) 28%, transparent);
+    color: color-mix(in srgb, var(--star) 86%, var(--text));
+}
+
+.now-playing-control-more.is-open {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
+}
+
+.now-playing-more-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: var(--control-gap);
+    width: 100%;
+    padding-top: var(--control-stack-gap-sm);
+    border-top: var(--border-width-default) solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.compact-controls-panel {
+    --grid-columns:
+        var(--compact-control-column-width)
+        minmax(0, 1fr)
+        minmax(var(--compact-control-column-width), auto);
+    width: 100%;
+}
+
+.save-states-step-group {
+    --grid-columns: var(--control-height) var(--control-height);
+    --grid-rows: var(--control-height);
+}
+
+.save-states-step {
+    width: var(--control-height);
+    min-width: var(--control-height);
+}
+
+.save-states-step:disabled {
+    cursor: default;
+    opacity: 0.58;
+}
+
+.compact-control-action:disabled:not(.is-feedback) {
+    opacity: 0.58;
+}
+
+.compact-control-summary {
+    min-width: 0;
+    height: var(--control-height);
+    padding: var(--control-padding-compact);
+}
+
+.compact-control-label {
+    flex-shrink: 0;
+    color: var(--text);
+    font-size: var(--secondary-meta-size-summary);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.save-states-slot-separator {
+    flex-shrink: 0;
+}
+
+.compact-control-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.compact-control-actions {
+    --grid-columns: var(--control-height) var(--control-height);
+    --grid-rows: var(--control-height);
+}
+
+.compact-control-action {
+    width: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+}
+
+.compact-control-action .now-playing-control-icon {
+    color: var(--accent);
+}
+
+
+.active-game-settings-panel {
+    display: grid;
+    gap: var(--control-stack-gap-sm);
+    padding: var(--control-stack-gap-sm);
+    border: var(--border-width-default) solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
+}
+
+.active-game-overrides-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: var(--control-gap);
+}
+
+.game-override-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--control-gap-compact);
+    min-width: 0;
+    border-radius: var(--radius-sm);
+}
+
+.game-override-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--control-gap);
+    min-width: 0;
+    min-height: var(--control-height);
+    padding: var(--control-padding-compact);
+    border: var(--border-width-default) solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.game-override-summary .compact-control-label {
+    flex-shrink: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.game-override-stepper {
+    display: grid;
+    grid-template-columns: var(--control-height) var(--control-height);
+    gap: var(--control-gap-compact);
+}
+
+.game-override-stepper .step-control {
+    min-width: 0;
+    width: 100%;
+    touch-action: manipulation;
+    user-select: none;
+}
+
+.step-control:disabled {
+    cursor: default;
+    opacity: 0.58;
+}
+
+.active-game-settings-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--control-gap);
+}
+
+.active-game-settings-footer .status-msg {
+    flex: 1 1 16rem;
+    margin: 0;
+}
+
+.active-game-settings-apply {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 7rem;
+}
