@@ -316,6 +316,34 @@ impl ReplayConfig {
         self.inner.get_non_empty("rcheevos_password").is_some()
     }
 
+    pub fn replay_insider_token_configured(&self) -> bool {
+        self.inner.get_non_empty("replay_insider_token").is_some()
+    }
+
+    pub fn link_play_mode(&self) -> &str {
+        self.inner
+            .get_non_empty("link_play_mode")
+            .unwrap_or("disabled")
+    }
+
+    pub fn link_play_address(&self) -> &str {
+        self.inner.get("link_play_address").unwrap_or("")
+    }
+
+    pub fn link_play_port(&self) -> u16 {
+        self.inner
+            .get("link_play_port")
+            .and_then(|value| value.parse().ok())
+            .filter(|port| *port > 0)
+            .unwrap_or(55_435)
+    }
+
+    pub fn link_play_lan_discovery_enabled(&self) -> bool {
+        self.inner
+            .get("link_play_lan_discovery")
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+    }
+
     // ── Write methods ───────────────────────────────────────────
 
     /// Enable or disable RePlayOS Net Control. RePlayOS owns token generation;
@@ -758,6 +786,32 @@ mod tests {
                 .unwrap();
         assert_eq!(config.retroachievements_username(), Some("player"));
         assert!(!config.retroachievements_password_configured());
+    }
+
+    #[test]
+    fn replay_insider_token_reports_only_non_empty_values() {
+        let configured = ReplayConfig::parse("replay_insider_token = \"secret\"\n").unwrap();
+        assert!(configured.replay_insider_token_configured());
+        let empty = ReplayConfig::parse("replay_insider_token = \"\"\n").unwrap();
+        assert!(!empty.replay_insider_token_configured());
+    }
+
+    #[test]
+    fn link_play_defaults_and_values() {
+        let defaults = ReplayConfig::parse("").unwrap();
+        assert_eq!(defaults.link_play_mode(), "disabled");
+        assert_eq!(defaults.link_play_address(), "");
+        assert_eq!(defaults.link_play_port(), 55_435);
+        assert!(!defaults.link_play_lan_discovery_enabled());
+
+        let configured = ReplayConfig::parse(
+            "link_play_mode = \"client\"\nlink_play_address = \"replay.local\"\nlink_play_port = \"6000\"\nlink_play_lan_discovery = \"true\"\n",
+        )
+        .unwrap();
+        assert_eq!(configured.link_play_mode(), "client");
+        assert_eq!(configured.link_play_address(), "replay.local");
+        assert_eq!(configured.link_play_port(), 6000);
+        assert!(configured.link_play_lan_discovery_enabled());
     }
 
     #[test]

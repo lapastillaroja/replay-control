@@ -105,10 +105,8 @@ pub struct VersionResponse {
 /// `get_playtime` payload: cumulative tracked play time, optionally filtered to
 /// one `system` and/or `game_file`.
 ///
-/// Documented in the RePlayOS REST API but **not yet implemented on 1.7.4** (it
-/// 404s on-device), so callers must degrade gracefully. We read only the raw
-/// `*_seconds` counts and format them ourselves; RePlayOS's preformatted
-/// `all`/`time` strings are ignored (serde drops unknown fields).
+/// We read the raw `*_seconds` counts and format them ourselves; RePlayOS's
+/// preformatted `all`/`time` strings are intentionally ignored.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlaytimeResponse {
     /// Whether RePlayOS is tracking play time at all. When `false`, the counts
@@ -119,6 +117,24 @@ pub struct PlaytimeResponse {
     /// subset when `system`/`game_file` narrow the query.
     #[serde(default)]
     pub all_seconds: u64,
+    #[serde(default)]
+    pub current_game_seconds: u64,
+    #[serde(default)]
+    pub session_seconds: u64,
+    #[serde(default)]
+    pub week_seconds: u64,
+    #[serde(default)]
+    pub games_played: u64,
+    #[serde(default)]
+    pub total_sessions: u64,
+    #[serde(default)]
+    pub most_played_game: String,
+    #[serde(default)]
+    pub most_played_system: String,
+    #[serde(default)]
+    pub average_session_seconds: u64,
+    #[serde(default)]
+    pub longest_session_seconds: u64,
     #[serde(default)]
     pub systems: Vec<PlaytimeSystem>,
     #[serde(default)]
@@ -211,8 +227,9 @@ pub struct Resolution {
 /// `get_info` payload (RePlayOS ≥ 1.7.4): hardware, resources, the connected
 /// display, and the running game's native resolution.
 ///
-/// `game_resolution` is `null` at the menu (no core loaded). Fields are
-/// `#[serde(default)]` so partial payloads still deserialize.
+/// `game_resolution` can describe the boot-menu core and is `null` only while
+/// no core has valid geometry (such as unload and failed-load transitions).
+/// Fields are `#[serde(default)]` so partial payloads still deserialize.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct InfoResponse {
     #[serde(default)]
@@ -284,7 +301,7 @@ pub struct DiscInfo {
     pub count: u32,
 }
 
-/// `get_config?type=…` payload: `{"modification_num": N, "config": {...}}`.
+/// `get_config?type=…` payload.
 ///
 /// `modification_num` is a session-local change counter (resets on frontend
 /// restart). The `wifi_*`/`nfs_*` families, passwords, and tokens are absent
@@ -299,6 +316,10 @@ pub struct DiscInfo {
 /// matches the docs is tolerated too.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReplayConfigSnapshot {
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub configured: bool,
     #[serde(default)]
     pub modification_num: u64,
     #[serde(default)]
@@ -308,6 +329,15 @@ pub struct ReplayConfigSnapshot {
 impl ReplayConfigSnapshot {
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.config.get(key).and_then(|value| value.as_str())
+    }
+
+    pub fn get_value_string(&self, key: &str) -> Option<String> {
+        match self.config.get(key)? {
+            serde_json::Value::String(value) => Some(value.clone()),
+            serde_json::Value::Number(value) => Some(value.to_string()),
+            serde_json::Value::Bool(value) => Some(value.to_string()),
+            _ => None,
+        }
     }
 
     /// The RePlayOS UI log verbosity (`system_log_level`), if present. Coerces
@@ -458,6 +488,9 @@ pub enum ApiError {
     /// Token rejected (401). Manual-only rotation: the user reset the code on
     /// the TV. Never auto-recovered; surfaces as `ReplayApiStatus::Unauthorized`.
     Unauthorized,
+    /// Too many invalid authentication attempts (429). RePlayOS temporarily
+    /// rate-limits further attempts; callers should wait instead of retrying.
+    RateLimited { message: String },
     /// Connection refused / timed out. With the measured 0–3 ms localhost
     /// latencies, "slow" means the frontend is down or Net Control is off.
     Unreachable { reason: String },
@@ -478,6 +511,9 @@ impl fmt::Display for ApiError {
         match self {
             ApiError::MissingToken => write!(f, "RePlayOS API token is not configured"),
             ApiError::Unauthorized => write!(f, "RePlayOS rejected the Net Control code"),
+            ApiError::RateLimited { message } => {
+                write!(f, "RePlayOS temporarily rate-limited access: {message}")
+            }
             ApiError::Unreachable { reason } => write!(f, "RePlayOS API unreachable: {reason}"),
             ApiError::BadStatus { status, message } => {
                 write!(f, "RePlayOS API error (HTTP {status}): {message}")
@@ -705,12 +741,14 @@ mod tests {
 
     #[test]
     fn config_snapshot_tolerates_documented_shape() {
-        // Defensive: if a future firmware matches the docs ({type, configured, config}),
-        // it still deserializes (unknown fields ignored, modification_num defaults to 0).
+        // Current documented shape; the older modification counter remains
+        // optional for compatibility with deployed 1.7/1.8 builds.
         let snapshot: ReplayConfigSnapshot = serde_json::from_str(
             r#"{"type":"replay","configured":true,"config":{"system_storage":"nfs"}}"#,
         )
         .unwrap();
+        assert_eq!(snapshot.kind, "replay");
+        assert!(snapshot.configured);
         assert_eq!(snapshot.get_str("system_storage"), Some("nfs"));
     }
 

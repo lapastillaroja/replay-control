@@ -1,4 +1,5 @@
 use super::*;
+use replay_control_core::replay_settings::SettingsOutcome;
 
 #[cfg(feature = "ssr")]
 use crate::api::response_cache::TtlSlot;
@@ -42,6 +43,12 @@ pub struct NfsConfig {
 pub struct RetroAchievementsConfig {
     pub username: String,
     pub password_configured: bool,
+}
+
+/// RePlayOS insider token status. The token itself is write-only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayInsiderConfig {
+    pub token_configured: bool,
 }
 
 /// Skin info for the skin page.
@@ -254,6 +261,40 @@ pub async fn save_retroachievements_config_and_restart(
         ],
     )
     .await
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_replay_insider_config() -> Result<ReplayInsiderConfig, ServerFnError> {
+    let state = super::app_state()?;
+    let fresh = ReplayConfig::from_file(&state.config_file_path()).ok();
+    let token_configured = match fresh {
+        Some(config) => config.replay_insider_token_configured(),
+        None => {
+            let guard = state
+                .replay_config
+                .read()
+                .expect("replay_config lock poisoned");
+            guard
+                .as_ref()
+                .ok_or_else(config_unavailable)?
+                .replay_insider_token_configured()
+        }
+    };
+    Ok(ReplayInsiderConfig { token_configured })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_replay_insider_token_and_restart(
+    token: String,
+) -> Result<SettingsOutcome, ServerFnError> {
+    let token = token.trim().to_string();
+    if token.len() > 512 || token.chars().any(char::is_control) {
+        return Ok(SettingsOutcome::InvalidToken);
+    }
+    let state = super::app_state()?;
+    apply_replay_api_config_change(&state, vec![("replay_insider_token", token)])
+        .await
+        .map(|_| SettingsOutcome::Restarting)
 }
 
 #[cfg(feature = "ssr")]

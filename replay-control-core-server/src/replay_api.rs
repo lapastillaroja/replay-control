@@ -72,24 +72,38 @@ impl ReplayApiClient {
         endpoint: &str,
         query: &[(&str, String)],
     ) -> Result<T, ApiError> {
-        let token = self
-            .token
-            .read()
-            .expect("replay api token lock poisoned")
-            .clone()
-            .ok_or(ApiError::MissingToken)?;
+        self.get_json_with_auth(endpoint, query, true).await
+    }
+
+    async fn get_json_with_auth<T: DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        query: &[(&str, String)],
+        authenticated: bool,
+    ) -> Result<T, ApiError> {
+        let token = authenticated
+            .then(|| {
+                self.token
+                    .read()
+                    .expect("replay api token lock poisoned")
+                    .clone()
+                    .ok_or(ApiError::MissingToken)
+            })
+            .transpose()?;
 
         let url = format!("{}/{endpoint}", self.base_url);
-        let response = shared_client()
-            .get(&url)
-            .header(TOKEN_HEADER, token)
-            .query(query)
-            .timeout(self.timeout)
-            .send()
-            .await
-            .map_err(|e| ApiError::Unreachable {
-                reason: e.to_string(),
-            })?;
+        let mut request = shared_client().get(&url).query(query);
+        if let Some(token) = token {
+            request = request.header(TOKEN_HEADER, token);
+        }
+        let response =
+            request
+                .timeout(self.timeout)
+                .send()
+                .await
+                .map_err(|e| ApiError::Unreachable {
+                    reason: e.to_string(),
+                })?;
 
         let status = response.status();
         let body = response.text().await.map_err(|e| ApiError::Unreachable {
@@ -98,6 +112,13 @@ impl ReplayApiClient {
 
         if status.as_u16() == 401 {
             return Err(ApiError::Unauthorized);
+        }
+        if status.as_u16() == 429 {
+            let message = serde_json::from_str::<ApiErrorBody>(&body)
+                .ok()
+                .and_then(|parsed| parsed.message())
+                .unwrap_or_else(|| "Too Many Requests".to_string());
+            return Err(ApiError::RateLimited { message });
         }
         if !status.is_success() {
             let message = serde_json::from_str::<ApiErrorBody>(&body)
@@ -116,7 +137,7 @@ impl ReplayApiClient {
     }
 
     pub async fn get_version(&self) -> Result<VersionResponse, ApiError> {
-        self.get_json("get_version", &[]).await
+        self.get_json_with_auth("get_version", &[], false).await
     }
 
     pub async fn get_status(&self) -> Result<StatusResponse, ApiError> {
@@ -141,10 +162,8 @@ impl ReplayApiClient {
     }
 
     /// Cumulative tracked play time, optionally filtered to one `system` and/or
-    /// `game_file`. Documented but not yet implemented on RePlayOS 1.7.4, so a
-    /// `BadStatus { status: 404 }` is the expected "tracking unavailable" reply
-    /// on current firmware — callers treat it as unavailable rather than an
-    /// error.
+    /// `game_file`. Older RePlayOS builds return 404; callers treat that as
+    /// unavailable rather than an integration error.
     pub async fn get_playtime(
         &self,
         system: Option<&str>,
@@ -293,8 +312,20 @@ mod tests {
     #[tokio::test]
     async fn unauthorized_is_classified() {
         let base = serve("401 Unauthorized", r#"{"error":"Unauthorized"}"#);
-        let err = client_for(base).get_version().await.unwrap_err();
+        let err = client_for(base).get_status().await.unwrap_err();
         assert_eq!(err, ApiError::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_is_classified() {
+        let base = serve("429 Too Many Requests", r#"{"error":"Too Many Requests"}"#);
+        let err = client_for(base).get_status().await.unwrap_err();
+        assert_eq!(
+            err,
+            ApiError::RateLimited {
+                message: "Too Many Requests".to_string()
+            }
+        );
     }
 
     #[tokio::test]
@@ -351,7 +382,7 @@ mod tests {
     async fn get_playtime_parses_totals_and_systems() {
         let base = serve(
             "200 OK",
-            r#"{"tracking_enabled":true,"all_seconds":7320,"all":"2h 2m","systems":[{"system":"sega_smd","seconds":3600,"time":"1h"},{"system":"snes","seconds":3720,"time":"1h 2m"}],"games":[]}"#,
+            r#"{"tracking_enabled":true,"all_seconds":7320,"session_seconds":1800,"week_seconds":3600,"games_played":18,"total_sessions":9,"most_played_game":"g.md","most_played_system":"sega_smd","average_session_seconds":813,"longest_session_seconds":3600,"systems":[{"system":"sega_smd","seconds":3600},{"system":"snes","seconds":3720}],"games":[]}"#,
         );
         let playtime = client_for(base).get_playtime(None, None).await.unwrap();
         assert!(playtime.tracking_enabled);
@@ -359,12 +390,15 @@ mod tests {
         assert_eq!(playtime.systems.len(), 2);
         assert_eq!(playtime.systems[0].system, "sega_smd");
         assert_eq!(playtime.systems[0].seconds, 3600);
+        assert_eq!(playtime.session_seconds, 1800);
+        assert_eq!(playtime.games_played, 18);
+        assert_eq!(playtime.most_played_system, "sega_smd");
     }
 
     #[tokio::test]
-    async fn get_playtime_unimplemented_endpoint_is_bad_status() {
-        // Current firmware (1.7.4) 404s this documented-but-unimplemented
-        // endpoint; the server fn maps BadStatus to "unavailable".
+    async fn legacy_get_playtime_404_is_bad_status() {
+        // Older firmware 404s this endpoint; the server fn maps BadStatus to
+        // "unavailable" for backward compatibility.
         let base = serve("404 Not Found", r#"{"error":"Not Found"}"#);
         let err = client_for(base)
             .get_playtime(Some("snes"), Some("g.sfc"))
@@ -390,11 +424,21 @@ mod tests {
     #[tokio::test]
     async fn missing_token_short_circuits_without_network() {
         let client = ReplayApiClient::new("http://127.0.0.1:1/api/v1", None);
-        let err = client.get_version().await.unwrap_err();
+        let err = client.get_status().await.unwrap_err();
         assert_eq!(err, ApiError::MissingToken);
         client.swap_local_token(Some("123456".to_string()));
         assert!(client.has_token());
         client.swap_local_token(Some(String::new()));
         assert!(!client.has_token(), "empty tokens are treated as absent");
+    }
+
+    #[tokio::test]
+    async fn get_version_does_not_require_a_token() {
+        let base = serve("200 OK", r#"{"version":"RePlayOS v2.0.17"}"#);
+        let client = ReplayApiClient::new(base, None);
+        assert_eq!(
+            client.get_version().await.unwrap().version,
+            "RePlayOS v2.0.17"
+        );
     }
 }

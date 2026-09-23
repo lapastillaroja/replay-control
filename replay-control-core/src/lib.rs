@@ -4,6 +4,7 @@ pub mod error;
 pub mod languages;
 pub mod locale;
 pub mod replay_api;
+pub mod replay_settings;
 pub mod runtime_env;
 pub mod search_scoring;
 pub mod storage_id;
