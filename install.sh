@@ -520,6 +520,7 @@ After=media-sd.mount
 
 [Service]
 Type=simple
+AllowedCPUs=1-3
 Environment=REPLAY_PORT=8080
 Environment=REPLAY_HTTPS_PORT=8443
 Environment=REPLAY_EXTRA_ARGS=
@@ -629,6 +630,9 @@ install_local() {
 
     # Write systemd service + env + avahi (reuse shared helpers)
     systemd_service_content > "$SERVICE_FILE"
+    cpu_count=$(getconf _NPROCESSORS_CONF)
+    (( cpu_count > 1 )) || fatal "Replay Control needs at least two CPUs to reserve CPU 0"
+    sed -i "s/^AllowedCPUs=.*/AllowedCPUs=1-$((cpu_count - 1))/" "$SERVICE_FILE"
     if [[ ! -f "$ENV_FILE" ]]; then
         env_file_content > "$ENV_FILE"
     fi
@@ -755,6 +759,7 @@ After=media-sd.mount
 
 [Service]
 Type=simple
+AllowedCPUs=1-3
 Environment=REPLAY_PORT=8080
 Environment=REPLAY_HTTPS_PORT=8443
 Environment=REPLAY_EXTRA_ARGS=
@@ -773,6 +778,13 @@ SyslogIdentifier=replay-control
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+cpu_count=$(getconf _NPROCESSORS_CONF)
+if [ "$cpu_count" -le 1 ]; then
+    echo "Replay Control needs at least two CPUs to reserve CPU 0" >&2
+    exit 1
+fi
+sed -i "s/^AllowedCPUs=.*/AllowedCPUs=1-$((cpu_count - 1))/" /etc/systemd/system/replay-control.service
 
 # Write default environment file (preserve existing)
 if [ ! -f /etc/default/replay-control ]; then

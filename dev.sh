@@ -373,7 +373,7 @@ check_pi_connectivity() {
 # install.sh emits via systemd_service_content + env_file_content; keep them
 # in sync. No-op when the unit already exists, so it stays cheap on every run.
 bootstrap_pi_if_needed() {
-    if run_ssh "systemctl cat $PI_SERVICE 2>/dev/null | grep -q -- '--https-port'"; then
+    if run_ssh "cpu_count=\$(getconf _NPROCESSORS_CONF); systemctl cat $PI_SERVICE 2>/dev/null | grep -q -- '--https-port' && [ \"\$(systemctl show $PI_SERVICE -p AllowedCPUs --value)\" = \"1-\$((cpu_count - 1))\" ]"; then
         return 0
     fi
     info "Service unit missing or outdated on Pi — writing systemd unit + env file..."
@@ -392,6 +392,7 @@ After=media-sd.mount
 
 [Service]
 Type=simple
+AllowedCPUs=1-3
 Environment=REPLAY_PORT=8080
 Environment=REPLAY_HTTPS_PORT=8443
 Environment=REPLAY_EXTRA_ARGS=
@@ -410,6 +411,13 @@ SyslogIdentifier=replay-control
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+cpu_count=$(getconf _NPROCESSORS_CONF)
+if [ "$cpu_count" -le 1 ]; then
+    echo "Replay Control needs at least two CPUs to reserve CPU 0" >&2
+    exit 1
+fi
+sed -i "s/^AllowedCPUs=.*/AllowedCPUs=1-$((cpu_count - 1))/" /etc/systemd/system/replay-control.service
 
 if [ ! -f /etc/default/replay-control ]; then
     cat > /etc/default/replay-control <<'ENV'
