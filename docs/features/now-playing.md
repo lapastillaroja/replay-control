@@ -13,7 +13,7 @@ The companion app shows the game currently loaded in RePlayOS. Open browser tabs
 
 The app distinguishes between a loaded game, the RePlayOS menu, and RePlayOS being unavailable. During game launches or core transitions, the UI avoids briefly showing stale game information.
 
-For multi-disc games, the player bar also shows which disc is in use ("Disc 1/4"), and it updates as the disc changes on the TV.
+For multi-disc games, the player bar also shows which disc is in use ("Disc 1/4"), and it updates as the disc changes on the TV. This indicator is read-only; disc switching and tray controls are handled on RePlayOS.
 
 {{< screenshot "now-playing-shenmue-mobile.png" "Player bar showing the current disc of a multi-disc game" >}}
 

@@ -457,29 +457,6 @@ impl SetCommand {
     }
 }
 
-/// Commands accepted by `set_media`. `next`/`previous` return `409 Media
-/// Boundary` at the ends (no wraparound); `next` auto-closes the tray.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MediaCommand {
-    OpenTray,
-    CloseTray,
-    Next,
-    Previous,
-    SetIndex(u32),
-}
-
-impl MediaCommand {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            MediaCommand::OpenTray => "open_tray",
-            MediaCommand::CloseTray => "close_tray",
-            MediaCommand::Next => "next",
-            MediaCommand::Previous => "previous",
-            MediaCommand::SetIndex(_) => "set_index",
-        }
-    }
-}
-
 /// Classified client-side error for RePlayOS API calls.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ApiError {
@@ -494,16 +471,10 @@ pub enum ApiError {
     /// Connection refused / timed out. With the measured 0–3 ms localhost
     /// latencies, "slow" means the frontend is down or Net Control is off.
     Unreachable { reason: String },
-    /// Non-2xx other than 401 (e.g. `404 Invalid Game`, `409 Media Boundary`).
+    /// Non-2xx other than 401 (e.g. `404 Invalid Game`).
     BadStatus { status: u16, message: String },
     /// `200` body that didn't parse as the expected shape.
     Decode { reason: String },
-}
-
-impl ApiError {
-    pub fn is_media_boundary(&self) -> bool {
-        matches!(self, ApiError::BadStatus { status: 409, .. })
-    }
 }
 
 impl fmt::Display for ApiError {

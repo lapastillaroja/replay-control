@@ -9,9 +9,8 @@
 //! Control is off, and other non-2xx statuses carry RePlayOS's
 //! `{"error","detail"}` body as the message.
 //!
-//! The full endpoint surface is implemented (and tested) ahead of its UI on
-//! purpose: `set_cmd`/`save_state`/`load_state`/`set_msg`/`set_media` are
-//! consumed by the player-bar and config phases of the integration plan.
+//! Player commands, save states, messages, and configuration are supported.
+//! Disc status is read-only; disc switching and tray commands are not exposed.
 
 pub use replay_control_core::replay_api::*;
 
@@ -251,18 +250,6 @@ impl ReplayApiClient {
         .await
         .map(|_| ())
     }
-
-    /// Disc control for multi-disc games. `Next`/`Previous` at the ends return
-    /// `409 Media Boundary` — check [`ApiError::is_media_boundary`].
-    pub async fn set_media(&self, cmd: MediaCommand) -> Result<(), ApiError> {
-        let mut query = vec![("cmd", cmd.as_str().to_string())];
-        if let MediaCommand::SetIndex(index) = cmd {
-            query.push(("index", index.to_string()));
-        }
-        self.get_json::<serde_json::Value>("set_media", &query)
-            .await
-            .map(|_| ())
-    }
 }
 
 fn truncate(text: &str, max: usize) -> String {
@@ -363,19 +350,6 @@ mod tests {
             )
             .await
             .unwrap();
-    }
-
-    #[tokio::test]
-    async fn media_boundary_is_detectable() {
-        let base = serve(
-            "409 Conflict",
-            r#"{"error":"Media Boundary","detail":"Already at the last media image"}"#,
-        );
-        let err = client_for(base)
-            .set_media(MediaCommand::Next)
-            .await
-            .unwrap_err();
-        assert!(err.is_media_boundary());
     }
 
     #[tokio::test]
