@@ -499,6 +499,7 @@ fn is_user_server_function(function: &str) -> bool {
                 | "delete_user_capture"
                 | "launch_game"
                 | "get_replay_api_status"
+                | "get_replay_capabilities"
                 | "get_library_playtime"
                 | "get_game_playtime"
                 | "reprobe_replay_api"

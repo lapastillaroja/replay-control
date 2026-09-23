@@ -364,9 +364,9 @@ mod tests {
         assert_eq!(playtime.systems.len(), 2);
         assert_eq!(playtime.systems[0].system, "sega_smd");
         assert_eq!(playtime.systems[0].seconds, 3600);
-        assert_eq!(playtime.session_seconds, 1800);
-        assert_eq!(playtime.games_played, 18);
-        assert_eq!(playtime.most_played_system, "sega_smd");
+        assert_eq!(playtime.session_seconds, Some(1800));
+        assert_eq!(playtime.games_played, Some(18));
+        assert_eq!(playtime.most_played_system.as_deref(), Some("sega_smd"));
     }
 
     #[tokio::test]

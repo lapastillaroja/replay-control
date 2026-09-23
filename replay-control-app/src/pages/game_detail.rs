@@ -10,7 +10,7 @@ use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
-use crate::hooks::confirm_replace_running_game;
+use crate::hooks::{confirm_replace_running_game, use_replay_capabilities};
 use crate::i18n::{Key, t, tf, use_i18n};
 #[cfg(feature = "hydrate")]
 use crate::server_fns::PlaytimeAvailability;
@@ -951,6 +951,9 @@ fn GameLaunchAction(
     let now_playing = crate::hooks::use_now_playing();
     let _ = return_to;
     let launch = ServerAction::<server_fns::LaunchGame>::new();
+    let capabilities = use_replay_capabilities();
+    let restriction =
+        move || capabilities.launch_restriction(&system.get_value(), i18n.locale.get());
     let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
     let initial_replay_api_status =
         Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
@@ -992,7 +995,9 @@ fn GameLaunchAction(
     let is_simulated =
         move || matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"));
     let is_error = move || matches!(launch_result.get(), Some(Err(_)));
-    let is_disabled = move || launching.get() || is_launched() || already_playing.get();
+    let is_disabled = move || {
+        launching.get() || is_launched() || already_playing.get() || restriction().is_some()
+    };
     let is_launching =
         move || launching.get() || (launch_clicked.get() && launch_result.get().is_none());
     let error_message = move || match launch_result.get() {
@@ -1078,6 +1083,9 @@ fn GameLaunchAction(
             </Show>
             <Show when=move || error_message().is_some() && !launch_requires_setup.get()>
                 <p class="game-action-error">{move || error_message().unwrap_or_default()}</p>
+            </Show>
+            <Show when=move || restriction().is_some() && !launch_requires_setup.get()>
+                <p class="game-action-note">{restriction}</p>
             </Show>
         </div>
     }

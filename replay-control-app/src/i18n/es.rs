@@ -282,6 +282,20 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsClearRestart => "Borrar y reiniciar RePlayOS",
         Key::RetroAchievementsSaved => "Credenciales de RetroAchievements actualizadas",
         Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderActive => "El acceso Insider está activo",
+        Key::ReplayInsiderInactive => "El acceso Insider no está activo",
+        Key::ReplayInsiderUnknown => "El estado de activación Insider no está disponible",
+        Key::ReplayInsiderRequired => {
+            "Iniciar este sistema requiere acceso activo a RePlayOS Insider. Puedes seguir consultando sus juegos y metadatos."
+        }
+        Key::ReplayCapabilitiesChecking => "Comprobando las funciones de RePlayOS…",
+        Key::ReplayFeatureRequiresVersion => "Esta función requiere RePlayOS {0} o posterior.",
+        Key::ReplayFeatureUnknownVersion => {
+            "No se pudo verificar la compatibilidad porque se desconoce la versión de RePlayOS."
+        }
+        Key::ReplayCapabilitiesUnavailable => {
+            "No se pudieron comprobar las funciones de RePlayOS. Revisa la conexión e inténtalo de nuevo."
+        }
         Key::ReplayInsiderHint => {
             "Introduce el token Insider proporcionado por RePlayOS para acceder a versiones beta disponibles. El token es de solo escritura y nunca se devuelve al navegador."
         }

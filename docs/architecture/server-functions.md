@@ -78,6 +78,28 @@ Merely changing `Resource` to `LocalResource` did not fix it. Revisit the
 client-only boundary when upgrading the rendering framework, with both direct
 loads and SPA navigation covered by the device browser regression test.
 
+### RePlayOS capabilities
+
+`get_replay_capabilities` reads `get_info` without exposing the token or hardware
+details. `DeviceCapabilities` evaluates the shared `ReplayFeature` mapping:
+version support comes first, then Insider access. Game settings and basic
+playtime retain the 1.8.0 baseline; newer systems and Link Play require 2.0.0.
+An unknown version disables gated controls with an explanation.
+
+`insider_features` contains Insider-gated features, not every supported feature.
+Only an explicitly inactive Insider flag plus a listed feature adds an Insider
+restriction. Missing legacy fields never bypass a feature's version requirement.
+
+The browser shares one capability snapshot across launch controls, refreshing
+on Net Control connection changes and every minute while connected. Request
+failures are not treated as legacy responses. The launch server function checks
+fresh capabilities before sending `load_game`, so a stale browser snapshot cannot
+bypass the gate. Link Play reads and writes enforce the same policy server-side.
+Expanded playtime metrics use optional fields: absent means unavailable, while
+an explicit zero remains zero. Their availability does not depend on a guessed
+version cutoff. Library reads, metadata enrichment, and Replay Control's own
+update channel do not use this gate.
+
 ### Skeleton Loaders
 
 Non-blocking resources use `<Suspense>` with skeleton fallbacks. The pattern:

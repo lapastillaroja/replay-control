@@ -7,6 +7,21 @@ pub use keys::Key;
 pub use replay_control_core::locale::Locale;
 
 use leptos::prelude::*;
+use replay_control_core::replay_api::FeatureRestriction;
+
+pub fn feature_restriction_message(locale: Locale, restriction: FeatureRestriction) -> String {
+    match restriction {
+        FeatureRestriction::RequiresVersion(major, minor, patch) => tf(
+            locale,
+            Key::ReplayFeatureRequiresVersion,
+            &[&format!("{major}.{minor}.{patch}")],
+        ),
+        FeatureRestriction::UnknownVersion => {
+            t(locale, Key::ReplayFeatureUnknownVersion).to_string()
+        }
+        FeatureRestriction::InsiderRequired => t(locale, Key::ReplayInsiderRequired).to_string(),
+    }
+}
 
 /// Wrapper so SSR can inject the starting locale before `App` renders.
 #[derive(Clone, Copy)]

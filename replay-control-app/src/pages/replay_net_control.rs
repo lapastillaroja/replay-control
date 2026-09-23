@@ -6,9 +6,11 @@
 //! TV, type the code it shows). The status card is driven live by the
 //! SSE-fed `RwSignal<ReplayApiStatus>` context.
 
+use crate::hooks::use_replay_capabilities;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use replay_control_core::replay_api::ReplayApiStatus;
+use replay_control_core::replay_api::ReplayFeature;
 use server_fn::ServerFnError;
 
 use crate::components::client_only::ClientOnly;
@@ -519,6 +521,27 @@ fn LinkPlaySection(
     api_action_disabled: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let capabilities = use_replay_capabilities();
+    let restriction =
+        move || capabilities.feature_restriction(ReplayFeature::LinkPlay, i18n.locale.get());
+    view! {
+        <Show when=move || restriction().is_none() fallback=move || view! {
+            <section class="apply-section link-play-unavailable">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::LinkPlayTitle)}</h3>
+                <p class="form-hint">{restriction}</p>
+            </section>
+        }>
+            <AvailableLinkPlaySection action_busy api_action_disabled />
+        </Show>
+    }
+}
+
+#[component]
+fn AvailableLinkPlaySection(
+    action_busy: RwSignal<bool>,
+    api_action_disabled: Signal<bool>,
+) -> impl IntoView {
+    let i18n = use_i18n();
     let refresh = RwSignal::new(0u64);
     // Optional device panels load in the browser, outside the page's streamed
     // SSR resource tree. Their failures never replace pairing/status controls.
@@ -686,6 +709,17 @@ fn InsiderForm(
     let insider_result = RwSignal::new(Option::<(bool, String)>::None);
     let insider_token = RwSignal::new(String::new());
     let insider_token_configured = RwSignal::new(insider.token_configured);
+    let insider_enabled = RwSignal::new(insider.enabled);
+    let activation_label = move || {
+        t(
+            i18n.locale.get(),
+            match insider_enabled.get() {
+                Some(true) => Key::ReplayInsiderActive,
+                Some(false) => Key::ReplayInsiderInactive,
+                None => Key::ReplayInsiderUnknown,
+            },
+        )
+    };
     let show_insider_token = RwSignal::new(false);
     let save_insider_token = move |clear: bool| {
         let token = if clear {
@@ -700,6 +734,7 @@ fn InsiderForm(
             move || {
                 insider_token.set(String::new());
                 insider_token_configured.set(!token.is_empty());
+                insider_enabled.set(None);
             },
         );
     };
@@ -710,6 +745,7 @@ fn InsiderForm(
             <section class="apply-section">
                 <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayInsiderTitle)}</h3>
                 <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayInsiderHint)}</p>
+                <p class="form-hint insider-activation-status">{activation_label}</p>
                 <div class="form-field">
                     <label class="form-label" for="replayos-insider-token">
                         {move || t(i18n.locale.get(), Key::ReplayInsiderToken)}

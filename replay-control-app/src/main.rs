@@ -33,9 +33,9 @@ mod ssr {
         AddGameResourceLink, CompleteFirstSetup, DeleteUserCapture, DowngradeAdminToUser,
         EnableReplayApiAssisted, GetActiveGameConfig, GetAdminSessionTimeout, GetAuthStatus,
         GetGamePlaytime, GetGameResourceLinks, GetLibraryPlaytime, GetLinkPlayConfig, GetLiveStats,
-        GetReplayApiStatus, GetReplayInsiderConfig, GetReplayosSettings, GetSaveStateSlots,
-        GetTlsCertificateInfo, GetUserCaptures, LoginAdmin, LoginWithReplayCode, Logout,
-        LogoutAllBrowsers, PowerOffReplayosDevice, RegenerateTlsCertificateInfo,
+        GetReplayApiStatus, GetReplayCapabilities, GetReplayInsiderConfig, GetReplayosSettings,
+        GetSaveStateSlots, GetTlsCertificateInfo, GetUserCaptures, LoginAdmin, LoginWithReplayCode,
+        Logout, LogoutAllBrowsers, PowerOffReplayosDevice, RegenerateTlsCertificateInfo,
         RemoveGameResourceLink, ReprobeReplayApi, RestartReplayosGame, SaveActiveGameConfig,
         SaveLinkPlayConfig, SaveReplayInsiderTokenAndRestart, SaveReplayosKioskMode,
         SendReplayPlayerCommand, SendReplayosMessage, SetAdminSessionTimeout,
@@ -1029,6 +1029,7 @@ mod ssr {
         server_fn::axum::register_explicit::<StartSetupMetadataDownloads>();
         server_fn::axum::register_explicit::<EnableReplayApiAssisted>();
         server_fn::axum::register_explicit::<GetReplayApiStatus>();
+        server_fn::axum::register_explicit::<GetReplayCapabilities>();
         server_fn::axum::register_explicit::<GetActiveGameConfig>();
         server_fn::axum::register_explicit::<GetLibraryPlaytime>();
         server_fn::axum::register_explicit::<GetGamePlaytime>();

@@ -29,10 +29,66 @@ use replay_control_core_server::settings::{
 use std::sync::Arc;
 
 #[cfg(feature = "ssr")]
+use crate::i18n::{Key, Locale, feature_restriction_message, t};
+use replay_control_core::replay_api::DeviceCapabilities;
+#[cfg(feature = "ssr")]
+use replay_control_core::replay_api::ReplayFeature;
+#[cfg(feature = "ssr")]
 use replay_control_core::replay_api::{
     ConfigKind, SetCommand, is_supported_replayos_version, min_supported_version_str,
 };
 use replay_control_core::replay_api::{ReplayApiStatus, ReplayLogLevel};
+
+#[server(prefix = "/sfn")]
+pub async fn get_replay_capabilities() -> Result<DeviceCapabilities, ServerFnError> {
+    let state = super::app_state()?;
+    let Some(api) = state.replay_api.as_ref() else {
+        return Ok(DeviceCapabilities::default());
+    };
+    read_replay_capabilities(api).await
+}
+
+#[cfg(feature = "ssr")]
+async fn read_replay_capabilities(api: &ReplayApi) -> Result<DeviceCapabilities, ServerFnError> {
+    api.client()
+        .get_info()
+        .await
+        .map(DeviceCapabilities::from)
+        .map_err(|error| {
+            api.report_error(&error);
+            ServerFnError::new(error.to_string())
+        })
+}
+
+#[cfg(feature = "ssr")]
+pub(crate) async fn ensure_game_launch_allowed(
+    api: &ReplayApi,
+    system: &str,
+    locale: Locale,
+) -> Result<(), ServerFnError> {
+    let Some(feature) = ReplayFeature::for_system(system) else {
+        return Ok(());
+    };
+    ensure_feature_available(api, feature, locale).await
+}
+
+#[cfg(feature = "ssr")]
+async fn ensure_feature_available(
+    api: &ReplayApi,
+    feature: ReplayFeature,
+    locale: Locale,
+) -> Result<(), ServerFnError> {
+    let capabilities = read_replay_capabilities(api)
+        .await
+        .map_err(|_| ServerFnError::new(t(locale, Key::ReplayCapabilitiesUnavailable)))?;
+    if let Some(restriction) = capabilities.restriction(feature) {
+        return Err(ServerFnError::new(feature_restriction_message(
+            locale,
+            restriction,
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ReplayPlayerCommand {
@@ -141,6 +197,14 @@ async fn apply_active_game_config(
 #[server(prefix = "/sfn")]
 pub async fn get_link_play_config() -> Result<LinkPlayConfig, ServerFnError> {
     let state = super::app_state()?;
+    let api = require_active_replay_api(&state, "read Link Play settings")?;
+    let locale = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .locale
+        .unwrap_or_default();
+    ensure_feature_available(&api, ReplayFeature::LinkPlay, locale).await?;
     let guard = state
         .replay_config
         .read()
@@ -162,6 +226,13 @@ pub async fn save_link_play_config(
 ) -> Result<SettingsOutcome, ServerFnError> {
     let state = super::app_state()?;
     let api = require_active_replay_api(&state, "change Link Play settings")?;
+    let locale = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .locale
+        .unwrap_or_default();
+    ensure_feature_available(&api, ReplayFeature::LinkPlay, locale).await?;
     if let Some(error) = config.validation_error() {
         return Ok(error);
     }
@@ -223,14 +294,14 @@ pub struct SystemPlaytime {
 pub struct PlaytimeSummary {
     pub availability: PlaytimeAvailability,
     pub all_seconds: u64,
-    pub session_seconds: u64,
-    pub week_seconds: u64,
-    pub games_played: u64,
-    pub total_sessions: u64,
-    pub most_played_game: String,
-    pub most_played_system: String,
-    pub average_session_seconds: u64,
-    pub longest_session_seconds: u64,
+    pub session_seconds: Option<u64>,
+    pub week_seconds: Option<u64>,
+    pub games_played: Option<u64>,
+    pub total_sessions: Option<u64>,
+    pub most_played_game: Option<String>,
+    pub most_played_system: Option<String>,
+    pub average_session_seconds: Option<u64>,
+    pub longest_session_seconds: Option<u64>,
     pub systems: Vec<SystemPlaytime>,
 }
 
@@ -879,6 +950,89 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[tokio::test]
+    async fn insider_launch_guard_uses_reported_gates() {
+        for system in ["nintendo_gc", "sony_ps2"] {
+            let locked = api_for(mock_replay_api(
+                "200 OK",
+                r#"{"version":"2.0.47","insider_enabled":false,"insider_features":["gamecube","playstation2"]}"#,
+            ));
+            let error = ensure_game_launch_allowed(&locked, system, Locale::Es)
+                .await
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(t(Locale::Es, Key::ReplayInsiderRequired))
+            );
+            for payload in [
+                r#"{"version":"2.0.0"}"#,
+                r#"{"version":"2.0.0","insider_enabled":true,"insider_features":["gamecube","playstation2"]}"#,
+                r#"{"version":"2.0.0","insider_enabled":false,"insider_features":["vulkan"]}"#,
+            ] {
+                let allowed = api_for(mock_replay_api("200 OK", payload));
+                ensure_game_launch_allowed(&allowed, system, Locale::En)
+                    .await
+                    .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn feature_guard_rejects_old_and_unknown_versions() {
+        for body in [
+            r#"{"version":"1.8.0"}"#,
+            r#"{"version":"1.8.0","insider_enabled":true}"#,
+            "{}",
+        ] {
+            let api = api_for(mock_replay_api("200 OK", body));
+            for feature in [
+                ReplayFeature::GameCube,
+                ReplayFeature::PlayStation2,
+                ReplayFeature::LinkPlay,
+            ] {
+                assert!(
+                    ensure_feature_available(&api, feature, Locale::En)
+                        .await
+                        .is_err()
+                );
+            }
+        }
+        let api = api_for(mock_replay_api(
+            "200 OK",
+            r#"{"version":"2.0.0","insider_enabled":false}"#,
+        ));
+        ensure_feature_available(&api, ReplayFeature::LinkPlay, Locale::En)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn insider_launch_guard_rejects_failed_checks_without_affecting_other_systems() {
+        for (status, body) in [
+            ("500 Internal Server Error", "{}"),
+            ("401 Unauthorized", "{}"),
+            ("429 Too Many Requests", "{}"),
+            ("200 OK", "not json"),
+        ] {
+            let api = api_for(mock_replay_api(status, body));
+            assert!(
+                ensure_game_launch_allowed(&api, "nintendo_gc", Locale::En)
+                    .await
+                    .is_err()
+            );
+        }
+        let offline = api_for(refused_replay_api());
+        assert!(
+            ensure_game_launch_allowed(&offline, "sony_ps2", Locale::En)
+                .await
+                .is_err()
+        );
+        ensure_game_launch_allowed(&offline, "sega_dc", Locale::En)
+            .await
+            .unwrap();
     }
     #[tokio::test]
     async fn game_override_rejects_changed_or_missing_game() {

@@ -75,6 +75,8 @@ Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Contr
 
 Eligible beta users can configure the token supplied by RePlayOS from **Settings > RePlayOS**. The token is write-only: the field is blank whenever the page opens, and Replay Control only reports whether a token is already saved.
 
+The page separately shows whether RePlayOS reports Insider access as active. A saved token does not necessarily mean access is active. If the device cannot report its activation status, Replay Control shows it as unavailable rather than inactive.
+
 Saving or clearing the token sends the change through the RePlayOS API and reboots RePlayOS. This stops any running game and briefly disconnects the TV frontend.
 
 ## RePlayOS Net Control
@@ -91,7 +93,7 @@ The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seco
 
 ### Link Play
 
-Configure Link Play from the RePlayOS settings page. A device can be disabled, host a compatible game, or connect as a client to a host name or IP address. The port defaults to `55435`. LAN discovery lets active hosts advertise themselves and lets clients find them while the Link Play menu is open.
+Configure Link Play from the RePlayOS settings page on RePlayOS 2.0 or newer. Older or unrecognized versions show an explanation instead of configuration controls. A device can be disabled, host a compatible game, or connect as a client to a host name or IP address. The port defaults to `55435`. LAN discovery lets active hosts advertise themselves and lets clients find them while the Link Play menu is open.
 
 Replay Control sends the mode, address, port, and discovery setting as one atomic update. RePlayOS applies Link Play changes immediately, so no reboot is required.
 

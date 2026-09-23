@@ -3,6 +3,8 @@ mod use_debounce;
 mod use_focus_scroll;
 mod use_infinite_scroll;
 mod use_launch_control;
+mod use_replay_capabilities;
+pub use use_replay_capabilities::{provide_replay_capabilities, use_replay_capabilities};
 mod use_now_playing;
 mod use_scroll_memory;
 mod use_update_state;

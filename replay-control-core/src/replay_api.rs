@@ -113,28 +113,27 @@ pub struct PlaytimeResponse {
     /// are meaningless and the UI shows the unavailable placeholder.
     #[serde(default)]
     pub tracking_enabled: bool,
-    /// Total tracked seconds across the whole library, or across the filtered
-    /// subset when `system`/`game_file` narrow the query.
+    /// Global total; query filters affect only the systems and games arrays.
     #[serde(default)]
     pub all_seconds: u64,
     #[serde(default)]
-    pub current_game_seconds: u64,
+    pub current_game_seconds: Option<u64>,
     #[serde(default)]
-    pub session_seconds: u64,
+    pub session_seconds: Option<u64>,
     #[serde(default)]
-    pub week_seconds: u64,
+    pub week_seconds: Option<u64>,
     #[serde(default)]
-    pub games_played: u64,
+    pub games_played: Option<u64>,
     #[serde(default)]
-    pub total_sessions: u64,
+    pub total_sessions: Option<u64>,
     #[serde(default)]
-    pub most_played_game: String,
+    pub most_played_game: Option<String>,
     #[serde(default)]
-    pub most_played_system: String,
+    pub most_played_system: Option<String>,
     #[serde(default)]
-    pub average_session_seconds: u64,
+    pub average_session_seconds: Option<u64>,
     #[serde(default)]
-    pub longest_session_seconds: u64,
+    pub longest_session_seconds: Option<u64>,
     #[serde(default)]
     pub systems: Vec<PlaytimeSystem>,
     #[serde(default)]
@@ -232,6 +231,8 @@ pub struct Resolution {
 /// Fields are `#[serde(default)]` so partial payloads still deserialize.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct InfoResponse {
+    #[serde(flatten)]
+    pub insider: InsiderCapabilities,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
@@ -254,6 +255,104 @@ pub struct InfoResponse {
     pub display_resolution: Option<Resolution>,
     #[serde(default)]
     pub game_resolution: Option<Resolution>,
+}
+
+/// The listed features require Insider access; this is not a list of all
+/// supported features. Missing legacy fields must not introduce restrictions.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InsiderCapabilities {
+    #[serde(default)]
+    pub insider_enabled: Option<bool>,
+    #[serde(default)]
+    pub insider_features: Vec<String>,
+}
+
+impl InsiderCapabilities {
+    pub fn feature_locked(&self, feature: &str) -> bool {
+        self.insider_enabled == Some(false)
+            && self.insider_features.iter().any(|name| name == feature)
+    }
+}
+
+/// RC features whose availability depends on the connected RePlayOS build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayFeature {
+    GameSettings,
+    BasicPlaytime,
+    GameCube,
+    PlayStation2,
+    LinkPlay,
+}
+
+impl ReplayFeature {
+    pub fn for_system(system: &str) -> Option<Self> {
+        match system {
+            "nintendo_gc" => Some(Self::GameCube),
+            "sony_ps2" => Some(Self::PlayStation2),
+            _ => None,
+        }
+    }
+
+    pub fn minimum_version(self) -> (u32, u32, u32) {
+        match self {
+            Self::GameSettings | Self::BasicPlaytime => MIN_SUPPORTED,
+            Self::GameCube | Self::PlayStation2 | Self::LinkPlay => (2, 0, 0),
+        }
+    }
+
+    fn insider_key(self) -> Option<&'static str> {
+        match self {
+            Self::GameCube => Some("gamecube"),
+            Self::PlayStation2 => Some("playstation2"),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRestriction {
+    RequiresVersion(u32, u32, u32),
+    UnknownVersion,
+    InsiderRequired,
+}
+
+/// Version support and Insider access are independent requirements.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceCapabilities {
+    #[serde(default)]
+    pub version: String,
+    #[serde(flatten)]
+    pub insider: InsiderCapabilities,
+}
+
+impl From<InfoResponse> for DeviceCapabilities {
+    fn from(info: InfoResponse) -> Self {
+        Self {
+            version: info.version,
+            insider: info.insider,
+        }
+    }
+}
+
+impl DeviceCapabilities {
+    pub fn restriction(&self, feature: ReplayFeature) -> Option<FeatureRestriction> {
+        let Some(version) = parse_replayos_version(&self.version) else {
+            return Some(FeatureRestriction::UnknownVersion);
+        };
+        let minimum = feature.minimum_version();
+        if version < minimum {
+            return Some(FeatureRestriction::RequiresVersion(
+                minimum.0, minimum.1, minimum.2,
+            ));
+        }
+        if feature
+            .insider_key()
+            .is_some_and(|key| self.insider.feature_locked(key))
+        {
+            return Some(FeatureRestriction::InsiderRequired);
+        }
+        None
+    }
 }
 
 /// One disc entry in `get_media_status.images`.
@@ -753,6 +852,34 @@ mod tests {
     }
 
     #[test]
+    fn insider_features_are_gates_not_supported_systems() {
+        let mut info: InfoResponse = serde_json::from_str(
+            r#"{"insider_enabled":false,"insider_features":["gamecube","playstation2","future_feature"]}"#,
+        ).unwrap();
+        assert!(info.insider.feature_locked("gamecube"));
+        assert!(info.insider.feature_locked("playstation2"));
+        assert!(!info.insider.feature_locked("dreamcast"));
+        assert!(info.insider.feature_locked("future_feature"));
+        info.insider.insider_enabled = Some(true);
+        assert!(!info.insider.feature_locked("gamecube"));
+        assert!(!info.insider.feature_locked("playstation2"));
+    }
+
+    #[test]
+    fn absent_insider_fields_and_unlisted_features_preserve_access() {
+        for payload in [
+            "{}",
+            r#"{"insider_enabled":false}"#,
+            r#"{"insider_features":["gamecube"]}"#,
+            r#"{"insider_enabled":false,"insider_features":["replays","update_channel"]}"#,
+        ] {
+            let info: InfoResponse = serde_json::from_str(payload).unwrap();
+            assert!(!info.insider.feature_locked("gamecube"), "{payload}");
+            assert!(!info.insider.feature_locked("playstation2"), "{payload}");
+        }
+    }
+
+    #[test]
     fn media_status_disc_info() {
         // Captured shape from the 4-disc Slam City session, 2026-06-07.
         let media: MediaStatus = serde_json::from_str(
@@ -770,6 +897,65 @@ mod tests {
         let unavailable: MediaStatus =
             serde_json::from_str(r#"{"available":false,"count":0}"#).unwrap();
         assert_eq!(unavailable.disc_info(), None);
+    }
+
+    #[test]
+    fn version_support_precedes_insider_access() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v1.8.0".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(true),
+                insider_features: vec![],
+            },
+        };
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::PlayStation2,
+            ReplayFeature::LinkPlay,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::RequiresVersion(2, 0, 0))
+            );
+        }
+        assert_eq!(capabilities.restriction(ReplayFeature::GameSettings), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::BasicPlaytime), None);
+        for version in ["2.0", "RePlayOS v2.0.0-beta", "2.0.47", "3.0.0"] {
+            capabilities.version = version.into();
+            assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+            assert_eq!(capabilities.restriction(ReplayFeature::LinkPlay), None);
+        }
+        capabilities.insider.insider_enabled = Some(false);
+        capabilities.insider.insider_features = vec!["gamecube".into()];
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
+        capabilities.version = "unknown".into();
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::LinkPlay),
+            Some(FeatureRestriction::UnknownVersion)
+        );
+    }
+
+    #[test]
+    fn expanded_playtime_preserves_missing_and_zero_values() {
+        let old: PlaytimeResponse =
+            serde_json::from_str(r#"{"tracking_enabled":true,"all_seconds":42}"#).unwrap();
+        assert_eq!(old.all_seconds, 42);
+        assert_eq!(old.session_seconds, None);
+        assert_eq!(old.week_seconds, None);
+        assert_eq!(old.games_played, None);
+        assert_eq!(old.longest_session_seconds, None);
+        let partial: PlaytimeResponse = serde_json::from_str(
+            r#"{"tracking_enabled":true,"session_seconds":0,"games_played":0,"week_seconds":null}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.session_seconds, Some(0));
+        assert_eq!(partial.games_played, Some(0));
+        assert_eq!(partial.week_seconds, None);
+        assert_eq!(partial.longest_session_seconds, None);
     }
 
     #[test]

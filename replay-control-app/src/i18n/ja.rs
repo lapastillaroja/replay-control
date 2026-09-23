@@ -282,6 +282,20 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsClearRestart => "消去してRePlayOSを再起動",
         Key::RetroAchievementsSaved => "RetroAchievements認証情報を更新しました",
         Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderActive => "Insiderアクセスは有効です",
+        Key::ReplayInsiderInactive => "Insiderアクセスは有効ではありません",
+        Key::ReplayInsiderUnknown => "Insiderの有効化状態を取得できません",
+        Key::ReplayInsiderRequired => {
+            "このシステムの起動には有効なRePlayOS Insiderアクセスが必要です。ゲームやメタデータの閲覧は引き続き利用できます。"
+        }
+        Key::ReplayCapabilitiesChecking => "RePlayOSの機能を確認しています…",
+        Key::ReplayFeatureRequiresVersion => "この機能にはRePlayOS {0}以降が必要です。",
+        Key::ReplayFeatureUnknownVersion => {
+            "RePlayOSのバージョンが不明なため、機能の対応状況を確認できません。"
+        }
+        Key::ReplayCapabilitiesUnavailable => {
+            "RePlayOSの機能を確認できませんでした。接続を確認して再試行してください。"
+        }
         Key::ReplayInsiderHint => {
             "RePlayOSから提供されたInsiderトークンを入力すると、対象のベータ版を利用できます。トークンは書き込み専用で、ブラウザーには返されません。"
         }

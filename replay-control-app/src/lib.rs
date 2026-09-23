@@ -151,7 +151,9 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(StorageStatus::default()));
     provide_context(RwSignal::new(RomWatcherStatus::default()));
     provide_context(RwSignal::new(Vec::<AssetHealthIssue>::new()));
-    provide_context(RwSignal::new(ReplayApiStatus::default()));
+    let replay_api_status = RwSignal::new(ReplayApiStatus::default());
+    provide_context(replay_api_status);
+    hooks::provide_replay_capabilities(replay_api_status);
     hooks::provide_now_playing(initial_now_playing_state());
     provide_context(Clock::install());
 

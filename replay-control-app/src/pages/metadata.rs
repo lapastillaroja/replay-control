@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::stat_card::StatCard;
-use crate::i18n::{Key, t, use_i18n};
+use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns::{
     self, Activity, CountBucket, DriverStatusCounts, ImportState, LibrarySummary,
     MetadataLibraryOverview, MetadataPageSnapshot, PlaytimeAvailability, RebuildProgress,
@@ -30,10 +30,10 @@ enum PlaytimeUi {
     Placeholder,
     Ready {
         all_seconds: u64,
-        session_seconds: u64,
-        week_seconds: u64,
-        games_played: u64,
-        longest_session_seconds: u64,
+        session_seconds: Option<u64>,
+        week_seconds: Option<u64>,
+        games_played: Option<u64>,
+        longest_session_seconds: Option<u64>,
         by_system: HashMap<String, u64>,
     },
 }
@@ -1263,17 +1263,14 @@ fn PlaytimeStatCard(playtime: Memo<PlaytimeUi>, metric: PlaytimeMetric) -> impl 
             longest_session_seconds,
             ..
         } => {
-            if matches!(metric, PlaytimeMetric::Games) {
-                games_played.to_string()
-            } else {
-                format_elapsed_short(match metric {
-                    PlaytimeMetric::Total => *all_seconds,
-                    PlaytimeMetric::Session => *session_seconds,
-                    PlaytimeMetric::Week => *week_seconds,
-                    PlaytimeMetric::Longest => *longest_session_seconds,
-                    PlaytimeMetric::Games => unreachable!(),
-                })
-            }
+            let value = match metric {
+                PlaytimeMetric::Total => Some(*all_seconds),
+                PlaytimeMetric::Session => *session_seconds,
+                PlaytimeMetric::Week => *week_seconds,
+                PlaytimeMetric::Longest => *longest_session_seconds,
+                PlaytimeMetric::Games => *games_played,
+            };
+            format_playtime_metric(i18n.locale.get(), metric, value)
         }
     };
     view! {
@@ -1281,6 +1278,42 @@ fn PlaytimeStatCard(playtime: Memo<PlaytimeUi>, metric: PlaytimeMetric) -> impl 
             <div class="stat-value">{value}</div>
             <div class="stat-label">{label}</div>
         </div>
+    }
+}
+
+fn format_playtime_metric(locale: Locale, metric: PlaytimeMetric, value: Option<u64>) -> String {
+    match value {
+        None => t(locale, Key::PlaytimeUnavailable).to_string(),
+        Some(value) if matches!(metric, PlaytimeMetric::Games) => value.to_string(),
+        Some(value) => format_elapsed_short(value),
+    }
+}
+
+#[cfg(test)]
+mod playtime_tests {
+    use super::*;
+
+    #[test]
+    fn absent_metrics_are_unavailable_but_reported_zero_is_real() {
+        for metric in [
+            PlaytimeMetric::Session,
+            PlaytimeMetric::Week,
+            PlaytimeMetric::Games,
+            PlaytimeMetric::Longest,
+        ] {
+            assert_eq!(
+                format_playtime_metric(Locale::En, metric, None),
+                t(Locale::En, Key::PlaytimeUnavailable)
+            );
+            assert_ne!(
+                format_playtime_metric(Locale::En, metric, Some(0)),
+                t(Locale::En, Key::PlaytimeUnavailable)
+            );
+        }
+        assert_eq!(
+            format_playtime_metric(Locale::En, PlaytimeMetric::Games, Some(0)),
+            "0"
+        );
     }
 }
 

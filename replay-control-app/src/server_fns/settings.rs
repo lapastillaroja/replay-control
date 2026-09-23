@@ -49,6 +49,7 @@ pub struct RetroAchievementsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayInsiderConfig {
     pub token_configured: bool,
+    pub enabled: Option<bool>,
 }
 
 /// Skin info for the skin page.
@@ -280,7 +281,17 @@ pub async fn get_replay_insider_config() -> Result<ReplayInsiderConfig, ServerFn
                 .replay_insider_token_configured()
         }
     };
-    Ok(ReplayInsiderConfig { token_configured })
+    let enabled = match super::get_replay_capabilities().await {
+        Ok(capabilities) => capabilities.insider.insider_enabled,
+        Err(error) => {
+            tracing::warn!(%error, "could not read Insider activation status");
+            None
+        }
+    };
+    Ok(ReplayInsiderConfig {
+        token_configured,
+        enabled,
+    })
 }
 
 #[server(prefix = "/sfn")]

@@ -1,3 +1,5 @@
+#[cfg(feature = "ssr")]
+use super::replay_api::ensure_game_launch_allowed;
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::error::Error as CoreError;
@@ -8,6 +10,8 @@ use replay_control_core::resource_kind;
 use replay_control_core::{systems, title_utils};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::favorites;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::launch::{launch_parts, validate_rom_exists};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::{GameEntry, LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
@@ -1113,11 +1117,19 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
             )
         })?;
 
-    replay_control_core_server::launch::validate_rom_exists(&storage, &rom_path)
+    validate_rom_exists(&storage, &rom_path)
         .await
         .map_err(|e| super::to_user_error("Game file not found", e))?;
-    let (system, game_file) = replay_control_core_server::launch::launch_parts(&rom_path)
-        .map_err(|e| super::to_user_error("Invalid ROM path", e))?;
+    let (system, game_file) =
+        launch_parts(&rom_path).map_err(|e| super::to_user_error("Invalid ROM path", e))?;
+
+    let locale = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .locale
+        .unwrap_or_default();
+    ensure_game_launch_allowed(&api, system, locale).await?;
 
     tracing::info!(rom = %rom_path, system, game_file, "launching game via RePlayOS API");
     if let Err(e) = api.client().load_game(system, game_file).await {
