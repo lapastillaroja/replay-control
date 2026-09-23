@@ -281,6 +281,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsSaveRestart => "保存してRePlayOSを再起動",
         Key::RetroAchievementsClearRestart => "消去してRePlayOSを再起動",
         Key::RetroAchievementsSaved => "RetroAchievements認証情報を更新しました",
+        Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderHint => {
+            "RePlayOSから提供されたInsiderトークンを入力すると、対象のベータ版を利用できます。トークンは書き込み専用で、ブラウザーには返されません。"
+        }
+        Key::ReplayInsiderToken => "Insiderトークン",
+        Key::ReplayInsiderTokenSaved => "Insiderトークンは保存済みです",
+        Key::ReplayInsiderTokenMissing => "Insiderトークンは保存されていません",
+        Key::ReplayInsiderSaveRestart => "保存してRePlayOSを再起動",
+        Key::ReplayInsiderClearRestart => "消去してRePlayOSを再起動",
+        Key::ReplayInsiderSaved => "RePlayOS Insiderトークンを更新しました",
+        Key::LinkPlayTitle => "リンクプレイ",
+        Key::LinkPlayHint => "対応ゲームをRePlayデバイス間で接続します。変更はすぐに適用されます。",
+        Key::LinkPlayMode => "モード",
+        Key::LinkPlayDisabled => "無効",
+        Key::LinkPlayHost => "ホスト",
+        Key::LinkPlayClient => "クライアント",
+        Key::LinkPlayAddress => "ホストアドレス",
+        Key::LinkPlayAddressHint => {
+            "クライアントモードで必要です。ホスト名またはIPアドレスを入力します。"
+        }
+        Key::LinkPlayPort => "ポート",
+        Key::LinkPlayDiscovery => "LAN検出",
+        Key::LinkPlayDiscoveryHint => {
+            "アクティブなホストを通知し、リンクプレイメニューから検出できるようにします。"
+        }
+        Key::LinkPlaySave => "リンクプレイ設定を適用",
 
         // Skin
         Key::MoreSkin => "スキン",
@@ -354,6 +380,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
         Key::GameDetailPlaytime => "プレイ時間",
+        Key::LinkPlayApplied => "リンクプレイ設定を適用しました",
+        Key::LinkPlayInvalidPort => "ポートは1〜65535で指定してください",
+        Key::LinkPlayInvalidMode => "有効なリンクプレイモードを選択してください",
+        Key::LinkPlayInvalidAddress => {
+            "クライアントモードの有効なホスト名またはIPアドレスを入力してください"
+        }
+        Key::ReplaySettingsRestarting => "設定を保存しました。RePlayOSを再起動しています…",
+        Key::ReplaySettingsFailed => {
+            "操作を完了できませんでした。再試行する前に接続と保存済み設定を確認してください。"
+        }
+        Key::ReplayInsiderInvalid => "Insiderトークンが無効です",
 
         Key::GameDetailEmulation => "互換性",
         Key::GameDetailRawCategory => "MAMEカテゴリ",
@@ -558,6 +595,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryStorage => "ストレージ",
         Key::MetadataSummaryDownloadedArt => "取得済み画像",
         Key::MetadataSummaryPlaytime => "プレイ時間",
+        Key::MetadataSummarySessionPlaytime => "今回のセッション",
+        Key::MetadataSummaryWeekPlaytime => "今週",
+        Key::MetadataSummaryGamesPlayed => "プレイしたゲーム",
+        Key::MetadataSummaryLongestSession => "最長セッション",
         Key::PlaytimeUnavailable => "利用不可",
 
         // System accordion rows

@@ -281,6 +281,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsSaveRestart => "Save & Reboot RePlayOS",
         Key::RetroAchievementsClearRestart => "Clear & Reboot RePlayOS",
         Key::RetroAchievementsSaved => "RetroAchievements credentials updated",
+        Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderHint => {
+            "Enter the insider token supplied by RePlayOS to access eligible beta builds. The token is write-only and is never returned to the browser."
+        }
+        Key::ReplayInsiderToken => "Insider token",
+        Key::ReplayInsiderTokenSaved => "Insider token saved",
+        Key::ReplayInsiderTokenMissing => "No insider token saved",
+        Key::ReplayInsiderSaveRestart => "Save & Reboot RePlayOS",
+        Key::ReplayInsiderClearRestart => "Clear & Reboot RePlayOS",
+        Key::ReplayInsiderSaved => "RePlayOS insider token updated",
+        Key::LinkPlayTitle => "Link Play",
+        Key::LinkPlayHint => {
+            "Connect compatible games between RePlay devices. Changes apply immediately to the running frontend."
+        }
+        Key::LinkPlayMode => "Mode",
+        Key::LinkPlayDisabled => "Disabled",
+        Key::LinkPlayHost => "Host",
+        Key::LinkPlayClient => "Client",
+        Key::LinkPlayAddress => "Host address",
+        Key::LinkPlayAddressHint => "Required in client mode. Enter a host name or IP address.",
+        Key::LinkPlayPort => "Port",
+        Key::LinkPlayDiscovery => "LAN discovery",
+        Key::LinkPlayDiscoveryHint => {
+            "Advertise active hosts and allow clients to find them while the Link Play menu is open."
+        }
+        Key::LinkPlaySave => "Apply Link Play Settings",
 
         // Skin
         Key::MoreSkin => "Skin",
@@ -352,6 +378,15 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
         Key::GameDetailPlaytime => "Play time",
+        Key::LinkPlayApplied => "Link Play settings applied",
+        Key::LinkPlayInvalidPort => "Port must be between 1 and 65535",
+        Key::LinkPlayInvalidMode => "Select a valid Link Play mode",
+        Key::LinkPlayInvalidAddress => "Enter a valid host name or IP address for client mode",
+        Key::ReplaySettingsRestarting => "Settings saved; RePlayOS is rebooting…",
+        Key::ReplaySettingsFailed => {
+            "The request could not be completed. Check the connection and saved settings before retrying."
+        }
+        Key::ReplayInsiderInvalid => "Invalid insider token",
 
         Key::GameDetailEmulation => "Compatibility",
         Key::GameDetailRawCategory => "MAME Category",
@@ -554,6 +589,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryStorage => "Storage",
         Key::MetadataSummaryDownloadedArt => "Downloaded Art",
         Key::MetadataSummaryPlaytime => "Play Time",
+        Key::MetadataSummarySessionPlaytime => "This Session",
+        Key::MetadataSummaryWeekPlaytime => "This Week",
+        Key::MetadataSummaryGamesPlayed => "Games Played",
+        Key::MetadataSummaryLongestSession => "Longest Session",
         Key::PlaytimeUnavailable => "Not available",
 
         // System accordion rows

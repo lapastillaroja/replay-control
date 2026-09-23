@@ -281,6 +281,34 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsSaveRestart => "Guardar y reiniciar RePlayOS",
         Key::RetroAchievementsClearRestart => "Borrar y reiniciar RePlayOS",
         Key::RetroAchievementsSaved => "Credenciales de RetroAchievements actualizadas",
+        Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderHint => {
+            "Introduce el token Insider proporcionado por RePlayOS para acceder a versiones beta disponibles. El token es de solo escritura y nunca se devuelve al navegador."
+        }
+        Key::ReplayInsiderToken => "Token Insider",
+        Key::ReplayInsiderTokenSaved => "Token Insider guardado",
+        Key::ReplayInsiderTokenMissing => "No hay ningún token Insider guardado",
+        Key::ReplayInsiderSaveRestart => "Guardar y reiniciar RePlayOS",
+        Key::ReplayInsiderClearRestart => "Borrar y reiniciar RePlayOS",
+        Key::ReplayInsiderSaved => "Token Insider de RePlayOS actualizado",
+        Key::LinkPlayTitle => "Juego enlazado",
+        Key::LinkPlayHint => {
+            "Conecta juegos compatibles entre dispositivos RePlay. Los cambios se aplican inmediatamente."
+        }
+        Key::LinkPlayMode => "Modo",
+        Key::LinkPlayDisabled => "Desactivado",
+        Key::LinkPlayHost => "Anfitrión",
+        Key::LinkPlayClient => "Cliente",
+        Key::LinkPlayAddress => "Dirección del anfitrión",
+        Key::LinkPlayAddressHint => {
+            "Obligatoria en modo cliente. Introduce un nombre de host o una dirección IP."
+        }
+        Key::LinkPlayPort => "Puerto",
+        Key::LinkPlayDiscovery => "Detección LAN",
+        Key::LinkPlayDiscoveryHint => {
+            "Anuncia los anfitriones activos y permite encontrarlos desde el menú Juego enlazado."
+        }
+        Key::LinkPlaySave => "Aplicar ajustes de Juego enlazado",
 
         // Skin
         Key::MoreSkin => "Tema visual",
@@ -354,6 +382,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
         Key::GameDetailPlaytime => "Tiempo de juego",
+        Key::LinkPlayApplied => "Ajustes de Juego enlazado aplicados",
+        Key::LinkPlayInvalidPort => "El puerto debe estar entre 1 y 65535",
+        Key::LinkPlayInvalidMode => "Selecciona un modo de Juego enlazado válido",
+        Key::LinkPlayInvalidAddress => {
+            "Introduce un nombre de host o una dirección IP válidos para el modo cliente"
+        }
+        Key::ReplaySettingsRestarting => "Ajustes guardados; RePlayOS se está reiniciando…",
+        Key::ReplaySettingsFailed => {
+            "No se pudo completar la solicitud. Comprueba la conexión y los ajustes guardados antes de reintentar."
+        }
+        Key::ReplayInsiderInvalid => "Token Insider no válido",
 
         Key::GameDetailEmulation => "Compatibilidad",
         Key::GameDetailRawCategory => "Categoría MAME",
@@ -562,6 +601,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryStorage => "Almacenamiento",
         Key::MetadataSummaryDownloadedArt => "Imágenes descargadas",
         Key::MetadataSummaryPlaytime => "Tiempo de juego",
+        Key::MetadataSummarySessionPlaytime => "Esta sesión",
+        Key::MetadataSummaryWeekPlaytime => "Esta semana",
+        Key::MetadataSummaryGamesPlayed => "Juegos jugados",
+        Key::MetadataSummaryLongestSession => "Sesión más larga",
         Key::PlaytimeUnavailable => "No disponible",
 
         // System accordion rows

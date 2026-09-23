@@ -30,6 +30,10 @@ enum PlaytimeUi {
     Placeholder,
     Ready {
         all_seconds: u64,
+        session_seconds: u64,
+        week_seconds: u64,
+        games_played: u64,
+        longest_session_seconds: u64,
         by_system: HashMap<String, u64>,
     },
 }
@@ -49,6 +53,7 @@ fn playtime_value(
         PlaytimeUi::Ready {
             all_seconds,
             by_system,
+            ..
         } => format_elapsed_short(pick(*all_seconds, by_system)),
     }
 }
@@ -68,7 +73,7 @@ pub fn MetadataPage() -> impl IntoView {
     let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
 
     // Play time is fetched client-side only — a `LocalResource` never runs
-    // during SSR, so a slow or unimplemented `get_playtime` endpoint can't
+    // during SSR, so a slow or unavailable `get_playtime` endpoint can't
     // block or delay the page. One fetch per page load; no polling. The summary
     // card and the per-system accordion rows read the result via context.
     let playtime = LocalResource::new(server_fns::get_library_playtime);
@@ -80,6 +85,10 @@ pub fn MetadataPage() -> impl IntoView {
             Ok(summary) if summary.availability == PlaytimeAvailability::Tracked => {
                 PlaytimeUi::Ready {
                     all_seconds: summary.all_seconds,
+                    session_seconds: summary.session_seconds,
+                    week_seconds: summary.week_seconds,
+                    games_played: summary.games_played,
+                    longest_session_seconds: summary.longest_session_seconds,
                     by_system: summary
                         .systems
                         .into_iter()
@@ -1206,7 +1215,11 @@ fn SummaryCards(
             <StatCard compact=true
                 value=storage_label
                 label=t(locale, Key::MetadataSummaryStorage) />
-            <PlaytimeStatCard playtime />
+            <PlaytimeStatCard playtime metric=PlaytimeMetric::Total />
+            <PlaytimeStatCard playtime metric=PlaytimeMetric::Session />
+            <PlaytimeStatCard playtime metric=PlaytimeMetric::Week />
+            <PlaytimeStatCard playtime metric=PlaytimeMetric::Games />
+            <PlaytimeStatCard playtime metric=PlaytimeMetric::Longest />
         </div>
     }
 }
@@ -1215,16 +1228,58 @@ fn SummaryCards(
 /// prop, so it shows the placeholder on standalone builds and on firmware
 /// without the `get_playtime` endpoint, and the formatted total once tracking
 /// data loads.
+#[derive(Clone, Copy)]
+enum PlaytimeMetric {
+    Total,
+    Session,
+    Week,
+    Games,
+    Longest,
+}
+
 #[component]
-fn PlaytimeStatCard(playtime: Memo<PlaytimeUi>) -> impl IntoView {
+fn PlaytimeStatCard(playtime: Memo<PlaytimeUi>, metric: PlaytimeMetric) -> impl IntoView {
     let i18n = use_i18n();
-    let value = move || playtime.with(|ui| playtime_value(ui, |all, _| all, i18n.locale.get()));
+    let label = move || {
+        t(
+            i18n.locale.get(),
+            match metric {
+                PlaytimeMetric::Total => Key::MetadataSummaryPlaytime,
+                PlaytimeMetric::Session => Key::MetadataSummarySessionPlaytime,
+                PlaytimeMetric::Week => Key::MetadataSummaryWeekPlaytime,
+                PlaytimeMetric::Games => Key::MetadataSummaryGamesPlayed,
+                PlaytimeMetric::Longest => Key::MetadataSummaryLongestSession,
+            },
+        )
+    };
+    let value = move || match &*playtime.read() {
+        PlaytimeUi::Loading => "…".to_string(),
+        PlaytimeUi::Placeholder => t(i18n.locale.get(), Key::PlaytimeUnavailable).to_string(),
+        PlaytimeUi::Ready {
+            all_seconds,
+            session_seconds,
+            week_seconds,
+            games_played,
+            longest_session_seconds,
+            ..
+        } => {
+            if matches!(metric, PlaytimeMetric::Games) {
+                games_played.to_string()
+            } else {
+                format_elapsed_short(match metric {
+                    PlaytimeMetric::Total => *all_seconds,
+                    PlaytimeMetric::Session => *session_seconds,
+                    PlaytimeMetric::Week => *week_seconds,
+                    PlaytimeMetric::Longest => *longest_session_seconds,
+                    PlaytimeMetric::Games => unreachable!(),
+                })
+            }
+        }
+    };
     view! {
         <div class="stat-card compact">
             <div class="stat-value">{value}</div>
-            <div class="stat-label">
-                {move || t(i18n.locale.get(), Key::MetadataSummaryPlaytime)}
-            </div>
+            <div class="stat-label">{label}</div>
         </div>
     }
 }
