@@ -23,7 +23,7 @@ ring = "0.17.14"
 semver = "1.0.28"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 deadpool-sqlite = { version = "=0.13.0", features = ["rt_tokio_1"] }
-deadpool = "=0.13.0"
+deadpool = "=0.13.1"
 deadpool-sync = "=0.2.0"
 tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process", "io-util"] }
 tokio-stream = "0.1.18"
