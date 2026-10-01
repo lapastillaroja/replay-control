@@ -365,7 +365,8 @@
   },
   {
     "normalized_title": "deathsmilesii",
-    "page_title": "Deathsmiles II"
+    "page_title": "Deathsmiles II",
+    "video_index": true
   },
   {
     "normalized_title": "deathsmilesmegablacklabel",
@@ -577,6 +578,10 @@
   {
     "normalized_title": "edensaegis",
     "page_title": "Eden's Aegis"
+  },
+  {
+    "normalized_title": "emeraldblue",
+    "page_title": "Emerald Blue"
   },
   {
     "normalized_title": "eschatos",
@@ -998,6 +1003,10 @@
     "page_title": "Jet Buster"
   },
   {
+    "normalized_title": "jikkyouoshaberiparodius",
+    "page_title": "Jikkyou Oshaberi Parodius"
+  },
+  {
     "normalized_title": "kaijukiteattack",
     "page_title": "Kaiju Kite Attack"
   },
@@ -1289,6 +1298,10 @@
   {
     "normalized_title": "perfectcherryblossom",
     "page_title": "Perfect Cherry Blossom"
+  },
+  {
+    "normalized_title": "phantasmagoriatrues",
+    "page_title": "Phantasmagoria Trues"
   },
   {
     "normalized_title": "phoenix",
@@ -1730,6 +1743,10 @@
     "normalized_title": "starhunterdx",
     "page_title": "Star Hunter DX",
     "video_index": true
+  },
+  {
+    "normalized_title": "starprince",
+    "page_title": "Star Prince"
   },
   {
     "normalized_title": "starsoldier",
