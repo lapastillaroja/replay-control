@@ -95,7 +95,7 @@
    "c39a085bb919a355f26c6a71e20ab1f5",
    "d15c0b9aa1d9d9c28d53bf80dad08ef0"
   ],
-  "num_achievements": 64,
+  "num_achievements": 61,
   "ra_id": "5764",
   "title": "~Hack~ Castlevania: Aria of Sorrow Alter"
  },
@@ -214,6 +214,15 @@
  },
  {
   "hashes": [
+   "0cb5a6c15a1a816c0efb2e0ce717ae4f",
+   "6ea329996dc6f918137b4de21af84414"
+  ],
+  "num_achievements": 82,
+  "ra_id": "36943",
+  "title": "~Hack~ Fire Emblem: The Hag in White"
+ },
+ {
+  "hashes": [
    "39050bd4b968b5cb1cd3067e9290cea2"
   ],
   "num_achievements": 214,
@@ -275,6 +284,14 @@
   "num_achievements": 56,
   "ra_id": "11737",
   "title": "~Hack~ Iron Emblem"
+ },
+ {
+  "hashes": [
+   "f51a5bf40e073469bcc146dce2c065f4"
+  ],
+  "num_achievements": 13,
+  "ra_id": "26383",
+  "title": "~Hack~ Just What Do I Need"
  },
  {
   "hashes": [
@@ -430,6 +447,15 @@
   "num_achievements": 29,
   "ra_id": "9045",
   "title": "~Hack~ Pokémon Edicion Naranja"
+ },
+ {
+  "hashes": [
+   "b16d27ee00538824ad70cdbed976b763",
+   "fdec9ab03f8c165872ad22ba2277fce2"
+  ],
+  "num_achievements": 109,
+  "ra_id": "33298",
+  "title": "~Hack~ Pokémon Elysium"
  },
  {
   "hashes": [
@@ -729,6 +755,14 @@
  },
  {
   "hashes": [
+   "795478d588bf9157209a7f2f0eac2a0b"
+  ],
+  "num_achievements": 40,
+  "ra_id": "41205",
+  "title": "~Hack~ Pokémon: No Center Challenge"
+ },
+ {
+  "hashes": [
    "a9ab32e8aa66acf206fb19c3764f29ce"
   ],
   "num_achievements": 49,
@@ -747,7 +781,7 @@
   "hashes": [
    "e7ec28748911cf3895f930d59d6d0120"
   ],
-  "num_achievements": 63,
+  "num_achievements": 19,
   "ra_id": "25856",
   "title": "~Hack~ Pokémon: Too Many Types"
  },
@@ -1154,7 +1188,7 @@
    "43c413e3b438bce1b1b4e1b6859e72b9",
    "aa1e384bd43b0c607bf3367ccfb4c4c8"
   ],
-  "num_achievements": 16,
+  "num_achievements": 14,
   "ra_id": "17919",
   "title": "~Homebrew~ Picross Advance"
  },
@@ -1165,6 +1199,14 @@
   "num_achievements": 8,
   "ra_id": "17755",
   "title": "~Homebrew~ Ping-Pong Diplomacy Advance"
+ },
+ {
+  "hashes": [
+   "78f5cc71299fdcc2815311d2b003454a"
+  ],
+  "num_achievements": 18,
+  "ra_id": "42809",
+  "title": "~Homebrew~ Pixel Pup"
  },
  {
   "hashes": [
@@ -1609,6 +1651,14 @@
  },
  {
   "hashes": [
+   "ce57edc0645572af5244e3e24b586133"
+  ],
+  "num_achievements": 35,
+  "ra_id": "8185",
+  "title": "Backyard Hockey"
+ },
+ {
+  "hashes": [
    "13fd90ae7070ba25c2ce4223b8f51a1e",
    "b8151c67817f126b56eca07c0b6aec11"
   ],
@@ -1659,6 +1709,14 @@
   "num_achievements": 25,
   "ra_id": "8064",
   "title": "Barbie as The Island Princess"
+ },
+ {
+  "hashes": [
+   "11bfeb390128b3fa4af1e92399a9bd3f"
+  ],
+  "num_achievements": 20,
+  "ra_id": "7817",
+  "title": "Barbie in The 12 Dancing Princesses"
  },
  {
   "hashes": [
@@ -1814,7 +1872,7 @@
   "hashes": [
    "c64b677831500e85222d85c70e2d23b6"
   ],
-  "num_achievements": 57,
+  "num_achievements": 56,
   "ra_id": "6946",
   "title": "Bookworm"
  },
@@ -1838,7 +1896,7 @@
  },
  {
   "hashes": [
-   "4054b5be1fbb8f05fd6331f2a0d1c3d8",
+   "555a56bd1612df2e013a17edf26dccad",
    "874aa5c4c6217febec6405a22d7bc9ef"
   ],
   "num_achievements": 41,
@@ -2212,7 +2270,7 @@
    "b282e479e10aea057e762de7b9d4ca4b",
    "e86b1d8e27c86eca96e1466462999b13"
   ],
-  "num_achievements": 74,
+  "num_achievements": 72,
   "ra_id": "526",
   "title": "Crash Bandicoot: The Huge Adventure"
  },
@@ -2439,7 +2497,7 @@
    "028807ea1e01c6645d38e228f6915a31",
    "8384aa8735b5a036fdddb5da430cb25b"
   ],
-  "num_achievements": 30,
+  "num_achievements": 29,
   "ra_id": "6289",
   "title": "Donald Duck Advance!"
  },
@@ -3115,7 +3173,7 @@
    "0a3523db5fe9a0329d766d9d1ff5e654",
    "1e2ed077d1db255c44cd6c653067750c"
   ],
-  "num_achievements": 78,
+  "num_achievements": 81,
   "ra_id": "5521",
   "title": "Genso Suikoden Card Stories"
  },
@@ -3258,7 +3316,8 @@
  },
  {
   "hashes": [
-   "a476526adc63d7e287d905eb7251d120"
+   "a476526adc63d7e287d905eb7251d120",
+   "c5780d2cd4873e19434e54595722ed5d"
   ],
   "num_achievements": 19,
   "ra_id": "7760",
@@ -3599,6 +3658,14 @@
  },
  {
   "hashes": [
+   "02c38fb19dab302379ece65724fb4e0f"
+  ],
+  "num_achievements": 39,
+  "ra_id": "40413",
+  "title": "Kingdom Hearts: Chain of Memories [Subset - Level 1]"
+ },
+ {
+  "hashes": [
    "df5efe075b35859529ebf82a4d824458"
   ],
   "num_achievements": 54,
@@ -3775,6 +3842,14 @@
   "num_achievements": 15,
   "ra_id": "7068",
   "title": "Lizzie McGuire: On the Go"
+ },
+ {
+  "hashes": [
+   "704943bd18075740bc9157a34d8c612f"
+  ],
+  "num_achievements": 41,
+  "ra_id": "9574",
+  "title": "Lode Runner Advance"
  },
  {
   "hashes": [
@@ -4211,8 +4286,7 @@
    "6838eb5df807a0f3299ad76066d59d26",
    "6eb8b130138582dc68e5e280606ec847",
    "7a98d4e8bcdd6fb3d3cda248be382683",
-   "eecc817eaa0ff2184fe7e1c25956d930",
-   "f5070f5ab5c6e8228f08fa4e4c68d56d"
+   "eecc817eaa0ff2184fe7e1c25956d930"
   ],
   "num_achievements": 23,
   "ra_id": "514",
@@ -4661,6 +4735,14 @@
   "num_achievements": 33,
   "ra_id": "2537",
   "title": "Piglet's Big Game"
+ },
+ {
+  "hashes": [
+   "ba7746952e87a2c85927fa691e7230dd"
+  ],
+  "num_achievements": 32,
+  "ra_id": "7029",
+  "title": "Pink Panther: Pinkadelic Pursuit"
  },
  {
   "hashes": [
@@ -5117,6 +5199,15 @@
  },
  {
   "hashes": [
+   "065b12ab5b43e941fa0011a5483a47df",
+   "b5da52577265dbb1d98977da249c4e20"
+  ],
+  "num_achievements": 35,
+  "ra_id": "18321",
+  "title": "Secret Agent Barbie: Royal Jewels Mission"
+ },
+ {
+  "hashes": [
    "f4326bde4b5e9f53f5fc58ce24d7b137"
   ],
   "num_achievements": 16,
@@ -5375,7 +5466,7 @@
   ],
   "num_achievements": 22,
   "ra_id": "14362",
-  "title": "Sonic Battle [Subset - Bonus]"
+  "title": "Sonic Battle [Subset - Completionist]"
  },
  {
   "hashes": [
@@ -6051,6 +6142,14 @@
   "num_achievements": 40,
   "ra_id": "4675",
   "title": "The Powerpuff Girls: Him and Seek"
+ },
+ {
+  "hashes": [
+   "28a2b3e44952944e29a168e5f17b5696"
+  ],
+  "num_achievements": 18,
+  "ra_id": "4674",
+  "title": "The Powerpuff Girls: Mojo Jojo A-Go-Go"
  },
  {
   "hashes": [

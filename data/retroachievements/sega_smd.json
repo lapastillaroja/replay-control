@@ -587,6 +587,14 @@
  },
  {
   "hashes": [
+   "5de0bc863d19ce1b916164ecc3c16ebf"
+  ],
+  "num_achievements": 16,
+  "ra_id": "30030",
+  "title": "~Homebrew~ Alice Sisters"
+ },
+ {
+  "hashes": [
    "30c01f5a82b51fd7e23315dd070d5818"
   ],
   "num_achievements": 7,
@@ -696,6 +704,14 @@
   "num_achievements": 14,
   "ra_id": "25018",
   "title": "~Homebrew~ Kekcroc"
+ },
+ {
+  "hashes": [
+   "c93d9ed26e4c92de8502fd2ffe8fb203"
+  ],
+  "num_achievements": 52,
+  "ra_id": "41154",
+  "title": "~Homebrew~ Kunio no Nekketsu School Fighters"
  },
  {
   "hashes": [
@@ -818,6 +834,14 @@
   "num_achievements": 7,
   "ra_id": "22371",
   "title": "~Homebrew~ Super Byoon"
+ },
+ {
+  "hashes": [
+   "bef766d43a93c2348592479ce9b5b591"
+  ],
+  "num_achievements": 17,
+  "ra_id": "32906",
+  "title": "~Homebrew~ Super Star Wars Holiday Special"
  },
  {
   "hashes": [
@@ -989,6 +1013,14 @@
   "num_achievements": 35,
   "ra_id": "7379",
   "title": "~Unlicensed~ Dial Q wo Mawase!"
+ },
+ {
+  "hashes": [
+   "6c34e2fd2b6800194dfad16fadaef820"
+  ],
+  "num_achievements": 15,
+  "ra_id": "36",
+  "title": "~Unlicensed~ Double Dragon"
  },
  {
   "hashes": [
@@ -1469,7 +1501,7 @@
    "1ffe5b490cddeb691e3add6947024f83",
    "b56ec31b0d80e257bb3b599e857a021e"
   ],
-  "num_achievements": 35,
+  "num_achievements": 33,
   "ra_id": "3108",
   "title": "Battle Mania Daiginjou"
  },
@@ -1721,6 +1753,14 @@
  },
  {
   "hashes": [
+   "5923b70dc6740d046ee97cd9e140adf0"
+  ],
+  "num_achievements": 29,
+  "ra_id": "4265",
+  "title": "Championship Bowling"
+ },
+ {
+  "hashes": [
    "1801efc4655e4523f1b7221d6b169ec9",
    "4d0899ee497d971e1b7b8e3d719c70c7",
    "93cacc2d10b6176afa16e4d08ab6ee1c"
@@ -1797,6 +1837,7 @@
    "90a9a99f853eb1853be2b725dab758c9",
    "afefa6517e8ee35f2a5b5b42964f4295",
    "b09f105210f67e01bddaa9c371151f03",
+   "d3723b25873e9cdeb0920b92e4b31ef1",
    "d92ccdfd14118af824b98997ab639bb7",
    "f75ac0929ebdff0c208fe717cc482097"
   ],
@@ -2066,14 +2107,6 @@
   "num_achievements": 29,
   "ra_id": "5756",
   "title": "Doraemon: Yume Dorobou to 7 Nin no Gozans"
- },
- {
-  "hashes": [
-   "6c34e2fd2b6800194dfad16fadaef820"
-  ],
-  "num_achievements": 15,
-  "ra_id": "36",
-  "title": "Double Dragon"
  },
  {
   "hashes": [
@@ -2369,7 +2402,7 @@
   "hashes": [
    "b6813ec7475012936d017c3c93412282"
   ],
-  "num_achievements": 22,
+  "num_achievements": 17,
   "ra_id": "4264",
   "title": "Fighting Masters"
  },
@@ -2539,7 +2572,6 @@
  },
  {
   "hashes": [
-   "2c03b499edcc327b6cb80e41950ac710",
    "2cd3573172961fa52f622f14ccff4e1a",
    "3cda1e8bf2fc09e9a7595c2f3c32c1d6",
    "7e93bd52d851c7f15c114452b3f911d5",
@@ -4136,7 +4168,7 @@
   "hashes": [
    "d0d14e031b6a62c733414e1039a51df3"
   ],
-  "num_achievements": 20,
+  "num_achievements": 26,
   "ra_id": "66",
   "title": "Splatterhouse 2"
  },
@@ -4844,7 +4876,7 @@
    "2857b7730fb7dbc5f7c1ec1a4ba1b0ee",
    "f29c5049a48f37a37b811a22dc731e3c"
   ],
-  "num_achievements": 27,
+  "num_achievements": 24,
   "ra_id": "4726",
   "title": "Trouble Shooter"
  },
@@ -4978,7 +5010,7 @@
    "61b922208e0518a2e127939d374a43cb",
    "ad3fb9946f0bf18c73413d0e4d57ddbf"
   ],
-  "num_achievements": 13,
+  "num_achievements": 18,
   "ra_id": "92",
   "title": "Virtua Fighter 2"
  },
@@ -5197,5 +5229,13 @@
   "num_achievements": 75,
   "ra_id": "3482",
   "title": "Zool: Ninja of the Nth Dimension"
+ },
+ {
+  "hashes": [
+   "dcb24422572d9acf8dc158aa734ebb79"
+  ],
+  "num_achievements": 74,
+  "ra_id": "1355",
+  "title": "Zoom!"
  }
 ]

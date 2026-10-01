@@ -205,6 +205,14 @@
  },
  {
   "hashes": [
+   "d2b70006d7144af1a1d6467460696d45"
+  ],
+  "num_achievements": 60,
+  "ra_id": "41273",
+  "title": "~Hack~ Resident Evil 4: The Xfile Edition"
+ },
+ {
+  "hashes": [
    "614ca5a31def02e3242e6907b38dab14"
   ],
   "num_achievements": 36,
@@ -446,6 +454,14 @@
  },
  {
   "hashes": [
+   "4e0745fd7d4b35e88a05666f2c40af89"
+  ],
+  "num_achievements": 24,
+  "ra_id": "20546",
+  "title": "All-Star Fighters"
+ },
+ {
+  "hashes": [
    "5039baf72fcb8c189ac4898f90bc9c3f"
   ],
   "num_achievements": 72,
@@ -503,6 +519,9 @@
  {
   "hashes": [
    "55260663f8326f0188ee891e831b6784",
+   "ca8b0bdfaae31b50c59fa4b51a1447e1",
+   "d5a17d825c774f1ab91593cb13f37326",
+   "de0ac9892cfde89c9cff96ed27eed808",
    "de3f215b8c1d69f0c66a81e641cf7abb"
   ],
   "num_achievements": 141,
@@ -631,6 +650,14 @@
   "num_achievements": 151,
   "ra_id": "2933",
   "title": "Baldur's Gate: Dark Alliance II"
+ },
+ {
+  "hashes": [
+   "a5cbae055c833070b8ea3c4f66e6ebd5"
+  ],
+  "num_achievements": 47,
+  "ra_id": "25226",
+  "title": "Barbie Horse Adventures: Wild Horse Rescue"
  },
  {
   "hashes": [
@@ -840,6 +867,14 @@
  },
  {
   "hashes": [
+   "67b71b594c2ec3af40058db0d607f6b7"
+  ],
+  "num_achievements": 43,
+  "ra_id": "24575",
+  "title": "Brothers in Arms: Road to Hill 30"
+ },
+ {
+  "hashes": [
    "7c59ec5f291a2ded69036e8cb52a9bcc"
   ],
   "num_achievements": 36,
@@ -985,6 +1020,22 @@
   "num_achievements": 113,
   "ra_id": "20700",
   "title": "Cars: Mater-National Championship"
+ },
+ {
+  "hashes": [
+   "cecebdda17acb7c10605027072a0e864"
+  ],
+  "num_achievements": 15,
+  "ra_id": "24145",
+  "title": "Casper and The Ghostly Trio"
+ },
+ {
+  "hashes": [
+   "e346b5ceb07bb656641fcbee7cea58e7"
+  ],
+  "num_achievements": 37,
+  "ra_id": "28905",
+  "title": "Casper: Spirit Dimensions"
  },
  {
   "hashes": [
@@ -1260,7 +1311,7 @@
   "hashes": [
    "25642d3cd2fce2171b4b94955c6182e6"
   ],
-  "num_achievements": 192,
+  "num_achievements": 191,
   "ra_id": "20446",
   "title": "Dance Dance Revolution SuperNova"
  },
@@ -1477,6 +1528,14 @@
  },
  {
   "hashes": [
+   "61fce18baef92192eeaff10d760b9385"
+  ],
+  "num_achievements": 13,
+  "ra_id": "41747",
+  "title": "Deus Ex: The Conspiracy [Subset - Ultimate Run]"
+ },
+ {
+  "hashes": [
    "9873357f36b9c98fbffa07d14cd856a9"
   ],
   "num_achievements": 142,
@@ -1635,6 +1694,15 @@
   "num_achievements": 77,
   "ra_id": "25307",
   "title": "DJ Hero"
+ },
+ {
+  "hashes": [
+   "bb7f866de353fdb5a41e5f4b6d55b6e5",
+   "d5f145084968d900f79f237587f259fc"
+  ],
+  "num_achievements": 50,
+  "ra_id": "19125",
+  "title": "DoDonPachi DaiOuJou"
  },
  {
   "hashes": [
@@ -1889,7 +1957,7 @@
    "217f15a71c15318b15f22368d9c1a251",
    "2b3942c743a534ca438141e7f046e618"
   ],
-  "num_achievements": 341,
+  "num_achievements": 275,
   "ra_id": "20787",
   "title": "Dynasty Warriors 5: Xtreme Legends"
  },
@@ -2043,6 +2111,22 @@
   "num_achievements": 77,
   "ra_id": "3213",
   "title": "Evergrace"
+ },
+ {
+  "hashes": [
+   "d23e8b84e0dd553456272d0662bfbaa4"
+  ],
+  "num_achievements": 63,
+  "ra_id": "3343",
+  "title": "Everybody's Golf 3"
+ },
+ {
+  "hashes": [
+   "93f3305c9c662ad0b77a823ee23289cc"
+  ],
+  "num_achievements": 96,
+  "ra_id": "20997",
+  "title": "Everybody's Golf 4"
  },
  {
   "hashes": [
@@ -2343,6 +2427,14 @@
  },
  {
   "hashes": [
+   "3d1c789ad54e785294a10a56ffe002af"
+  ],
+  "num_achievements": 102,
+  "ra_id": "20570",
+  "title": "Ford Racing 3"
+ },
+ {
+  "hashes": [
    "f8af97e751bd392c6bb575f070ec7d8a"
   ],
   "num_achievements": 83,
@@ -2356,6 +2448,15 @@
   "num_achievements": 34,
   "ra_id": "32724",
   "title": "Formula One 06 [Subset - Multiplayer]"
+ },
+ {
+  "hashes": [
+   "78d6c1648251a4244948c4610166353f",
+   "c37537524a1790199cd7fb552e62a903"
+  ],
+  "num_achievements": 68,
+  "ra_id": "21971",
+  "title": "Freedom Fighters"
  },
  {
   "hashes": [
@@ -2396,6 +2497,14 @@
   "num_achievements": 31,
   "ra_id": "21363",
   "title": "Fugitive Hunter: War on Terror"
+ },
+ {
+  "hashes": [
+   "47c55b482f1d70d85ad6c95189bf5c33"
+  ],
+  "num_achievements": 52,
+  "ra_id": "20969",
+  "title": "Fullmetal Alchemist 2: Curse of the Crimson Elixir"
  },
  {
   "hashes": [
@@ -3075,22 +3184,6 @@
  },
  {
   "hashes": [
-   "d23e8b84e0dd553456272d0662bfbaa4"
-  ],
-  "num_achievements": 63,
-  "ra_id": "3343",
-  "title": "Hot Shots Golf 3"
- },
- {
-  "hashes": [
-   "93f3305c9c662ad0b77a823ee23289cc"
-  ],
-  "num_achievements": 96,
-  "ra_id": "20997",
-  "title": "Hot Shots Golf Fore!"
- },
- {
-  "hashes": [
    "35165d5516c7a0d5ab12720ff9ea6f23",
    "3611ea5050e3d1e97735d4757f0af888"
   ],
@@ -3254,6 +3347,7 @@
  },
  {
   "hashes": [
+   "1ecabf3e1849c907e9ac42047375a921",
    "71f3799e320278437cf2d260c50c6868"
   ],
   "num_achievements": 72,
@@ -3332,6 +3426,22 @@
   "num_achievements": 100,
   "ra_id": "21858",
   "title": "K-1 World GP 2006"
+ },
+ {
+  "hashes": [
+   "0179d0436d81f0eedd304fa77963495f"
+  ],
+  "num_achievements": 258,
+  "ra_id": "20777",
+  "title": "Kaido Racer"
+ },
+ {
+  "hashes": [
+   "b9d1784dc5c5b9301f26f826f6c5f07b"
+  ],
+  "num_achievements": 8,
+  "ra_id": "43169",
+  "title": "Kaido Racer [Subset - All Category Races]"
  },
  {
   "hashes": [
@@ -3659,6 +3769,14 @@
  },
  {
   "hashes": [
+   "6b645b0e9230910bbf7f2eadff4ce12c"
+  ],
+  "num_achievements": 73,
+  "ra_id": "21030",
+  "title": "Lumines Plus"
+ },
+ {
+  "hashes": [
    "5ce2ce0013e2298fa7ec4036a257ca56"
   ],
   "num_achievements": 38,
@@ -3682,6 +3800,16 @@
   "num_achievements": 65,
   "ra_id": "19288",
   "title": "Madagascar"
+ },
+ {
+  "hashes": [
+   "27ac79bb5d16f55511a7b41183bdbf7f",
+   "5278ae6827030bdbe30e4e8ef062e66c",
+   "95e5a55292437d38e348679e9f4438a7"
+  ],
+  "num_achievements": 47,
+  "ra_id": "19289",
+  "title": "Madagascar: Escape 2 Africa"
  },
  {
   "hashes": [
@@ -4972,6 +5100,14 @@
  },
  {
   "hashes": [
+   "715b2bdd3443d6f4dada9de399ac2b0e"
+  ],
+  "num_achievements": 42,
+  "ra_id": "3048",
+  "title": "Red Faction II"
+ },
+ {
+  "hashes": [
    "8664cbfa31c044756a72e7d2b21a86f0"
   ],
   "num_achievements": 40,
@@ -5176,6 +5312,14 @@
  },
  {
   "hashes": [
+   "5bfdfd5879cd882106c1d7d90aebb4a3"
+  ],
+  "num_achievements": 51,
+  "ra_id": "27524",
+  "title": "Ruff Trigger: The Vanocore Conspiracy"
+ },
+ {
+  "hashes": [
    "6959213136b4679680a16e9344169647"
   ],
   "num_achievements": 60,
@@ -5228,6 +5372,7 @@
  },
  {
   "hashes": [
+   "08e2c1fc59c16ea667e43d2540823d39",
    "362f725e9fe844399d7933f05210a925",
    "3b361a99bf117771ff3f3c56903ea610",
    "6c8669454c69680d5c4c39d8f11c314f"
@@ -5262,7 +5407,8 @@
  },
  {
   "hashes": [
-   "4e692bea4a855133df05ebe2150d485b"
+   "4e692bea4a855133df05ebe2150d485b",
+   "67d87d5735c74d2920224b7b6fdf585a"
   ],
   "num_achievements": 50,
   "ra_id": "20778",
@@ -5284,6 +5430,14 @@
   "num_achievements": 139,
   "ra_id": "20684",
   "title": "Scarface: The World Is Yours"
+ },
+ {
+  "hashes": [
+   "6708cb9012c6fb89cf56df643e786272"
+  ],
+  "num_achievements": 70,
+  "ra_id": "21069",
+  "title": "Scooby-Doo! and the Spooky Swamp"
  },
  {
   "hashes": [
@@ -5840,6 +5994,14 @@
  },
  {
   "hashes": [
+   "ac4a64dd8452aacff37bb1403deafb04"
+  ],
+  "num_achievements": 51,
+  "ra_id": "21121",
+  "title": "Speed Racer: The Videogame"
+ },
+ {
+  "hashes": [
    "c7b60699f5e993f3fd89a163eda917b0"
   ],
   "num_achievements": 139,
@@ -6006,6 +6168,14 @@
  },
  {
   "hashes": [
+   "8fa0cf0976a994337cf885b355446f58"
+  ],
+  "num_achievements": 43,
+  "ra_id": "21129",
+  "title": "Star Trek: Conquest"
+ },
+ {
+  "hashes": [
    "b41a81f09ed28d54aadaa88653a5eae9"
   ],
   "num_achievements": 65,
@@ -6151,6 +6321,14 @@
   "num_achievements": 135,
   "ra_id": "2609",
   "title": "Suikoden III"
+ },
+ {
+  "hashes": [
+   "1c041974d1eb6489229a5d252f20239e"
+  ],
+  "num_achievements": 100,
+  "ra_id": "2617",
+  "title": "Suikoden IV"
  },
  {
   "hashes": [
@@ -6331,6 +6509,15 @@
  },
  {
   "hashes": [
+   "22bdd475640dc07845eeb138ad1fdeaa",
+   "4153af881adb78fa69ac3bb5c18275b9"
+  ],
+  "num_achievements": 117,
+  "ra_id": "21146",
+  "title": "TearRing Saga: Berwick Saga"
+ },
+ {
+  "hashes": [
    "77685ff3d70b70ec7288489efca67b7b"
   ],
   "num_achievements": 49,
@@ -6424,7 +6611,7 @@
    "3309dc23a536a1262074f8170606f927",
    "a149afcd651b45e392f626ad18a3fba1"
   ],
-  "num_achievements": 241,
+  "num_achievements": 239,
   "ra_id": "21154",
   "title": "Test Drive Unlimited"
  },
@@ -6435,6 +6622,14 @@
   "num_achievements": 149,
   "ra_id": "21151",
   "title": "Test Drive: Eve of Destruction"
+ },
+ {
+  "hashes": [
+   "65417a9f170dd1a30152be1ed4412cad"
+  ],
+  "num_achievements": 45,
+  "ra_id": "21155",
+  "title": "Tetris Worlds"
  },
  {
   "hashes": [
@@ -6706,7 +6901,7 @@
   ],
   "num_achievements": 33,
   "ra_id": "21367",
-  "title": "The Nekomura no Hitobito"
+  "title": "The Nekomura no Hitobito: Pug Daikan no Akugyou Zanmai"
  },
  {
   "hashes": [
@@ -6886,7 +7081,7 @@
   "hashes": [
    "9a591a94373b938cf95786e229b37207"
   ],
-  "num_achievements": 86,
+  "num_achievements": 85,
   "ra_id": "21674",
   "title": "The X-Files: Resist or Serve"
  },
@@ -7026,6 +7221,14 @@
  },
  {
   "hashes": [
+   "ad3db3dd4a8e71dac6907c48a30f6f75"
+  ],
+  "num_achievements": 56,
+  "ra_id": "21160",
+  "title": "Tom Clancy's Ghost Recon 2"
+ },
+ {
+  "hashes": [
    "74d131f9787fe98d749ef3e6854f784a",
    "c32cb006a5cb0fbb992cccd083a8870b"
   ],
@@ -7073,6 +7276,14 @@
   "num_achievements": 102,
   "ra_id": "20637",
   "title": "Tony Hawk's American Wasteland"
+ },
+ {
+  "hashes": [
+   "da8c2c798437f36def2bbd92c604f3ce"
+  ],
+  "num_achievements": 52,
+  "ra_id": "20650",
+  "title": "Tony Hawk's Downhill Jam"
  },
  {
   "hashes": [
@@ -7581,6 +7792,14 @@
  },
  {
   "hashes": [
+   "64fc7003552f24a0b44e727022c7c6e8"
+  ],
+  "num_achievements": 51,
+  "ra_id": "26629",
+  "title": "WRC II Extreme"
+ },
+ {
+  "hashes": [
    "3ff22473a4ed67ee0e72771b18dc492f"
   ],
   "num_achievements": 120,
@@ -7712,7 +7931,8 @@
  },
  {
   "hashes": [
-   "9a5ebae24f81f2384141826e4e4cc0d2"
+   "9a5ebae24f81f2384141826e4e4cc0d2",
+   "c0b0d0353d7826772a30b0d29f771803"
   ],
   "num_achievements": 62,
   "ra_id": "9451",
