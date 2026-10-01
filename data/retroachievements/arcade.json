@@ -154,6 +154,14 @@
  },
  {
   "hashes": [
+   "692eb761c012d9bded45de479d1b899d"
+  ],
+  "num_achievements": 92,
+  "ra_id": "17369",
+  "title": "~Hack~ The King of Fighters '99: Anniversary Edition"
+ },
+ {
+  "hashes": [
    "f841bd9b866709f0606cfa1f5efa5111"
   ],
   "num_achievements": 50,
@@ -860,6 +868,15 @@
  },
  {
   "hashes": [
+   "ce864032315862b02e58e9450306dbf0",
+   "ced46190ef09156deaa2e11f7bd0e09a"
+  ],
+  "num_achievements": 63,
+  "ra_id": "12461",
+  "title": "Boxy Boy"
+ },
+ {
+  "hashes": [
    "4af3f971f26f1e78fa672da2312bb861",
    "ed405ed14132353de9a2e317384fd2d5"
   ],
@@ -1331,9 +1348,7 @@
  },
  {
   "hashes": [
-   "4be78e8e30561a4cb05367ce596b6747",
-   "641617fb1087bf53b5cc2f34d3a85acc",
-   "b593e21f66b0f84d90f8bf3e05bf5d6a"
+   "4be78e8e30561a4cb05367ce596b6747"
   ],
   "num_achievements": 16,
   "ra_id": "14646",
@@ -2075,6 +2090,14 @@
  },
  {
   "hashes": [
+   "87ca6ae89b1fb54735da2a19db96ea78"
+  ],
+  "num_achievements": 50,
+  "ra_id": "14893",
+  "title": "Knights of Valour 2"
+ },
+ {
+  "hashes": [
    "1cde3e3b392366b5fd5129d245c8b109"
   ],
   "num_achievements": 15,
@@ -2281,6 +2304,14 @@
   "num_achievements": 13,
   "ra_id": "15240",
   "title": "Match It"
+ },
+ {
+  "hashes": [
+   "89cf9beeb9ea18529e4bd86703ab5392"
+  ],
+  "num_achievements": 30,
+  "ra_id": "29590",
+  "title": "Maximum Speed"
  },
  {
   "hashes": [
@@ -2704,6 +2735,14 @@
  },
  {
   "hashes": [
+   "fc8117c3f262a6a55e4c09b08ece7b04"
+  ],
+  "num_achievements": 28,
+  "ra_id": "28685",
+  "title": "Numan Athletics"
+ },
+ {
+  "hashes": [
    "5802ae899e406453f3ad93e37f9d26a8"
   ],
   "num_achievements": 20,
@@ -2734,6 +2773,14 @@
   "num_achievements": 16,
   "ra_id": "11875",
   "title": "Osman"
+ },
+ {
+  "hashes": [
+   "fbd2c46eee483945592ef763041cbd39"
+  ],
+  "num_achievements": 30,
+  "ra_id": "11873",
+  "title": "Out Zone"
  },
  {
   "hashes": [
@@ -2837,6 +2884,14 @@
   "num_achievements": 27,
   "ra_id": "11868",
   "title": "Penguin-kun Wars"
+ },
+ {
+  "hashes": [
+   "9348ab0688f662882f384d7d45bd7730"
+  ],
+  "num_achievements": 13,
+  "ra_id": "13276",
+  "title": "Perfect Billiard"
  },
  {
   "hashes": [
@@ -2966,7 +3021,7 @@
    "4884009c430ddae8038d9b52208f997b",
    "69f495b39a48003d5e4d359aac9f7669"
   ],
-  "num_achievements": 30,
+  "num_achievements": 42,
   "ra_id": "11830",
   "title": "Progear"
  },
@@ -3729,7 +3784,7 @@
   ],
   "num_achievements": 48,
   "ra_id": "12436",
-  "title": "Street Hoop | Street Slam | Dunk Dream"
+  "title": "Street Hoop"
  },
  {
   "hashes": [
@@ -3765,6 +3820,15 @@
   "num_achievements": 50,
   "ra_id": "13399",
   "title": "Super Baseball 2020"
+ },
+ {
+  "hashes": [
+   "110196a9e2732d9088959ef2e59fba1c",
+   "cb0f93018340d3e639053139fb4c8e30"
+  ],
+  "num_achievements": 91,
+  "ra_id": "12239",
+  "title": "Super Buster Bros."
  },
  {
   "hashes": [

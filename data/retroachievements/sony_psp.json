@@ -9,6 +9,22 @@
  },
  {
   "hashes": [
+   "94d2eb37a05cc08185dff731bf5f5ab0"
+  ],
+  "num_achievements": 54,
+  "ra_id": "37981",
+  "title": "~Homebrew~ ~Prototype~ Touhou Imitation Style"
+ },
+ {
+  "hashes": [
+   "ea9a1800fc551a70142bebcc3b62e22f"
+  ],
+  "num_achievements": 16,
+  "ra_id": "41315",
+  "title": "~Homebrew~ ~Prototype~ Touhou Imitation Style [Subset - Lunatic Clears]"
+ },
+ {
+  "hashes": [
    "97034313765dcf317ec77dec1700cb5a",
    "e06c35f25727b6198b6cecd9d1eea299"
   ],
@@ -125,7 +141,7 @@
   "hashes": [
    "3b970aa70d18538b8f31ec5c92a18b6b"
   ],
-  "num_achievements": 36,
+  "num_achievements": 35,
   "ra_id": "26981",
   "title": "~Homebrew~ Syobon Action"
  },
@@ -427,6 +443,14 @@
   "num_achievements": 74,
   "ra_id": "14500",
   "title": "Brave Story: New Traveler"
+ },
+ {
+  "hashes": [
+   "3bada47b4163a03381e89a04fc898af2"
+  ],
+  "num_achievements": 178,
+  "ra_id": "3044",
+  "title": "Breath of Fire III"
  },
  {
   "hashes": [
@@ -892,6 +916,28 @@
  },
  {
   "hashes": [
+   "75dae6957b4906668bbca1a2196929ac",
+   "f55a5aface22c97c41edc690386e2a68"
+  ],
+  "num_achievements": 95,
+  "ra_id": "3969",
+  "title": "Everybody's Golf"
+ },
+ {
+  "hashes": [
+   "0afb15bf15e0ef74759010e2543ab4ab",
+   "16a489789789f0d89de385f95ca6f0e2",
+   "2b45e36460c1c0367679367bfbe22e9f",
+   "8056024b0744c9160cdd5a7356932661",
+   "a66202c61153c2636f823971dc9e194c",
+   "ae60d1aba1f7dedeceb8fd074b54ba0a"
+  ],
+  "num_achievements": 75,
+  "ra_id": "18265",
+  "title": "Everybody's Tennis"
+ },
+ {
+  "hashes": [
    "9ba66c14aeb669924aa2c247b6bb3aa7"
   ],
   "num_achievements": 30,
@@ -1013,7 +1059,7 @@
    "b81199e201db86f760c504d2f08a1a8c",
    "e61c731f888f65bb47821e66c7f60755"
   ],
-  "num_achievements": 172,
+  "num_achievements": 171,
   "ra_id": "3236",
   "title": "Final Fantasy Tactics: The War of the Lions"
  },
@@ -1085,7 +1131,7 @@
   "hashes": [
    "e5860491dbaaa87e116cf6cbd2e3eb52"
   ],
-  "num_achievements": 229,
+  "num_achievements": 228,
   "ra_id": "15626",
   "title": "Gran Turismo: The Real Driving Simulator"
  },
@@ -1249,15 +1295,6 @@
  },
  {
   "hashes": [
-   "75dae6957b4906668bbca1a2196929ac",
-   "f55a5aface22c97c41edc690386e2a68"
-  ],
-  "num_achievements": 95,
-  "ra_id": "3969",
-  "title": "Hot Shots Golf: Open Tee"
- },
- {
-  "hashes": [
    "f0e8dfb7ecdef17ee576089bd4658708"
   ],
   "num_achievements": 24,
@@ -1337,7 +1374,7 @@
   ],
   "num_achievements": 189,
   "ra_id": "3519",
-  "title": "K-ON! Ho-kago Live!!"
+  "title": "K-ON! Houkago Live!!"
  },
  {
   "hashes": [
@@ -1345,7 +1382,7 @@
   ],
   "num_achievements": 95,
   "ra_id": "37509",
-  "title": "K-ON! Ho-kago Live!! [Subset - Full Combo Songs]"
+  "title": "K-ON! Houkago Live!! [Subset - Full Combo Songs]"
  },
  {
   "hashes": [
@@ -1803,15 +1840,6 @@
  },
  {
   "hashes": [
-   "4a91cfff0cbd7d85c95653089d6de649",
-   "91f439c3b24b6d6ef98c037c6cd74119"
-  ],
-  "num_achievements": 249,
-  "ra_id": "3999",
-  "title": "Nayuta no Kiseki"
- },
- {
-  "hashes": [
    "b079f140baf6c592dff8b53385955861",
    "f6e123671e85305561e771a996f72262"
   ],
@@ -1932,9 +1960,25 @@
   "hashes": [
    "6f3fe3f563d21bdfe8b96cddf499f796"
   ],
-  "num_achievements": 144,
+  "num_achievements": 146,
   "ra_id": "3507",
   "title": "Patapon 3"
+ },
+ {
+  "hashes": [
+   "d308de800d85354700189cbdb47628cd"
+  ],
+  "num_achievements": 7,
+  "ra_id": "38690",
+  "title": "Patapon 3 [Subset - Multiplayer]"
+ },
+ {
+  "hashes": [
+   "73107979534312483c1ef1609f37d1f3"
+  ],
+  "num_achievements": 237,
+  "ra_id": "38691",
+  "title": "Patapon 3 [Subset - Ultimate Uberhero]"
  },
  {
   "hashes": [
@@ -2562,6 +2606,28 @@
   "num_achievements": 55,
   "ra_id": "5932",
   "title": "The Legend of Heroes: Trails in the Sky the 3rd [Subset - NG Nightmare]"
+ },
+ {
+  "hashes": [
+   "4a91cfff0cbd7d85c95653089d6de649",
+   "91f439c3b24b6d6ef98c037c6cd74119"
+  ],
+  "num_achievements": 249,
+  "ra_id": "3999",
+  "title": "The Legend of Nayuta: Boundless Trails"
+ },
+ {
+  "hashes": [
+   "094c3a6fd07da2ff58c821f473dbf1e4",
+   "71ba8be20193b377557b874f0c24bcb6",
+   "7e3422a2569868efacfbd86d0287abb0",
+   "9567dc3ca7c4f80b60805cc4393c2da9",
+   "97eafc37a9efb8377830b4540fa21f65",
+   "df46a01713d8b8ebc0678d8ac72f9054"
+  ],
+  "num_achievements": 169,
+  "ra_id": "25057",
+  "title": "The Lord of the Rings: Tactics"
  },
  {
   "hashes": [

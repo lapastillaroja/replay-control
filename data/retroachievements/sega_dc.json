@@ -1,6 +1,14 @@
 [
  {
   "hashes": [
+   "34308d525dfa540eaefae81f4a517556"
+  ],
+  "num_achievements": 6,
+  "ra_id": "26475",
+  "title": "~Demo~ Sonic Adventure Tournament Disk"
+ },
+ {
+  "hashes": [
    "3afb59a182653ca85f537b600a96e051",
    "709749676bb335a1f4e134b030254642"
   ],
@@ -23,6 +31,14 @@
   "num_achievements": 18,
   "ra_id": "24223",
   "title": "~Prototype~ Castlevania: Resurrection"
+ },
+ {
+  "hashes": [
+   "c83ed55939055b0d211cbb9a3439d3d1"
+  ],
+  "num_achievements": 65,
+  "ra_id": "17779",
+  "title": "~Prototype~ Propeller Arena: Aviation Battle Championship"
  },
  {
   "hashes": [
@@ -331,6 +347,14 @@
  },
  {
   "hashes": [
+   "41b94ff357fab983a6eda4f4b69974bf"
+  ],
+  "num_achievements": 59,
+  "ra_id": "3750",
+  "title": "Elemental Gimmick Gear"
+ },
+ {
+  "hashes": [
    "642d60ce0704cc22146bde04095906ea"
   ],
   "num_achievements": 109,
@@ -514,6 +538,14 @@
   "num_achievements": 122,
   "ra_id": "3452",
   "title": "Marvel vs. Capcom 2: New Age of Heroes"
+ },
+ {
+  "hashes": [
+   "a98d45b342e1eb74cb594eeb57b4f34d"
+  ],
+  "num_achievements": 94,
+  "ra_id": "3867",
+  "title": "Marvel vs. Capcom: Clash of Super Heroes"
  },
  {
   "hashes": [
@@ -864,7 +896,6 @@
  },
  {
   "hashes": [
-   "ae01371343d0d3a264b93cd5b7f8e119",
    "c09140970e7b797dcac7e8a79319eb54",
    "cb73faf2595353269a7846a034517420"
   ],
@@ -908,14 +939,6 @@
   "num_achievements": 59,
   "ra_id": "24940",
   "title": "Sonic Adventure 2 [Subset - Ring Attack & Animal Chase]"
- },
- {
-  "hashes": [
-   "34308d525dfa540eaefae81f4a517556"
-  ],
-  "num_achievements": 6,
-  "ra_id": "26475",
-  "title": "Sonic Adventure Tournament Disk"
  },
  {
   "hashes": [
@@ -1160,6 +1183,14 @@
   "num_achievements": 50,
   "ra_id": "10831",
   "title": "Under Defeat"
+ },
+ {
+  "hashes": [
+   "67da9236ebb8ac7c0f19819c70600d0d"
+  ],
+  "num_achievements": 45,
+  "ra_id": "19155",
+  "title": "V-Rally 2: Expert Edition"
  },
  {
   "hashes": [

@@ -176,14 +176,6 @@
  },
  {
   "hashes": [
-   "59e32f8c38b3400bc147a470c88fb582"
-  ],
-  "num_achievements": 9,
-  "ra_id": "25397",
-  "title": "~Homebrew~ ~Demo~ Five Nights at Freddy's"
- },
- {
-  "hashes": [
    "b694cf3747aea6ac213cf2401f0ad421"
   ],
   "num_achievements": 8,
@@ -200,11 +192,35 @@
  },
  {
   "hashes": [
+   "ab6b18164411840ebeb952c09c5c900e"
+  ],
+  "num_achievements": 7,
+  "ra_id": "41827",
+  "title": "~Homebrew~ ~Demo~ Submachine GBC"
+ },
+ {
+  "hashes": [
    "ebb4915a6897804a2cbf72cd7f60d4f5"
   ],
   "num_achievements": 16,
   "ra_id": "31955",
   "title": "~Homebrew~ ~Demo~ The New Adventures of Sonic the Hedgehog"
+ },
+ {
+  "hashes": [
+   "bbad259d61cfd1fee30578b6214d7891"
+  ],
+  "num_achievements": 28,
+  "ra_id": "41177",
+  "title": "~Homebrew~ ~Prototype~ Fear & Hunger: GameBoy Color Demake"
+ },
+ {
+  "hashes": [
+   "59e32f8c38b3400bc147a470c88fb582"
+  ],
+  "num_achievements": 9,
+  "ra_id": "25397",
+  "title": "~Homebrew~ ~Prototype~ Five Nights at Freddy's"
  },
  {
   "hashes": [
@@ -221,6 +237,14 @@
   "num_achievements": 19,
   "ra_id": "38159",
   "title": "~Homebrew~ Akumanor Gaiden DX"
+ },
+ {
+  "hashes": [
+   "bffe620cc51fd5ba14ccc54a03f282fc"
+  ],
+  "num_achievements": 6,
+  "ra_id": "42740",
+  "title": "~Homebrew~ Ao Oni"
  },
  {
   "hashes": [
@@ -273,9 +297,9 @@
  },
  {
   "hashes": [
-   "029cd8ae6b130b91918597239464cc35"
+   "7fa88d27169175b80fd330e16e9787db"
   ],
-  "num_achievements": 26,
+  "num_achievements": 35,
   "ra_id": "31934",
   "title": "~Homebrew~ Combo Fishing"
  },
@@ -464,6 +488,14 @@
  },
  {
   "hashes": [
+   "75678f36af1d1678ee0c3e92ed9032e6"
+  ],
+  "num_achievements": 14,
+  "ra_id": "41264",
+  "title": "~Homebrew~ Loveless Losers"
+ },
+ {
+  "hashes": [
    "afe14eef683f3eb910b67ea2e3feb124"
   ],
   "num_achievements": 16,
@@ -472,11 +504,11 @@
  },
  {
   "hashes": [
-   "fefb4d5e54d2bf6419a12638b1bef7e7"
+   "d00144b1ee100e1ce9d39747e510f25f"
   ],
-  "num_achievements": 15,
+  "num_achievements": 25,
   "ra_id": "38109",
-  "title": "~Homebrew~ Masturbrowse"
+  "title": "~Homebrew~ Masturbrowse SX"
  },
  {
   "hashes": [
@@ -737,6 +769,14 @@
  },
  {
   "hashes": [
+   "1a3ddd2e8430ee7f754196f6b5202432"
+  ],
+  "num_achievements": 7,
+  "ra_id": "33642",
+  "title": "~Homebrew~ TV-Chan's Great Escape!: GB"
+ },
+ {
+  "hashes": [
    "09bc56a467f95a19a357174c5710db74"
   ],
   "num_achievements": 45,
@@ -767,6 +807,14 @@
   "num_achievements": 21,
   "ra_id": "29775",
   "title": "~Homebrew~ Wishing Sarah"
+ },
+ {
+  "hashes": [
+   "ec2544c37e506602eeacceaa2f7c843c"
+  ],
+  "num_achievements": 50,
+  "ra_id": "42846",
+  "title": "~Homebrew~ Yume Tenshi"
  },
  {
   "hashes": [
@@ -802,6 +850,15 @@
   "num_achievements": 45,
   "ra_id": "7964",
   "title": "~Prototype~ South Park"
+ },
+ {
+  "hashes": [
+   "243b2b6151d41d8e111e98ac49ba9ab4",
+   "7273f7069729f49cd7991314d303f1d8"
+  ],
+  "num_achievements": 16,
+  "ra_id": "15592",
+  "title": "~Prototype~ Sutte Hakkun GB"
  },
  {
   "hashes": [
@@ -1015,6 +1072,14 @@
  },
  {
   "hashes": [
+   "2aba33e89caca45c9091b25a276dd4c6"
+  ],
+  "num_achievements": 12,
+  "ra_id": "3655",
+  "title": "Austin Powers: Oh, Behave!"
+ },
+ {
+  "hashes": [
    "464acbe3c82887db897c39cdba877237",
    "f6b6ddfaaf03392dc469f4eed49ec15d"
   ],
@@ -1037,6 +1102,15 @@
   "num_achievements": 15,
   "ra_id": "13091",
   "title": "Ballistic"
+ },
+ {
+  "hashes": [
+   "2a0abe753877bf312725a9122f1e6489",
+   "f94f61e6beaec6222e0d35229e2e271e"
+  ],
+  "num_achievements": 49,
+  "ra_id": "6523",
+  "title": "Balloon Fight GB"
  },
  {
   "hashes": [
@@ -1372,7 +1446,7 @@
   "hashes": [
    "dbada1fdfaba283bede36852843f5ed8"
   ],
-  "num_achievements": 61,
+  "num_achievements": 59,
   "ra_id": "6181",
   "title": "Dance Dance Revolution GB: Disney Mix"
  },
@@ -1424,6 +1498,14 @@
   "num_achievements": 26,
   "ra_id": "3632",
   "title": "Dexter's Laboratory: Robot Rampage"
+ },
+ {
+  "hashes": [
+   "f9be99d213760ba2e9525abea1de3cb6"
+  ],
+  "num_achievements": 24,
+  "ra_id": "7469",
+  "title": "Die Maus"
  },
  {
   "hashes": [
@@ -1508,7 +1590,7 @@
   ],
   "num_achievements": 138,
   "ra_id": "697",
-  "title": "Dragon Quest III"
+  "title": "Dragon Quest III: Soshite Densetsu e..."
  },
  {
   "hashes": [
@@ -1516,7 +1598,7 @@
   ],
   "num_achievements": 166,
   "ra_id": "20026",
-  "title": "Dragon Quest III [Subset - Gold Medals]"
+  "title": "Dragon Quest III: Soshite Densetsu e... [Subset - Gold Medals]"
  },
  {
   "hashes": [
@@ -1528,12 +1610,19 @@
  },
  {
   "hashes": [
-   "8e79dcdee0e15ef069b3f376a0fee37d",
    "f71ac6ac4bb335f59bfd2b594d47ab49"
   ],
-  "num_achievements": 61,
+  "num_achievements": 71,
   "ra_id": "5105",
-  "title": "Dragon Quest Monsters 2"
+  "title": "Dragon Quest Monsters 2: Cobi's Journey"
+ },
+ {
+  "hashes": [
+   "8e79dcdee0e15ef069b3f376a0fee37d"
+  ],
+  "num_achievements": 86,
+  "ra_id": "41277",
+  "title": "Dragon Quest Monsters 2: Tara's Adventure"
  },
  {
   "hashes": [
@@ -2288,6 +2377,15 @@
  },
  {
   "hashes": [
+   "4d090ceaa53d571db00d7160ca4be69d",
+   "a57d5976214d5f8d52dae5faf4354abb"
+  ],
+  "num_achievements": 28,
+  "ra_id": "7272",
+  "title": "Ms. Pac-Man: Special Color Edition"
+ },
+ {
+  "hashes": [
    "54165d2bf7a040aa31d6d0956408d10d"
   ],
   "num_achievements": 49,
@@ -2670,6 +2768,14 @@
  },
  {
   "hashes": [
+   "b3bd4adc4613ff8f4b9cf8c80ff0a6ef"
+  ],
+  "num_achievements": 16,
+  "ra_id": "8362",
+  "title": "Rocket Power: Gettin Air"
+ },
+ {
+  "hashes": [
    "70e3ab7ef2061e7075d81aede74ea95c"
   ],
   "num_achievements": 41,
@@ -2745,11 +2851,19 @@
  },
  {
   "hashes": [
+   "a2623acf15ec36ab072ee5b92b88b613"
+  ],
+  "num_achievements": 25,
+  "ra_id": "3638",
+  "title": "Sgt. Rock: On the Front Line"
+ },
+ {
+  "hashes": [
    "4c18b5d470b105344ec55d195a05d2de",
    "90280833c156e2ca8e4eaa29adf369b2",
    "9d79034c9b026f448f84f9898c6ccfd6"
   ],
-  "num_achievements": 33,
+  "num_achievements": 32,
   "ra_id": "4933",
   "title": "Shadowgate Classic"
  },
@@ -3180,7 +3294,7 @@
   "hashes": [
    "ef032b6f603b3a290a91d40cb9c4b3e6"
   ],
-  "num_achievements": 46,
+  "num_achievements": 45,
   "ra_id": "8402",
   "title": "Toy Story 2"
  },

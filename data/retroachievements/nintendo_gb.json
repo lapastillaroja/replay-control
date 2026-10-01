@@ -289,6 +289,14 @@
  },
  {
   "hashes": [
+   "99013103818a32bf0241bbca83c2774a"
+  ],
+  "num_achievements": 25,
+  "ra_id": "20298",
+  "title": "~Hack~ Threetris"
+ },
+ {
+  "hashes": [
    "2bd5f9c939c7980e5138ac6d9a33c61b",
    "eb543a5e89d688f3f00175ce65e8cff9"
   ],
@@ -639,6 +647,14 @@
  },
  {
   "hashes": [
+   "b58acfd448cb0eb4732da50e3a5a8f5f"
+  ],
+  "num_achievements": 6,
+  "ra_id": "41239",
+  "title": "~Homebrew~ Flooder"
+ },
+ {
+  "hashes": [
    "a35f069f57eac92b4289b6cb45376963"
   ],
   "num_achievements": 6,
@@ -652,6 +668,14 @@
   "num_achievements": 8,
   "ra_id": "32487",
   "title": "~Homebrew~ Frog Detective -1"
+ },
+ {
+  "hashes": [
+   "119d2364ec0507fbb228d216beac4957"
+  ],
+  "num_achievements": 12,
+  "ra_id": "37076",
+  "title": "~Homebrew~ Fydo's Magic Tiles"
  },
  {
   "hashes": [
@@ -1052,6 +1076,14 @@
  },
  {
   "hashes": [
+   "1212019d533b9238f1af8d348b1c1e05"
+  ],
+  "num_achievements": 8,
+  "ra_id": "41261",
+  "title": "~Homebrew~ Unfair Flips: Unofficial Pocket Edition"
+ },
+ {
+  "hashes": [
    "6e684f059d3228b0c99e59cb69c3ee10"
   ],
   "num_achievements": 8,
@@ -1266,6 +1298,7 @@
  },
  {
   "hashes": [
+   "58dd9396ca73e6e5e94b3dfb5b3c00a0",
    "d8326bfee457ccb2c0afb8dd6ac11db2"
   ],
   "num_achievements": 11,
@@ -1906,7 +1939,8 @@
  },
  {
   "hashes": [
-   "3d4537f6a0542f781e408bd5440d23dd"
+   "3d4537f6a0542f781e408bd5440d23dd",
+   "ef3df5f544c31b74dc6ecfa7a562917b"
   ],
   "num_achievements": 34,
   "ra_id": "3694",
@@ -2761,6 +2795,7 @@
  },
  {
   "hashes": [
+   "28cd0de46215976d7d16c658e06e9a97",
    "4ff223851bc7e3d19acdbf8034e4829f",
    "f28ade3926852a8ad2e449c274683956"
   ],
@@ -2932,6 +2967,7 @@
   "hashes": [
    "13dd6801246da226b0c2db339df4a246",
    "7f896b5e5e27eda1b08251ebe581c885",
+   "94767764273919e23c91542de3af8aa3",
    "e12c5c2897ed095f8d26c7578afddfda"
   ],
   "num_achievements": 36,
@@ -3087,7 +3123,7 @@
    "34bc051c58166d7bd1fc2540870edfdb",
    "e8c6250592807a674b4235d06fb05357"
   ],
-  "num_achievements": 32,
+  "num_achievements": 50,
   "ra_id": "6621",
   "title": "Picross 2"
  },
@@ -3361,6 +3397,15 @@
   "num_achievements": 11,
   "ra_id": "2473",
   "title": "SD Lupin III: Kinko Yaburi Daisakusen"
+ },
+ {
+  "hashes": [
+   "73377222a76829e02c9a32b569862bde",
+   "ed999967209a4cbcaa844b8a84e09ea9"
+  ],
+  "num_achievements": 21,
+  "ra_id": "2562",
+  "title": "Serpent"
  },
  {
   "hashes": [
@@ -4054,7 +4099,7 @@
   "hashes": [
    "e5e8910d436acb9fd218559a216501a3"
   ],
-  "num_achievements": 20,
+  "num_achievements": 19,
   "ra_id": "740",
   "title": "Wario Land II"
  },

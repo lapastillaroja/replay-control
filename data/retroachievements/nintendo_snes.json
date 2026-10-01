@@ -33,6 +33,14 @@
  },
  {
   "hashes": [
+   "9d16d0cfc0e23747df0bf220514c9296"
+  ],
+  "num_achievements": 7,
+  "ra_id": "44295",
+  "title": "~Hack~ ~Demo~ Super Geometry Dash World"
+ },
+ {
+  "hashes": [
    "8fb9e2b2e06a766da85c5e5b55a63ea7"
   ],
   "num_achievements": 9,
@@ -51,7 +59,7 @@
   "hashes": [
    "c422ea1145352be2fde34b2f01be5b68"
   ],
-  "num_achievements": 36,
+  "num_achievements": 35,
   "ra_id": "16187",
   "title": "~Hack~ 1st Kochobo Dourado Collab | Kochobo Dourado"
  },
@@ -110,14 +118,6 @@
   "num_achievements": 11,
   "ra_id": "20281",
   "title": "~Hack~ 3 Islands of Shells"
- },
- {
-  "hashes": [
-   "7492bf1f9d437dda767cd75842053c56"
-  ],
-  "num_achievements": 249,
-  "ra_id": "9527",
-  "title": "~Hack~ 9th Annual Vanilla Level Design Contest"
  },
  {
   "hashes": [
@@ -230,6 +230,14 @@
   "num_achievements": 66,
   "ra_id": "17360",
   "title": "~Hack~ Arcana: Seal of Rimsala"
+ },
+ {
+  "hashes": [
+   "36dd05f3b71ead91dde3fb68e62d844b"
+  ],
+  "num_achievements": 33,
+  "ra_id": "38028",
+  "title": "~Hack~ Attempt at a Normal Hack"
  },
  {
   "hashes": [
@@ -431,6 +439,14 @@
  },
  {
   "hashes": [
+   "d1b27d8a78536a1d3bcbf076c7befe9d"
+  ],
+  "num_achievements": 75,
+  "ra_id": "17945",
+  "title": "~Hack~ Chrono Trigger: Schala Edition"
+ },
+ {
+  "hashes": [
    "3c792c4686a682f96f28241358e36839"
   ],
   "num_achievements": 109,
@@ -479,9 +495,9 @@
  },
  {
   "hashes": [
-   "5ad584a19226c0f1a21e48f16c1260de",
    "60793c171bb4808649a83f001b394c3f",
-   "a19025d30d2f056b5d2f67c6d2df4fb0",
+   "7a3d3773ae24dc25dcadd1fc4666ca60",
+   "990ba63420147c099f55adc6e77de800",
    "f5ed58c63d0580bdcd0237a5d23fd288"
   ],
   "num_achievements": 54,
@@ -624,6 +640,14 @@
  },
  {
   "hashes": [
+   "417f536fe5b6ffada50924dfbc3e2500"
+  ],
+  "num_achievements": 48,
+  "ra_id": "38725",
+  "title": "~Hack~ Earthbound Beginnings Remake"
+ },
+ {
+  "hashes": [
    "3c9a6079146414790ad6712d48ab31a3",
    "82cbda347e2bdfb18ef8ee088f5ecc3e"
   ],
@@ -706,6 +730,14 @@
  },
  {
   "hashes": [
+   "c7de3002e14ce4029ce658537348ff9a"
+  ],
+  "num_achievements": 29,
+  "ra_id": "41194",
+  "title": "~Hack~ ESCAPE FROM LA PLUME"
+ },
+ {
+  "hashes": [
    "e36096a034012492b2cd19317550150d"
   ],
   "num_achievements": 56,
@@ -730,6 +762,15 @@
  },
  {
   "hashes": [
+   "acaa057f3371de134908e693e1fc0525",
+   "d0e6cfa8a28dae6125acc8a73fd9865e"
+  ],
+  "num_achievements": 84,
+  "ra_id": "23702",
+  "title": "~Hack~ FF5r"
+ },
+ {
+  "hashes": [
    "6a6c84b67ebfd718a10fd31682234ed4"
   ],
   "num_achievements": 72,
@@ -746,11 +787,44 @@
  },
  {
   "hashes": [
+   "5efc4af74338cc002d4dbcfb877acde4",
+   "690ac0fcf373f7261f164814c064b577"
+  ],
+  "num_achievements": 65,
+  "ra_id": "32725",
+  "title": "~Hack~ Final Fantasy C2"
+ },
+ {
+  "hashes": [
    "23cf0947b5731d761cd8c6df4547093b"
   ],
   "num_achievements": 40,
   "ra_id": "33613",
   "title": "~Hack~ Final Fantasy II: Job System"
+ },
+ {
+  "hashes": [
+   "196ec66cfea2600204bc4dc037b9378f"
+  ],
+  "num_achievements": 30,
+  "ra_id": "32738",
+  "title": "~Hack~ Final Fantasy IV: Daughter of Darkness and Light"
+ },
+ {
+  "hashes": [
+   "54ba840acbdc42f83529fa31aa86900b"
+  ],
+  "num_achievements": 57,
+  "ra_id": "34088",
+  "title": "~Hack~ Final Fantasy IV: T-Edition"
+ },
+ {
+  "hashes": [
+   "99d3778632b512d714835083b98577d1"
+  ],
+  "num_achievements": 46,
+  "ra_id": "32731",
+  "title": "~Hack~ Final Fantasy IV: The Darkness Within"
  },
  {
   "hashes": [
@@ -1242,6 +1316,14 @@
  },
  {
   "hashes": [
+   "0b184ad9ac886455d0c7902626c686d9"
+  ],
+  "num_achievements": 103,
+  "ra_id": "41272",
+  "title": "~Hack~ Journey to Kaizo"
+ },
+ {
+  "hashes": [
    "405644d643e3e8672c2cc801910a0bd6"
   ],
   "num_achievements": 91,
@@ -1339,6 +1421,22 @@
   "num_achievements": 18,
   "ra_id": "18102",
   "title": "~Hack~ Lakitu's Great Adventure"
+ },
+ {
+  "hashes": [
+   "affa75a9cd1f5677a42f0de1f44f184e"
+  ],
+  "num_achievements": 24,
+  "ra_id": "33521",
+  "title": "~Hack~ Law & Order: Mushroom Kingdom Unit - Pilot Episode - Tragic Fox \"Tails\""
+ },
+ {
+  "hashes": [
+   "fdd7bf17dac6d6b06b55abfa715f7c0a"
+  ],
+  "num_achievements": 30,
+  "ra_id": "41222",
+  "title": "~Hack~ Le plume"
  },
  {
   "hashes": [
@@ -1688,7 +1786,7 @@
   "hashes": [
    "318a6ca4b0769360c4d9a13628d3d89f"
   ],
-  "num_achievements": 39,
+  "num_achievements": 38,
   "ra_id": "9582",
   "title": "~Hack~ Mega Mario World: Another Universe"
  },
@@ -1764,6 +1862,22 @@
   "num_achievements": 11,
   "ra_id": "25294",
   "title": "~Hack~ My QLDC Level"
+ },
+ {
+  "hashes": [
+   "a3e792a29aa6db2076a1f530ce5a84df"
+  ],
+  "num_achievements": 21,
+  "ra_id": "38027",
+  "title": "~Hack~ Nachos and Fried Oreos"
+ },
+ {
+  "hashes": [
+   "f3860df86b559a1236650ca196a27a97"
+  ],
+  "num_achievements": 35,
+  "ra_id": "41207",
+  "title": "~Hack~ Nays Nice Hack"
  },
  {
   "hashes": [
@@ -2014,9 +2128,10 @@
  },
  {
   "hashes": [
-   "feda879c47a717ad736ebfb676b3b148"
+   "799e4e8a009d0ba1715ad0add5c12432",
+   "847ff64d5d0a4d3fafc3c8f84350b345"
   ],
-  "num_achievements": 40,
+  "num_achievements": 44,
   "ra_id": "30906",
   "title": "~Hack~ Reverie"
  },
@@ -2065,6 +2180,14 @@
   "num_achievements": 21,
   "ra_id": "17728",
   "title": "~Hack~ Rockman X: New Year's"
+ },
+ {
+  "hashes": [
+   "4e6d60c65e18eed6c7e5440f1e8f7b7b"
+  ],
+  "num_achievements": 53,
+  "ra_id": "41275",
+  "title": "~Hack~ Rockman X3: Anti-Tasverick"
  },
  {
   "hashes": [
@@ -2377,7 +2500,7 @@
   "hashes": [
    "f208e5cd6842a35fb01fee9fe81ced0f"
   ],
-  "num_achievements": 33,
+  "num_achievements": 53,
   "ra_id": "4049",
   "title": "~Hack~ Super Demo World: The Legend Continues"
  },
@@ -2405,6 +2528,15 @@
   "num_achievements": 34,
   "ra_id": "27722",
   "title": "~Hack~ Super Dram World"
+ },
+ {
+  "hashes": [
+   "07c7ea158bbee54b9c8cba558bcbe95f",
+   "3871150d89e9c3f0eaf7511ec2e896c2"
+  ],
+  "num_achievements": 36,
+  "ra_id": "3787",
+  "title": "~Hack~ Super Dram World 2"
  },
  {
   "hashes": [
@@ -2471,6 +2603,14 @@
   "num_achievements": 16,
   "ra_id": "14485",
   "title": "~Hack~ Super Machok World"
+ },
+ {
+  "hashes": [
+   "8efc822f0f4498cf78d5eb6ac7d9f6d4"
+  ],
+  "num_achievements": 17,
+  "ra_id": "41224",
+  "title": "~Hack~ Super Magro World for Super Nintendo"
  },
  {
   "hashes": [
@@ -2700,7 +2840,7 @@
   "hashes": [
    "c6d3ec4da72690585c0c75b44e438b2a"
   ],
-  "num_achievements": 120,
+  "num_achievements": 118,
   "ra_id": "17949",
   "title": "~Hack~ Super Mario World: 30th Anniversary Edition"
  },
@@ -3094,6 +3234,14 @@
   "num_achievements": 154,
   "ra_id": "17548",
   "title": "~Hack~ The 8th Annual Vanilla Level Design Contest"
+ },
+ {
+  "hashes": [
+   "7492bf1f9d437dda767cd75842053c56"
+  ],
+  "num_achievements": 249,
+  "ra_id": "9527",
+  "title": "~Hack~ The 9th Annual Vanilla Level Design Contest"
  },
  {
   "hashes": [
@@ -3708,6 +3856,14 @@
  },
  {
   "hashes": [
+   "5ae643072832047b09462f111099b4f5"
+  ],
+  "num_achievements": 13,
+  "ra_id": "14699",
+  "title": "~Prototype~ Sound Factory"
+ },
+ {
+  "hashes": [
    "55d4156933f56409a8790bf8289254b3"
   ],
   "num_achievements": 16,
@@ -4058,9 +4214,18 @@
  },
  {
   "hashes": [
+   "0000684516676e1b97c614d10af5a5dc",
+   "b22871e35d219853d268f2297e6937e7"
+  ],
+  "num_achievements": 65,
+  "ra_id": "2665",
+  "title": "Ball Bullet Gun"
+ },
+ {
+  "hashes": [
    "fdecc2c3cb3c351dad5d54da7999d3c0"
   ],
-  "num_achievements": 7,
+  "num_achievements": 18,
   "ra_id": "412",
   "title": "Barbie: Super Model"
  },
@@ -4380,7 +4545,7 @@
   ],
   "num_achievements": 8,
   "ra_id": "5211",
-  "title": "BS F-Zero Grand Prix 2: Practice"
+  "title": "BS F-Zero Grand Prix 2"
  },
  {
   "hashes": [
@@ -4414,6 +4579,7 @@
    "25b4d32c87e25f303a1ac87434028f5d",
    "506f7d161960e4385577a5626aa80124",
    "62331bfa00172b3e2705dc33dc93e1ee",
+   "6e49324af48c7a3e6e6fbd857ecdad2d",
    "7aca67c5fec3f20ccb522edaac19821a",
    "887e9d1af2192c55314b07112c3f9818",
    "bbb778e1023ac5da2edde430b7df9e29",
@@ -4433,7 +4599,7 @@
   ],
   "num_achievements": 59,
   "ra_id": "8747",
-  "title": "BS The Legend of Zelda"
+  "title": "BS Zelda no Densetsu"
  },
  {
   "hashes": [
@@ -4457,7 +4623,7 @@
   ],
   "num_achievements": 57,
   "ra_id": "7465",
-  "title": "BS The Legend of Zelda: Ancient Stone Tablets"
+  "title": "BS Zelda no Densetsu: Inishie no Sekiban"
  },
  {
   "hashes": [
@@ -4789,7 +4955,7 @@
    "0be736bb76d0a5cce320886570382362",
    "19853f55cc724d45d21d9136fcdcb20a"
   ],
-  "num_achievements": 26,
+  "num_achievements": 19,
   "ra_id": "2751",
   "title": "Cyborg 009"
  },
@@ -5567,6 +5733,16 @@
   "num_achievements": 112,
   "ra_id": "1408",
   "title": "Front Mission: Gun Hazard"
+ },
+ {
+  "hashes": [
+   "6cdd5607e78d7f240ea7aa85565c97c2",
+   "8c8fc738eae4eb714b43889767daf094",
+   "9b1e8f4be0cecb88741f51ebeb1e05c9"
+  ],
+  "num_achievements": 56,
+  "ra_id": "2899",
+  "title": "Fushigi no Dungeon 2: Fuurai no Shiren"
  },
  {
   "hashes": [
@@ -6490,25 +6666,20 @@
  {
   "hashes": [
    "0f1353cffeb2aa3e6557a369ef598e74",
+   "2660ddd1f9b24f496a76acc0c5fd3d77",
    "6efc477d6203ed2b3b9133c1cd9e9c5d",
    "8607561b2d3175b949ebd899aa12052b",
    "97998af661bfb8477737bfc83fc9dae8",
-   "9877b2b1b6b0f32db434947d0b910523",
-   "bf57e03293d2a09ece8a83177dd78a99",
    "d7b17796c17749485feac614a2598344",
-   "ed37fc950ef8be02fc7f66cb37424063",
-   "f81af0a9e66e1aa0119419a9f57bf8a7"
+   "f76843cc024eb83167960da07839c897"
   ],
-  "num_achievements": 64,
+  "num_achievements": 60,
   "ra_id": "1005",
   "title": "Lufia II: Rise of the Sinistrals"
  },
  {
   "hashes": [
-   "12a57acafc4b7cd93fc849bcc20b7a24",
-   "1e5ed4a520339747ba827535dec266e3",
-   "31c76879c33a0220561edb369522e9dc",
-   "5f5d097df9c3501ab05fdcb1f30bb8e5"
+   "1e5ed4a520339747ba827535dec266e3"
   ],
   "num_achievements": 50,
   "ra_id": "12818",
@@ -6738,7 +6909,7 @@
   "hashes": [
    "301d8c4f1b5de2cd10b68686b17b281a"
   ],
-  "num_achievements": 49,
+  "num_achievements": 53,
   "ra_id": "469",
   "title": "Mega Man 7"
  },
@@ -8083,7 +8254,7 @@
    "ac39bcc1c19813048903098d0c1e4935",
    "e2c3cc007c2c1c358bfe50ead5c8b9ac"
   ],
-  "num_achievements": 25,
+  "num_achievements": 27,
   "ra_id": "555",
   "title": "Shin Kidou Senki Gundam W: Endless Duel"
  },
@@ -8298,6 +8469,14 @@
   "num_achievements": 23,
   "ra_id": "321",
   "title": "Spider-Man"
+ },
+ {
+  "hashes": [
+   "c4f2fe9b3ec4fc5c9c5d1b8ae1bd8054"
+  ],
+  "num_achievements": 46,
+  "ra_id": "1179",
+  "title": "Spider-Man & Venom: Maximum Carnage"
  },
  {
   "hashes": [
@@ -9041,6 +9220,14 @@
  },
  {
   "hashes": [
+   "c9bfaa0cf1365a1ae1d9be62abe0366b"
+  ],
+  "num_achievements": 28,
+  "ra_id": "23626",
+  "title": "Tamagotchi Town"
+ },
+ {
+  "hashes": [
    "16c01d30d842496fd8cec31c48cdabff",
    "269d47792f93fb7b8448cd99b08e02ab",
    "7a165aae06e675eb9a569bd1935b4816",
@@ -9063,7 +9250,7 @@
   "hashes": [
    "d26babb046182e3a564fb1bdddce7e42"
   ],
-  "num_achievements": 92,
+  "num_achievements": 102,
   "ra_id": "1250",
   "title": "Tecmo Secret of the Stars"
  },
@@ -9717,6 +9904,7 @@
   "hashes": [
    "4704f212be4ff8afb99f2b77ff9fe3cd",
    "5615595c240a5161b531ab30dad96c83",
+   "c95b45d1588db4eaa8876c28877a1247",
    "c9fc87528511770db888b28a4c506f46"
   ],
   "num_achievements": 111,
@@ -9864,6 +10052,14 @@
   "num_achievements": 36,
   "ra_id": "7928",
   "title": "Ultima: Kyouryuu Teikoku - The Savage Empire"
+ },
+ {
+  "hashes": [
+   "27968dfca9cbca44b2d233083ec765ea"
+  ],
+  "num_achievements": 60,
+  "ra_id": "1288",
+  "title": "Ultima: Runes of Virtue II"
  },
  {
   "hashes": [
