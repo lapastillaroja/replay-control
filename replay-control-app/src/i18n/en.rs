@@ -307,8 +307,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayInsiderSaved => "RePlayOS insider token updated",
         Key::LinkPlayTitle => "Link Play",
         Key::LinkPlayHint => {
-            "Connect compatible games between RePlay devices. Changes apply immediately to the running frontend."
+            "Play together across RePlay devices on the same network in games whose cores support Link Play. Set one device to Host and the others to Client. Changes apply immediately."
         }
+        Key::LinkPlayConfigGuide => "RePlayOS Link Play configuration guide",
         Key::LinkPlayMode => "Mode",
         Key::LinkPlayDisabled => "Disabled",
         Key::LinkPlayHost => "Host",

@@ -201,6 +201,27 @@ pub struct LinkPlayConfig {
 }
 
 impl LinkPlayConfig {
+    pub fn from_snapshot(snapshot: &ReplayConfigSnapshot) -> Self {
+        Self {
+            mode: snapshot
+                .get_str("link_play_mode")
+                .unwrap_or("disabled")
+                .to_string(),
+            address: snapshot
+                .get_str("link_play_address")
+                .unwrap_or("")
+                .to_string(),
+            port: snapshot
+                .get_value_string("link_play_port")
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|port| *port > 0)
+                .unwrap_or(55_435),
+            lan_discovery: snapshot
+                .get_value_string("link_play_lan_discovery")
+                .is_none_or(|value| !value.eq_ignore_ascii_case("false")),
+        }
+    }
+
     pub fn validation_error(&self) -> Option<SettingsOutcome> {
         let mode = self.mode.trim();
         let address = self.address.trim();
@@ -265,6 +286,24 @@ mod tests {
             config.validation_error(),
             Some(SettingsOutcome::InvalidPort)
         );
+    }
+    #[test]
+    fn link_play_snapshot_uses_current_api_values_and_beta_defaults() {
+        let defaults = LinkPlayConfig::from_snapshot(&ReplayConfigSnapshot::default());
+        assert_eq!(defaults.mode, "disabled");
+        assert_eq!(defaults.address, "");
+        assert_eq!(defaults.port, 55_435);
+        assert!(defaults.lan_discovery);
+
+        let snapshot: ReplayConfigSnapshot = serde_json::from_str(
+            r#"{"config":{"link_play_mode":"client","link_play_address":"::1","link_play_port":"6000","link_play_lan_discovery":false}}"#,
+        )
+        .unwrap();
+        let configured = LinkPlayConfig::from_snapshot(&snapshot);
+        assert_eq!(configured.mode, "client");
+        assert_eq!(configured.address, "::1");
+        assert_eq!(configured.port, 6000);
+        assert!(!configured.lan_discovery);
     }
     #[test]
     fn inheritance_resolves_core_before_global_and_requires_known_values() {

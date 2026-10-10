@@ -39,6 +39,7 @@ pub fn WifiPage() -> impl IntoView {
 fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
     let i18n = use_i18n();
 
+    let mode_available = config.mode_available;
     let ssid = RwSignal::new(config.ssid);
     let password = RwSignal::new(String::new());
     let country = RwSignal::new(config.country);
@@ -55,7 +56,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
         let ssid = ssid.get();
         let password = password.get();
         let country = country.get();
-        let mode = mode.get();
+        let mode = mode_available.then(|| mode.get());
         let hidden = hidden.get();
 
         leptos::task::spawn_local(async move {
@@ -115,14 +116,16 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
                 />
             </div>
 
-            <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiMode)}</label>
-                <select class="form-input" bind:value=mode>
-                    <option value="transition">"WPA2/WPA3 (Transition)"</option>
-                    <option value="wpa2">"WPA2 Only"</option>
-                    <option value="wpa3">"WPA3 Only"</option>
-                </select>
-            </div>
+            <Show when=move || mode_available>
+                <div class="form-field">
+                    <label class="form-label">{move || t(i18n.locale.get(), Key::WifiMode)}</label>
+                    <select class="form-input" bind:value=mode>
+                        <option value="transition">"WPA2/WPA3 (Transition)"</option>
+                        <option value="wpa2">"WPA2 Only"</option>
+                        <option value="wpa3">"WPA3 Only"</option>
+                    </select>
+                </div>
+            </Show>
 
             <div class="form-field form-field-check">
                 <label class="form-label">{move || t(i18n.locale.get(), Key::WifiHidden)}</label>

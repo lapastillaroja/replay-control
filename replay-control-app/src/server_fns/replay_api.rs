@@ -36,6 +36,7 @@ use replay_control_core::replay_api::ReplayFeature;
 #[cfg(feature = "ssr")]
 use replay_control_core::replay_api::{
     ConfigKind, SetCommand, is_supported_replayos_version, min_supported_version_str,
+    parse_replayos_version,
 };
 use replay_control_core::replay_api::{ReplayApiStatus, ReplayLogLevel};
 
@@ -182,16 +183,33 @@ async fn apply_active_game_config(
     if ActiveGameIdentity::from_status(&status).as_ref() != Some(&config.identity) {
         return Ok(GameSettingsOutcome::GameChanged);
     }
-    // Best-effort identity guard only: RePlayOS has no atomic conditional write.
-    // A TV-side game switch between this check and set_config remains possible.
-    api.client()
-        .set_config(ConfigKind::Game, &changes)
-        .await
-        .map_err(|error| {
+    let supports_target_guard = matches!(
+        api.status(),
+        ReplayApiStatus::Active { ref version }
+            if parse_replayos_version(version).is_some_and(|version| version >= (2, 0, 0))
+    );
+    let result = if supports_target_guard {
+        api.client()
+            .set_game_config_for_target(&config.identity, &changes)
+            .await
+    } else {
+        // RePlayOS 1.8 has no conditional write; the status check above is
+        // the best available protection on that version.
+        api.client().set_config(ConfigKind::Game, &changes).await
+    };
+    match result {
+        Err(ApiError::BadStatus {
+            status: 409,
+            message,
+        }) if supports_target_guard && message.starts_with("Target Changed") => {
+            Ok(GameSettingsOutcome::GameChanged)
+        }
+        Err(error) => {
             api.report_error(&error);
-            ServerFnError::new(error.to_string())
-        })?;
-    Ok(GameSettingsOutcome::Applied)
+            Err(ServerFnError::new(error.to_string()))
+        }
+        Ok(()) => Ok(GameSettingsOutcome::Applied),
+    }
 }
 
 #[server(prefix = "/sfn")]
@@ -205,19 +223,15 @@ pub async fn get_link_play_config() -> Result<LinkPlayConfig, ServerFnError> {
         .locale
         .unwrap_or_default();
     ensure_feature_available(&api, ReplayFeature::LinkPlay, locale).await?;
-    let guard = state
-        .replay_config
-        .read()
-        .expect("replay_config lock poisoned");
-    let config = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("RePlayOS configuration unavailable"))?;
-    Ok(LinkPlayConfig {
-        mode: config.link_play_mode().to_string(),
-        address: config.link_play_address().to_string(),
-        port: config.link_play_port(),
-        lan_discovery: config.link_play_lan_discovery_enabled(),
-    })
+    let snapshot = api
+        .client()
+        .get_config(ConfigKind::Replay)
+        .await
+        .map_err(|error| {
+            api.report_error(&error);
+            ServerFnError::new(error.to_string())
+        })?;
+    Ok(LinkPlayConfig::from_snapshot(&snapshot))
 }
 
 #[server(prefix = "/sfn")]
@@ -925,15 +939,22 @@ mod tests {
     use super::*;
     use replay_control_core::replay_settings::{GameOverride, GameSetting};
     use replay_control_core_server::test_utils::{mock_replay_api, refused_replay_api};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
     use std::time::Duration;
     use tokio::sync::broadcast;
 
     fn api_for(url: String) -> ReplayApi {
         let (events, _) = broadcast::channel(8);
-        ReplayApi::from_client(
+        let api = ReplayApi::from_client(
             ReplayApiClient::new(url, Some("123456".to_string())),
             events,
-        )
+        );
+        api.set_status(ReplayApiStatus::Active {
+            version: "RePlayOS v2.0.47".to_string(),
+        });
+        api
     }
     fn config() -> ActiveGameConfig {
         ActiveGameConfig {
@@ -952,12 +973,43 @@ mod tests {
         }
     }
 
+    fn game_save_server(
+        set_status: &'static str,
+        set_body: &'static str,
+    ) -> (String, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            for (status, body) in [
+                (
+                    "200 OK",
+                    r#"{"system":"nintendo_gc","game_file":"/media/nfs/roms/nintendo_gc/game.iso"}"#,
+                ),
+                (set_status, set_body),
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                let length = stream.read(&mut request).unwrap();
+                sender
+                    .send(String::from_utf8_lossy(&request[..length]).into_owned())
+                    .unwrap();
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (format!("http://{address}/api/v1"), receiver)
+    }
+
     #[tokio::test]
-    async fn insider_launch_guard_uses_reported_gates() {
-        for system in ["nintendo_gc", "sony_ps2"] {
+    async fn insider_launch_guard_allows_public_or_active_insider_features() {
+        for system in ["nintendo_gc", "nintendo_wii", "arcade_triforce", "sony_ps2"] {
             let locked = api_for(mock_replay_api(
                 "200 OK",
-                r#"{"version":"2.0.47","insider_enabled":false,"insider_features":["gamecube","playstation2"]}"#,
+                r#"{"version":"2.0.52","insider_enabled":false,"insider_features":["gamecube","playstation2"]}"#,
             ));
             let error = ensure_game_launch_allowed(&locked, system, Locale::Es)
                 .await
@@ -967,16 +1019,30 @@ mod tests {
                     .to_string()
                     .contains(t(Locale::Es, Key::ReplayInsiderRequired))
             );
+            let allowed = api_for(mock_replay_api(
+                "200 OK",
+                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":["gamecube","playstation2"]}"#,
+            ));
+            ensure_game_launch_allowed(&allowed, system, Locale::En)
+                .await
+                .unwrap();
             for payload in [
-                r#"{"version":"2.0.0"}"#,
-                r#"{"version":"2.0.0","insider_enabled":true,"insider_features":["gamecube","playstation2"]}"#,
-                r#"{"version":"2.0.0","insider_enabled":false,"insider_features":["vulkan"]}"#,
+                r#"{"version":"2.0.52"}"#,
+                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":["vulkan"]}"#,
+                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":[]}"#,
             ] {
-                let allowed = api_for(mock_replay_api("200 OK", payload));
-                ensure_game_launch_allowed(&allowed, system, Locale::En)
+                let public = api_for(mock_replay_api("200 OK", payload));
+                ensure_game_launch_allowed(&public, system, Locale::En)
                     .await
                     .unwrap();
             }
+            let public_without_insider = api_for(mock_replay_api(
+                "200 OK",
+                r#"{"version":"2.0.52","insider_enabled":false,"insider_features":["vulkan"]}"#,
+            ));
+            ensure_game_launch_allowed(&public_without_insider, system, Locale::En)
+                .await
+                .unwrap();
         }
     }
 
@@ -1058,6 +1124,39 @@ mod tests {
             apply_active_game_config(&api, config()).await.unwrap(),
             GameSettingsOutcome::Applied
         );
+    }
+    #[tokio::test]
+    async fn game_override_uses_legacy_write_on_replayos_1_8() {
+        let (url, requests) = game_save_server("200 OK", "{}");
+        let api = api_for(url);
+        api.set_status(ReplayApiStatus::Active {
+            version: "RePlayOS v1.8.0".to_string(),
+        });
+        assert_eq!(
+            apply_active_game_config(&api, config()).await.unwrap(),
+            GameSettingsOutcome::Applied
+        );
+        let _status_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        let save_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(save_request.contains("/api/v1/set_config?"));
+        assert!(!save_request.contains("game_file="));
+        assert!(!save_request.contains("system="));
+    }
+    #[tokio::test]
+    async fn game_override_maps_atomic_target_change_to_game_changed() {
+        let (url, requests) = game_save_server(
+            "409 Conflict",
+            r#"{"error":"Target Changed","detail":"Active configuration target changed"}"#,
+        );
+        let api = api_for(url);
+        assert_eq!(
+            apply_active_game_config(&api, config()).await.unwrap(),
+            GameSettingsOutcome::GameChanged
+        );
+        let _status_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        let save_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(save_request.contains("system=nintendo_gc"));
+        assert!(save_request.contains("game_file="));
     }
     #[tokio::test]
     async fn game_override_rejects_invalid_values_before_network() {

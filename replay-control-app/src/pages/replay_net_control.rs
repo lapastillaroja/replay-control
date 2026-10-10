@@ -328,30 +328,6 @@ fn NetControlContent(
             </section>
 
             <section class="apply-section">
-                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsDeviceTitle)}</h3>
-                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsDeviceHint)}</p>
-                <div class="replayos-button-stack">
-                    <button
-                        type="button"
-                        class="form-btn form-btn-secondary"
-                        disabled=move || action_busy.get()
-                        on:click=on_reboot
-                    >
-                        {move || t(i18n.locale.get(), Key::SettingsReboot)}
-                    </button>
-                    <button
-                        type="button"
-                        class="form-btn form-btn-secondary"
-                        disabled=move || api_action_disabled.get()
-                        on:click=on_power_off
-                    >
-                        {move || t(i18n.locale.get(), Key::ReplayOsPowerOff)}
-                    </button>
-                </div>
-                <StatusMessage status=device_result />
-            </section>
-
-            <section class="apply-section">
                 <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsModeTitle)}</h3>
                 <div class="form-field form-field-check">
                     <label class="form-label" for="replayos-kiosk-mode">
@@ -382,6 +358,30 @@ fn NetControlContent(
                 <LinkPlaySection action_busy api_action_disabled=Signal::derive(move || api_action_disabled.get()) />
                 <InsiderSection action_busy api_action_disabled=Signal::derive(move || api_action_disabled.get()) />
             </ClientOnly>
+
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsDeviceTitle)}</h3>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsDeviceHint)}</p>
+                <div class="replayos-button-stack">
+                    <button
+                        type="button"
+                        class="form-btn form-btn-secondary"
+                        disabled=move || action_busy.get()
+                        on:click=on_reboot
+                    >
+                        {move || t(i18n.locale.get(), Key::SettingsReboot)}
+                    </button>
+                    <button
+                        type="button"
+                        class="form-btn form-btn-secondary"
+                        disabled=move || api_action_disabled.get()
+                        on:click=on_power_off
+                    >
+                        {move || t(i18n.locale.get(), Key::ReplayOsPowerOff)}
+                    </button>
+                </div>
+                <StatusMessage status=device_result />
+            </section>
         </div>
     }
 }
@@ -604,6 +604,11 @@ fn LinkPlayForm(
             <section class="apply-section">
                 <h3 class="form-label">{move || t(i18n.locale.get(), Key::LinkPlayTitle)}</h3>
                 <p class="form-hint">{move || t(i18n.locale.get(), Key::LinkPlayHint)}</p>
+                <p class="form-hint">
+                    <a href="https://www.replayos.com/linkplay/#configuration-file" target="_blank" rel="noopener noreferrer">
+                        {move || t(i18n.locale.get(), Key::LinkPlayConfigGuide)}
+                    </a>
+                </p>
                 <div class="form-field">
                     <label class="form-label" for="link-play-mode">
                         {move || t(i18n.locale.get(), Key::LinkPlayMode)}

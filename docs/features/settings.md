@@ -71,6 +71,8 @@ Use **Save & Reboot RePlayOS** to apply changes. Rebooting RePlayOS stops any ru
 
 Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control sends the changes through the RePlayOS API, then asks RePlayOS to reboot so the new system-level settings take effect. On development systems outside RePlayOS, these system settings are skipped.
 
+On RePlayOS 2.0 and newer, Wi-Fi security is selected automatically, so the older security-mode control is hidden and is not sent when saving Wi-Fi settings.
+
 ## RePlayOS Insider
 
 Eligible beta users can configure the token supplied by RePlayOS from **Settings > RePlayOS**. The token is write-only: the field is blank whenever the page opens, and Replay Control only reports whether a token is already saved.
@@ -93,9 +95,11 @@ The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seco
 
 ### Link Play
 
-Configure Link Play from the RePlayOS settings page on RePlayOS 2.0 or newer. Older or unrecognized versions show an explanation instead of configuration controls. A device can be disabled, host a compatible game, or connect as a client to a host name or IP address. The port defaults to `55435`. LAN discovery lets active hosts advertise themselves and lets clients find them while the Link Play menu is open.
+Configure Link Play from the RePlayOS settings page on RePlayOS 2.0 or newer. It lets compatible games play together across RePlay devices on the same network. Set one device to Host and the others to Client, or disable it when not in use. Older or unrecognized versions show an explanation instead of configuration controls. The port defaults to `55435`. LAN discovery is enabled by default; it lets active hosts advertise themselves and lets clients find them while the Link Play menu is open. The page links to the [RePlayOS Link Play configuration guide](https://www.replayos.com/linkplay/#configuration-file).
 
 Replay Control sends the mode, address, port, and discovery setting as one atomic update. RePlayOS applies Link Play changes immediately, so no reboot is required.
+
+Reboot and power-off controls appear at the bottom of the RePlayOS settings page, after the other settings.
 
 ## Font Size
 

@@ -4,7 +4,9 @@ use replay_control_core::replay_settings::SettingsOutcome;
 #[cfg(feature = "ssr")]
 use crate::api::response_cache::TtlSlot;
 #[cfg(feature = "ssr")]
-use replay_control_core::replay_api::{ConfigKind, ReplayApiStatus, SetCommand};
+use replay_control_core::replay_api::{
+    ConfigKind, ReplayApiStatus, SetCommand, parse_replayos_version,
+};
 use replay_control_core::skins::SkinId;
 #[cfg(feature = "ssr")]
 use replay_control_core::skins::{SKINS, SkinDefinition, definition, theme_css};
@@ -26,6 +28,7 @@ pub struct WifiConfig {
     pub ssid: String,
     pub country: String,
     pub mode: String,
+    pub mode_available: bool,
     pub hidden: bool,
 }
 
@@ -120,17 +123,29 @@ fn config_unavailable() -> ServerFnError {
 #[server(prefix = "/sfn")]
 pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
     let state = super::app_state()?;
-    let guard = state
-        .replay_config
-        .read()
-        .expect("replay_config lock poisoned");
-    let config = guard.as_ref().ok_or_else(config_unavailable)?;
-    Ok(WifiConfig {
-        ssid: config.wifi_name().unwrap_or("").to_string(),
-        country: config.wifi_country().unwrap_or("").to_string(),
-        mode: config.wifi_mode().unwrap_or("transition").to_string(),
-        hidden: config.wifi_hidden(),
-    })
+    let mut wifi = {
+        let guard = state
+            .replay_config
+            .read()
+            .expect("replay_config lock poisoned");
+        let config = guard.as_ref().ok_or_else(config_unavailable)?;
+        WifiConfig {
+            ssid: config.wifi_name().unwrap_or("").to_string(),
+            country: config.wifi_country().unwrap_or("").to_string(),
+            mode: config.wifi_mode().unwrap_or("transition").to_string(),
+            mode_available: false,
+            hidden: config.wifi_hidden(),
+        }
+    };
+    if let Some(api) = &state.replay_api {
+        wifi.mode_available = api
+            .client()
+            .get_version()
+            .await
+            .ok()
+            .is_some_and(|response| wifi_mode_available(&response.version));
+    }
+    Ok(wifi)
 }
 
 #[server(prefix = "/sfn")]
@@ -138,26 +153,47 @@ pub async fn save_wifi_config(
     ssid: String,
     password: String,
     country: String,
-    auth_mode: String,
+    auth_mode: Option<String>,
     hidden: bool,
 ) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    let (ssid, password, country, auth_mode) =
-        validate_wifi_config(&ssid, &password, &country, &auth_mode)?;
-    apply_replay_api_config_change(
-        &state,
-        vec![
-            ("wifi_name", ssid),
-            ("wifi_pwd", password),
-            ("wifi_country", country),
-            ("wifi_mode", auth_mode),
-            (
-                "wifi_hidden",
-                if hidden { "true" } else { "false" }.to_string(),
-            ),
-        ],
-    )
-    .await
+    let api = state
+        .replay_api
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("RePlayOS Net Control is unavailable"))?;
+    let version =
+        api.client().get_version().await.map_err(|error| {
+            ServerFnError::new(format!("Cannot check RePlayOS version: {error}"))
+        })?;
+    let mode_available = wifi_mode_available(&version.version);
+    let (ssid, password, country, auth_mode) = validate_wifi_config(
+        &ssid,
+        &password,
+        &country,
+        if mode_available {
+            auth_mode.as_deref().unwrap_or("")
+        } else {
+            "transition"
+        },
+    )?;
+    let mut writes = vec![
+        ("wifi_name", ssid),
+        ("wifi_pwd", password),
+        ("wifi_country", country),
+    ];
+    if mode_available {
+        writes.push(("wifi_mode", auth_mode));
+    }
+    writes.push((
+        "wifi_hidden",
+        if hidden { "true" } else { "false" }.to_string(),
+    ));
+    apply_replay_api_config_change(&state, writes).await
+}
+
+#[cfg(feature = "ssr")]
+fn wifi_mode_available(version: &str) -> bool {
+    parse_replayos_version(version).is_some_and(|version| version < (2, 0, 0))
 }
 
 #[server(prefix = "/sfn")]
@@ -1247,6 +1283,14 @@ mod tests {
     #[test]
     fn wifi_validation_rejects_bad_country() {
         assert!(validate_wifi_config("ReplayNet", "", "USA", "wpa2").is_err());
+    }
+
+    #[test]
+    fn wifi_security_mode_is_only_available_before_replayos_2() {
+        assert!(wifi_mode_available("RePlayOS v1.8.0"));
+        assert!(!wifi_mode_available("RePlayOS v2.0.0"));
+        assert!(!wifi_mode_available("RePlayOS v2.0.52"));
+        assert!(!wifi_mode_available("unknown"));
     }
 
     #[test]

@@ -82,13 +82,20 @@ loads and SPA navigation covered by the device browser regression test.
 
 `get_replay_capabilities` reads `get_info` without exposing the token or hardware
 details. `DeviceCapabilities` evaluates the shared `ReplayFeature` mapping:
-version support comes first, then Insider access. Game settings and basic
-playtime retain the 1.8.0 baseline; newer systems and Link Play require 2.0.0.
-An unknown version disables gated controls with an explanation.
+version support comes first, then Insider access for mapped systems. Game
+settings and basic playtime retain the 1.8.0 baseline; newer systems and Link
+Play require 2.0.0, while Wii, Triforce, and Virtual Boy first appear in
+2.0.52. An unknown version disables gated controls with an explanation.
 
-`insider_features` contains Insider-gated features, not every supported feature.
-Only an explicitly inactive Insider flag plus a listed feature adds an Insider
-restriction. Missing legacy fields never bypass a feature's version requirement.
+For a system RC maps to an `insider_features` ID, a listed ID requires
+`insider_enabled: true`; an unlisted ID is public on a supported RePlayOS
+version, including after promotion out of Insider. A missing list is treated
+as empty. Other 2.0 features such as Link Play use only their version gate.
+Older 1.8 responses have no Insider fields and are restricted by version first.
+Wii and Triforce provisionally share GameCube's `gamecube` ID because all three
+use RePlayOS's Dolphin core; Virtual Boy is version-gated but not Insider-gated.
+RePlayOS's feature list is independent of token activation, so absence alone
+cannot distinguish a public promotion from unsupported hardware.
 
 The browser shares one capability snapshot across launch controls, refreshing
 on Net Control connection changes and every minute while connected. Request
@@ -99,6 +106,17 @@ Expanded playtime metrics use optional fields: absent means unavailable, while
 an explicit zero remains zero. Their availability does not depend on a guessed
 version cutoff. Library reads, metadata enrichment, and Replay Control's own
 update channel do not use this gate.
+
+Active-game settings retain the preflight `get_status` identity check on all
+supported versions. On RePlayOS 2.0 or newer, `set_config?type=game` also sends
+the exact `system` and full `game_file` from that status. RePlayOS verifies the
+target immediately before writing and returns `409 Target Changed` if a TV-side
+game switch occurred; the server function maps that to the existing
+`GameChanged` outcome. On 1.8, it uses the original unguarded API request after
+the preflight check. The Link Play panel reads its four values from
+`get_config?type=replay`, so TV-side changes appear on the next load. Discovery
+defaults to enabled when its API config key is absent, following the current
+RePlayOS 2 contract.
 
 ### Skeleton Loaders
 

@@ -306,7 +306,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayInsiderClearRestart => "消去してRePlayOSを再起動",
         Key::ReplayInsiderSaved => "RePlayOS Insiderトークンを更新しました",
         Key::LinkPlayTitle => "リンクプレイ",
-        Key::LinkPlayHint => "対応ゲームをRePlayデバイス間で接続します。変更はすぐに適用されます。",
+        Key::LinkPlayHint => {
+            "リンクプレイ対応コアのゲームを、同じネットワーク上のRePlayデバイス間で一緒に遊べます。1台をホスト、ほかをクライアントに設定してください。変更はすぐに適用されます。"
+        }
+        Key::LinkPlayConfigGuide => "RePlayOSリンクプレイの設定ガイド",
         Key::LinkPlayMode => "モード",
         Key::LinkPlayDisabled => "無効",
         Key::LinkPlayHost => "ホスト",

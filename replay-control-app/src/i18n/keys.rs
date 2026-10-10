@@ -261,6 +261,7 @@ pub enum Key {
     ReplayInsiderSaved,
     LinkPlayTitle,
     LinkPlayHint,
+    LinkPlayConfigGuide,
     LinkPlayMode,
     LinkPlayDisabled,
     LinkPlayHost,

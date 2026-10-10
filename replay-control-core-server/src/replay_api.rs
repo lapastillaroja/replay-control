@@ -20,6 +20,7 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 
 use crate::http::shared_client;
+use replay_control_core::replay_settings::ActiveGameIdentity;
 
 const TOKEN_HEADER: &str = "X-RePlay-Token";
 
@@ -187,8 +188,33 @@ impl ReplayApiClient {
         kind: ConfigKind,
         changes: &[(&str, &str)],
     ) -> Result<(), ApiError> {
+        self.set_config_with_game_target(kind, changes, None).await
+    }
+
+    /// RePlayOS 2 checks the full active game identity immediately before
+    /// writing. A mismatch returns `409 Target Changed` without applying any
+    /// option. Callers on older firmware must use `set_config` instead.
+    pub async fn set_game_config_for_target(
+        &self,
+        identity: &ActiveGameIdentity,
+        changes: &[(&str, &str)],
+    ) -> Result<(), ApiError> {
+        self.set_config_with_game_target(ConfigKind::Game, changes, Some(identity))
+            .await
+    }
+
+    async fn set_config_with_game_target(
+        &self,
+        kind: ConfigKind,
+        changes: &[(&str, &str)],
+        target: Option<&ActiveGameIdentity>,
+    ) -> Result<(), ApiError> {
         let mut query = Vec::with_capacity(1 + changes.len() * 2);
         query.push(("type", kind.as_str().to_string()));
+        if let Some(target) = target {
+            query.push(("system", target.system.clone()));
+            query.push(("game_file", target.game_file.clone()));
+        }
         for (option, value) in changes {
             query.push(("option", (*option).to_string()));
             query.push(("value", (*value).to_string()));
@@ -350,6 +376,54 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn game_config_target_is_encoded_and_target_change_is_reported() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let length = stream.read(&mut request).unwrap();
+            sender
+                .send(String::from_utf8_lossy(&request[..length]).into_owned())
+                .unwrap();
+            let body =
+                r#"{"error":"Target Changed","detail":"Active configuration target changed"}"#;
+            let response = format!(
+                "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        let identity = ActiveGameIdentity {
+            system: "arcade_fbneo".into(),
+            game_file: "/media/nfs/roms/arcade_fbneo/Game One.zip".into(),
+        };
+        let error = client_for(format!("http://{address}/api/v1"))
+            .set_game_config_for_target(&identity, &[("replay_video_filter", "3")])
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ApiError::BadStatus { status: 409, ref message } if message.starts_with("Target Changed")
+        ));
+        let request = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        let path = request.split_whitespace().nth(1).unwrap();
+        let url = reqwest::Url::parse(&format!("http://{address}{path}")).unwrap();
+        assert_eq!(url.path(), "/api/v1/set_config");
+        let query: Vec<_> = url.query_pairs().collect();
+        assert!(query.contains(&("type".into(), "game".into())));
+        assert!(query.contains(&("system".into(), "arcade_fbneo".into())));
+        assert!(query.contains(&("game_file".into(), identity.game_file.as_str().into())));
+        assert!(query.contains(&("option".into(), "replay_video_filter".into())));
+        assert!(query.contains(&("value".into(), "3".into())));
     }
 
     #[tokio::test]
