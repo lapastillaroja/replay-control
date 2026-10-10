@@ -218,7 +218,7 @@ fn build_single_entry(
 /// re-ask `is_disc_rc_hash_system` / `is_hash_eligible`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashIdentificationMethod {
-    /// Cartridge whole-file No-Intro CRC (+ header rc_hash for some systems).
+    /// Cartridge No-Intro CRC (+ runtime RA hash for selected systems).
     Cart,
     /// Disc boot-file rc_hash (PSX, Sega CD, Saturn, Dreamcast, 3DO, …).
     Disc,
@@ -269,6 +269,11 @@ fn is_disc_identity_candidate(rom_filename: &str) -> bool {
             | "cdi"
             | "pbp"
             | "rvz"
+            | "wbfs"
+            | "wad"
+            | "gcm"
+            | "gcz"
+            | "wia"
             | "gz"
             | "ciso"
             | "cso"
@@ -749,6 +754,14 @@ mod tests {
         for (system, extension) in [
             ("nintendo_gc", "rvz"),
             ("nintendo_gc", "iso"),
+            ("nintendo_gc", "gcm"),
+            ("nintendo_gc", "gcz"),
+            ("nintendo_gc", "wia"),
+            ("nintendo_gc", "ciso"),
+            ("nintendo_wii", "iso"),
+            ("nintendo_wii", "wbfs"),
+            ("nintendo_wii", "rvz"),
+            ("nintendo_wii", "wad"),
             ("sony_ps2", "cso"),
             ("sony_ps2", "ciso"),
             ("sony_ps2", "zso"),

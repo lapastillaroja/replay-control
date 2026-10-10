@@ -8,7 +8,7 @@ Usage:
     python3 tools/resize-system-icons.py [source_dir] [--only system_folder]
 
     source_dir: directory containing the 300x300 PNGs (default: /tmp/arcade-icons/png-options)
-    Generated PS2/GameCube sources: private repo design/assets/system-icons/
+    Generated PS2/GameCube/Wii/Triforce sources: private repo design/assets/system-icons/
 
 Output: replay-control-app/static/icons/systems/ (112x112 PNGs, trimmed + centered)
 
@@ -23,7 +23,7 @@ import argparse
 # Source → destination filename mapping (source artwork name → app folder_name)
 MAPPING = {
     "ARCADE_FBNEO": "arcade_fbneo",  # FBNeo-branded cabinet (was the generic ARCADE)
-    "ARCADE": "arcade_stv",          # generic cabinet for Sega Titan Video
+    "STV": "arcade_stv",  # generated Sega Titan Video mark
     "MAME": "arcade_mame",
     "MAME2003PLUS": "arcade_mame_2k3p",
     "NAOMI": "arcade_dc",
@@ -41,6 +41,8 @@ MAPPING = {
     "PCECD": "nec_pcecd",
     "NDS": "nintendo_ds",
     "GAMECUBE": "nintendo_gc",  # generated controller; KyleBing NGC is Neo Geo Color
+    "WII": "nintendo_wii",  # generated Wii Remote and Nunchuk
+    "VB": "nintendo_vb",
     "GB": "nintendo_gb",
     "GBA": "nintendo_gba",
     "GBC": "nintendo_gbc",
@@ -64,6 +66,7 @@ MAPPING = {
     "NGP": "snk_ngp",
     "PS": "sony_psx",
     "PS2": "sony_ps2",  # approved generated DualShock 2, archived in private repo
+    "TRIFORCE": "arcade_triforce",  # generated hardware enclosure; no KyleBing source
     "PSP": "sony_psp",
     "VIDEOS": "alpha_player",
 }

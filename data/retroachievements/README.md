@@ -29,7 +29,9 @@ The extract also records `num_achievements`, which the build ignores; only
 
 The extract includes cartridge systems, arcade, and disc systems with runtime
 `rc_hash` recipes. Disc entries populate the catalog's hash lookup independently
-of `canonical_game`, so they do not require No-Intro identification data.
+of `canonical_game`, so they do not require No-Intro identification data. Virtual
+Boy also computes its whole-file RA hash at scan time, allowing homebrew and
+hacks absent from No-Intro to resolve by exact hash.
 
 ## Where the data comes from
 

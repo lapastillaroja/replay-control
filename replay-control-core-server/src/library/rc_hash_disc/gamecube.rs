@@ -1,4 +1,4 @@
-//! rcheevos rc_hash_gamecube, over the logical ISO bytes of ISO/RVZ images.
+//! rcheevos rc_hash_gamecube, over the logical ISO bytes of GameCube images.
 use super::md5_digest_hex;
 use md5::{Digest, Md5};
 use nod::Disc;
@@ -14,8 +14,8 @@ pub(super) fn hash_path(path: &Path) -> io::Result<Option<String>> {
         .to_ascii_lowercase()
         .as_str()
     {
-        "iso" => hash(&mut File::open(path)?),
-        "rvz" => hash(&mut Disc::new(path).map_err(io::Error::other)?),
+        "iso" | "gcm" => hash(&mut File::open(path)?),
+        "rvz" | "wia" | "gcz" | "ciso" => hash(&mut Disc::new(path).map_err(io::Error::other)?),
         _ => Ok(None),
     }
 }
@@ -35,23 +35,35 @@ fn hash(reader: &mut (impl Read + Seek)) -> io::Result<Option<String>> {
     if magic != [0xc2, 0x33, 0x9f, 0x3d] {
         return Ok(None);
     }
+    let mut digest = Md5::new();
+    append_partition(reader, &mut digest, 0, 0)?;
+    Ok(Some(md5_digest_hex(digest.finalize().into())))
+}
+
+/// Append rcheevos' Nintendo disc partition recipe. Wii's unencrypted discs
+/// share this with GameCube, but encode DOL offsets and lengths in words.
+pub(super) fn append_partition(
+    reader: &mut (impl Read + Seek),
+    digest: &mut Md5,
+    base: u64,
+    offset_shift: u32,
+) -> io::Result<()> {
     let mut sizes = [0; 8];
-    read_at(reader, 0x2454, &mut sizes)?;
+    read_at(reader, base + 0x2454, &mut sizes)?;
     let size = (0x2460 + u64::from(big_u32(&sizes)) + u64::from(big_u32(&sizes[4..])))
         .min(1024 * 1024) as usize;
     let mut buffer = vec![0; 1024 * 1024];
-    read_at(reader, 0, &mut buffer[..size])?;
-    let mut digest = Md5::new();
+    read_at(reader, base, &mut buffer[..size])?;
     digest.update(&buffer[..size]);
-    let dol_offset = u64::from(big_u32(&buffer[0x420..]));
+    let dol_offset = u64::from(big_u32(&buffer[0x420..])) << offset_shift;
     let mut segments = [0; 0xd8];
-    read_at(reader, dol_offset, &mut segments)?;
+    read_at(reader, base + dol_offset, &mut segments)?;
     for index in 0..18 {
-        let offset = u64::from(big_u32(&segments[index * 4..]));
-        let mut remaining = u64::from(big_u32(&segments[0x90 + index * 4..]));
+        let offset = u64::from(big_u32(&segments[index * 4..])) << offset_shift;
+        let mut remaining = u64::from(big_u32(&segments[0x90 + index * 4..])) << offset_shift;
         // These are absolute disc offsets in rcheevos' recipe, not relative
         // to the DOL header. Preserve that identity even for unusual images.
-        reader.seek(SeekFrom::Start(offset))?;
+        reader.seek(SeekFrom::Start(base + offset))?;
         while remaining != 0 {
             let count = remaining.min(buffer.len() as u64) as usize;
             reader.read_exact(&mut buffer[..count])?;
@@ -59,7 +71,7 @@ fn hash(reader: &mut (impl Read + Seek)) -> io::Result<Option<String>> {
             remaining -= count as u64;
         }
     }
-    Ok(Some(md5_digest_hex(digest.finalize().into())))
+    Ok(())
 }
 
 #[cfg(test)]

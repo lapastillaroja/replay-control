@@ -41,6 +41,7 @@ use replay_control_core::systems::{RcHashKind, find_system};
 mod containers;
 mod gamecube;
 mod ps2;
+mod wii;
 
 /// rcheevos caps the bytes it MD5s at 64 MiB; mirror it for the PSX exe body.
 const MAX_BUFFER_SIZE: usize = 64 * 1024 * 1024;
@@ -1516,7 +1517,8 @@ fn find_file_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
 /// Compute the disc `rc_hash` for `path` per the given RePlayOS system. Returns
 /// `None` for unsupported systems/formats or when the recipe can't identify the
 /// disc (e.g. missing magic / boot file). Supported: PSX, Sega CD (Mega-CD),
-/// Saturn, Dreamcast (.gdi), 3DO, PC Engine CD, Neo Geo CD, Atari Jaguar CD.
+/// Saturn, Dreamcast (.gdi), 3DO, PC Engine CD, Neo Geo CD, Atari Jaguar CD,
+/// GameCube, Wii, and PS2.
 pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<String>> {
     let Some(kind) = disc_rc_hash_kind(system) else {
         return Ok(None);
@@ -1531,6 +1533,9 @@ pub fn compute_disc_rc_hash(system: &str, path: &Path) -> io::Result<Option<Stri
     }
     if kind == RcHashKind::GameCube {
         return gamecube::hash_path(path);
+    }
+    if kind == RcHashKind::Wii {
+        return wii::hash_path(path);
     }
     if kind == RcHashKind::Ps2 {
         return ps2::hash_path(path);
@@ -1580,7 +1585,22 @@ fn looks_like_m3u_reference(line: &str) -> bool {
         .and_then(|ext| ext.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    matches!(ext.as_str(), "chd" | "cue" | "bin" | "iso" | "img" | "gdi")
+    matches!(
+        ext.as_str(),
+        "chd"
+            | "cue"
+            | "bin"
+            | "iso"
+            | "img"
+            | "gdi"
+            | "gcm"
+            | "ciso"
+            | "gcz"
+            | "rvz"
+            | "wia"
+            | "wbfs"
+            | "wad"
+    )
 }
 
 fn parse_m3u_lines(m3u_path: &Path) -> io::Result<Vec<String>> {
@@ -2280,6 +2300,14 @@ mod tests {
         let body: Vec<u8> = (0..80u8).map(|i| i.wrapping_mul(3)).collect();
         exp.update(&body);
         assert_eq!(got, md5_digest_hex(exp.finalize().into()));
+    }
+
+    #[test]
+    fn m3u_accepts_wii_and_gamecube_images() {
+        assert!(is_disc_rc_hash_system("nintendo_wii"));
+        for file in ["disc.wbfs", "disc.rvz", "disc.wia", "disc.gcm", "disc.wad"] {
+            assert!(looks_like_m3u_reference(file), "{file}");
+        }
     }
 
     fn write_sega_cd_bin(path: &Path) {

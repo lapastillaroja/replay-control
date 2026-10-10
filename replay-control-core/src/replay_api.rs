@@ -257,8 +257,9 @@ pub struct InfoResponse {
     pub game_resolution: Option<Resolution>,
 }
 
-/// The listed features require Insider access; this is not a list of all
-/// supported features. Missing legacy fields must not introduce restrictions.
+/// Build/hardware feature IDs reported independently of Insider activation.
+/// RC's current policy gates known experimental systems when their ID is listed;
+/// an unlisted ID is treated as public once its minimum version is met.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InsiderCapabilities {
     #[serde(default)]
@@ -269,7 +270,7 @@ pub struct InsiderCapabilities {
 
 impl InsiderCapabilities {
     pub fn feature_locked(&self, feature: &str) -> bool {
-        self.insider_enabled == Some(false)
+        self.insider_enabled != Some(true)
             && self.insider_features.iter().any(|name| name == feature)
     }
 }
@@ -280,6 +281,9 @@ pub enum ReplayFeature {
     GameSettings,
     BasicPlaytime,
     GameCube,
+    Wii,
+    Triforce,
+    VirtualBoy,
     PlayStation2,
     LinkPlay,
 }
@@ -288,6 +292,9 @@ impl ReplayFeature {
     pub fn for_system(system: &str) -> Option<Self> {
         match system {
             "nintendo_gc" => Some(Self::GameCube),
+            "nintendo_wii" => Some(Self::Wii),
+            "arcade_triforce" => Some(Self::Triforce),
+            "nintendo_vb" => Some(Self::VirtualBoy),
             "sony_ps2" => Some(Self::PlayStation2),
             _ => None,
         }
@@ -297,12 +304,13 @@ impl ReplayFeature {
         match self {
             Self::GameSettings | Self::BasicPlaytime => MIN_SUPPORTED,
             Self::GameCube | Self::PlayStation2 | Self::LinkPlay => (2, 0, 0),
+            Self::Wii | Self::Triforce | Self::VirtualBoy => (2, 0, 52),
         }
     }
 
     fn insider_key(self) -> Option<&'static str> {
         match self {
-            Self::GameCube => Some("gamecube"),
+            Self::GameCube | Self::Wii | Self::Triforce => Some("gamecube"),
             Self::PlayStation2 => Some("playstation2"),
             _ => None,
         }
@@ -316,7 +324,7 @@ pub enum FeatureRestriction {
     InsiderRequired,
 }
 
-/// Version support and Insider access are independent requirements.
+/// Version support and Insider access are separate requirements.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceCapabilities {
     #[serde(default)]
@@ -852,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn insider_features_are_gates_not_supported_systems() {
+    fn listed_features_require_active_insider_access() {
         let mut info: InfoResponse = serde_json::from_str(
             r#"{"insider_enabled":false,"insider_features":["gamecube","playstation2","future_feature"]}"#,
         ).unwrap();
@@ -866,7 +874,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_insider_fields_and_unlisted_features_preserve_access() {
+    fn absent_insider_fields_and_unlisted_features_do_not_require_insider() {
         for payload in [
             "{}",
             r#"{"insider_enabled":false}"#,
@@ -874,7 +882,6 @@ mod tests {
             r#"{"insider_enabled":false,"insider_features":["replays","update_channel"]}"#,
         ] {
             let info: InfoResponse = serde_json::from_str(payload).unwrap();
-            assert!(!info.insider.feature_locked("gamecube"), "{payload}");
             assert!(!info.insider.feature_locked("playstation2"), "{payload}");
         }
     }
@@ -932,11 +939,52 @@ mod tests {
             Some(FeatureRestriction::InsiderRequired)
         );
         assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
+        capabilities.insider.insider_enabled = None;
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::InsiderRequired)
+        );
         capabilities.version = "unknown".into();
         assert_eq!(
             capabilities.restriction(ReplayFeature::LinkPlay),
             Some(FeatureRestriction::UnknownVersion)
         );
+    }
+
+    #[test]
+    fn replayos_2_0_52_systems_have_version_and_dolphin_gates() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v2.0.51".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(true),
+                insider_features: vec!["gamecube".into()],
+            },
+        };
+        for feature in [
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::VirtualBoy,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::RequiresVersion(2, 0, 52))
+            );
+        }
+        capabilities.version = "RePlayOS v2.0.52".into();
+        capabilities.insider.insider_enabled = Some(false);
+        for feature in [ReplayFeature::Wii, ReplayFeature::Triforce] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::InsiderRequired)
+            );
+        }
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::Wii), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::Triforce), None);
     }
 
     #[test]

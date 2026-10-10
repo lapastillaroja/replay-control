@@ -78,6 +78,7 @@ declare -A NOINTRO_DATS=(
     ["nintendo_gbc"]="Nintendo - Game Boy Color.dat"
     ["nintendo_gba"]="Nintendo - Game Boy Advance.dat"
     ["nintendo_n64"]="Nintendo - Nintendo 64.dat"
+    ["nintendo_vb"]="Nintendo - Virtual Boy.dat"
     ["sega_sms"]="Sega - Master System - Mark III.dat"
     ["sega_smd"]="Sega - Mega Drive - Genesis.dat"
     ["sega_gg"]="Sega - Game Gear.dat"
