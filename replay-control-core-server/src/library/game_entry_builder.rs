@@ -770,6 +770,7 @@ mod tests {
             ("sony_ps2", "cue"),
             ("sony_ps2", "m3u"),
             ("atari_jaguarcd", "cdi"),
+            ("atari_jaguarcd", "chd"),
             ("sony_psp", "pbp"),
         ] {
             assert!(is_identity_applicable(system, &format!("Game.{extension}")));

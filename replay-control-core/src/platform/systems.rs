@@ -109,16 +109,9 @@ pub struct System {
     /// (MAME cores — RA arcade is FBNeo only), and `arcade_stv` (mednafen_stv not an
     /// RA core).
     ///
-    /// This is NOT the whole story for whether a given game earns RA on-device: a
-    /// separate RePlayOS frontend bug fails RA hash generation for **`.chd`** disc
-    /// images on every disc core (`hash generation failed (Invalid state)`), while
-    /// track-sheet / raw images (`.cue`/`.gdi`/`.iso`/`.ccd`) work. So the disc cores
-    /// DO support RA (this flag is `true`) but `.chd` games can't earn it today. That
-    /// per-file `.chd` check lives in the game-detail view, not here. Verified on-device
-    /// 2026-06-19: same Beetle Saturn core, `.chd` (Daytona) fails while `.cue`/`.iso`/
-    /// `.ccd` work, and the `.chd` games still run — so the failing step is the
-    /// frontend's RA hash reader, not the core's CHD loading. `.chd` fails identically
-    /// across four cores (genesis_plus_gx, neocd, opera, mednafen_saturn).
+    /// RePlayOS 2.0.53 fixed the frontend dependency that prevented CHD images
+    /// from working with RetroAchievements. Format support and whether an exact
+    /// game hash matches an RA set remain separate from this core capability.
     #[serde(skip)]
     pub core_supports_retroachievements: bool,
 }
@@ -445,7 +438,7 @@ pub static SYSTEMS: &[System] = &[
         category: SystemCategory::Console,
         abbreviation: "JCD",
         placeholder_color: "#8b4513",
-        extensions: &["cue", "cdi"],
+        extensions: &["cue", "cdi", "chd"],
         launchbox_platforms: &["Atari Jaguar CD"],
         hidden: false,
         uses_megabit: false,
@@ -1943,7 +1936,7 @@ mod tests {
         let jaguar_cd = find_system("atari_jaguarcd").expect("atari_jaguarcd must be in SYSTEMS");
         assert_eq!(jaguar_cd.display_name, "Atari Jaguar CD");
         assert_eq!(jaguar_cd.category, SystemCategory::Console);
-        assert_eq!(jaguar_cd.extensions, &["cue", "cdi"]);
+        assert_eq!(jaguar_cd.extensions, &["cue", "cdi", "chd"]);
         assert_eq!(jaguar_cd.tgdb_platform_ids, &[29]);
         assert_eq!(jaguar_cd.launchbox_platforms, &["Atari Jaguar CD"]);
         assert_eq!(jaguar_cd.thumbnail_repos, &["Atari - Jaguar"]);

@@ -19,7 +19,7 @@ A summary card displays:
 - ROM capacity (Mbit/Kbit) for cartridge and ROM-chip systems where that historical unit is meaningful
 - Developer, release year, genre
 - Player count and co-op support
-- A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). Compressed disc images (`.chd`) are also affected for now, pending a RePlayOS fix
+- A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). RePlayOS 2.0.53 and newer can also identify supported compressed disc images (`.chd`) for achievements; Jaguar CD CHD playback requires 2.0.59 or newer. Jaguar CD CHDs must also preserve the disc's sessions: older flattened conversions may appear in the library but fail to launch. Reconvert those images from the original CUE/BIN files with a compatible converter.
 - For arcade games, the hardware **board** with its manufacturer (e.g. "CPS-2 (Capcom)") — a link to that board's page. See [Arcade Boards](arcade-boards.md).
 - For arcade games, a **Mature category** flag when the source category data marks the entry with `* Mature *`.
 
