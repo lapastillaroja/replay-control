@@ -893,7 +893,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         buckets.push(("mame_2k3p", entries));
     }
 
-    let mame_current_path = upstream(sources_dir).join("mame0285-arcade.xml");
+    let mame_current_path = upstream(sources_dir).join("mame0289-arcade.xml");
     if mame_current_path.exists() {
         let entries = parse_mame_current_xml(&mame_current_path);
         eprintln!("Arcade DB: MAME current loaded {} entries", entries.len());
@@ -3136,7 +3136,7 @@ const REQUIRED_SOURCES: &[RequiredSource] = &[
     // ── Core game data (rows) ──
     RequiredSource::File("upstream/fbneo-arcade.dat"),
     RequiredSource::File("upstream/mame2003plus.xml"),
-    RequiredSource::File("upstream/mame0285-arcade.xml"),
+    RequiredSource::File("upstream/mame0289-arcade.xml"),
     RequiredSource::Dir {
         path: "upstream/no-intro",
         suffix: ".dat",
@@ -3287,9 +3287,9 @@ fn preflight_check(sources_dir: &Path, allow_partial: bool) -> Result<(), String
          \n  ./scripts/download-metadata.sh\n\
          \n  TGDB_API_KEY=... ./scripts/download-tgdb-lookups.sh\n\
          \n  python3 scripts/wikidata-series-extract.py > data/wikidata/series.json\n\
-         \nmame0285-arcade.xml additionally needs `7z` (p7zip-full) and `python3` \
+         \nmame0289-arcade.xml additionally needs `7z` (p7zip-full) and `python3` \
          installed on the build host; without them download-arcade-data.sh skips it \
-         with a warning, producing a catalog that omits MAME 0.285 games.\n\
+         with a warning, producing a catalog that omits MAME 0.289 games.\n\
          \nThe TGDB lookups need a TheGamesDB API key — see scripts/.env / \
          download-tgdb-lookups.sh.\n\
          \nRelease builds use the committed data/wikidata/series.json snapshot and \
@@ -3366,7 +3366,7 @@ fn main() {
         .unwrap_or_else(|_| "0".to_string());
     conn.execute(
         "INSERT INTO db_meta (key, value) VALUES ('mame_version', ?1)",
-        params!["0.285"],
+        params!["0.289"],
     )
     .expect("Failed to insert mame_version");
     conn.execute(
@@ -3602,7 +3602,7 @@ mod tests {
         let path = write_temp_file(
             "mame-entities.xml",
             r#"<?xml version="1.0"?>
-<mame version="0.285">
+<mame version="0.289">
 <m name="sfa" rotate="0" players="2" status="good"><d>Street Fighter Alpha: Warriors&#x27; Dreams (Europe 950727)</d><y>1995</y><f>Capcom</f></m>
 <m name="ddsom" rotate="0" players="4" status="good"><d>Dungeons &amp; Dragons: Shadow over Mystara (Europe 960619)</d><y>1996</y><f>Capcom</f></m>
 </mame>
@@ -3730,9 +3730,9 @@ mod tests {
         let up = upstream(&dir);
         fs::create_dir_all(&up).unwrap();
         fs::write(
-            up.join("mame0285-arcade.xml"),
+            up.join("mame0289-arcade.xml"),
             r#"<?xml version="1.0"?>
-<mame version="0.285">
+<mame version="0.289">
 <m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
 <m name="100lions" rotate="0" players="1" status="good"><d>100 Lions</d><y>2006</y><f>Aristocrat</f></m>
 <m name="apple2gsr0p" rotate="0" status="good"><d>Apple IIgs (ROM00 prototype)</d><y>1986</y><f>Apple</f></m>

@@ -74,6 +74,16 @@
  },
  {
   "hashes": [
+   "4b1670bc86ad3dcc6b1804ef775e626e",
+   "80d5e21c786ad1239d2158c58e306fc2",
+   "ab6a43800cf54d9ec5133f5fd5cb2231"
+  ],
+  "num_achievements": 12,
+  "ra_id": "38568",
+  "title": "Aha! I Found It! Hidden Object Game"
+ },
+ {
+  "hashes": [
    "6692a180fc2d6bd190cb6aa74d4d5b5e",
    "87cb27d021c7eeb989b4a48ee78fe64e",
    "8d0815056b069c1c2736f7b22f7d82b8",
@@ -1151,6 +1161,12 @@
   "num_achievements": 108,
   "ra_id": "11088",
   "title": "LEGO Star Wars: The Complete Saga"
+ },
+ {
+  "hashes": [],
+  "num_achievements": 36,
+  "ra_id": "38644",
+  "title": "LEGO Star Wars: The Complete Saga [Subset - Glitch Showcase]"
  },
  {
   "hashes": [

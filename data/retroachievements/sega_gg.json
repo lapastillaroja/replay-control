@@ -123,6 +123,14 @@
  },
  {
   "hashes": [
+   "6c29fc1bae1051774e9a83098f55bd4e"
+  ],
+  "num_achievements": 20,
+  "ra_id": "14298",
+  "title": "Alien Syndrome"
+ },
+ {
+  "hashes": [
    "ce3e5094025b10c3885ff1da53a46d2f"
   ],
   "num_achievements": 64,
@@ -370,6 +378,14 @@
   "num_achievements": 72,
   "ra_id": "12768",
   "title": "Dragon Crystal"
+ },
+ {
+  "hashes": [
+   "1d1c50cdbfe605a37d5dcf1250a951df"
+  ],
+  "num_achievements": 21,
+  "ra_id": "31793",
+  "title": "Dunk Kids"
  },
  {
   "hashes": [
@@ -1277,7 +1293,7 @@
   "hashes": [
    "b0a6edc1d506d034d3770a3707c3e201"
   ],
-  "num_achievements": 6,
+  "num_achievements": 8,
   "ra_id": "13175",
   "title": "Wizard Pinball"
  },

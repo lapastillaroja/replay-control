@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Download arcade source data files used by replay-control-core's build.rs to generate
-# the embedded arcade game database (PHF map).
+# Download arcade source data files used by build-catalog to generate catalog.sqlite.
 #
 # These files are NOT checked into git. Run this script after cloning or when
 # you want to refresh the data.
@@ -31,17 +30,21 @@ download() {
     local url="$1"
     local dest="$2"
     local desc="$3"
+    local temp_file
 
     echo "Downloading $desc..."
     echo "  URL:  $url"
     echo "  Dest: $dest"
 
-    if curl -fSL --retry 3 --retry-delay 2 -o "$dest" "$url"; then
+    temp_file=$(mktemp "${dest}.tmp.XXXXXX")
+    if curl -fSL --retry 3 --retry-delay 2 -o "$temp_file" "$url"; then
         local size
-        size=$(stat --printf="%s" "$dest" 2>/dev/null || stat -f "%z" "$dest" 2>/dev/null)
+        size=$(stat --printf="%s" "$temp_file" 2>/dev/null || stat -f "%z" "$temp_file" 2>/dev/null)
+        mv "$temp_file" "$dest"
         echo "  OK ($size bytes)"
     else
         echo "  FAILED to download $desc" >&2
+        rm -f "$temp_file"
         return 1
     fi
     echo
@@ -62,7 +65,7 @@ download \
     "$DATA_DIR/catver.ini" \
     "catver.ini (MAME 2003+ categories)"
 
-# --- MAME current (0.285) ---
+# --- MAME current (0.289) ---
 #
 # The full MAME listxml is ~285 MB XML. We download the Progetto-SNAPS DAT pack
 # (a 7z archive ~40 MB) which contains the full listxml, then preprocess it with
@@ -71,9 +74,9 @@ download \
 #
 # Requirements: 7z (p7zip) and python3.
 #
-MAME_VERSION="285"
+MAME_VERSION="289"
 MAME_7Z="$DATA_DIR/MAME_Dats_${MAME_VERSION}.7z"
-MAME_OUTPUT="$DATA_DIR/mame0285-arcade.xml"
+MAME_OUTPUT="$DATA_DIR/mame0${MAME_VERSION}-arcade.xml"
 
 if [ -f "$MAME_OUTPUT" ]; then
     echo "MAME 0.${MAME_VERSION} arcade XML already exists at $MAME_OUTPUT, skipping."
@@ -110,7 +113,10 @@ else
                 echo "  ERROR: Could not find XML file in archive" >&2
             else
                 echo "  Preprocessing: extracting arcade metadata..."
-                python3 "$SCRIPT_DIR/extract-mame-arcade.py" "$MAME_FULL_XML" "$MAME_OUTPUT"
+                MAME_TEMP_OUTPUT=$(mktemp "${MAME_OUTPUT}.tmp.XXXXXX")
+                trap "rm -rf '$TMPDIR_MAME'; rm -f '$MAME_TEMP_OUTPUT'" EXIT
+                python3 "$SCRIPT_DIR/extract-mame-arcade.py" "$MAME_FULL_XML" "$MAME_TEMP_OUTPUT"
+                mv "$MAME_TEMP_OUTPUT" "$MAME_OUTPUT"
                 MAME_SIZE=$(stat --printf="%s" "$MAME_OUTPUT" 2>/dev/null || stat -f "%z" "$MAME_OUTPUT" 2>/dev/null)
                 echo "  OK: $MAME_OUTPUT ($MAME_SIZE bytes)"
             fi

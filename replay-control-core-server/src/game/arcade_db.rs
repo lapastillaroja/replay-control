@@ -57,7 +57,7 @@ pub struct ArcadeGameInfo {
     /// Distinct display names from the *non-winning* sources, for thumbnail
     /// matching only. The per-system priority merge picks one `display_name`,
     /// but libretro-thumbnails may file a game under a different emulator's
-    /// name (e.g. MAME 0.285 "Atomic Runner Chelnov (World)" vs the repo's
+    /// name (e.g. MAME "Atomic Runner Chelnov (World)" vs the repo's
     /// MAME-current "Chelnov - Atomic Runner (World)"). Trying these recovers
     /// covers that exist upstream under an alternate curated name. Excludes
     /// `display_name` and empties; order follows [`ArcadeSource::ALL`].
@@ -263,7 +263,7 @@ fn merge_for_system(rom_name: &str, rows: &SourceRows, system: &str) -> ArcadeGa
     // not follow, say, `arcade_mame`'s "MAME first" preference. FBNeo is
     // Replay's primary arcade core and carries the richest board coverage,
     // so it outranks MAME 2003+ (legacy, enabled only on older Pis). MAME
-    // 0.285 sits last. Flycast leads because its curated CSV explicitly splits
+    // MAME current sits last. Flycast leads because its curated CSV explicitly splits
     // Naomi, Naomi 2, Atomiswave, and System SP, which share driver families in
     // MAME's sourcefile data.
     const BOARD_PRIORITY: &[ArcadeSource] = &[
@@ -419,7 +419,7 @@ pub async fn arcade_release_dates() -> Vec<(String, String, String)> {
 }
 
 /// MAME version used as the primary data source (from catalog metadata).
-pub const MAME_VERSION: &str = "0.285";
+pub const MAME_VERSION: &str = "0.289";
 
 /// Total number of distinct ROM names in the arcade database.
 ///
@@ -475,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn board_resolved_from_mame_sourcefile() {
-        // sf2's MAME 0.285 fixture row carries `sourcefile="capcom/cps2.cpp"`,
+        // sf2's MAME fixture row carries `sourcefile="capcom/cps2.cpp"`,
         // which build-catalog resolves to `ArcadeBoard::Cps2` at insert time.
         init_test_catalog().await;
         let info = lookup_arcade_game("arcade_mame", "sf2")
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn merge_collects_distinct_non_winner_alt_names() {
-        // chelnov: MAME 0.285 and FBNeo agree on one name; MAME 2003+ differs
+        // chelnov: MAME current and FBNeo agree on one name; MAME 2003+ differs
         // (the name libretro-thumbnails actually files the cover under).
         let mut rows: SourceRows = Default::default();
         rows[ArcadeSource::Mame.idx()] =

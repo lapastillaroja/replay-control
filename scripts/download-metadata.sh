@@ -45,6 +45,7 @@ download() {
     local url="$1"
     local dest="$2"
     local desc="$3"
+    local temp_file
 
     if [ "$FORCE" = false ] && [ -f "$dest" ]; then
         echo "  Already exists: $dest (skipping, use --force to re-download)"
@@ -52,13 +53,15 @@ download() {
     fi
 
     echo "  Downloading $desc..."
-    if curl -fSL --retry 3 --retry-delay 2 -o "$dest" "$url"; then
+    temp_file=$(mktemp "${dest}.tmp.XXXXXX")
+    if curl -fSL --retry 3 --retry-delay 2 -o "$temp_file" "$url"; then
         local size
-        size=$(stat --printf="%s" "$dest" 2>/dev/null || stat -f "%z" "$dest" 2>/dev/null)
+        size=$(stat --printf="%s" "$temp_file" 2>/dev/null || stat -f "%z" "$temp_file" 2>/dev/null)
+        mv "$temp_file" "$dest"
         echo "    OK ($size bytes)"
     else
         echo "    FAILED to download $desc" >&2
-        rm -f "$dest"
+        rm -f "$temp_file"
         return 1
     fi
 }

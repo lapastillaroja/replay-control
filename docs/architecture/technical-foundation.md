@@ -104,7 +104,7 @@ Pages use Leptos `Resource::new_blocking` for critical-path data (page structure
 
 ## Bundled Game Databases
 
-~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and broad arcade metadata (MAME 0.285 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are baked into a read-only `catalog.sqlite` shipped alongside the binary. The catalog pool serves SQL lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with no filesystem access beyond the `mmap`-ed catalog file.
+~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and broad arcade metadata (MAME 0.289 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are baked into a read-only `catalog.sqlite` shipped alongside the binary. The catalog pool serves SQL lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with no filesystem access beyond the `mmap`-ed catalog file.
 
 For arcade ROMs the catalog stores **one row per (rom_name, source)** so each upstream's curation is preserved; the runtime merges fields per system using `arcade_source_priority`. See [Database Schema](database-schema.md#per-system-arcade-merge) for the merge semantics.
 
@@ -118,7 +118,7 @@ See [Design Decisions #10](design-decisions.md) for the trade-offs and the migra
 
 ## Embedded Series Database
 
-~5,345 Wikidata series entries across 194+ franchises compiled at build time. Provides game franchise identification, sequel/prequel chains (P155/P156), and ordinals. Bidirectional links are filled at build time so both forward and backward navigation work even when Wikidata only has one direction.
+~5,720 Wikidata series entries compiled at build time. Provides game franchise identification, sequel/prequel chains (P155/P156), and ordinals. Bidirectional links are filled at build time so both forward and backward navigation work even when Wikidata only has one direction.
 
 **Files**: `replay-control-core-server/src/game/series_db.rs`
 

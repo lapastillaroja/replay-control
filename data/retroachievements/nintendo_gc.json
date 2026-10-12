@@ -285,6 +285,14 @@
  },
  {
   "hashes": [
+   "391597776dc7c9e55697591e290e2461"
+  ],
+  "num_achievements": 45,
+  "ra_id": "42494",
+  "title": "~Hack~ Super Monkey Ball Jr. Remake"
+ },
+ {
+  "hashes": [
    "786d44bbf718f843340246fb215a32b2"
   ],
   "num_achievements": 74,
@@ -1540,6 +1548,16 @@
   "num_achievements": 167,
   "ra_id": "30893",
   "title": "SpongeBob SquarePants: Battle for Bikini Bottom [Subset - Bonus]"
+ },
+ {
+  "hashes": [
+   "00656d64afbdcaada265a9adf0b206f6",
+   "80ca1596e351c2b142f5a18183b27ac2",
+   "813e392d62be2991e09360ddd24c3bfe"
+  ],
+  "num_achievements": 160,
+  "ra_id": "3776",
+  "title": "SSX 3"
  },
  {
   "hashes": [
