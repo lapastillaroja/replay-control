@@ -69,6 +69,13 @@ jobs:
 
       - name: Package release archives
         run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          app_version=$(cargo metadata --no-deps --format-version 1 | \
+            python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "replay-control-app"))')
+          if [[ "$tag" != "v$app_version" ]]; then
+            echo "Release tag $tag does not match app version v$app_version" >&2
+            exit 1
+          fi
           tar -czf replay-control-app-aarch64-linux.tar.gz \
               -C target/aarch64-unknown-linux-gnu/release \
               replay-control-app
@@ -91,11 +98,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          # Create the release if it doesn't exist. Normally release-plz creates
-          # it via workflow_call, but a human-pushed tag fires this workflow
-          # directly (push: tags: ['v*']) with no release behind it — in that
-          # case we self-heal instead of failing at upload.
-          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          # A rerun may repair an incomplete draft, but replacing assets on a
+          # published release would expose a mixed set during the upload.
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            if [[ $(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft') != true ]]; then
+              echo "Refusing to replace assets on published release $TAG" >&2
+              exit 1
+            fi
+          else
+            # A directly pushed tag can reach this workflow without a release.
             echo "Release $TAG not found — creating it."
             gh release create "$TAG" \
               --repo "${{ github.repository }}" \
@@ -111,8 +122,25 @@ jobs:
             checksums.sha256 \
             --clobber
 
-          # release-plz created the release as a draft (git_release_draft), so it
-          # has stayed invisible until now. Publish it with its assets attached.
+          # Check what GitHub actually serves while the release is still a
+          # draft. All release assets are covered by checksums.sha256.
+          release_assets_dir=$(mktemp -d)
+          trap 'rm -rf "$release_assets_dir"' EXIT
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir "$release_assets_dir"
+          cmp checksums.sha256 "$release_assets_dir/checksums.sha256"
+          (cd "$release_assets_dir" && sha256sum -c checksums.sha256)
+          expected_assets=$(awk '{print $2}' checksums.sha256 | sort)
+          actual_assets=$(find "$release_assets_dir" -maxdepth 1 -type f \
+            ! -name checksums.sha256 -printf '%f\n' | sort)
+          if [[ "$actual_assets" != "$expected_assets" ]]; then
+            echo "Release asset set does not match checksums.sha256" >&2
+            exit 1
+          fi
+
+          # release-plz created the release as a draft (git_release_draft).
+          # Publish only after the uploaded assets pass checksum verification.
           # SemVer prerelease tags (vX.Y.Z-foo) are badged as prerelease and kept
           # out of /releases/latest; stable tags become the latest release.
           if [[ "$TAG" == *-* ]]; then

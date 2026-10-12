@@ -116,6 +116,11 @@ pub async fn github_get(
 
 /// Parse a GitHub release JSON object into an AvailableUpdate.
 pub fn parse_release(json: &serde_json::Value) -> Option<AvailableUpdate> {
+    // Repository-authorized tokens can see drafts before CI attaches assets.
+    // A draft must never be offered as an installable update.
+    if json.get("draft").and_then(|value| value.as_bool()) == Some(true) {
+        return None;
+    }
     let tag = json.get("tag_name")?.as_str()?;
     let version = tag.strip_prefix('v').unwrap_or(tag);
 
@@ -772,6 +777,13 @@ DEF456 *replay-catalog.tar.gz
     }
 
     #[test]
+    fn parse_release_skips_draft() {
+        let mut json = make_release_json("v0.3.0-beta.1", true);
+        json["draft"] = serde_json::json!(true);
+        assert!(parse_release(&json).is_none());
+    }
+
+    #[test]
     fn parse_release_no_v_prefix() {
         let json = serde_json::json!({
             "tag_name": "1.0.0",
@@ -1061,6 +1073,28 @@ DEF456 *replay-catalog.tar.gz
         .await
         .unwrap();
         assert_eq!(result.unwrap().version, "0.3.0-beta.2");
+    }
+
+    #[tokio::test]
+    async fn check_beta_channel_skips_newer_draft() {
+        let mut draft = make_release_json("v0.4.0-beta.1", true);
+        draft["draft"] = serde_json::json!(true);
+        let gh = mock_github(
+            None,
+            serde_json::json!([draft, make_release_json("v0.3.0-beta.1", true),]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.2.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.3.0-beta.1");
     }
 
     #[tokio::test]
