@@ -16,13 +16,7 @@ images will remain unavailable until a suitable source is supported.
 
 ## Jaguar CD CHD Does Not Launch
 
-If a Jaguar CD `.chd` does not launch, it may have been made with a `chdman`
-build that lost the disc's session information. Recreate it from the original
-CUE/BIN files using the `chdman` included with the
-[latest Virtual Jaguar release](https://github.com/libretro/virtualjaguar-libretro/releases/latest)
-(at least version 3.7.0),
-or use the CUE/BIN files directly. Recompressing the existing CHD cannot
-restore information that was lost during its first conversion.
+If a Jaguar CD `.chd` does not launch, it may have been made with a `chdman` build that lost the disc's session information. Recreate it from the original CUE/BIN files using the `chdman` included with the [latest Virtual Jaguar release](https://github.com/libretro/virtualjaguar-libretro/releases/latest) (at least version 3.7.0), or use the CUE/BIN files directly. Recompressing the existing CHD cannot restore information that was lost during its first conversion.
 
 ## New ROMs Added Externally — Partial Metadata
 
