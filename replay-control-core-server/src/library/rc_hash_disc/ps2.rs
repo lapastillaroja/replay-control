@@ -170,7 +170,7 @@ mod tests {
         output[16..20].copy_from_slice(&2048u32.to_le_bytes());
         output[20] = 1;
         output[21] = 2; // alignment padding must not become compressed content
-        for (index, block) in iso.chunks_exact(SECTOR_USER).enumerate() {
+        for (index, block) in iso.as_chunks::<SECTOR_USER>().0.iter().enumerate() {
             output.resize(output.len().next_multiple_of(4), 0);
             let raw = index % 2 == 0;
             let offset = (output.len() as u32 >> 2) | if raw { 0x80000000 } else { 0 };
@@ -214,7 +214,7 @@ mod tests {
         let cue = dir.path().join("game.cue");
         // Stored pregap, with MODE1/2352 frames, rather than guessed framing.
         let mut bin = vec![0; 2352 * 2];
-        for sector in iso.chunks_exact(SECTOR_USER) {
+        for sector in iso.as_chunks::<SECTOR_USER>().0 {
             bin.extend_from_slice(&[0; 16]);
             bin.extend_from_slice(sector);
             bin.extend_from_slice(&[0; 288]);
