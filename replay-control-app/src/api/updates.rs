@@ -470,13 +470,31 @@ async fn start_update_download(
     update_io::nuke_update_dir();
     tokio::fs::create_dir_all(&update_dir).await?;
 
-    // Resolve asset URLs.
-    let assets = update_io::resolve_asset_urls(&base_url, REPO, tag, github_key.as_deref()).await?;
+    let manager = package_manager()?;
+    let package_name = manager
+        .map(|manager| package_asset_name(manager, tag))
+        .transpose()?;
+    let assets = update_io::resolve_asset_urls(
+        &base_url,
+        REPO,
+        tag,
+        package_name.as_deref(),
+        github_key.as_deref(),
+    )
+    .await?;
 
     // A Debian or RPM package owns the binary and assets. Update through its
     // package manager so the ownership database remains accurate.
-    if let Some(manager) = package_manager()? {
-        start_package_update(tag, &assets, &update_dir, guard, manager).await?;
+    if let Some(manager) = manager {
+        start_package_update(
+            tag,
+            &assets,
+            &update_dir,
+            guard,
+            manager,
+            package_name.as_deref().unwrap(),
+        )
+        .await?;
         return Ok(UpdateExecution::Package);
     }
     let _ = std::fs::remove_file(PACKAGE_RESULT);
@@ -677,6 +695,24 @@ enum PackageManager {
     Dnf,
 }
 
+fn package_asset_name(manager: PackageManager, tag: &str) -> Result<String, &'static str> {
+    let version = tag.strip_prefix('v').unwrap_or(tag);
+    match manager {
+        PackageManager::Apt => {
+            let arch = match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                "x86_64" => "amd64",
+                _ => return Err("No Debian package for this architecture"),
+            };
+            Ok(format!("replay-control_{version}_{arch}.deb"))
+        }
+        PackageManager::Dnf if cfg!(target_arch = "x86_64") => {
+            Ok(format!("replay-control-{version}-1.x86_64.rpm"))
+        }
+        PackageManager::Dnf => Err("No RPM package for this architecture"),
+    }
+}
+
 fn package_manager() -> Result<Option<PackageManager>, Box<dyn std::error::Error + Send + Sync>> {
     let exe = std::env::current_exe()?;
     let exe_path = exe.to_str().ok_or("Executable path is not valid UTF-8")?;
@@ -723,14 +759,13 @@ async fn start_package_update(
     update_dir: &Path,
     guard: &super::activity::ActivityGuard,
     manager: PackageManager,
+    expected_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use super::activity::UpdatePhase;
 
-    let url = match manager {
-        PackageManager::Apt => assets.package_url.as_deref(),
-        PackageManager::Dnf => assets.rpm_url.as_deref(),
-    }
-    .ok_or_else(|| format!("Release {tag} has no package for this system. Try another release."))?;
+    let url = assets.package_url.as_deref().ok_or_else(|| {
+        format!("Release {tag} has no package for this system. Try another release.")
+    })?;
     let checksums_url = assets
         .checksums_url
         .as_deref()
@@ -738,22 +773,13 @@ async fn start_package_update(
     let checksums = update_io::fetch_checksums(checksums_url).await?;
     let name = url.rsplit('/').next().unwrap_or("");
     let expected_version = tag.strip_prefix('v').unwrap_or(tag);
-    let arch = match std::env::consts::ARCH {
-        "aarch64" => "arm64",
-        "x86_64" => "amd64",
-        _ => return Err("No Debian package for this architecture".into()),
-    };
-    let expected_name = match manager {
-        PackageManager::Apt => format!("replay-control_{expected_version}_{arch}.deb"),
-        PackageManager::Dnf => format!("replay-control-{expected_version}-1.x86_64.rpm"),
-    };
     if name != expected_name {
         return Err(format!("Unexpected package asset name: {name}").into());
     }
     let checksum = checksums
         .get(name)
         .ok_or("Package missing from checksums.sha256")?;
-    let package = update_dir.join(&expected_name);
+    let package = update_dir.join(expected_name);
     update_io::download_asset(url, &package, &|_| {}).await?;
     update_io::verify_sha256(&package, checksum).await?;
 
@@ -776,6 +802,11 @@ async fn start_package_update(
     let package_path = package.to_str().ok_or("Invalid package path")?;
     match manager {
         PackageManager::Apt => {
+            let arch = match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                "x86_64" => "amd64",
+                _ => return Err("No Debian package for this architecture".into()),
+            };
             let deb_version = expected_version.replacen('-', "~", 1);
             for (field, expected) in [
                 ("Package", "replay-control"),
@@ -924,6 +955,27 @@ async fn find_extracted_dir_containing(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn package_asset_names_keep_release_version() {
+        use super::{PackageManager, package_asset_name};
+
+        let deb_arch = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "amd64"
+        };
+        assert_eq!(
+            package_asset_name(PackageManager::Apt, "v1.3.0-beta.1").unwrap(),
+            format!("replay-control_1.3.0-beta.1_{deb_arch}.deb")
+        );
+        if cfg!(target_arch = "x86_64") {
+            assert_eq!(
+                package_asset_name(PackageManager::Dnf, "v1.3.0-beta.1").unwrap(),
+                "replay-control-1.3.0-beta.1-1.x86_64.rpm"
+            );
+        }
+    }
+
     #[test]
     fn dpkg_owner_must_be_replay_control() {
         assert!(super::dpkg_owns_app(
