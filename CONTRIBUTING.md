@@ -90,7 +90,7 @@ The storage path should point to a directory with ROMs organized by system (e.g.
 
 ## Running Tests
 
-Four test layers; each is independent and runs from the repo root.
+The test layers are independent and run from the repo root.
 
 ```bash
 # 1. Rust tests (unit + in-process integration). Fastest. ~1100 tests.
@@ -121,6 +121,11 @@ tests/e2e/.venv/bin/pip install playwright pytest pytest-timeout
 tests/e2e/.venv/bin/playwright install chromium
 # Then run:
 PI_IP=192.168.10.30 tests/e2e/.venv/bin/python -m pytest tests/e2e/ -v --timeout=180
+
+# 5. Installed-package integration (Debian 13 and Fedora 42 containers).
+#    Build the packages first; see "Build packages" above.
+tests/package/run-debian.sh amd64 replay-control_VERSION_amd64.deb
+tests/package/run-fedora.sh x86_64 replay-control-VERSION-1.x86_64.rpm
 ```
 
 Useful subsets:
