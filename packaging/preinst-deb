@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+if [ "$1" = install ] && [ -f /etc/systemd/system/replay-control.service ]; then
+    marker=/run/replay-control-package-migration
+    if [ ! -s "$marker" ] || ! kill -0 "$(cat "$marker")" 2>/dev/null; then
+        echo 'An archive installation is active. Use install.sh --package to migrate it.' >&2
+        exit 1
+    fi
+fi

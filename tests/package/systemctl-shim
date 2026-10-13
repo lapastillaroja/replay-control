@@ -1,0 +1,63 @@
+#!/bin/bash
+set -euo pipefail
+
+# arm64 QEMU containers in rootless Podman cannot run systemd services through
+# cgroups. This shim starts the real binary for package/installer integration;
+# the physical Pi test covers the real systemd unit.
+pid_file=/run/replay-control-test.pid
+enabled_file=/run/replay-control-test-enabled
+action=${1:?action required}
+if [[ "$action" == enable && -e /run/replay-control-fail-enable-once &&
+      ! -e /etc/systemd/system/replay-control.service ]]; then
+    rm -f /run/replay-control-fail-enable-once
+    exit 1
+fi
+case "$action" in
+    daemon-reload) exit 0 ;;
+    enable) touch "$enabled_file"; exit 0 ;;
+    disable) rm -f "$enabled_file"; exit 0 ;;
+    is-enabled) [[ -f "$enabled_file" ]] ;;
+    stop|restart|start)
+        if [[ -f "$pid_file" ]]; then
+            kill "$(cat "$pid_file")" 2>/dev/null || true
+            rm -f "$pid_file"
+        fi
+        [[ "$action" == stop ]] && exit 0
+        if [[ -e /run/replay-control-fail-start-once ]]; then
+            rm -f /run/replay-control-fail-start-once
+            exit 1
+        fi
+        set -a
+        # The fixture uses shell-compatible assignment syntax.
+        # shellcheck disable=SC1091
+        source /etc/default/replay-control
+        set +a
+        if [[ -f /etc/systemd/system/replay-control.service ]]; then
+            /usr/local/bin/replay-control-app --port "${REPLAY_PORT:-8080}" \
+                --https-port "${REPLAY_HTTPS_PORT:-8443}" \
+                --site-root /usr/local/share/replay/site \
+                --storage-path /media/sd --dangerous-disable-https \
+                8>&- 9>&- >/var/log/replay-control-test.log 2>&1 &
+        else
+            /usr/lib/replay-control/start-service \
+                8>&- 9>&- >/var/log/replay-control-test.log 2>&1 &
+        fi
+        echo $! > "$pid_file"
+        ;;
+    is-active)
+        [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")"
+        ;;
+    show)
+        if [[ " $* " == *" ActiveState "* ]]; then
+            helper_pid_file=/run/replay-control-package-update-test.pid
+            if [[ -f "$helper_pid_file" ]] && kill -0 "$(cat "$helper_pid_file")" 2>/dev/null; then
+                echo active
+            else
+                echo inactive
+            fi
+        else
+            [[ -f "$pid_file" ]] && cat "$pid_file"
+        fi
+        ;;
+    *) echo "Unsupported test systemctl action: $*" >&2; exit 1 ;;
+esac

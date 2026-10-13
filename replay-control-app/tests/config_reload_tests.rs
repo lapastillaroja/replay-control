@@ -12,6 +12,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use replay_control_app::api::AppState;
+use replay_control_core::runtime_env::HostKind;
 use replay_control_core::skins::SkinId;
 
 fn storage_with_config(cfg: &str) -> std::path::PathBuf {
@@ -34,7 +35,13 @@ fn storage_with_config(cfg: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn unsupported_synced_skin_uses_replay_palette() {
     let tmp = storage_with_config("system_storage = \"sd\"\nsystem_skin = \"midnight-arcade\"\n");
-    let state = AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap();
+    let state = AppState::new(
+        HostKind::Standalone,
+        Some(tmp.to_string_lossy().into_owned()),
+        None,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(state.effective_skin(), SkinId::default());
 
@@ -44,7 +51,13 @@ async fn unsupported_synced_skin_uses_replay_palette() {
 #[tokio::test]
 async fn reload_keeps_last_known_good_config_on_bad_read() {
     let tmp = storage_with_config("wifi_name = \"HomeNet\"\nsystem_storage = \"sd\"\n");
-    let state = AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap();
+    let state = AppState::new(
+        HostKind::Standalone,
+        Some(tmp.to_string_lossy().into_owned()),
+        None,
+        None,
+    )
+    .unwrap();
     let cfg = tmp.join("config/replay.cfg");
 
     // Baseline: a valid reload adopts the wifi name.
@@ -122,7 +135,6 @@ async fn reload_keeps_last_known_good_config_on_bad_read() {
 /// `Folder`, and the app is serviceable.
 #[tokio::test]
 async fn local_without_config_is_none_folder_and_serviceable() {
-    use replay_control_core::runtime_env::Mode;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -134,17 +146,23 @@ async fn local_without_config_is_none_folder_and_serviceable() {
     }
     // Note: no config/replay.cfg is written.
 
-    let state = AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap();
+    let state = AppState::new(
+        HostKind::Standalone,
+        Some(tmp.to_string_lossy().into_owned()),
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(
         state.replay_config.read().unwrap().is_none(),
         "no fabricated config"
     );
-    assert!(matches!(state.mode, Mode::Standalone { .. }));
+    assert!(matches!(state.host, HostKind::Standalone));
     assert_eq!(
-        state.mode.standalone_root(),
-        Some(tmp.as_path()),
-        "Mode::Standalone carries the storage root supplied via --storage-path"
+        state.storage().root.as_path(),
+        tmp.as_path(),
+        "Standalone storage uses the selected root"
     );
     assert!(state.has_storage());
     assert!(state.is_serviceable());

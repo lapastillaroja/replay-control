@@ -55,18 +55,20 @@ If the library database becomes corrupted (e.g., due to unexpected power loss), 
 
 ## App Data Directory
 
-The app stores its data in `.replay-control/` on the ROM storage device, separate from the RePlayOS configuration. This directory contains:
+The app keeps data that belongs to a ROM collection on that storage device:
 
-- **Library database** -- game library index, imported metadata, thumbnail index (rebuildable)
-- **User data database** -- box art overrides, saved videos (persistent)
-- **Settings** -- region preference, font size, skin override
+- **User data** -- favorites, overrides, and other library-specific choices
 - **Media** -- downloaded box art, screenshots, and title screen images
 
-This data travels with the ROM collection if you move the storage device to another Pi.
+This data travels with the ROM collection if you move the storage device to another computer. The library index and downloaded metadata sources stay on the computer running Replay Control.
+
+In standalone mode, the selected folder is remembered on that computer. Changing folders does not erase your app preferences; each library keeps its own favorites, artwork, and other library data. Standalone mode is **work in progress and unsupported**.
+
+On first startup, choose the folder that contains `roms/`. Replay Control then continues to the metadata setup step. You can change the folder later from Settings.
 
 ## Config Boundary
 
 Two configuration files serve different purposes:
 
 - **RePlayOS config** (on the SD card) -- system-level settings (Wi-Fi, NFS, storage mode, skin). Managed by RePlayOS and read by the app. Lives only on the SD card regardless of ROM storage location.
-- **App settings** (on ROM storage) -- app-specific preferences (region, language, font size). Travels with the ROM collection.
+- **App settings** -- app-specific preferences such as region, language, and text size.

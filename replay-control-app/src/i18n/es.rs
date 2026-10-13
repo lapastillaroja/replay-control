@@ -113,6 +113,58 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsTitle => "Ajustes",
         Key::SettingsSectionAppearance => "Apariencia",
         Key::SettingsSectionLibraryGames => "Biblioteca y juegos",
+        Key::StandaloneStorageLocation => "Ubicación de almacenamiento",
+        Key::StandaloneStorageLocalHint => {
+            "Para cambiar el almacenamiento, abre Replay Control en este ordenador usando localhost."
+        }
+        Key::StorageSetupTitle => "Elige la ubicación de almacenamiento",
+        Key::StorageSetupBack => "← Ajustes",
+        Key::StorageSetupStep => "CONFIGURACIÓN · PASO 1 DE 2",
+        Key::StorageSetupIntro => {
+            "Selecciona la carpeta que contiene roms/. Replay Control también usará carpetas del mismo nivel, como bios/, saves/ y captures/, si existen."
+        }
+        Key::StorageSetupNext => {
+            "Después, Replay Control descargará los metadatos de los juegos. La descarga y la base de datos se guardan en /var/lib/replay-control/ de este ordenador; las imágenes de la biblioteca permanecen en la ubicación elegida."
+        }
+        Key::StorageSetupPathLabel => "Carpeta raíz de almacenamiento en este ordenador",
+        Key::StorageSetupBrowse => "Examinar",
+        Key::StorageSetupParent => "Carpeta superior",
+        Key::StorageSetupSelect => "Usar esta carpeta",
+        Key::StorageSetupCurrent => "Almacenamiento actual: {0}",
+        Key::StorageSetupNone => "Aún no se ha elegido una ubicación de almacenamiento.",
+        Key::StorageSetupUnavailable => "El almacenamiento configurado no está disponible: {0}",
+        Key::StorageSetupFound => {
+            "Se encontró la carpeta raíz. Replay Control leerá los juegos de {0}/roms/."
+        }
+        Key::StorageSetupInvalid => "Esta carpeta no contiene un directorio roms/ legible.",
+        Key::StorageSetupBrowseFailed => "No se pudieron explorar las carpetas.",
+        Key::StorageSetupSwitching => {
+            "Cambiando el almacenamiento y comprobando la nueva biblioteca…"
+        }
+        Key::StorageSetupSwitchTimeout => {
+            "El cambio está tardando más de lo esperado. Comprueba replay-control.service en este ordenador y actualiza esta página."
+        }
+        Key::StorageSetupSwitchFailed => "El cambio de almacenamiento no terminó.",
+        Key::StorageSetupCouldNotSwitch => "No se pudo cambiar el almacenamiento.",
+        Key::StorageSetupSelectDirectory => "Selecciona un directorio.",
+        Key::StorageSetupAlreadySelected => "Esta carpeta ya está seleccionada.",
+        Key::StorageSetupInvalidPath => "La ruta contiene un carácter no válido.",
+        Key::StorageSetupSwitchBusy => {
+            "Ya hay un cambio de almacenamiento en curso. Vuelve a intentarlo cuando termine."
+        }
+        Key::StorageSetupValidationRequired => {
+            "Esta carpeta debe contener un directorio roms/ legible."
+        }
+        Key::StorageSetupSwitchRestored => {
+            "La carpeta seleccionada no pudo iniciar Replay Control. Se restauró la ubicación anterior."
+        }
+        Key::StorageSetupSwitchInterrupted => {
+            "El cambio de almacenamiento se detuvo sin informar del resultado. Reinicia Replay Control para restaurar la ubicación anterior."
+        }
+        Key::StorageSetupSwitchStartFailed => "No se pudo iniciar el cambio de almacenamiento.",
+        Key::StorageSetupPackageOnly => {
+            "El cambio de almacenamiento está disponible en instalaciones con paquete."
+        }
         Key::SettingsSectionDeviceNetwork => "Red del dispositivo",
         Key::SettingsSectionAccess => "Acceso y seguridad",
         Key::SettingsSectionSystem => "Sistema",
@@ -858,13 +910,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "Recargando en {0} segundos...",
         Key::UpdateWaitingForServer => "Esperando al servidor...",
         Key::UpdateBackToSettings => "Volver a ajustes",
+        Key::UpdateComplete => "Actualización completada",
+        Key::UpdateContinue => "Continuar",
         Key::UpdatePageTitle => "Actualizando Replay Control",
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "\u{00a1}Bienvenido a Replay Control!",
+        Key::SetupKicker => "CONFIGURACIÓN",
+        Key::SetupProgress => "Progreso de la configuración",
+        Key::SetupFailed => "Error",
+        Key::SetupCancelled => "Cancelado",
+        Key::SetupNetNotConfigured => "RePlayOS Net Control no está configurado",
+        Key::SetupNetPendingRestart => "RePlayOS todavía se está reiniciando",
+        Key::SetupNetUnauthorized => "RePlayOS rechazó el código de Net Control",
+        Key::SetupNetUnsupported => "Esta versión de RePlayOS no admite el control remoto",
         Key::SetupIntro => {
             "Saca el m\u{00e1}ximo partido a tu biblioteca y conecta Replay Control con RePlayOS."
         }
+        Key::SetupStandaloneIntro => "Termina de configurar tu biblioteca de juegos.",
+        Key::SetupStorageTitle => "Elegir la carpeta de juegos",
+        Key::SetupStorageHint => "Las ROM y las car\u{00e1}tulas permanecen en la carpeta elegida",
         Key::SetupMetadataTitle => "Descargar fuentes de metadatos",
         Key::SetupMetadataHint => {
             "A\u{00f1}ade descripciones, valoraciones, fechas y car\u{00e1}tulas autom\u{00e1}ticas"

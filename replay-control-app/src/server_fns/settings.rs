@@ -1,5 +1,7 @@
 use super::*;
 use replay_control_core::replay_settings::SettingsOutcome;
+#[cfg(feature = "ssr")]
+use replay_control_core::runtime_env::HostKind;
 
 #[cfg(feature = "ssr")]
 use crate::api::response_cache::TtlSlot;
@@ -21,6 +23,9 @@ use replay_control_core_server::config::ReplayConfig;
 use replay_control_core_server::security::tls::{
     TlsCertificateStatus, regenerate_self_signed_certificate, tls_certificate_status,
 };
+
+#[cfg(feature = "ssr")]
+const STANDALONE_SAVE_SKIPPED: &str = "Save skipped (standalone mode)";
 
 /// WiFi configuration (password is never sent to the client).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +162,9 @@ pub async fn save_wifi_config(
     hidden: bool,
 ) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
+    if !state.host.is_replayos() {
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
+    }
     let api = state
         .replay_api
         .as_ref()
@@ -352,8 +360,8 @@ async fn apply_replay_api_config_change(
     state: &crate::api::AppState,
     writes: Vec<ConfigWrite>,
 ) -> Result<String, ServerFnError> {
-    if !state.mode.is_device() {
-        return Ok("Save skipped (standalone mode)".to_string());
+    if !state.host.is_replayos() {
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
     }
 
     let Some(api) = state.replay_api.clone() else {
@@ -460,34 +468,28 @@ fn validate_nfs_config(
 /// calls and the config file I/O are all blocking, so the whole sequence runs
 /// on a blocking thread to avoid stalling the async runtime.
 ///
-/// `is_device` is a bool, not the full `Mode`, because this function only
-/// branches on "does the OS own this config?" — pre-resolving it at the call
-/// site (`state.mode.is_device()`) keeps the signature honest about what it
-/// actually needs.
 #[cfg(feature = "ssr")]
 pub(crate) async fn apply_replay_config_change<F>(
-    is_device: bool,
+    host: HostKind,
     write_config: F,
 ) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || {
-        apply_replay_config_change_blocking(is_device, write_config)
-    })
-    .await
-    .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
+    tokio::task::spawn_blocking(move || apply_replay_config_change_blocking(host, write_config))
+        .await
+        .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
 }
 
 #[cfg(feature = "ssr")]
 fn apply_replay_config_change_blocking<F>(
-    is_device: bool,
+    host: HostKind,
     write_config: F,
 ) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
 {
-    if !is_device {
+    if !host.is_replayos() {
         // Standalone is documented as having system-mutation features disabled —
         // no `replay.service` to restart, no `replay.cfg` we're meant to own, no
         // surrounding RePlayOS state to keep in sync. Refuse the write entirely
@@ -495,7 +497,7 @@ where
         // skipped result the device path would have for an inert call. The UI
         // hides these pages off-device; a direct /sfn POST hits this guard.
         let _ = write_config;
-        return Ok("Save skipped (standalone mode)".to_string());
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
     }
 
     replay_control_core_server::replay_service::stop()
@@ -558,7 +560,7 @@ impl Drop for StartReplayOnDrop {
 #[server(prefix = "/sfn")]
 pub async fn reboot_system() -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Reboot skipped (standalone mode)".to_string());
     }
 
@@ -608,7 +610,7 @@ pub async fn get_hostname() -> Result<String, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Hostname change skipped (standalone mode)".to_string());
     }
 
@@ -700,7 +702,7 @@ pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, Ser
 /// wait on a restart that kills this process. No-op off-device.
 #[cfg(feature = "ssr")]
 fn restart_for_new_certificate(state: &crate::api::AppState) {
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return;
     }
     tokio::task::spawn(async {
@@ -1011,7 +1013,7 @@ pub async fn change_root_password(
     use std::process::{Command, Stdio};
 
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Password change skipped (standalone mode)".to_string());
     }
 
@@ -1154,15 +1156,14 @@ pub async fn get_update_channel() -> Result<String, ServerFnError> {
     )
 }
 
-/// Save the update channel. Nukes the update dir and triggers an immediate re-check.
+/// Save the update channel and trigger an immediate re-check.
 #[server(prefix = "/sfn")]
 pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
     let state = super::app_state()?;
     let channel_val = replay_control_core::update::UpdateChannel::from_str_value(&channel);
     replay_control_core_server::settings::write_update_channel(&state.settings, channel_val)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // Nuke stale update state and trigger re-check with new channel.
-    replay_control_core_server::update::nuke_update_dir();
+    // The re-check handles stale state unless an install owns the directory.
     let state_clone = state.clone();
     tokio::spawn(async move {
         match crate::api::updates::perform_update_check(&state_clone).await {

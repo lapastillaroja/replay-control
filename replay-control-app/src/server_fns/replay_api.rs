@@ -382,7 +382,7 @@ pub async fn get_replayos_log_level() -> Result<Option<ReplayLogLevel>, ServerFn
 }
 
 /// Current integration status. Standalone mode has no integration and reports
-/// the default (`NotConfigured`); UI surfaces gate on `get_mode` anyway.
+/// the default (`NotConfigured`); UI surfaces gate on `get_host_kind` anyway.
 #[server(prefix = "/sfn")]
 pub async fn get_replay_api_status() -> Result<ReplayApiStatus, ServerFnError> {
     let state = super::app_state()?;
@@ -753,7 +753,7 @@ pub async fn enable_replay_api_assisted() -> Result<ReplayApiStatus, ServerFnErr
         // flapping the status to `Error` while the API is expectedly down.
         api.set_status(ReplayApiStatus::PendingRestart);
         let restart_window = api.begin_restart_window();
-        let result = super::settings::apply_replay_config_change(state.mode.is_device(), {
+        let result = super::settings::apply_replay_config_change(state.host, {
             let state = state.clone();
             move || state.enable_replayos_net_control()
         })

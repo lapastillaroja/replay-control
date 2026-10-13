@@ -25,7 +25,7 @@ use crate::util::numeric_code;
 pub fn ReplayNetControlPage() -> impl IntoView {
     let i18n = use_i18n();
     let status = expect_context::<RwSignal<ReplayApiStatus>>();
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
+    let host_kind = Resource::new_blocking(|| (), |_| server_fns::get_host_kind());
     let initial_status = Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
     let initial_settings = Resource::new_blocking(|| (), |_| server_fns::get_replayos_settings());
 
@@ -42,7 +42,7 @@ pub fn ReplayNetControlPage() -> impl IntoView {
                 view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }
             }>
                 {move || Suspend::new(async move {
-                    if !mode.await.map(|p| p.is_device()).unwrap_or(false) {
+                    if !host_kind.await.map(|host| host.is_replayos()).unwrap_or(false) {
                         return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
                     }
                     let initial = initial_status.await?;

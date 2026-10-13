@@ -1096,7 +1096,7 @@ fn rename_fav_recursive(
 #[server(prefix = "/sfn")]
 pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         #[cfg(feature = "ssr")]
         redirect_after_progressive_form(&return_to);
         return Ok("Launch simulated (standalone mode)".into());

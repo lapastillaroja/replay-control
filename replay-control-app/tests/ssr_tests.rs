@@ -8,7 +8,7 @@ use axum::routing::{get, post, put};
 use http_body_util::BodyExt;
 use replay_control_app::server_fns;
 use replay_control_core::auth::AuthRole;
-use replay_control_core::runtime_env::Mode;
+use replay_control_core::runtime_env::HostKind;
 use replay_control_core_server::auth::AuthStore;
 use replay_control_core_server::settings::{write_first_setup_done, write_replay_api_token};
 use server_fn::ServerFn;
@@ -102,7 +102,7 @@ async fn game_detail_page_renders_info_table_rows() {
 async fn login_page_renders_net_control_code_instructions() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -173,7 +173,7 @@ async fn login_page_in_standalone_mode_skips_credentials() {
 async fn first_setup_page_renders_device_password_guidance() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     let app = test_router(env.state.clone());
 
     let resp = app
@@ -256,7 +256,7 @@ async fn access_security_page_in_standalone_mode_skips_session_controls() {
 async fn settings_page_authenticated_user_links_to_access_without_sign_in_item() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let session = env
@@ -300,7 +300,7 @@ async fn settings_page_authenticated_user_links_to_access_without_sign_in_item()
 async fn authenticated_login_request_redirects_to_home() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let session = env
@@ -331,7 +331,7 @@ async fn authenticated_login_request_redirects_to_home() {
 async fn login_page_authenticated_component_state_does_not_render_login_ui() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let session = env
@@ -369,7 +369,7 @@ async fn login_page_authenticated_component_state_does_not_render_login_ui() {
 async fn access_security_requires_auth_only_in_device_mode() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let session = env
@@ -415,7 +415,7 @@ async fn access_security_requires_auth_only_in_device_mode() {
 async fn first_setup_pending_redirects_login_and_blocks_other_auth_bootstrap() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     let app = with_auth_guard(auth_probe_router(), env.state.clone());
 
     let home = app
@@ -512,7 +512,7 @@ async fn first_setup_pending_redirects_login_and_blocks_other_auth_bootstrap() {
 async fn access_security_page_normal_user_renders_inline_admin_unlock_form() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let session = env
         .state
@@ -553,7 +553,7 @@ async fn access_security_page_normal_user_renders_inline_admin_unlock_form() {
 async fn access_security_page_direct_admin_shows_disabled_downgrade() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let shadow_path = env.tmp.join("shadow");
     std::fs::write(&shadow_path, "root:$y$j9T$testhash:19793:0:99999:7:::\n").unwrap();
@@ -598,7 +598,7 @@ async fn access_security_page_direct_admin_shows_disabled_downgrade() {
 async fn access_security_page_elevated_admin_offers_downgrade() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let shadow_path = env.tmp.join("shadow");
     std::fs::write(&shadow_path, "root:$y$j9T$testhash:19793:0:99999:7:::\n").unwrap();
@@ -792,7 +792,7 @@ async fn storage_guard_redirects_to_waiting_page_with_error_reboot_action() {
 async fn auth_bootstrap_survives_storage_guard_but_waiting_reboot_requires_auth() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     {
         let mut storage = env.state.storage.write().expect("storage lock poisoned");
@@ -871,7 +871,7 @@ async fn waiting_page_redirects_to_root_when_storage_is_available() {
 #[tokio::test(flavor = "multi_thread")]
 async fn auth_guard_does_not_require_auth_in_standalone_mode() {
     let env = TestEnv::new().await;
-    assert!(matches!(env.state.mode, Mode::Standalone { .. }));
+    assert!(matches!(env.state.host, HostKind::Standalone));
     let app = with_auth_guard(auth_probe_router(), env.state.clone());
 
     let resp = app
@@ -890,7 +890,7 @@ async fn auth_guard_does_not_require_auth_in_standalone_mode() {
 async fn standalone_auth_status_ignores_stale_admin_cookie() {
     setup();
     let mut env = TestEnv::new().await;
-    assert!(matches!(env.state.mode, Mode::Standalone { .. }));
+    assert!(matches!(env.state.host, HostKind::Standalone));
     let shadow_path = env.tmp.join("shadow");
     std::fs::write(&shadow_path, "root:$y$j9T$testhash:19793:0:99999:7:::\n").unwrap();
     env.state.auth.store = AuthStore::open_at_with_shadow(
@@ -975,7 +975,7 @@ async fn live_stats_and_library_playtime_server_functions_are_registered() {
 async fn auth_bootstrap_ignores_invalid_cookie_for_csrf() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     let app = with_auth_guard(test_router(env.state.clone()), env.state.clone());
 
     let resp = app
@@ -998,7 +998,7 @@ async fn auth_bootstrap_ignores_invalid_cookie_for_csrf() {
 #[tokio::test(flavor = "multi_thread")]
 async fn auth_guard_requires_csrf_for_valid_session_mutations() {
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let user = env
@@ -1027,7 +1027,7 @@ async fn auth_guard_requires_csrf_for_valid_session_mutations() {
 #[tokio::test(flavor = "multi_thread")]
 async fn auth_guard_csrf_protects_authenticated_bootstrap_actions() {
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let user = env
@@ -1080,7 +1080,7 @@ async fn auth_guard_csrf_protects_authenticated_bootstrap_actions() {
 #[tokio::test(flavor = "multi_thread")]
 async fn auth_guard_enforces_device_mode_default_roles() {
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     write_replay_api_token(&env.state.settings, "123456").unwrap();
     let shadow_path = env.tmp.join("shadow");
@@ -1179,7 +1179,7 @@ async fn auth_guard_enforces_device_mode_default_roles() {
 async fn auth_guard_uses_real_server_function_paths_for_bootstrap() {
     setup();
     let mut env = TestEnv::new().await;
-    env.state.mode = Mode::Device;
+    env.state.host = HostKind::ReplayOs;
     mark_first_setup_done(&env.state);
     let app = with_auth_guard(test_router(env.state.clone()), env.state.clone());
 

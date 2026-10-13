@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage location · Replay Control</title>
+  <link rel="stylesheet" href="/storage-setup/app.css">
+  <script src="/storage-setup/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <a id="back" class="back" href="/settings" data-i18n="back" hidden>← Settings</a>
+    <p id="setup-step" class="step" data-i18n="step" hidden>SETUP · STEP 1 OF 2</p>
+    <h1 data-i18n="title">Choose your storage location</h1>
+    <p data-i18n="intro">Select the folder that contains roms/. Replay Control will also use sibling folders such as bios/, saves/, and captures/ when present.</p>
+    <p id="setup-next" class="muted" data-i18n="next" hidden>Next, Replay Control will download game metadata. Its download and database use /var/lib/replay-control/ on this computer; downloaded library artwork stays with the selected storage folder.</p>
+    <p id="storage-problem" class="error" role="alert" hidden></p>
+
+    <label for="path" data-i18n="path_label">Storage root on this computer</label>
+    <div class="path-row">
+      <input id="path" type="text" autocomplete="off" spellcheck="false" placeholder="/mnt/games">
+      <button id="browse" type="button" data-i18n="browse">Browse</button>
+    </div>
+    <p id="current" class="muted"></p>
+
+    <div id="browser" hidden>
+      <div class="browser-head">
+        <strong id="browser-path"></strong>
+        <button id="parent" type="button" data-i18n="parent">Parent folder</button>
+      </div>
+      <div id="directories" class="directories"></div>
+    </div>
+
+    <div id="preview" class="preview"></div>
+    <p id="message" role="status"></p>
+    <button id="select" class="primary" type="button" data-i18n="select" disabled>Use this folder</button>
+  </main>
+</body>
+</html>

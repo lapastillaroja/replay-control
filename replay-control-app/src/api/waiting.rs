@@ -43,7 +43,7 @@ pub fn waiting_page_response(state: AppState) -> axum::response::Response {
 }
 
 /// Handle the reboot action exposed only on waiting-page storage errors.
-/// `reboot_allowed` is captured from `AppState.mode.is_device()` when the
+/// `reboot_allowed` is captured from the host identity when the
 /// route is wired (see `with_storage_guard`); the handler itself stays
 /// state-less.
 pub fn waiting_reboot_response(reboot_allowed: bool) -> axum::response::Response {
@@ -82,7 +82,7 @@ pub fn with_storage_guard(app: axum::Router, app_state: AppState) -> axum::Route
         async move { waiting_page_response(state) }
     });
     // Captured once at route-build time; reboot is only available on Device.
-    let reboot_allowed = app_state.mode.is_device();
+    let reboot_allowed = app_state.host.is_replayos();
     let waiting_reboot_handler =
         axum::routing::post(move || async move { waiting_reboot_response(reboot_allowed) });
     let guard_state = app_state.clone();

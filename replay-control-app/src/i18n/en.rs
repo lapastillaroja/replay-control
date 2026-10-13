@@ -113,6 +113,54 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsTitle => "Settings",
         Key::SettingsSectionAppearance => "Appearance",
         Key::SettingsSectionLibraryGames => "Library & Games",
+        Key::StandaloneStorageLocation => "Storage location",
+        Key::StandaloneStorageLocalHint => {
+            "To change storage, open Replay Control on this computer using localhost."
+        }
+        Key::StorageSetupTitle => "Choose your storage location",
+        Key::StorageSetupBack => "← Settings",
+        Key::StorageSetupStep => "SETUP · STEP 1 OF 2",
+        Key::StorageSetupIntro => {
+            "Select the folder that contains roms/. Replay Control will also use sibling folders such as bios/, saves/, and captures/ when present."
+        }
+        Key::StorageSetupNext => {
+            "Next, Replay Control will download game metadata. Its download and database use /var/lib/replay-control/ on this computer; downloaded library artwork stays with the selected storage folder."
+        }
+        Key::StorageSetupPathLabel => "Storage root on this computer",
+        Key::StorageSetupBrowse => "Browse",
+        Key::StorageSetupParent => "Parent folder",
+        Key::StorageSetupSelect => "Use this folder",
+        Key::StorageSetupCurrent => "Current storage: {0}",
+        Key::StorageSetupNone => "No storage location selected yet.",
+        Key::StorageSetupUnavailable => "The configured storage is unavailable: {0}",
+        Key::StorageSetupFound => {
+            "Storage root found. Replay Control will read games from {0}/roms/."
+        }
+        Key::StorageSetupInvalid => "This folder does not contain a readable roms/ directory.",
+        Key::StorageSetupBrowseFailed => "Could not browse folders.",
+        Key::StorageSetupSwitching => "Switching storage and checking the new library…",
+        Key::StorageSetupSwitchTimeout => {
+            "The switch is taking longer than expected. Check replay-control.service on this computer, then refresh this page."
+        }
+        Key::StorageSetupSwitchFailed => "The storage switch did not finish.",
+        Key::StorageSetupCouldNotSwitch => "Could not switch storage.",
+        Key::StorageSetupSelectDirectory => "Select a directory.",
+        Key::StorageSetupAlreadySelected => "This folder is already selected.",
+        Key::StorageSetupInvalidPath => "The path contains an invalid character.",
+        Key::StorageSetupSwitchBusy => {
+            "A storage switch is already in progress. Try again after it finishes."
+        }
+        Key::StorageSetupValidationRequired => {
+            "This folder must contain a readable roms/ directory."
+        }
+        Key::StorageSetupSwitchRestored => {
+            "The selected folder could not start Replay Control. The previous storage selection was restored."
+        }
+        Key::StorageSetupSwitchInterrupted => {
+            "The storage switch stopped before reporting a result. Restart Replay Control to restore the previous selection."
+        }
+        Key::StorageSetupSwitchStartFailed => "Could not start the storage switch.",
+        Key::StorageSetupPackageOnly => "Storage switching is available in packaged installs.",
         Key::SettingsSectionDeviceNetwork => "Device Network",
         Key::SettingsSectionAccess => "Access & Security",
         Key::SettingsSectionSystem => "System",
@@ -844,13 +892,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "Reloading in {0} seconds...",
         Key::UpdateWaitingForServer => "Waiting for server...",
         Key::UpdateBackToSettings => "Back to settings",
+        Key::UpdateComplete => "Update complete",
+        Key::UpdateContinue => "Continue",
         Key::UpdatePageTitle => "Updating Replay Control",
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "Welcome to Replay Control!",
+        Key::SetupKicker => "SETUP",
+        Key::SetupProgress => "Setup progress",
+        Key::SetupFailed => "Failed",
+        Key::SetupCancelled => "Cancelled",
+        Key::SetupNetNotConfigured => "RePlayOS Net Control is not configured",
+        Key::SetupNetPendingRestart => "RePlayOS is still restarting",
+        Key::SetupNetUnauthorized => "RePlayOS rejected the Net Control code",
+        Key::SetupNetUnsupported => "This RePlayOS version does not support remote control",
         Key::SetupIntro => {
             "Get the most out of your library and connect Replay Control to RePlayOS."
         }
+        Key::SetupStandaloneIntro => "Finish setting up your game library.",
+        Key::SetupStorageTitle => "Choose your game library folder",
+        Key::SetupStorageHint => "ROMs and library artwork stay with the selected storage folder",
         Key::SetupMetadataTitle => "Download metadata sources",
         Key::SetupMetadataHint => {
             "Adds game descriptions, ratings, release dates, and automatic box art"

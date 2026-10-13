@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Replay Control
+Comment=Manage your game library in a web browser
+Exec=/usr/lib/replay-control/open-browser
+Icon=replay-control
+Terminal=false
+StartupNotify=false
+Categories=Game;

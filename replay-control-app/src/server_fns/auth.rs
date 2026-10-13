@@ -33,7 +33,7 @@ const USER_MAX_AGE_SECONDS: u64 = 720 * 60 * 60;
 #[server(prefix = "/sfn")]
 pub async fn get_auth_status() -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
     }
@@ -44,7 +44,7 @@ pub async fn get_auth_status() -> Result<AuthStatus, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn login_with_replay_code(code: String) -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
     }
@@ -88,7 +88,7 @@ pub async fn login_with_replay_code(code: String) -> Result<AuthStatus, ServerFn
 #[server(prefix = "/sfn")]
 pub async fn login_admin(password: String) -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
             "Admin login with the device password is available only on RePlayOS",
@@ -116,7 +116,7 @@ pub async fn login_admin(password: String) -> Result<AuthStatus, ServerFnError> 
 #[server(prefix = "/sfn")]
 pub async fn complete_first_setup(password: String) -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Ok(auth_status_from_session(&state, None));
     }
@@ -227,7 +227,7 @@ pub(crate) fn reissue_admin_session(
 #[server(prefix = "/sfn")]
 pub async fn get_admin_session_timeout() -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Ok(AdminSessionTimeout::default().as_str().to_string());
     }
@@ -243,7 +243,7 @@ pub async fn get_admin_session_timeout() -> Result<String, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn set_admin_session_timeout(value: String) -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
             "Admin sessions are available only on RePlayOS",
@@ -285,7 +285,7 @@ pub async fn set_admin_session_timeout(value: String) -> Result<AuthStatus, Serv
 #[server(prefix = "/sfn")]
 pub async fn downgrade_admin_to_user() -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
             "Admin sessions are available only on RePlayOS",
@@ -326,7 +326,7 @@ pub async fn logout() -> Result<AuthStatus, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn logout_all_browsers() -> Result<AuthStatus, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         clear_session_cookie()?;
         return Err(ServerFnError::new(
             "Admin sessions are available only on RePlayOS",
@@ -403,8 +403,8 @@ fn auth_status_for_role(
 ) -> AuthStatus {
     AuthStatus {
         role,
-        auth_required: state.mode.is_device(),
-        can_downgrade: state.mode.is_device() && can_downgrade,
+        auth_required: state.host.is_replayos(),
+        can_downgrade: state.host.is_replayos() && can_downgrade,
         session_seconds_remaining,
         admin_seconds_remaining,
     }
@@ -432,7 +432,7 @@ fn current_unix_seconds() -> u64 {
 async fn current_session(
     state: &crate::api::AppState,
 ) -> Result<Option<ResolvedAuthSession>, ServerFnError> {
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok(None);
     }
     let Some(token) = session_token_from_request().await? else {

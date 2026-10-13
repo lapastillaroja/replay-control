@@ -108,6 +108,42 @@ pub fn t(locale: Locale, key: Key) -> &'static str {
     }
 }
 
+/// Resolve the preferred supported language from an HTTP request.
+#[cfg(feature = "ssr")]
+pub fn resolve_locale_from_accept_language(headers: &axum::http::HeaderMap) -> Locale {
+    use axum::http::header::ACCEPT_LANGUAGE;
+
+    let Some(accept) = headers.get(ACCEPT_LANGUAGE) else {
+        return Locale::En;
+    };
+    let Ok(value) = accept.to_str() else {
+        return Locale::En;
+    };
+    let mut languages: Vec<(&str, f32)> = value
+        .split(',')
+        .filter_map(|part| {
+            let mut parts = part.trim().splitn(2, ';');
+            let tag = parts.next()?.trim();
+            let quality = parts
+                .next()
+                .and_then(|value| value.trim().strip_prefix("q="))
+                .and_then(|value| value.parse::<f32>().ok())
+                .unwrap_or(1.0);
+            Some((tag, quality))
+        })
+        .collect();
+    languages.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (tag, _) in languages {
+        match tag.split('-').next().unwrap_or(tag) {
+            "en" => return Locale::En,
+            "es" => return Locale::Es,
+            "ja" => return Locale::Ja,
+            _ => {}
+        }
+    }
+    Locale::En
+}
+
 /// Resolves a key name string to a `Key` variant.
 /// Only covers keys used in server-returned structured data (recommendation titles).
 pub fn key_from_str(s: &str) -> Option<Key> {
@@ -169,6 +205,19 @@ pub fn tf(locale: Locale, key: Key, args: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "ssr")]
+    #[test]
+    fn accept_language_uses_quality_and_region() {
+        use axum::http::{HeaderMap, HeaderValue, header::ACCEPT_LANGUAGE};
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT_LANGUAGE,
+            HeaderValue::from_static("en;q=0.5,es-ES;q=0.9,ja;q=0.7"),
+        );
+        assert_eq!(resolve_locale_from_accept_language(&headers), Locale::Es);
+    }
 
     #[test]
     fn key_from_str_covers_all_server_keys() {

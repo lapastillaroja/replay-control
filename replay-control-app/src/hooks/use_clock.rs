@@ -19,7 +19,7 @@ impl Clock {
     pub fn install() -> Self {
         let now_unix = RwSignal::new(0u64);
 
-        #[cfg(feature = "hydrate")]
+        #[cfg(target_arch = "wasm32")]
         {
             use wasm_bindgen::prelude::*;
             let Some(window) = web_sys::window() else {
@@ -84,7 +84,7 @@ pub fn use_live_elapsed_secs(started_at_unix_secs: u64) -> Signal<u64> {
     })
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn current_unix_secs() -> u64 {
     js_sys::Date::now() as u64 / 1000
 }

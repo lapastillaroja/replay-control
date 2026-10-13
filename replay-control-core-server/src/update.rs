@@ -44,6 +44,9 @@ fn classify_asset(name: &str) -> Option<AssetKind> {
 /// Download URLs for a specific release, resolved fresh from GitHub API.
 #[derive(Debug)]
 pub struct AssetUrls {
+    /// Independent Debian package; absent on archive-only older releases.
+    pub package_url: Option<String>,
+    pub rpm_url: Option<String>,
     pub binary_url: String,
     pub site_url: String,
     /// `None` for releases that predate the catalog asset (< v0.4.0-beta.3).
@@ -448,6 +451,8 @@ pub async fn resolve_asset_urls(
     let mut site_url = None;
     let mut catalog_url = None;
     let mut checksums_url = None;
+    let mut package_url = None;
+    let mut rpm_url = None;
 
     for asset in assets {
         let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -455,6 +460,19 @@ pub async fn resolve_asset_urls(
         let Some(url) = download_url else { continue };
         if name == "checksums.sha256" {
             checksums_url = Some(url.to_string());
+            continue;
+        }
+        let package_arch = match std::env::consts::ARCH {
+            "aarch64" => "arm64",
+            "x86_64" => "amd64",
+            _ => "unsupported",
+        };
+        if name.starts_with("replay-control_") && name.ends_with(&format!("_{package_arch}.deb")) {
+            package_url = Some(url.to_string());
+            continue;
+        }
+        if name.starts_with("replay-control-") && name.ends_with(".x86_64.rpm") {
+            rpm_url = Some(url.to_string());
             continue;
         }
         if !name.ends_with(".tar.gz") {
@@ -469,6 +487,8 @@ pub async fn resolve_asset_urls(
     }
 
     Ok(AssetUrls {
+        package_url,
+        rpm_url,
         binary_url: binary_url.ok_or("Binary asset not found in release")?,
         site_url: site_url.ok_or("Site asset not found in release")?,
         catalog_url,
@@ -874,6 +894,39 @@ DEF456 *replay-catalog.tar.gz
             assets.catalog_url.as_deref(),
             Some("https://example.com/v0.5.0/catalog.tar.gz")
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_asset_urls_selects_native_debian_package() {
+        let mut release = make_release_json("v0.5.0", false);
+        let assets = release["assets"].as_array_mut().unwrap();
+        for arch in ["arm64", "amd64"] {
+            assets.push(serde_json::json!({
+                "name": format!("replay-control_0.5.0_{arch}.deb"),
+                "browser_download_url": format!("https://example.com/replay-control_0.5.0_{arch}.deb")
+            }));
+        }
+        assets.push(serde_json::json!({
+            "name": "replay-control-0.5.0-1.x86_64.rpm",
+            "browser_download_url": "https://example.com/replay-control-0.5.0-1.x86_64.rpm"
+        }));
+        let mut server = mockito::Server::new_async().await;
+        mock_release_endpoint(&mut server, release);
+        let resolved = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None)
+            .await
+            .unwrap();
+        let arch = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "amd64"
+        };
+        assert!(
+            resolved
+                .package_url
+                .unwrap()
+                .ends_with(&format!("_{arch}.deb"))
+        );
+        assert!(resolved.rpm_url.unwrap().ends_with(".x86_64.rpm"));
     }
 
     #[tokio::test]

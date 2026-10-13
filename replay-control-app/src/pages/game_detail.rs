@@ -954,7 +954,7 @@ fn GameLaunchAction(
     let capabilities = use_replay_capabilities();
     let restriction =
         move || capabilities.launch_restriction(&system.get_value(), i18n.locale.get());
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
+    let host_kind = Resource::new_blocking(|| (), |_| server_fns::get_host_kind());
     let initial_replay_api_status =
         Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
     let replay_api_status = use_context::<RwSignal<ReplayApiStatus>>();
@@ -962,11 +962,11 @@ fn GameLaunchAction(
     let launch_result = launch.value();
     let launch_clicked = RwSignal::new(false);
     let launch_requires_setup = Memo::new(move |_| {
-        let on_device = mode
+        let on_replayos = host_kind
             .get()
             .and_then(Result::ok)
-            .is_some_and(|mode| mode.is_device());
-        if !on_device {
+            .is_some_and(|host| host.is_replayos());
+        if !on_replayos {
             return false;
         }
 

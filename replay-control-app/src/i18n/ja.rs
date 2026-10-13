@@ -113,6 +113,56 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsTitle => "設定",
         Key::SettingsSectionAppearance => "外観",
         Key::SettingsSectionLibraryGames => "ライブラリとゲーム",
+        Key::StandaloneStorageLocation => "ストレージの場所",
+        Key::StandaloneStorageLocalHint => {
+            "ストレージを変更するには、このコンピューターで localhost から Replay Control を開いてください。"
+        }
+        Key::StorageSetupTitle => "ストレージの場所を選択",
+        Key::StorageSetupBack => "← 設定",
+        Key::StorageSetupStep => "セットアップ · ステップ1/2",
+        Key::StorageSetupIntro => {
+            "roms/ フォルダーがある場所を選んでください。同じ階層に bios/、saves/、captures/ などのフォルダーがあれば、Replay Control はそれらも使用します。"
+        }
+        Key::StorageSetupNext => {
+            "次にゲームのメタデータをダウンロードします。ダウンロードデータとデータベースはこのコンピューターの /var/lib/replay-control/ に保存され、ライブラリの画像は選択したストレージに保存されます。"
+        }
+        Key::StorageSetupPathLabel => "このコンピューターのストレージのルート",
+        Key::StorageSetupBrowse => "参照",
+        Key::StorageSetupParent => "親フォルダー",
+        Key::StorageSetupSelect => "このフォルダーを使用",
+        Key::StorageSetupCurrent => "現在のストレージ: {0}",
+        Key::StorageSetupNone => "ストレージの場所はまだ選択されていません。",
+        Key::StorageSetupUnavailable => "設定されたストレージを使用できません: {0}",
+        Key::StorageSetupFound => {
+            "ストレージが見つかりました。{0}/roms/ からゲームを読み込みます。"
+        }
+        Key::StorageSetupInvalid => {
+            "このフォルダーには読み取り可能な roms/ ディレクトリがありません。"
+        }
+        Key::StorageSetupBrowseFailed => "フォルダーを参照できませんでした。",
+        Key::StorageSetupSwitching => "ストレージを切り替え、新しいライブラリを確認しています…",
+        Key::StorageSetupSwitchTimeout => {
+            "切り替えに時間がかかっています。このコンピューターの replay-control.service を確認してから、ページを更新してください。"
+        }
+        Key::StorageSetupSwitchFailed => "ストレージの切り替えが完了しませんでした。",
+        Key::StorageSetupCouldNotSwitch => "ストレージを切り替えられませんでした。",
+        Key::StorageSetupSelectDirectory => "フォルダーを選択してください。",
+        Key::StorageSetupAlreadySelected => "このフォルダーはすでに選択されています。",
+        Key::StorageSetupInvalidPath => "パスに使用できない文字が含まれています。",
+        Key::StorageSetupSwitchBusy => {
+            "ストレージの切り替え中です。完了してからもう一度お試しください。"
+        }
+        Key::StorageSetupValidationRequired => {
+            "このフォルダーには読み取り可能な roms/ ディレクトリが必要です。"
+        }
+        Key::StorageSetupSwitchRestored => {
+            "選択したフォルダーでは Replay Control を起動できませんでした。以前のストレージ設定に戻しました。"
+        }
+        Key::StorageSetupSwitchInterrupted => {
+            "ストレージの切り替えが結果を報告せずに停止しました。Replay Control を再起動して以前の設定に戻してください。"
+        }
+        Key::StorageSetupSwitchStartFailed => "ストレージの切り替えを開始できませんでした。",
+        Key::StorageSetupPackageOnly => "ストレージの切り替えはパッケージ版で利用できます。",
         Key::SettingsSectionDeviceNetwork => "デバイスネットワーク",
         Key::SettingsSectionAccess => "アクセスとセキュリティ",
         Key::SettingsSectionSystem => "システム",
@@ -848,11 +898,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "{0}秒後にリロードします...",
         Key::UpdateWaitingForServer => "サーバーの応答を待っています...",
         Key::UpdateBackToSettings => "設定に戻る",
+        Key::UpdateComplete => "アップデートが完了しました",
+        Key::UpdateContinue => "続行",
         Key::UpdatePageTitle => "Replay Controlをアップデート中",
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "Replay Controlへようこそ！",
+        Key::SetupKicker => "セットアップ",
+        Key::SetupProgress => "セットアップの進行状況",
+        Key::SetupFailed => "失敗",
+        Key::SetupCancelled => "キャンセル済み",
+        Key::SetupNetNotConfigured => "RePlayOS Net Control が設定されていません",
+        Key::SetupNetPendingRestart => "RePlayOS はまだ再起動中です",
+        Key::SetupNetUnauthorized => "RePlayOS が Net Control コードを拒否しました",
+        Key::SetupNetUnsupported => {
+            "このバージョンの RePlayOS はリモートコントロールに対応していません"
+        }
         Key::SetupIntro => "ライブラリを充実させ、Replay ControlをRePlayOSに接続します。",
+        Key::SetupStandaloneIntro => "ゲームライブラリの設定を完了します。",
+        Key::SetupStorageTitle => "ゲームライブラリのフォルダーを選択",
+        Key::SetupStorageHint => "ROMとライブラリの画像は選択したフォルダーに保存されます",
         Key::SetupMetadataTitle => "メタデータソースをダウンロード",
         Key::SetupMetadataHint => "説明、評価、発売日、自動カバーアートを追加します",
         Key::SetupReplayosTitle => "RePlayOS連携を有効化",

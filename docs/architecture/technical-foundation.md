@@ -2,16 +2,11 @@
 
 The core technical stack and infrastructure that powers Replay Control. For performance-specific design decisions, see [Design Decisions](design-decisions.md).
 
-## Deployment Mode
+## Host and Storage
 
-The app supports two first-class deployment shapes, captured in a single `Mode` enum (`replay-control-core/src/runtime_env.rs`) that is fixed at startup by `detect_mode`:
+Host identity is detected once at startup from `/opt/replay` and sent to the browser as `HostKind` (`device` or `standalone`). It controls RePlayOS-only features. Storage is resolved separately: RePlayOS follows the active storage in `/media/sd/config/replay.cfg`; standalone uses a selected folder containing `roms/`. An explicit storage path cannot change the host identity.
 
-- **`Mode::Device`** — running on the RePlayOS device. The `/opt/replay` marker is present, `replay.cfg` lives at `/media/sd/config/replay.cfg`, system-mutation features (Wi-Fi, NFS, RetroAchievements, hostname, password, reboot, assisted Net Control setup) are enabled, the `replay.cfg` file watcher and `mountinfo` POLLPRI watcher are spawned.
-- **`Mode::Standalone { storage_root }`** — running off-device as a standalone ROM manager (`--storage-path /path/to/roms`). The variant carries the storage root the user supplied, so "where does `replay.cfg` live?" is answered by pattern-matching on `Mode` itself — no parallel `Option<PathBuf>` to drift. System-mutation features are disabled (the closure that would have written `replay.cfg` is never invoked); the storage watcher is a no-op because the folder isn't OS-owned. Storage is always `StorageKind::Folder`; the device-only kinds (`Sd`, `Usb`, `Nvme`, `Nfs`) only mean something with `/proc/mounts` + `replay.cfg` in scope.
-
-`Mode::standalone_root()` returns `Some(&Path)` iff `Standalone`, by construction — every site that previously checked "is there a `--storage-path` override?" now reads the variant directly. The wire shape exposed to the client is just the tag string (`"device"` / `"standalone"`); the storage path is a server-side concern and never leaves the host.
-
-Off-device with no `--storage-path` is an unrecoverable startup error: `AppState::new` returns `Err` because there's no library to point at.
+On standalone packages, a saved browser choice takes precedence over `REPLAY_STORAGE_PATH`, which optionally preconfigures the first path. Without a path, the package serves the local storage selector before creating `AppState`. Direct binary runs require a path. Package ownership is checked separately by the updater to choose APT, DNF, or the archive update path.
 
 ## Crates
 
@@ -90,7 +85,7 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 
 | Environment | SSR Server | WASM Client |
 |-------------|-----------|-------------|
-| Fast dev (`dev.sh`) | `dev-fast` (opt 0) | `wasm-dev-fast` (opt 0) |
+| Fast dev (`dev.sh --pi` or `--build-only`) | `dev-fast` (opt 0) | `wasm-dev-fast` (opt 0) |
 | Debug / compact dev | `dev` (opt 1) | `wasm-dev` (opt "s") |
 | Prod | `release` (opt 3, thin LTO) | `wasm-release` (opt "z", fat LTO) |
 
@@ -205,7 +200,7 @@ The app checks GitHub releases for new versions and handles the full download-in
 
 **Update state**: The `UpdateState` enum (`None` → `Available` → `Restarting`) is provided as app-level context and drives the update banner on the Settings page. The banner shows "Update Now", "View on GitHub", and "Skip this version" actions.
 
-**Install flow**: Clicking "Update Now" navigates to `/updating`, which triggers `start_update()`. This downloads the binary and site tarballs from the GitHub release, verifies them, writes a shell script (`/var/tmp/replay-control-do-update.sh`) that replaces the binary and restarts the service, then executes it. The updating page shows a countdown and auto-reloads when the new version responds. Rollback is supported via `.bak` of the previous binary.
+**Install flow**: Clicking "Update Now" navigates to `/updating`, which triggers `start_update()`. Package installations download and checksum-verify the matching `.deb` or `.rpm`, validate its metadata, then launch a separate systemd helper to install it via APT or DNF. The helper records success or an actionable failure after the service restart. Archive installations continue to download and verify the tarballs, then run the swap script (`/var/tmp/replay-control-do-update.sh`). The updating page reloads when the new version responds. Archive rollback is supported via `.bak` of the previous binary. See [Package Distribution](package-distribution.md).
 
 **Configuration**: `UpdateChannel` (stable/beta) is stored in `AppSettings`. An optional GitHub API key raises the rate limit from 60 to 5,000 requests/hour.
 

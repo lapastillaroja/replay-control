@@ -47,8 +47,8 @@ On the **Stable** channel, beta (pre-release) versions are hidden by default; ti
 
 Clicking **Update Now** navigates to a dedicated updating page that shows progress through each phase:
 
-1. **Downloading** -- fetches the new binary and site assets from GitHub
-2. **Installing** -- replaces the current binary (the previous version is kept as a `.bak` file for rollback)
+1. **Downloading** -- fetches the release assets from GitHub and verifies their checksums
+2. **Installing** -- installs the new Replay Control release
 3. **Restarting** -- restarts the service
 4. **Reloading** -- the browser automatically reloads once the new version is running
 
@@ -56,9 +56,7 @@ The entire process is protected by a 5-minute timeout. If something goes wrong, 
 
 Any tabs you had open during the update will pick up the new version on their own, no manual refresh or cache clear needed.
 
-## Rollback
-
-The previous binary is preserved as a backup file (`.bak`) during each update. If an update causes problems, the previous version can be restored manually via SSH.
+Your settings and library data remain in place during updates.
 
 ## GitHub API Key
 

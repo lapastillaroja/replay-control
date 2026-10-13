@@ -43,18 +43,14 @@ def _settings_path() -> str:
     return path
 
 
-def _is_standalone_mode() -> bool:
-    cmdline = exec_cmd(
-        "pid=$(cat /var/run/replay-control.pid 2>/dev/null || true); "
-        "[ -n \"$pid\" ] && tr '\\0' ' ' < /proc/$pid/cmdline || true"
-    )
-    return "--storage-path" in cmdline
+def _is_standalone_host() -> bool:
+    return exec_cmd("test -e /opt/replay && echo replayos || echo standalone").strip() == "standalone"
 
 
 @pytest.fixture()
 def first_setup_pending():
-    if _is_standalone_mode():
-        pytest.skip("first setup is only enforced in device mode")
+    if _is_standalone_host():
+        pytest.skip("first setup is only enforced in RePlayOS")
 
     settings_path = _settings_path()
     snapshot = "/tmp/replay-control-e2e-settings.cfg"

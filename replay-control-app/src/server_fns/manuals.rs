@@ -327,7 +327,7 @@ pub async fn download_manual(
         tmp_path.display()
     );
 
-    let download_result = if state.mode.is_device() {
+    let download_result = if state.host.is_replayos() {
         download_to_file_guarded(
             &encoded_url,
             &tmp_path,
@@ -338,7 +338,7 @@ pub async fn download_manual(
     } else {
         // Standalone mode is an off-device ROM manager. Allow local/private
         // manual sources there so developers and local library tools can serve
-        // manuals from the same machine or LAN; device mode remains SSRF-guarded.
+        // manuals from the same machine or LAN; RePlayOS remains SSRF-guarded.
         download_to_file(
             &encoded_url,
             &tmp_path,

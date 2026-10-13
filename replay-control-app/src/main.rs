@@ -5,7 +5,11 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(feature = "ssr")]
+mod standalone_storage;
+
+#[cfg(feature = "ssr")]
 mod ssr {
+    use crate::standalone_storage;
     use axum::extract::connect_info::ConnectInfo;
     use axum::http::StatusCode;
     use axum::http::header::HOST;
@@ -16,7 +20,9 @@ mod ssr {
     use axum_server::tls_rustls::RustlsConfig;
     use clap::Parser;
     use leptos::config::LeptosOptions;
+    use replay_control_core::runtime_env::HostKind;
     use replay_control_core::skins;
+    use replay_control_core_server::replay_service::{detect_host, packaged_standalone};
     use replay_control_core_server::security::tls::{
         ensure_self_signed_certificate, install_default_crypto_provider,
         regenerate_self_signed_certificate,
@@ -57,7 +63,7 @@ mod ssr {
         #[arg(long, default_value = "8443")]
         https_port: u16,
 
-        /// Enable HTTPS in standalone mode. Device mode enables HTTPS by default.
+        /// Enable HTTPS in standalone mode. RePlayOS enables HTTPS by default.
         #[arg(long)]
         enable_https: bool,
 
@@ -94,8 +100,8 @@ mod ssr {
         site_root: String,
     }
 
-    fn https_enabled(enable_https: bool, dangerous_disable_https: bool, is_device: bool) -> bool {
-        !dangerous_disable_https && (is_device || enable_https)
+    fn https_enabled(enable_https: bool, dangerous_disable_https: bool, host: HostKind) -> bool {
+        !dangerous_disable_https && (host.is_replayos() || enable_https)
     }
 
     fn http_guidance_router(
@@ -127,6 +133,13 @@ mod ssr {
                         "version": replay_control_app::VERSION,
                         "git_hash": replay_control_app::GIT_HASH,
                     }))
+                }),
+            )
+            .route(
+                "/api/update-result",
+                axum::routing::get(|| async {
+                    std::fs::read_to_string("/var/lib/replay-control/update-result")
+                        .unwrap_or_default()
                 }),
             )
             .route(
@@ -895,7 +908,10 @@ mod ssr {
         server_fn::axum::register_explicit::<DowngradeAdminToUser>();
         server_fn::axum::register_explicit::<Logout>();
         server_fn::axum::register_explicit::<LogoutAllBrowsers>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMode>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostKind>();
+        server_fn::axum::register_explicit::<
+            replay_control_app::server_fns::GetStandaloneStorageSelectorAvailable,
+        >();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecents>();
@@ -1071,12 +1087,56 @@ mod ssr {
         // Without this, Resource async tasks won't run during SSR.
         let _ = any_spawner::Executor::init_tokio();
 
-        let cli = Cli::parse();
+        let mut cli = Cli::parse();
         tracing::info!(
             "Replay Control version: v{} ({})",
             replay_control_app::VERSION,
             replay_control_app::GIT_HASH
         );
+
+        let host = detect_host();
+        let packaged_standalone = packaged_standalone(host);
+        if host.is_replayos() {
+            if cli.storage_path.is_some() || std::env::var_os("REPLAY_STORAGE_PATH").is_some() {
+                tracing::warn!(
+                    "Ignoring storage override on RePlayOS; active storage follows replay.cfg"
+                );
+            }
+            cli.storage_path = None;
+        } else {
+            let preconfigured = cli
+                .storage_path
+                .take()
+                .or_else(|| std::env::var("REPLAY_STORAGE_PATH").ok());
+            cli.storage_path =
+                standalone_storage::resolve_storage_path(packaged_standalone, preconfigured);
+        }
+        if packaged_standalone {
+            let storage_error = cli
+                .storage_path
+                .as_deref()
+                .and_then(|path| standalone_storage::check_configured_storage(path).err());
+            if cli.storage_path.is_none() || storage_error.is_some() {
+                if let Some(ref error) = storage_error {
+                    tracing::warn!("Configured standalone storage is unavailable: {error}");
+                }
+                let serve_https =
+                    https_enabled(cli.enable_https, cli.dangerous_disable_https, host);
+                if let Err(error) = standalone_storage::serve_bootstrap(
+                    cli.port,
+                    cli.https_port,
+                    serve_https,
+                    cli.storage_path,
+                    storage_error,
+                )
+                .await
+                {
+                    tracing::error!("Storage setup server stopped: {error}");
+                    std::process::exit(1);
+                }
+                return;
+            }
+        }
 
         let catalog_path = resolve_catalog_path(&cli.catalog_path);
         if let Err(e) = replay_control_core_server::init_catalog(&catalog_path).await {
@@ -1089,19 +1149,19 @@ mod ssr {
         }
         tracing::info!("catalog loaded from {}", catalog_path.display());
 
-        let mut app_state =
-            match api::AppState::new(cli.storage_path, cli.settings_path, cli.data_dir) {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!("Failed to initialize: {e}");
-                    tracing::info!(
-                        "Hint: use --storage-path to point to a RePlayOS storage location"
-                    );
-                    std::process::exit(1);
-                }
-            };
-        let device_mode = app_state.mode.is_device();
-        let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, device_mode);
+        let mut app_state = match api::AppState::new(
+            host,
+            cli.storage_path.clone(),
+            cli.settings_path,
+            cli.data_dir,
+        ) {
+            Ok(state) => state,
+            Err(e) => {
+                tracing::error!("Failed to initialize: {e}");
+                std::process::exit(1);
+            }
+        };
+        let serve_https = https_enabled(cli.enable_https, cli.dangerous_disable_https, host);
 
         // Browsers drop a Secure cookie on a non-HTTPS origin, so when we are not
         // serving HTTPS the session cookie must drop Secure or login never
@@ -1353,6 +1413,13 @@ mod ssr {
                     }))
                 }),
             )
+            .route(
+                "/api/update-result",
+                axum::routing::get(|| async {
+                    std::fs::read_to_string("/var/lib/replay-control/update-result")
+                        .unwrap_or_default()
+                }),
+            )
             .route("/sse/activity", activity_sse_handler)
             .route("/sse/config", config_sse_handler)
             .route("/sse/now-playing", now_playing_sse_handler)
@@ -1446,10 +1513,15 @@ mod ssr {
 
         let app = api::with_storage_guard(app, guard_state.clone());
         let app = api::with_auth_guard(app, guard_state.clone());
+        let app = if packaged_standalone {
+            app.merge(standalone_storage::router(cli.storage_path.clone()))
+        } else {
+            app
+        };
 
         if !serve_https {
             let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
-            if device_mode {
+            if host.is_replayos() {
                 tracing::warn!(
                     "dangerous_disable_https is set; serving Replay Control over plain HTTP on {addr}"
                 );
@@ -1521,7 +1593,7 @@ mod ssr {
             "HTTP guidance page available on http://0.0.0.0:{}",
             cli.port
         );
-        if device_mode {
+        if host.is_replayos() {
             tracing::info!(
                 "Try https://replay.local:{} or use this device's LAN IP address",
                 cli.https_port
@@ -1571,27 +1643,28 @@ mod ssr {
         use axum::body::Body;
         use axum::extract::connect_info::ConnectInfo;
         use axum::http::{HeaderMap, HeaderValue, Request, header};
+        use replay_control_core::runtime_env::HostKind;
         use std::net::SocketAddr;
 
         #[test]
-        fn device_mode_enables_https_by_default() {
-            assert!(https_enabled(false, false, true));
+        fn replayos_enables_https_by_default() {
+            assert!(https_enabled(false, false, HostKind::ReplayOs));
         }
 
         #[test]
         fn standalone_mode_uses_plain_http_by_default() {
-            assert!(!https_enabled(false, false, false));
+            assert!(!https_enabled(false, false, HostKind::Standalone));
         }
 
         #[test]
         fn standalone_mode_can_opt_into_https() {
-            assert!(https_enabled(true, false, false));
+            assert!(https_enabled(true, false, HostKind::Standalone));
         }
 
         #[test]
-        fn dangerous_disable_https_overrides_device_default_and_standalone_opt_in() {
-            assert!(!https_enabled(false, true, true));
-            assert!(!https_enabled(true, true, false));
+        fn dangerous_disable_https_overrides_host_default_and_standalone_opt_in() {
+            assert!(!https_enabled(false, true, HostKind::ReplayOs));
+            assert!(!https_enabled(true, true, HostKind::Standalone));
         }
 
         #[test]

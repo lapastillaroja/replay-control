@@ -29,7 +29,7 @@ pub fn with_auth_guard(app: axum::Router, app_state: AppState) -> axum::Router {
         move |request: Request<axum::body::Body>, next: Next| {
             let state = app_state.clone();
             async move {
-                if !state.mode.is_device() {
+                if !state.host.is_replayos() {
                     return next.run(request).await;
                 }
                 let path = request.uri().path().to_string();
@@ -485,7 +485,8 @@ fn is_user_server_function(function: &str) -> bool {
             function,
             "get_info"
                 | "get_live_stats"
-                | "get_mode"
+                | "get_host_kind"
+                | "get_standalone_storage_selector_available"
                 | "get_favorites"
                 | "get_system_favorites"
                 | "add_favorite"

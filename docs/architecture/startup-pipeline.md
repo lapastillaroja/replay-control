@@ -144,7 +144,7 @@ The previous 10s / 60s belt-and-suspenders poll was removed: on RePlayOS the ker
 
 On storage transition (None -> Some), opens DB pools and starts the full background pipeline. On disappearance (Some -> None), closes pools.
 
-In **Standalone mode** (`--storage-path`), the watcher is a no-op: `replay.cfg` is RePlayOS-owned and not under the supplied folder, mount changes on the host are not meaningful for an off-device ROM manager, and folder-disappearance surfaces at the next ROM-read. The user-triggered `refresh_storage` server fn still runs and performs a liveness check on the standalone root.
+On a **standalone host**, the RePlayOS config watcher is inactive. The selected folder is fixed for the process lifetime; `refresh_storage` checks whether it is still available.
 
 ## ROM Watcher
 

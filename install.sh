@@ -21,6 +21,7 @@ INSTALL_DIR="/usr/local/bin"
 SITE_DIR="/usr/local/share/replay"
 SERVICE_NAME="replay-control"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+DEV_DROPIN="/etc/systemd/system/${SERVICE_NAME}.service.d/90-replay-control-dev.conf"
 ENV_FILE="/etc/default/${SERVICE_NAME}"
 AVAHI_FILE="/etc/avahi/services/${SERVICE_NAME}.service"
 DEFAULT_PORT="8080"
@@ -75,10 +76,12 @@ confirm_destructive() {
 MODE="ssh"           # ssh or local
 ACTION="install"     # install or uninstall
 DRY_RUN=false
-PURGE_DATA=false     # uninstall additionally wipes .replay-control/ and the env file
+PURGE_DATA=false     # uninstall additionally wipes settings, app data, and storage data
 ASSUME_YES=false     # skip the destructive-action confirmation prompt
 LOCAL=false
 LOCAL_DIR=""
+PACKAGE_REQUESTED=false
+PACKAGE_FILE=""
 PI_ADDR="${REPLAY_PI_ADDR:-}"
 VERSION="${REPLAY_CONTROL_VERSION:-latest}"
 TMPDIR_WORK=""
@@ -112,10 +115,11 @@ ${BOLD}FLAGS${RESET}
     --help              Show this help message
     --uninstall         Remove the app from a connected Pi via SSH
                         (preserves user data on storage, /var/lib/replay-control,
-                        and the env file)
+                        /etc/replay-control, and the env file)
     --purge             Like --uninstall but also wipes ALL Replay Control
                         data: /var/lib/replay-control/ (per-storage library
                         DBs + host-global external_metadata.db + cache),
+                        /etc/replay-control (host settings),
                         .replay-control/ on storage (user_data.db, downloaded
                         media, storage-id), and the env file. ROMs, saves,
                         captures, and BIOS are NOT touched.
@@ -126,6 +130,9 @@ ${BOLD}FLAGS${RESET}
     --dry-run           Show what would be done without making changes
     --local [DIR]       Use locally built artifacts instead of downloading
                         (default: project root, expects target/release/ and target/site/)
+    --package [FILE]    Opt in to the Debian package. Without FILE, download
+                        the release .deb; with FILE, install that local .deb.
+                        The default install uses the release archives.
 
 ${BOLD}ENVIRONMENT VARIABLES${RESET}
     REPLAY_CONTROL_VERSION  Release to install: tag, "latest" (default), or "beta"
@@ -147,6 +154,9 @@ ${BOLD}EXAMPLES${RESET}
 
     ${BOLD}Install from local build:${RESET}
         bash install.sh --local
+
+    ${BOLD}Install the release Debian package (opt in):${RESET}
+        bash install.sh --package
 
     ${BOLD}Preview what would happen:${RESET}
         bash install.sh --dry-run
@@ -204,6 +214,14 @@ parse_args() {
                     shift
                 fi
                 ;;
+            --package)
+                PACKAGE_REQUESTED=true
+                shift
+                if [[ $# -gt 0 && "$1" != --* ]]; then
+                    PACKAGE_FILE="$1"
+                    shift
+                fi
+                ;;
             --version)
                 shift
                 [[ $# -eq 0 ]] && fatal "Missing version after --version"
@@ -219,6 +237,12 @@ parse_args() {
                 ;;
         esac
     done
+    if $PACKAGE_REQUESTED && $LOCAL; then
+        fatal "--package and --local are separate install methods"
+    fi
+    if $PACKAGE_REQUESTED && [[ "$ACTION" != install ]]; then
+        fatal "--package cannot be combined with uninstall or purge"
+    fi
 }
 
 # ── Release URL resolution ─────────────────────────────────────────────────
@@ -229,10 +253,20 @@ resolve_download_urls() {
     if [[ "$VERSION" == "beta" ]]; then
         info "Querying GitHub for latest beta release..."
         local tag
-        tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" \
-            | grep -o '"tag_name": *"[^"]*"' \
-            | head -1 \
-            | sed 's/.*"\(v[^"]*\)".*/\1/')
+        local releases
+        releases=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100")
+        if command -v python3 >/dev/null; then
+            tag=$(printf '%s' "$releases" | python3 -c 'import json,sys; print(next((r["tag_name"] for r in json.load(sys.stdin) if r.get("prerelease") and not r.get("draft")), ""))')
+        elif command -v jq >/dev/null; then
+            tag=$(printf '%s' "$releases" | jq -r '[.[] | select(.prerelease == true and .draft == false) | .tag_name][0] // ""')
+        else
+            # GitHub's pretty-printed API response has one release field per
+            # line. Keep the archive installer's original shell-only baseline.
+            tag=$(printf '%s\n' "$releases" | awk -F '"' '
+                /"tag_name"[[:space:]]*:/ { tag=$4 }
+                /"prerelease"[[:space:]]*:[[:space:]]*true/ && tag ~ /^v/ { print tag; exit }
+            ')
+        fi
         if [[ -z "$tag" ]]; then
             fatal "No releases found. Check https://github.com/$REPO/releases"
         fi
@@ -282,9 +316,11 @@ prepare_local_artifacts() {
     fi
     local site_dir="$target_dir/site"
 
-    # Prefer aarch64 binary (for Pi), fall back to native
+    # dev.sh supplies its fast-profile binary for a first Pi installation.
     local binary=""
-    if [[ -f "$target_dir/aarch64-unknown-linux-gnu/release/replay-control-app" ]]; then
+    if [[ -n "${REPLAY_LOCAL_BINARY:-}" ]]; then
+        binary="$REPLAY_LOCAL_BINARY"
+    elif [[ -f "$target_dir/aarch64-unknown-linux-gnu/release/replay-control-app" ]]; then
         binary="$target_dir/aarch64-unknown-linux-gnu/release/replay-control-app"
     elif [[ -f "$target_dir/release/replay-control-app" ]]; then
         binary="$target_dir/release/replay-control-app"
@@ -384,10 +420,219 @@ fetch_artifacts() {
     fi
 }
 
-# ── Local Pi detection ──────────────────────────────────────────────────────
+# Install the explicitly requested package. Return a failure when the release
+# lacks an eligible package; never switch methods without the user's request.
+try_package_install() {
+    TMPDIR_WORK="$(mktemp -d)"
+    local package arch=arm64
+    if [[ "$MODE" != ssh ]]; then
+        arch=$(dpkg --print-architecture)
+    fi
+    [[ "$arch" == arm64 || "$arch" == amd64 ]] || return 1
+    if [[ -n "$PACKAGE_FILE" ]]; then
+        [[ -s "$PACKAGE_FILE" ]] || fatal "Package file not found: $PACKAGE_FILE"
+        package=$(basename "$PACKAGE_FILE")
+        [[ "$package" =~ ^replay-control_([0-9A-Za-z.+~-]+)_(arm64|amd64)\.deb$ ]] || fatal "Unexpected package filename: $package"
+        VERSION="v${BASH_REMATCH[1]}"
+        cp "$PACKAGE_FILE" "$TMPDIR_WORK/$package"
+    else
+        command -v curl >/dev/null || return 1
+        package="replay-control_${VERSION#v}_${arch}.deb"
+        local base="https://github.com/$REPO/releases/download/$VERSION"
+        if ! curl -fsSL -o "$TMPDIR_WORK/$package" "$base/$package"; then
+            error "No Debian package in release $VERSION"
+            return 1
+        fi
+        curl -fsSL -o "$TMPDIR_WORK/checksums.sha256" "$base/checksums.sha256" || fatal "Package checksum manifest is unavailable"
+        local expected
+        expected=$(awk -v name="$package" '$2 == name {print $1}' "$TMPDIR_WORK/checksums.sha256")
+        [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || fatal "Package checksum is missing or invalid"
+        if command -v sha256sum >/dev/null; then
+            (cd "$TMPDIR_WORK" && printf '%s  %s\n' "$expected" "$package" | sha256sum -c -) || fatal "Package checksum mismatch"
+        else
+            (cd "$TMPDIR_WORK" && printf '%s  %s\n' "$expected" "$package" | shasum -a 256 -c -) || fatal "Package checksum mismatch"
+        fi
+    fi
+    if [[ "$MODE" == ssh ]]; then
+        run_scp "$TMPDIR_WORK/$package" "${PI_USER}@${PI_ADDR}:/tmp/$package" || fatal "Could not transfer package"
+        local install_result=0
+        run_ssh bash -s -- "/tmp/$package" "${VERSION#v}" \
+            < <(declare -f install_verified_package; printf 'install_verified_package "$1" "$2"\n') \
+            || install_result=$?
+        run_ssh "rm -f /tmp/$package" || true
+        return "$install_result"
+    else
+        install_verified_package "$TMPDIR_WORK/$package" "${VERSION#v}"
+    fi
+}
 
-is_running_on_pi() {
-    [[ -f /media/sd/config/replay.cfg ]]
+install_verified_package() {
+    local deb="$1"
+    local app_version="$2"
+    if [[ -e /etc/systemd/system/replay-control.service.d/90-replay-control-dev.conf ]]; then
+        echo 'A development build is active. Run dev.sh --pi --reset before installing a package.' >&2
+        return 2
+    fi
+    local version="$app_version"
+    version=${version/-/\~}
+    command -v apt-get >/dev/null && command -v dpkg-deb >/dev/null || return 1
+    local arch
+    arch=$(dpkg --print-architecture)
+    [[ "$arch" == arm64 || "$arch" == amd64 ]] || return 1
+    local was_packaged=false
+    if dpkg-query -W -f='${Status}' replay-control 2>/dev/null | grep -q 'install ok installed'; then
+        was_packaged=true
+    fi
+    [[ $(dpkg-deb --field "$deb" Package) == replay-control &&
+       $(dpkg-deb --field "$deb" Architecture) == "$arch" &&
+       $(dpkg-deb --field "$deb" Version) == "$version" ]] || return 2
+    local apt_simulation
+    if ! apt_simulation=$(apt-get -s --reinstall --allow-downgrades install "$deb" 2>&1); then
+        if grep -qiE 'lock|could not get lock|resource temporarily unavailable' <<< "$apt_simulation"; then
+            echo 'APT is busy. Retry when the other package operation finishes.' >&2
+            return 2
+        fi
+        return 1
+    fi
+    local old_unit=/etc/systemd/system/replay-control.service
+    local backup_unit=""
+    if [[ -f "$old_unit" ]]; then
+        backup_unit=$(mktemp)
+        cp -a "$old_unit" "$backup_unit"
+    fi
+    if [[ -n "$backup_unit" ]]; then
+        printf '%s\n' "$$" > /run/replay-control-package-migration
+    fi
+    local apt_result=0
+    DEBIAN_FRONTEND=noninteractive apt-get --reinstall --allow-downgrades install -y "$deb" || apt_result=$?
+    rm -f /run/replay-control-package-migration
+    if (( apt_result != 0 )); then
+        if ! $was_packaged; then
+            DEBIAN_FRONTEND=noninteractive apt-get remove -y replay-control || true
+        fi
+        if [[ -n "$backup_unit" ]]; then
+            systemctl enable replay-control.service || true
+            systemctl restart replay-control.service || true
+        fi
+        [[ -z "$backup_unit" ]] || rm -f "$backup_unit"
+        return 2
+    fi
+    local activated=false
+    local migration_ok=true
+    if [[ -n "$backup_unit" && -e /opt/replay ]]; then
+        local legacy_root legacy_data legacy_settings legacy_args
+        legacy_args=$(sed -n 's/^REPLAY_EXTRA_ARGS=//p' /etc/default/replay-control 2>/dev/null | tail -1 || true)
+        legacy_root=$(sed -n 's/.*--storage-path[ =]\([^[:space:]]*\).*/\1/p' <<< "$legacy_args")
+        legacy_root=${legacy_root#\"}
+        legacy_root=${legacy_root%\"}
+        legacy_data=$(sed -n 's/.*--data-dir[ =]\([^[:space:]]*\).*/\1/p' <<< "$legacy_args")
+        legacy_data=${legacy_data#\"}
+        legacy_data=${legacy_data%\"}
+        legacy_settings=$(sed -n 's/.*--settings-path[ =]\([^[:space:]]*\).*/\1/p' <<< "$legacy_args")
+        legacy_settings=${legacy_settings#\"}
+        legacy_settings=${legacy_settings%\"}
+        if [[ -n "$legacy_root" && ( -z "$legacy_data" || -z "$legacy_settings" ) ]]; then
+            local archive_port archive_version
+            archive_port=$(sed -n 's/^REPLAY_PORT=//p' /etc/default/replay-control | tail -1)
+            [[ "$archive_port" =~ ^[0-9]+$ ]] || archive_port=8080
+            archive_version=$(curl -kfsSL --max-time 5 "http://127.0.0.1:$archive_port/api/version" 2>/dev/null |
+                sed -n 's/.*"version":"\([^"]*\)".*/\1/p' || true)
+            archive_version=${archive_version/-/\~}
+            if [[ -z "$archive_version" ]]; then
+                echo 'Cannot determine the archive version; retry while its service is healthy.' >&2
+                migration_ok=false
+            elif dpkg --compare-versions "$archive_version" lt '1.3.0~beta'; then
+                [[ -n "$legacy_data" ]] || legacy_data="$legacy_root/.replay-control-data"
+                [[ -n "$legacy_settings" ]] || legacy_settings="$legacy_root/.replay-control"
+            fi
+        fi
+        if ! $migration_ok || ! systemctl stop replay-control.service; then
+            migration_ok=false
+        elif [[ -n "$legacy_data" && "$legacy_data" != /var/lib/replay-control && -d "$legacy_data" ]]; then
+            # The v1 source remains authoritative on every retry, including
+            # after an interrupted copy and a period of resumed archive use.
+            cp -a "$legacy_data/." /var/lib/replay-control/ || migration_ok=false
+        fi
+        if $migration_ok && [[ -n "$legacy_settings" && "$legacy_settings" != /etc/replay-control && -f "$legacy_settings/settings.cfg" ]]; then
+            if ! mkdir -p /etc/replay-control ||
+               ! cp -a "$legacy_settings/settings.cfg" /etc/replay-control/settings.cfg; then
+                migration_ok=false
+            fi
+        fi
+    fi
+    if $migration_ok; then
+        # The old /etc unit overrides the package unit. Keep archive files
+        # until the packaged service passes health.
+        [[ -z "$backup_unit" ]] || rm -f "$old_unit"
+        if systemctl daemon-reload &&
+           systemctl enable replay-control.service &&
+           systemctl restart replay-control.service; then
+            activated=true
+        fi
+    fi
+    if ! $activated; then
+        echo 'Could not activate the packaged service or migrate v1 data' >&2
+    fi
+    local port=8443
+    if [[ -f /etc/default/replay-control ]]; then
+        local configured
+        configured=$(sed -n 's/^REPLAY_HTTPS_PORT=//p' /etc/default/replay-control | tail -1)
+        case "$configured" in
+            \"*\") configured=${configured#\"}; configured=${configured%\"} ;;
+            \'*\') configured=${configured#\'}; configured=${configured%\'} ;;
+        esac
+        [[ "$configured" =~ ^[0-9]+$ ]] && port=$configured
+    fi
+    local healthy=false
+    if $activated; then
+        for _ in {1..30}; do
+            local app_ready=false
+            if curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/version" 2>/dev/null | grep -q "\"version\":\"$app_version\""; then
+                app_ready=true
+            elif curl -kfsS --max-time 3 "https://127.0.0.1:$port/storage-setup/status" 2>/dev/null | grep -Eq '"current":null|"storage_error":"[^"]' &&
+                 curl -kfsS --max-time 3 "https://127.0.0.1:$port/storage-setup" >/dev/null 2>&1; then
+                # A standalone package serves the local setup page before a
+                # first selection, or while a configured path is unavailable.
+                app_ready=true
+            fi
+            if $app_ready; then
+                local service_pid
+                service_pid=$(systemctl show -p MainPID --value replay-control.service)
+                if [[ "$service_pid" =~ ^[0-9]+$ ]] &&
+                   [[ $(readlink "/proc/$service_pid/exe" 2>/dev/null) == /usr/bin/replay-control-app ]]; then
+                    healthy=true
+                    break
+                fi
+            fi
+            sleep 2
+        done
+    fi
+    if ! $healthy; then
+        echo 'Packaged service failed health check' >&2
+        if ! $was_packaged; then
+            if ! DEBIAN_FRONTEND=noninteractive apt-get remove -y replay-control; then
+                echo 'Rollback could not remove the Replay Control package. Run: apt-get remove replay-control' >&2
+            fi
+        fi
+        if [[ -n "$backup_unit" ]]; then
+            cp -a "$backup_unit" "$old_unit"
+            systemctl daemon-reload || true
+            systemctl enable replay-control.service || true
+            systemctl restart replay-control.service || true
+        fi
+        [[ -z "$backup_unit" ]] || rm -f "$backup_unit"
+        return 2
+    fi
+    [[ -z "$backup_unit" ]] || rm -f "$backup_unit"
+    rm -f /usr/local/bin/replay-control-app /usr/local/bin/catalog.sqlite
+    rm -rf /usr/local/share/replay/site
+    echo 'Replay Control Debian package installed and healthy'
+}
+
+# ── Local RePlayOS detection ────────────────────────────────────────────────
+
+is_replayos_host() {
+    [[ -e /opt/replay ]]
 }
 
 # ── Pi discovery ────────────────────────────────────────────────────────────
@@ -523,13 +768,11 @@ Type=simple
 AllowedCPUs=1-3
 Environment=REPLAY_PORT=8080
 Environment=REPLAY_HTTPS_PORT=8443
-Environment=REPLAY_EXTRA_ARGS=
 EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --https-port ${REPLAY_HTTPS_PORT} \
-    --site-root ${REPLAY_SITE_ROOT} \
-    $REPLAY_EXTRA_ARGS
+    --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/replay-control.log
@@ -551,16 +794,6 @@ REPLAY_HTTPS_PORT=8443
 
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
-
-# Extra CLI args. Dangerous debug flags must be explicit here, for example:
-#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
-REPLAY_EXTRA_ARGS=
-
-# Uncomment to override auto-detected storage path
-#REPLAY_STORAGE_PATH=/media/sd
-
-# Uncomment to override auto-detected config path
-#REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
 # Advanced: hash-identification workers for library rebuilds/rescans.
 # Default is 2 workers for every storage class. Valid range: 1-4.
@@ -588,6 +821,18 @@ AVAHI
 # ── Local install (running directly on the Pi) ─────────────────────────────
 
 install_local() {
+    if $PACKAGE_REQUESTED; then
+        if $DRY_RUN; then
+            dry "Would install Debian package ${PACKAGE_FILE:-from release $VERSION} on this machine"
+            return
+        fi
+        [[ -n "$PACKAGE_FILE" ]] || resolve_download_urls
+        try_package_install || fatal "Debian package installation failed or is unsupported"
+        return
+    fi
+    if command -v dpkg-query >/dev/null && dpkg-query -S /usr/bin/replay-control-app >/dev/null 2>&1; then
+        fatal "Archive installer cannot replace package-owned files"
+    fi
     fetch_artifacts
 
     if $DRY_RUN; then
@@ -672,6 +917,20 @@ install_ssh() {
     discover_pi
     check_ssh_connectivity
     setup_askpass
+    if $PACKAGE_REQUESTED; then
+        if $DRY_RUN; then
+            dry "Would install Debian package ${PACKAGE_FILE:-from release $VERSION} on ${PI_ADDR}"
+            teardown_askpass
+            return
+        fi
+        [[ -n "$PACKAGE_FILE" ]] || resolve_download_urls
+        try_package_install || fatal "Debian package installation failed or is unsupported on Pi"
+        teardown_askpass
+        return
+    fi
+    if run_ssh "dpkg-query -S /usr/bin/replay-control-app >/dev/null 2>&1"; then
+        fatal "Archive installer cannot replace package-owned files on Pi"
+    fi
     fetch_artifacts
 
     if $DRY_RUN; then
@@ -762,13 +1021,11 @@ Type=simple
 AllowedCPUs=1-3
 Environment=REPLAY_PORT=8080
 Environment=REPLAY_HTTPS_PORT=8443
-Environment=REPLAY_EXTRA_ARGS=
 EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --https-port ${REPLAY_HTTPS_PORT} \
-    --site-root ${REPLAY_SITE_ROOT} \
-    $REPLAY_EXTRA_ARGS
+    --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/replay-control.log
@@ -797,16 +1054,6 @@ REPLAY_HTTPS_PORT=8443
 
 # Path to static site assets
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
-
-# Extra CLI args. Dangerous debug flags must be explicit here, for example:
-#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
-REPLAY_EXTRA_ARGS=
-
-# Uncomment to override auto-detected storage path
-#REPLAY_STORAGE_PATH=/media/sd
-
-# Uncomment to override auto-detected config path
-#REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
 # Advanced: hash-identification workers for library rebuilds/rescans.
 # Default is 2 workers for every storage class. Valid range: 1-4.
@@ -876,6 +1123,7 @@ maybe_confirm_purge() {
     echo ""
     warn "${BOLD}--purge${RESET}${YELLOW} will delete all Replay Control data on the Pi:${RESET}"
     echo "  - ${ENV_FILE}"
+    echo "  - /etc/replay-control/  (host settings)"
     echo "  - /var/lib/replay-control/  (central per-storage library DBs)"
     for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
         echo "  - ${root}/.replay-control/  (user_data.db, downloaded media, storage-id)"
@@ -891,12 +1139,18 @@ uninstall_local() {
     maybe_confirm_purge
 
     if $DRY_RUN; then
+        if command -v dpkg-query >/dev/null &&
+           dpkg-query -W -f='${Status}' replay-control 2>/dev/null | grep -q 'install ok installed'; then
+            dry "Would run: apt-get remove -y replay-control"
+        fi
         dry "Would stop and disable ${SERVICE_NAME}"
         dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app ${INSTALL_DIR}/catalog.sqlite"
+        dry "Would remove: ${DEV_DROPIN}"
         dry "Would remove: ${SITE_DIR}"
         dry "Would run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "Would remove: ${ENV_FILE}"
+            dry "Would remove: /etc/replay-control/ (host settings)"
             dry "Would remove: /var/lib/replay-control/ (per-storage library DBs + host-global external_metadata.db + cache)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "Would remove: ${root}/.replay-control/ (if present)"
@@ -908,15 +1162,21 @@ uninstall_local() {
     fi
 
     info "Uninstalling locally..."
+    if command -v dpkg-query >/dev/null && dpkg-query -W -f='${Status}' replay-control 2>/dev/null | grep -q 'install ok installed'; then
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y replay-control
+    fi
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app" "$INSTALL_DIR/catalog.sqlite"
+    rm -f "$DEV_DROPIN"
+    rmdir "$(dirname "$DEV_DROPIN")" 2>/dev/null || true
     rm -rf "$SITE_DIR"
     systemctl daemon-reload
 
     if $PURGE_DATA; then
         info "Purging Replay Control data..."
         rm -f "$ENV_FILE"
+        rm -rf /etc/replay-control
         if [[ -d /var/lib/replay-control ]]; then
             info "  removing /var/lib/replay-control"
             rm -rf /var/lib/replay-control
@@ -942,9 +1202,13 @@ uninstall_ssh() {
     if $DRY_RUN; then
         dry "Would set up SSH_ASKPASS for password automation"
         dry "Would run uninstall commands on Pi via SSH:"
+        if run_ssh "dpkg-query -W -f='\${Status}' replay-control 2>/dev/null | grep -q 'install ok installed'"; then
+            dry "  - Run: apt-get remove -y replay-control"
+        fi
         dry "  - Run: systemctl stop ${SERVICE_NAME}"
         dry "  - Run: systemctl disable ${SERVICE_NAME}"
         dry "  - Remove: ${SERVICE_FILE}"
+        dry "  - Remove: ${DEV_DROPIN}"
         dry "  - Remove: ${AVAHI_FILE}"
         dry "  - Remove: ${INSTALL_DIR}/replay-control-app"
         dry "  - Remove: ${INSTALL_DIR}/catalog.sqlite"
@@ -952,6 +1216,7 @@ uninstall_ssh() {
         dry "  - Run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "  - Remove: ${ENV_FILE}"
+            dry "  - Remove: /etc/replay-control/ (host settings)"
             dry "  - Remove: /var/lib/replay-control/ (per-storage library DBs + host-global external_metadata.db + cache)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "  - Remove: ${root}/.replay-control/ (if present)"
@@ -976,9 +1241,14 @@ uninstall_ssh() {
     run_ssh PURGE_DATA="$PURGE_DATA" bash -s <<'REMOTE_UNINSTALL'
 set -euo pipefail
 
+if dpkg-query -W -f='${Status}' replay-control 2>/dev/null | grep -q 'install ok installed'; then
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y replay-control
+fi
 systemctl stop replay-control 2>/dev/null || true
 systemctl disable replay-control 2>/dev/null || true
 rm -f /etc/systemd/system/replay-control.service
+rm -f /etc/systemd/system/replay-control.service.d/90-replay-control-dev.conf
+rmdir /etc/systemd/system/replay-control.service.d 2>/dev/null || true
 rm -f /etc/avahi/services/replay-control.service
 rm -f /usr/local/bin/replay-control-app
 rm -f /usr/local/bin/catalog.sqlite
@@ -987,6 +1257,7 @@ systemctl daemon-reload
 
 if [[ "${PURGE_DATA:-false}" == "true" ]]; then
     rm -f /etc/default/replay-control
+    rm -rf /etc/replay-control
     if [[ -d /var/lib/replay-control ]]; then
         echo "Removing /var/lib/replay-control/"
         rm -rf /var/lib/replay-control
@@ -1024,10 +1295,16 @@ main() {
     fi
     echo ""
 
-    # Auto-detect: if running on a RePlayOS Pi and no explicit mode was chosen, install locally.
-    if [[ "$MODE" == "ssh" ]] && [[ -z "$PI_ADDR" ]] && is_running_on_pi; then
-        MODE="local"
-        info "Detected RePlayOS — installing locally (no SSH needed)"
+    # A local package can be installed before any storage selection exists.
+    if [[ "$MODE" == "ssh" ]] && [[ -z "$PI_ADDR" ]]; then
+        if is_replayos_host; then
+            MODE="local"
+            info "Detected RePlayOS — running locally (no SSH needed)"
+        elif $PACKAGE_REQUESTED && command -v dpkg >/dev/null &&
+             [[ $(dpkg --print-architecture) =~ ^(arm64|amd64)$ ]]; then
+            MODE="local"
+            info "Installing the Debian package on this machine"
+        fi
     fi
 
     case "${ACTION}-${MODE}" in

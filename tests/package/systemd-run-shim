@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+
+# The rootless container has no working systemd manager. Run the package helper
+# outside the app process and return immediately, like systemd-run --no-block.
+while [[ $# -gt 0 && $1 == --* ]]; do shift; done
+[[ $# -ge 1 ]] || exit 1
+nohup "$@" </dev/null >/var/log/replay-control-package-update.log 2>&1 &
+echo $! > /run/replay-control-package-update-test.pid

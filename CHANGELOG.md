@@ -6,8 +6,13 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [Unreleased]
 
+## [1.3.0-beta.1]
+
+> Expanded RePlayOS 2.x support, including new systems and game formats.
+
 ### Added
 
+- **Optional Replay Control packages.** Install on Debian 13 (arm64 or amd64) or Fedora 42 (x86_64), with a desktop shortcut and updates through **Update Now**. Existing RePlayOS installs can move from the 1.0 archive installer without losing settings or library data. Standalone use is experimental and unsupported.
 - **Atari Jaguar CD support.** A separate `atari_jaguarcd` library for `.cue` and `.cdi` games, with metadata, artwork, manuals, a dedicated icon, and RetroAchievements identification. Launching requires a RePlayOS build that supports the system.
 - **Nintendo GameCube and PlayStation 2 support.** Browse GameCube games in `nintendo_gc` (`.rvz`, `.iso`) and PS2 games in `sony_ps2` (`.elf`, `.iso`, `.ciso`, `.cue`, `.gz`, `.chd`, `.cso`, `.zso`, `.m3u`), with metadata, artwork, and system icons. PS2 playlists group their discs and include their combined size. Launching requires a compatible RePlayOS build.
 - **RetroAchievements identification for GameCube and PS2 disc images**, including supported compressed formats, with bundled achievement catalogs. Library identification does not imply that the RePlayOS core supports earning achievements on-device.
@@ -21,6 +26,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Updated the RePlayOS integration for the 2.x API, including configuration responses, public version discovery, and expanded playtime fields.
 - Unified compact playback and settings controls, with more consistent spacing, mobile layout, and separation between the connection indicator and its text.
 - Installed and development-deployed services keep Replay Control off CPU 0, leaving it available for RePlayOS and using the remaining detected CPUs. Installation now requires at least two CPUs.
+- New installs no longer use the optional `REPLAY_EXTRA_ARGS` service setting; existing 1.0 installs can still be migrated. Use the dedicated port settings to change the listening ports.
 - Added or refreshed controller artwork for Atari Jaguar, Jaguar CD, Philips CD-i, GameCube, and PS2, and simplified the system-icon generation script.
 - Simplified the README quick start and clarified where to find the device IP address.
 - Internal: added archive and disc-image reader dependencies for built-in ZIP extraction and the newly supported disc formats.

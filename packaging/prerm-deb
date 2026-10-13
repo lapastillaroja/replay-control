@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ]; then
+    systemctl stop replay-control.service || true
+    systemctl disable replay-control.service || true
+fi

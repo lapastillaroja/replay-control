@@ -694,36 +694,34 @@ def clean_settings():
     wait_for_app(60)
 
 
-# ── Device-mode fixture (auth tests) ─────────────────────────────────
+# ── RePlayOS fixture (auth tests) ─────────────────────────────────
 #
-# The container normally boots standalone (`--storage-path`, guard bypassed).
-# This fixture relaunches the in-container app in *device* mode (no
-# --storage-path → is_device() via the /opt/replay marker) with first-setup done
+# The container normally boots standalone. This fixture creates /opt/replay
+# before relaunching the app as a RePlayOS host with first setup done
 # and a known root password, so the auth guard + login flow can be exercised.
-# Shared here so any future device-mode test can reuse it.
+# Shared here so any future RePlayOS host test can reuse it.
 
-# In device mode the settings store falls back to /etc/replay-control (see
-# resolve_settings_store in api/mod.rs), NOT the storage's .replay-control dir.
-DEVICE_SETTINGS_DIR = "/etc/replay-control"
+# RePlayOS settings live under /etc/replay-control.
+REPLAYOS_SETTINGS_DIR = "/etc/replay-control"
 
 # Known device (root) password so login_admin can verify it via /etc/shadow
 # (needs python3 + libcrypt1, added to Containerfile.replayos).
 ADMIN_PW = "replaytest123"
 
-_DEVICE_PIDFILE = "/var/run/replay-control-device-e2e.pid"
+_REPLAYOS_PIDFILE = "/var/run/replay-control-replayos-e2e.pid"
 # nohup + </dev/null + /proc/1/fd redirection keeps the detached instance alive
 # after the podman-exec session closes (same trick as mock_systemctl.sh); the
 # pidfile lets teardown stop exactly this instance.
-_DEVICE_LAUNCH = (
+_REPLAYOS_LAUNCH = (
     "nohup /usr/local/bin/replay-control-app --dangerous-disable-https "
     "--dangerous-allow-insecure-auth-over-http --port 8080 "
     "--site-root /usr/local/share/replay/site "
-    f"</dev/null >/proc/1/fd/1 2>/proc/1/fd/2 & echo $! > {_DEVICE_PIDFILE}"
+    f"</dev/null >/proc/1/fd/1 2>/proc/1/fd/2 & echo $! > {_REPLAYOS_PIDFILE}"
 )
 
 
-def _start_device_mode(first_setup_done: bool):
-    """Stop standalone and relaunch the app in device mode with a known root
+def _start_replayos(first_setup_done: bool):
+    """Stop standalone and relaunch the app on a RePlayOS host with a known root
     password. `first_setup_done` controls whether the guard enforces role gating
     (True) or shows the first-setup flow (False)."""
     _require_container()
@@ -731,22 +729,23 @@ def _start_device_mode(first_setup_done: bool):
     time.sleep(1)
     done = "true" if first_setup_done else "false"
     exec_cmd(
+        'mkdir -p /opt/replay; touch /opt/replay/launcher; '
         'sed -i "/^system_storage/d" /media/sd/config/replay.cfg 2>/dev/null || true; '
         'printf "system_storage = \\"usb\\"\\n" >> /media/sd/config/replay.cfg; '
-        f"mkdir -p {DEVICE_SETTINGS_DIR}; "
-        f'sed -i "/^first_setup_done/d" {DEVICE_SETTINGS_DIR}/settings.cfg 2>/dev/null || true; '
-        f'printf "first_setup_done = \\"{done}\\"\\n" >> {DEVICE_SETTINGS_DIR}/settings.cfg; '
+        f"mkdir -p {REPLAYOS_SETTINGS_DIR}; "
+        f'sed -i "/^first_setup_done/d" {REPLAYOS_SETTINGS_DIR}/settings.cfg 2>/dev/null || true; '
+        f'printf "first_setup_done = \\"{done}\\"\\n" >> {REPLAYOS_SETTINGS_DIR}/settings.cfg; '
         f"echo 'root:{ADMIN_PW}' | chpasswd"
     )
-    exec_cmd(_DEVICE_LAUNCH)
+    exec_cmd(_REPLAYOS_LAUNCH)
     wait_for_app(timeout=60)
 
 
-def _stop_device_mode():
-    """Stop the device instance and restore the standalone service."""
+def _stop_replayos():
+    """Stop the RePlayOS instance and restore the standalone service."""
     exec_cmd(
-        f"[ -f {_DEVICE_PIDFILE} ] && kill $(cat {_DEVICE_PIDFILE}) 2>/dev/null || true; "
-        f"rm -f {_DEVICE_PIDFILE}"
+        f"[ -f {_REPLAYOS_PIDFILE} ] && kill $(cat {_REPLAYOS_PIDFILE}) 2>/dev/null || true; "
+        f"rm -f {_REPLAYOS_PIDFILE} /opt/replay/launcher; rmdir /opt/replay 2>/dev/null || true"
     )
     time.sleep(1)
     exec_cmd("systemctl start replay-control >/dev/null 2>&1 || true")
@@ -754,16 +753,16 @@ def _stop_device_mode():
 
 
 @pytest.fixture(scope="module")
-def device_mode_app():
-    """Device mode with first-setup already done (guard enforces role gating)."""
-    _start_device_mode(first_setup_done=True)
+def replayos_app():
+    """RePlayOS host with first-setup already done (guard enforces role gating)."""
+    _start_replayos(first_setup_done=True)
     yield
-    _stop_device_mode()
+    _stop_replayos()
 
 
 @pytest.fixture(scope="module")
-def device_mode_first_setup():
-    """Device mode with first-setup PENDING (the /first-setup flow is active)."""
-    _start_device_mode(first_setup_done=False)
+def replayos_first_setup():
+    """RePlayOS host with first-setup PENDING (the /first-setup flow is active)."""
+    _start_replayos(first_setup_done=False)
     yield
-    _stop_device_mode()
+    _stop_replayos()

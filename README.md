@@ -103,15 +103,22 @@ Planned, not yet available (in no particular order):
 
 You need a Raspberry Pi running [RePlayOS](https://www.replayos.com/) and a computer, phone, or tablet on the same network.
 
-1. From Windows 10+, macOS, or Linux, SSH into your Pi and run the installer:
+1. From Windows 10+, macOS, or Linux, SSH into your Pi:
 
 ```bash
 ssh root@replay.local
 # default password: replayos
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-2. On a device connected to the same network, open **[https://replay.local:8443](https://replay.local:8443)** in a browser.
+2. Once the Pi shell opens, run the installer:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash
+```
+
+3. On a device connected to the same network, open **[https://replay.local:8443](https://replay.local:8443)** in a browser.
 
 Your browser will show a security warning because Replay Control uses a local self-signed certificate. Approve the exception to continue, then follow the first-time setup screen.
 
@@ -123,10 +130,19 @@ For setup help and what to do next, see the [Getting Started guide](https://lapa
 
 The Quick Start command installs the latest stable release. Run the same command again on the Pi to update Replay Control.
 
-To uninstall while preserving settings and downloaded library data, run on the Pi:
+To uninstall while preserving settings and downloaded library data, connect to the Pi:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --uninstall
+ssh root@replay.local
+# default password: replayos
+```
+
+Then run:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash -s -- --uninstall
 ```
 
 For specific versions, remote installation, a complete data purge, and other options, see the [Installation guide](https://lapastillaroja.github.io/replay-control/docs/features/installation/).
@@ -148,8 +164,8 @@ RePlayOS is a Linux distribution featuring a custom libretro frontend for retro 
 ## Build & Run
 
 ```bash
-# Local development (auto-rebuild + reload)
-./dev.sh --storage-path /path/to/roms
+# Fast local build
+./dev.sh --build-only
 
 # Deploy to Pi
 ./dev.sh --pi [IP]

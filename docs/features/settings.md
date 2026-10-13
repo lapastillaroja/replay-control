@@ -12,6 +12,8 @@ On desktop, the page uses a two-pane layout: a sticky sidebar with scroll-spy na
 
 The seven sections are: **Appearance**, **Library & Games**, **Device Network**, **Access & Security**, **RePlayOS**, **Updates**, and **System**.
 
+On standalone Debian and Fedora package installs, **Library & Games > Storage location** opens the same folder selector used at first startup. Open Replay Control through `localhost` on the computer running it. When you connect through a LAN address, the row stays visible but is disabled and explains how to open it locally; remote browsers cannot browse or change host folders. Choose the storage root containing `roms/`, with `bios/`, `saves/`, `captures/`, `config/`, and `skins/` as optional siblings. Replay Control checks the new location before switching; if it cannot start with the new library, it restores the previous selection. This control is not shown on RePlayOS.
+
 ## Navigation Rule
 
 The main Settings page should stay scannable. Keep summaries and low-risk, single-step preferences inline, such as text size, app language, region preference, update channel, analytics, connection status, and live system information.

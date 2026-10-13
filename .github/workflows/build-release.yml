@@ -20,7 +20,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Cross sysroot sets the oldest glibc/library ABI supported by the .deb.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,19 +54,22 @@ jobs:
             mold \
             p7zip-full \
             unzip
+          sudo apt-get install -y dpkg-dev rpm
           # Make mold discoverable by aarch64 cross-compiler
           sudo ln -sf /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.127
+        run: cargo install wasm-bindgen-cli@0.2.129
 
       - name: Download TGDB lookup tables
         env:
           TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
         run: ./scripts/download-tgdb-lookups.sh
 
-      - name: Build (WASM + aarch64 server)
-        run: ./build.sh aarch64
+      - name: Build (WASM + arm64 and amd64 servers)
+        run: |
+          ./build.sh aarch64
+          ./build.sh amd64 --server-only
 
       - name: Package release archives
         run: |
@@ -76,6 +80,9 @@ jobs:
             echo "Release tag $tag does not match app version v$app_version" >&2
             exit 1
           fi
+          ./scripts/package-deb.sh "${{ inputs.tag || github.ref_name }}" arm64
+          ./scripts/package-deb.sh "${{ inputs.tag || github.ref_name }}" amd64
+          ./scripts/package-rpm.sh "${{ inputs.tag || github.ref_name }}"
           tar -czf replay-control-app-aarch64-linux.tar.gz \
               -C target/aarch64-unknown-linux-gnu/release \
               replay-control-app
@@ -90,6 +97,9 @@ jobs:
               replay-control-app-aarch64-linux.tar.gz \
               replay-site.tar.gz \
               replay-catalog.tar.gz \
+              replay-control_*_arm64.deb \
+              replay-control_*_amd64.deb \
+              replay-control-*-1.x86_64.rpm \
               install.sh \
               > checksums.sha256
 
@@ -118,6 +128,9 @@ jobs:
             replay-control-app-aarch64-linux.tar.gz \
             replay-site.tar.gz \
             replay-catalog.tar.gz \
+            replay-control_*_arm64.deb \
+            replay-control_*_amd64.deb \
+            replay-control-*-1.x86_64.rpm \
             install.sh \
             checksums.sha256 \
             --clobber

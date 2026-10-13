@@ -16,6 +16,7 @@ mod common;
 
 use axum::body::Body;
 use axum::http::Request;
+use replay_control_core::runtime_env::HostKind;
 use tower::ServiceExt;
 
 use common::{assert_json_ok, test_api_router};
@@ -48,6 +49,7 @@ fn unpopulated_state() -> (replay_control_app::api::AppState, std::path::PathBuf
     std::fs::write(tmp.join("config/replay.cfg"), "storage_mode=sd\n").unwrap();
 
     let state = replay_control_app::api::AppState::new(
+        HostKind::Standalone,
         Some(tmp.to_string_lossy().into_owned()),
         None,
         None,

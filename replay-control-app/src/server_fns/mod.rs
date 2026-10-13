@@ -1,4 +1,4 @@
-use replay_control_core::runtime_env::Mode;
+use replay_control_core::runtime_env::HostKind;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::boxart::resolve_effective_box_art_url;
 #[cfg(feature = "ssr")]
@@ -250,7 +250,7 @@ pub struct SystemInfo {
     pub available_ram_mb: Option<u64>,
     /// Whether the app is running on the RePlayOS device or in standalone mode.
     /// Drives gating of device-only settings (Wi-Fi, NFS, reboot, …).
-    pub mode: Mode,
+    pub host: HostKind,
 }
 
 /// Live-updating system stats for the settings page.

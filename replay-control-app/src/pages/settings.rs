@@ -13,6 +13,7 @@ use crate::server_fns;
 use crate::server_fns::SystemLiveStats;
 use crate::util::{format_elapsed_short, format_storage_size};
 use replay_control_core::auth::{AuthRole, AuthStatus};
+use replay_control_core::runtime_env::StorageSelectorAccess;
 use replay_control_core::update::{ChangelogEntry, UpdateChannel, UpdateState};
 
 /// Section definitions: (ID, i18n key) — single source of truth for sidebar + scroll-spy.
@@ -43,7 +44,8 @@ struct AppearanceValues {
 #[derive(Clone, Serialize, Deserialize)]
 struct LibraryGamesValues {
     admin_unlocked: bool,
-    on_device: bool,
+    on_replayos: bool,
+    storage_selector_access: StorageSelectorAccess,
     region: String,
     region_secondary: String,
     language_primary: String,
@@ -53,7 +55,7 @@ struct LibraryGamesValues {
 #[derive(Clone, Serialize, Deserialize)]
 struct GateValues {
     admin_unlocked: bool,
-    on_device: bool,
+    on_replayos: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -70,14 +72,15 @@ async fn load_appearance_values() -> Result<AppearanceValues, ServerFnError> {
 }
 
 async fn load_library_games_values() -> Result<LibraryGamesValues, ServerFnError> {
-    let mode = server_fns::get_mode().await?;
+    let host_kind = server_fns::get_host_kind().await?;
     let auth_status = server_fns::get_auth_status().await?;
     let admin_unlocked = admin_settings_unlocked(&auth_status);
     let (language_primary, language_secondary) = server_fns::get_language_preference().await?;
 
     Ok(LibraryGamesValues {
         admin_unlocked,
-        on_device: mode.is_device(),
+        on_replayos: host_kind.is_replayos(),
+        storage_selector_access: server_fns::get_standalone_storage_selector_available().await?,
         region: server_fns::get_region_preference().await?,
         region_secondary: server_fns::get_region_preference_secondary().await?,
         language_primary,
@@ -86,12 +89,12 @@ async fn load_library_games_values() -> Result<LibraryGamesValues, ServerFnError
 }
 
 async fn load_gate_values() -> Result<GateValues, ServerFnError> {
-    let mode = server_fns::get_mode().await?;
+    let host_kind = server_fns::get_host_kind().await?;
     let auth_status = server_fns::get_auth_status().await?;
 
     Ok(GateValues {
         admin_unlocked: admin_settings_unlocked(&auth_status),
-        on_device: mode.is_device(),
+        on_replayos: host_kind.is_replayos(),
     })
 }
 
@@ -186,7 +189,7 @@ fn LibraryGamesSection() -> impl IntoView {
                     {move || Suspend::new(async move {
                         match values.await {
                             Ok(values) => {
-                                let device_hint_key = if values.on_device {
+                                let replayos_hint_key = if values.on_replayos {
                                     Key::SettingsAdminOnlyDisabled
                                 } else {
                                     Key::SettingsDeviceOnlyDisabled
@@ -194,10 +197,16 @@ fn LibraryGamesSection() -> impl IntoView {
                                 view! {
                                     <div class="menu-list">
                                         {menu_item("\u{1F4DA}", Key::MoreMetadata, values.admin_unlocked.then_some("/settings/game-library"))}
-                                        {menu_item("\u{1F3C6}", Key::MoreRetroAchievements, (values.on_device && values.admin_unlocked).then_some("/settings/retroachievements"))}
+                                        <Show when=move || values.storage_selector_access != StorageSelectorAccess::Unavailable>
+                                            <StandaloneStorageMenuItem access=values.storage_selector_access />
+                                        </Show>
+                                        {menu_item("\u{1F3C6}", Key::MoreRetroAchievements, (values.on_replayos && values.admin_unlocked).then_some("/settings/retroachievements"))}
                                     </div>
-                                    <Show when=move || !values.on_device || !values.admin_unlocked>
-                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    <Show when=move || values.storage_selector_access == StorageSelectorAccess::Remote>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), Key::StandaloneStorageLocalHint)}</p>
+                                    </Show>
+                                    <Show when=move || !values.on_replayos || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), replayos_hint_key)}</p>
                                     </Show>
 
                                     <div class="settings-inline-setting">
@@ -246,20 +255,20 @@ fn DeviceNetworkSection() -> impl IntoView {
                     {move || Suspend::new(async move {
                         match values.await {
                             Ok(values) => {
-                                let device_href = move |href: &'static str| (values.on_device && values.admin_unlocked).then_some(href);
-                                let device_hint_key = if values.on_device {
+                                let replayos_href = move |href: &'static str| (values.on_replayos && values.admin_unlocked).then_some(href);
+                                let replayos_hint_key = if values.on_replayos {
                                     Key::SettingsAdminOnlyDisabled
                                 } else {
                                     Key::SettingsDeviceOnlyDisabled
                                 };
                                 view! {
                                     <div class="menu-list">
-                                        {menu_item("\u{1F4F6}", Key::MoreWifi, device_href("/settings/wifi"))}
-                                        {menu_item("\u{1F4C1}", Key::MoreNfs, device_href("/settings/nfs"))}
-                                        {menu_item("\u{1F4BB}", Key::MoreHostname, device_href("/settings/hostname"))}
+                                        {menu_item("\u{1F4F6}", Key::MoreWifi, replayos_href("/settings/wifi"))}
+                                        {menu_item("\u{1F4C1}", Key::MoreNfs, replayos_href("/settings/nfs"))}
+                                        {menu_item("\u{1F4BB}", Key::MoreHostname, replayos_href("/settings/hostname"))}
                                     </div>
-                                    <Show when=move || !values.on_device || !values.admin_unlocked>
-                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    <Show when=move || !values.on_replayos || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), replayos_hint_key)}</p>
                                     </Show>
                                 }
                                     .into_any()
@@ -317,17 +326,17 @@ fn ReplayOsSection() -> impl IntoView {
                     {move || Suspend::new(async move {
                         match values.await {
                             Ok(values) => {
-                                let device_hint_key = if values.on_device {
+                                let replayos_hint_key = if values.on_replayos {
                                     Key::SettingsAdminOnlyDisabled
                                 } else {
                                     Key::SettingsDeviceOnlyDisabled
                                 };
                                 view! {
                                     <div class="menu-list">
-                                        {menu_item("\u{1F4E1}", Key::ReplayOsSettingsTitle, (values.on_device && values.admin_unlocked).then_some("/settings/replayos"))}
+                                        {menu_item("\u{1F4E1}", Key::ReplayOsSettingsTitle, (values.on_replayos && values.admin_unlocked).then_some("/settings/replayos"))}
                                     </div>
-                                    <Show when=move || !values.on_device || !values.admin_unlocked>
-                                        <p class="form-hint">{move || t(i18n.locale.get(), device_hint_key)}</p>
+                                    <Show when=move || !values.on_replayos || !values.admin_unlocked>
+                                        <p class="form-hint">{move || t(i18n.locale.get(), replayos_hint_key)}</p>
                                     </Show>
                                 }
                                     .into_any()
@@ -1234,6 +1243,30 @@ fn menu_item(icon: &'static str, label_key: Key, href: Option<&'static str>) -> 
         >
             <span class="menu-icon">{icon}</span>
             <span class="menu-label">{label}</span>
+            <span class="menu-chevron">{"\u{203A}"}</span>
+        </a>
+    }
+}
+
+#[component]
+fn StandaloneStorageMenuItem(access: StorageSelectorAccess) -> impl IntoView {
+    let i18n = use_i18n();
+    let local = access == StorageSelectorAccess::Local;
+    let href = if local { "/storage-setup" } else { "#" };
+    let class = if local {
+        "menu-item"
+    } else {
+        "menu-item menu-item-disabled"
+    };
+    let on_click = move |event: leptos::ev::MouseEvent| {
+        if !local {
+            event.prevent_default();
+        }
+    };
+    view! {
+        <a href=href rel="external" class=class aria-disabled=if local { "false" } else { "true" } tabindex=if local { "0" } else { "-1" } on:click=on_click>
+            <span class="menu-icon">{"\u{1F4C1}"}</span>
+            <span class="menu-label">{move || t(i18n.locale.get(), Key::StandaloneStorageLocation)}</span>
             <span class="menu-chevron">{"\u{203A}"}</span>
         </a>
     }

@@ -39,7 +39,9 @@ The Cargo linker config is already set up in `.cargo/config.toml`.
 
 ## Building
 
-### Release build
+Packages are the standard developer output for validating deployable builds. The public RePlayOS installer still uses the archive by default; package installation remains opt-in.
+
+### Build release artifacts
 
 ```bash
 ./build.sh              # x86_64
@@ -48,17 +50,25 @@ The Cargo linker config is already set up in `.cargo/config.toml`.
 
 Produces a server binary and site assets at `target/site/`.
 
+### Build packages
+
+On an x86_64 machine with `rpmbuild` installed, build the Fedora RPM from the current Cargo version:
+
+```bash
+./build.sh amd64
+./scripts/package-rpm.sh
+```
+
+The RPM is written to the repository root. On the Ubuntu 22.04 package baseline, run `./scripts/package-deb.sh amd64` after the same build to create the Debian package. For the Pi's arm64 package, run `./build.sh aarch64` and `./scripts/package-deb.sh arm64` with the cross-toolchain installed. See [Package Distribution](docs/architecture/package-distribution.md#building-packages-locally) for the compatibility baseline and release packaging flow.
+
 ### Development build
 
 ```bash
-./dev.sh --storage-path /path/to/roms
+./dev.sh --pi
+./dev.sh --build-only
 ```
 
-This builds both WASM (`wasm-dev-fast` profile) and the SSR server (`dev-fast` profile), then starts `cargo-watch` for auto-rebuild and reload on file changes. The app runs on port 8091 by default.
-
-Options:
-- `--storage-path /path/to/roms` — path to ROM storage (required for local dev)
-- `--port 8091` — override the default port
+Both commands build WASM (`wasm-dev-fast`) and the SSR server (`dev-fast`). The first deploys the latest build to the Pi; the second makes native artifacts for local or container tests without deploying.
 
 Set `REPLAY_DEV_WASM_PROFILE=wasm-dev` and/or `REPLAY_DEV_SERVER_PROFILE=dev` when smaller dev artifacts are more important than rebuild latency.
 
@@ -66,8 +76,9 @@ Set `REPLAY_DEV_WASM_PROFILE=wasm-dev` and/or `REPLAY_DEV_SERVER_PROFILE=dev` wh
 ## Running Locally
 
 ```bash
-# Development mode with auto-reload
-./dev.sh --storage-path /path/to/roms
+# Build fast local artifacts, then run the server
+./dev.sh --build-only
+./target/dev-fast/replay-control-app --storage-path /path/to/roms --site-root target/site
 
 # Or run a release build manually
 ./build.sh
@@ -155,6 +166,7 @@ work is no-oped.
 ```
 
 If no IP is specified, defaults to `replay.local`.
+This command builds the latest code and deploys it over an archive or Debian package installation. On a clean Pi it calls `install.sh` once to set up the archive service. Development artifacts live outside package-owned paths; `./dev.sh --pi --reset` returns to the installed build. To install a prebuilt package instead, use `bash install.sh --package ./replay-control_VERSION_arm64.deb --ip [IP]`.
 
 ### Release deploy
 

@@ -491,7 +491,7 @@ async fn sfn_dismiss_setup_returns_200() {
 /// restart and the OS doesn't own `replay.cfg` off-device. The response is
 /// the dedicated "Save skipped (standalone mode)" string; the file on disk
 /// must remain unchanged. (The form param is `auth_mode` post-rename; the
-/// previous `mode` collided lexically with `state.mode: Mode`.)
+/// previous `mode` collided lexically with `state.host: HostKind`.)
 #[tokio::test(flavor = "multi_thread")]
 async fn sfn_wifi_save_in_standalone_skips_write_and_restart() {
     setup();

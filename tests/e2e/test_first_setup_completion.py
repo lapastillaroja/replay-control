@@ -1,11 +1,11 @@
 """
-End-to-end coverage for completing the first-setup flow (device mode).
+End-to-end coverage for completing the first-setup flow (RePlayOS host).
 
 `test_first_setup.py` covers the *gate* (unauthenticated requests redirect to
 /first-setup). This covers actually *completing* it: entering the device password
 on /first-setup runs `complete_first_setup`, which verifies the OS root password,
-persists `first_setup_done`, and opens an admin session. Needs the device-mode
-container (python3 + a known root password); reuses the `device_mode_first_setup`
+persists `first_setup_done`, and opens an admin session. Needs the RePlayOS host
+container (python3 + a known root password); reuses the `replayos_first_setup`
 fixture, which boots with first-setup pending.
 
 The wrong-password test runs first so it leaves setup pending for the completion
@@ -18,18 +18,18 @@ from playwright.sync_api import expect
 from conftest import (
     ADMIN_PW,
     CONTAINER,
-    DEVICE_SETTINGS_DIR,
+    REPLAYOS_SETTINGS_DIR,
     exec_cmd,
     goto_hydrated,
 )
 
 pytestmark = pytest.mark.skipif(
     not CONTAINER,
-    reason="first-setup completion e2e relaunches the app in device mode",
+    reason="first-setup completion e2e relaunches the app in RePlayOS host",
 )
 
 
-def test_first_setup_rejects_wrong_password(device_mode_first_setup, page):
+def test_first_setup_rejects_wrong_password(replayos_first_setup, page):
     goto_hydrated(page, "/first-setup")
     pw = page.locator("#first-setup-password")
     expect(pw).to_be_visible(timeout=15000)
@@ -40,7 +40,7 @@ def test_first_setup_rejects_wrong_password(device_mode_first_setup, page):
     assert "/first-setup" in page.url
 
 
-def test_first_setup_completion_grants_admin(device_mode_first_setup, page):
+def test_first_setup_completion_grants_admin(replayos_first_setup, page):
     goto_hydrated(page, "/first-setup")
     pw = page.locator("#first-setup-password")
     expect(pw).to_be_visible(timeout=15000)
@@ -51,5 +51,5 @@ def test_first_setup_completion_grants_admin(device_mode_first_setup, page):
     # device container it lands on "/" / the storage gate, never back to setup).
     page.wait_for_url(lambda url: "/first-setup" not in url, timeout=10000)
 
-    setup_line = exec_cmd(f'grep first_setup_done "{DEVICE_SETTINGS_DIR}/settings.cfg"')
+    setup_line = exec_cmd(f'grep first_setup_done "{REPLAYOS_SETTINGS_DIR}/settings.cfg"')
     assert "true" in setup_line, f"first_setup_done should be persisted true, got: {setup_line!r}"

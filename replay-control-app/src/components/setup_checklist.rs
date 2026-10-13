@@ -6,8 +6,10 @@ use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_query_map;
 use replay_control_core::replay_api::ReplayApiStatus;
 
-use crate::i18n::{Key, t, use_i18n};
-use crate::server_fns::{self, Activity, RefreshMetadataPhase, SetupStatus, ThumbnailPhase};
+use crate::i18n::{Key, Locale, t, use_i18n};
+use crate::server_fns::{
+    self, Activity, RefreshMetadataPhase, SetupStatus, StartupPhase, ThumbnailPhase,
+};
 
 /// Dismissible first-run setup checklist shown at the top of the Home page.
 ///
@@ -51,8 +53,9 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                 .as_ref()
                 .is_some_and(|status| status.read().is_active())
     });
-    let has_replayos_step = status.is_device;
-    let has_password_step = status.is_device;
+    let has_replayos_step = status.is_replayos;
+    let has_password_step = status.is_replayos;
+    let has_storage_step = status.has_storage_step;
     let admin_access = status.admin_access;
     let metadata_error = RwSignal::new(None::<String>);
     let replay_api_error = RwSignal::new(None::<String>);
@@ -72,8 +75,12 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     // can see the result and re-run if needed.
     let metadata_sources_done = Signal::derive(move || metadata_done.get() && thumbnail_done.get());
     let setup_progress = Signal::derive(move || {
-        let total = 1 + usize::from(has_replayos_step) + usize::from(has_password_step);
-        let completed = usize::from(metadata_sources_done.get())
+        let total = 1
+            + usize::from(has_storage_step)
+            + usize::from(has_replayos_step)
+            + usize::from(has_password_step);
+        let completed = usize::from(has_storage_step)
+            + usize::from(metadata_sources_done.get())
             + usize::from(has_replayos_step && replay_api_done.get())
             + usize::from(has_password_step && password_done.get());
         format!("{completed}/{total}")
@@ -81,7 +88,7 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     let show_complete_view = !force
         && status.has_metadata
         && status.has_thumbnail_index
-        && (!status.is_device
+        && (!status.is_replayos
             || (status.replay_api_active && !status.default_root_password_active));
 
     // Read the app-level activity signal (populated by SseEventsListener at
@@ -98,9 +105,45 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
             || activity.with(|a| {
                 matches!(
                     a,
-                    Activity::RefreshExternalMetadata { .. } | Activity::ThumbnailUpdate { .. }
+                    Activity::RefreshExternalMetadata { .. }
+                        | Activity::ThumbnailUpdate { .. }
+                        | Activity::Startup {
+                            phase: StartupPhase::FetchingMetadata,
+                            ..
+                        }
                 )
             })
+    });
+    // The first-run startup pipeline fetches metadata before scanning. Its
+    // activity is distinct from a user-requested metadata refresh. Wait until
+    // the scan has begun and the startup activity ends: metadata import happens
+    // between the fetch and scan phases, while later phases reuse the same
+    // Startup activity with a different phase label.
+    Effect::new(move |saw_scan: Option<bool>| {
+        let (is_startup, is_scanning) = activity.with(|current| {
+            (
+                matches!(current, Activity::Startup { .. }),
+                matches!(
+                    current,
+                    Activity::Startup {
+                        phase: StartupPhase::Scanning,
+                        ..
+                    }
+                ),
+            )
+        });
+        let saw_scan = saw_scan.unwrap_or(false) || is_scanning;
+        if saw_scan && !is_startup {
+            leptos::task::spawn_local(async move {
+                if let Ok(refreshed) = server_fns::get_setup_status(true).await {
+                    metadata_done.set(refreshed.has_metadata);
+                    thumbnail_done.set(refreshed.has_thumbnail_index);
+                }
+            });
+            false
+        } else {
+            saw_scan
+        }
     });
     let replay_api_busy = Memo::new(move |_| replay_api_pending.get());
     let password_busy = Memo::new(move |_| false);
@@ -155,17 +198,26 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
             Activity::RefreshExternalMetadata { progress }
                 if matches!(progress.phase, RefreshMetadataPhase::Failed) =>
             {
-                metadata_error.set(Some(format_error("Failed", progress.error.as_deref())));
+                metadata_error.set(Some(format_error(
+                    t(i18n.locale.get(), Key::SetupFailed),
+                    progress.error.as_deref(),
+                )));
             }
             Activity::ThumbnailUpdate { progress, .. }
                 if matches!(progress.phase, ThumbnailPhase::Failed) =>
             {
-                metadata_error.set(Some(format_error("Failed", progress.error.as_deref())));
+                metadata_error.set(Some(format_error(
+                    t(i18n.locale.get(), Key::SetupFailed),
+                    progress.error.as_deref(),
+                )));
             }
             Activity::ThumbnailUpdate { progress, .. }
                 if matches!(progress.phase, ThumbnailPhase::Cancelled) =>
             {
-                metadata_error.set(Some(format_error("Cancelled", progress.error.as_deref())));
+                metadata_error.set(Some(format_error(
+                    t(i18n.locale.get(), Key::SetupCancelled),
+                    progress.error.as_deref(),
+                )));
             }
             _ => {}
         });
@@ -194,7 +246,10 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
         leptos::task::spawn_local(async move {
             if let Err(e) = server_fns::start_setup_metadata_downloads().await {
                 metadata_pending.set(false);
-                metadata_error.set(Some(format!("Error: {e}")));
+                metadata_error.set(Some(format_error(
+                    t(i18n.locale.get_untracked(), Key::CommonError),
+                    Some(&e.to_string()),
+                )));
             }
         });
     };
@@ -224,11 +279,17 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                 }
                 Ok(status) => {
                     replay_api_pending.set(false);
-                    replay_api_error.set(Some(replay_api_status_message(status)));
+                    replay_api_error.set(Some(replay_api_status_message(
+                        status,
+                        i18n.locale.get_untracked(),
+                    )));
                 }
                 Err(e) => {
                     replay_api_pending.set(false);
-                    replay_api_error.set(Some(format!("Error: {e}")));
+                    replay_api_error.set(Some(format_error(
+                        t(i18n.locale.get_untracked(), Key::CommonError),
+                        Some(&e.to_string()),
+                    )));
                 }
             }
         });
@@ -271,18 +332,32 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
                         view! {
                             <div class="setup-header">
                                 <div class="setup-heading">
-                                    <span class="setup-kicker">{"SETUP"}</span>
+                                    <span class="setup-kicker">{move || t(i18n.locale.get(), Key::SetupKicker)}</span>
                                     <h3 class="setup-welcome">{t(i18n.locale.get(), Key::SetupWelcome)}</h3>
-                                    <p class="setup-intro">{t(i18n.locale.get(), Key::SetupIntro)}</p>
+                                    <p class="setup-intro">{move || t(i18n.locale.get(), if has_storage_step { Key::SetupStandaloneIntro } else { Key::SetupIntro })}</p>
                                 </div>
-                                <div class="setup-progress" aria-label="Setup progress">
+                                <div class="setup-progress" aria-label=move || t(i18n.locale.get(), Key::SetupProgress)>
                                     {move || setup_progress.get()}
                                 </div>
                             </div>
 
                             <div class="setup-tasks">
+                                <Show when=move || has_storage_step>
+                                    <div class="setup-task-row">
+                                        <div class="setup-task done">
+                                            <div class="setup-task-marker"><span class="setup-task-check">{"OK"}</span></div>
+                                            <div class="setup-task-info">
+                                                <span class="setup-task-title">{move || t(i18n.locale.get(), Key::SetupStorageTitle)}</span>
+                                                <span class="setup-task-hint">{move || t(i18n.locale.get(), Key::SetupStorageHint)}</span>
+                                            </div>
+                                            <div class="setup-task-action">
+                                                <span class="setup-task-done">{move || t(i18n.locale.get(), Key::SetupDone)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Show>
                                 <SetupTaskRow
-                                    step="1"
+                                    step=if has_storage_step { "2" } else { "1" }
                                     done=metadata_sources_done
                                     busy=metadata_busy
                                     global_busy=is_busy
@@ -351,16 +426,23 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     }
 }
 
-fn replay_api_status_message(status: ReplayApiStatus) -> String {
+fn replay_api_status_message(status: ReplayApiStatus, locale: Locale) -> String {
+    let error = t(locale, Key::CommonError);
     match status {
-        ReplayApiStatus::NotConfigured => "Error: RePlayOS Net Control is not configured".into(),
-        ReplayApiStatus::PendingRestart => "Error: RePlayOS is still restarting".into(),
-        ReplayApiStatus::Active { .. } => String::new(),
-        ReplayApiStatus::Unauthorized => "Error: RePlayOS rejected the Net Control code".into(),
-        ReplayApiStatus::Unsupported { .. } => {
-            "Error: This RePlayOS version does not support remote control".into()
+        ReplayApiStatus::NotConfigured => {
+            format_error(error, Some(t(locale, Key::SetupNetNotConfigured)))
         }
-        ReplayApiStatus::Error { reason } => format!("Error: {reason}"),
+        ReplayApiStatus::PendingRestart => {
+            format_error(error, Some(t(locale, Key::SetupNetPendingRestart)))
+        }
+        ReplayApiStatus::Active { .. } => String::new(),
+        ReplayApiStatus::Unauthorized => {
+            format_error(error, Some(t(locale, Key::SetupNetUnauthorized)))
+        }
+        ReplayApiStatus::Unsupported { .. } => {
+            format_error(error, Some(t(locale, Key::SetupNetUnsupported)))
+        }
+        ReplayApiStatus::Error { reason } => format_error(error, Some(&reason)),
     }
 }
 
