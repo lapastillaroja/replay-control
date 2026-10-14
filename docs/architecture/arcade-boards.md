@@ -33,11 +33,13 @@ Invariants are test-pinned: every spelling round-trips to its board, and no spel
 | MAME 0.289 (`mame0289-arcade.xml`) | **Yes** — the extract keeps the `sourcefile` attribute | MAME-current `manufacturer/board.cpp` |
 | MAME 2003+ (`mame2003plus.xml`) | Yes | legacy `board.c` |
 | FBNeo (`fbneo-arcade.dat`) | Yes | `dir/d_board.cpp` |
-| Flycast (Naomi CSV) | n/a | explicit board tag curated per ROM from the MAME 0.285 Naomi, Naomi 2, Atomiswave, and System SP machine declarations |
+| Flycast (Naomi CSV) | n/a | board tag synced from Flycast's per-game BIOS field (`naomi`, `naomi2`, `awbios`, `segasp`, and Naomi BIOS variants) |
 
 `board_tag_from_sourcefile()` normalizes the one parser-shape quirk `from_sourcefile()` doesn't model — `normalize_sourcefile()` strips the FBNeo `d_` basename prefix — then defers to `ArcadeBoard::from_sourcefile()`. The legacy `.c` and canonical `.cpp` forms match verbatim against the `sourcefiles()` table. There is no separate legacy-to-canonical map; all spellings live on the enum.
 
-The Flycast CSV is different because Naomi-family games share driver files and product-code prefixes do not identify the hardware reliably. Its committed `board` column is therefore authoritative; catalog builds fail when a row omits the field or uses an unknown tag. Refresh it from the matching MAME machine declarations rather than inferring the board from `GDS` or `GDL` text.
+The Flycast CSV is different because Naomi-family games share driver files and product-code prefixes do not identify the hardware reliably. Its committed `board` column is therefore authoritative; catalog builds fail when a row omits the field or uses an unknown tag. Run `python3 scripts/sync_flycast_games.py` to sync it from Flycast's `core/hw/naomi/naomi_roms.cpp` game table. The script derives board, parent, and rotation from Flycast's per-game fields, preserves existing supplemental metadata, and fills new rows from the local MAME extract. Run `python3 scripts/sync_flycast_games.py --check` to detect upstream drift without writing. The monthly `refresh-flycast-games.yml` workflow runs the same sync, validates a catalog build, and opens or updates a review PR only when the CSV changes. New BIOS identifiers fail the sync until they are explicitly classified; they must not silently become Naomi. Do not infer boards from `GDS` or `GDL` product codes.
+
+The compact MAME extract preserves `sourcefile` but not the original BIOS/hardware declaration. MAME puts some Naomi 2 games in `sega/naomi.cpp`, so a missing Flycast CSV row falls through to an incorrect Naomi board. `inidv3cy` and `inidv3ca` (Initial D Ver. 3 Cycraft) exposed this gap; both have `naomi2` in Flycast's source.
 
 ## Runtime merge — board has its own priority
 

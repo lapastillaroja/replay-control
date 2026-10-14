@@ -6,6 +6,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [Unreleased]
 
+### Changed
+
+- The Flycast arcade game list can now be synced from upstream; a monthly job proposes board-classification updates in a reviewable pull request, including the correction needed for Initial D Cycraft. (#163)
+
 ## [1.3.0-beta.1]
 
 > Expanded RePlayOS 2.x support, including new systems and game formats.

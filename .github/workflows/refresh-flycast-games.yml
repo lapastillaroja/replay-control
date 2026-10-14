@@ -1,0 +1,86 @@
+name: Refresh Flycast Game List
+
+# Flycast's Game table identifies the Naomi-family board for each ROM. Keep
+# the committed snapshot reviewable instead of changing it during builds.
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly, staggered after the other metadata snapshot refreshes.
+    - cron: '0 9 1 * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install catalog build dependencies
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full mold
+
+      - name: Restore catalog source data cache
+        uses: actions/cache/restore@v6
+        with:
+          path: data/upstream/
+          key: data-upstream-latest
+          restore-keys: data-upstream-
+
+      - name: Download catalog source data
+        run: |
+          ./scripts/download-arcade-data.sh
+          ./scripts/download-metadata.sh
+
+      - name: Refresh Flycast game list
+        run: python3 scripts/sync_flycast_games.py
+
+      - name: Validate game list
+        run: python3 -m unittest discover -s tests/unit -p 'test_sync_flycast_games.py' -v
+
+      - name: Build catalog with refreshed game list
+        # No TGDB API key in this job; validate with a partial catalog.
+        run: cargo run --release -p build-catalog -- --output /tmp/catalog-flycast-refresh.sqlite --allow-partial
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-flycast-games
+        run: |
+          if git diff --quiet -- data/arcade/flycast_games.csv; then
+            echo "No Flycast game list changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/arcade/flycast_games.csv
+          git commit -m "chore: refresh Flycast game list"
+          # This bot-owned branch is replaced on each run.
+          git push --force origin "$BRANCH"
+
+          pr_number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')"
+          body="Refreshes the committed Flycast Naomi-family game list from upstream.
+
+          Validation performed by this workflow:
+          - Flycast parser tests
+          - Full catalog build using the refreshed game list"
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "chore: refresh Flycast game list" \
+              --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: refresh Flycast game list" \
+              --body "$body"
+          fi
