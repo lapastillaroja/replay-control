@@ -19,7 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  HUGO_VERSION: '0.152.2'
+  HUGO_VERSION: '0.160.1'
+  DART_SASS_VERSION: '1.105.1'
 
 jobs:
   build:
@@ -32,6 +33,16 @@ jobs:
           curl -sLO "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
           sudo tar -C /usr/local/bin -xf "hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz" hugo
           hugo version
+
+      - name: Install Dart Sass
+        run: |
+          archive="${RUNNER_TEMP}/dart-sass.tar.gz"
+          curl -fL --retry 3 -o "$archive" \
+            "https://github.com/sass/dart-sass/releases/download/${DART_SASS_VERSION}/dart-sass-${DART_SASS_VERSION}-linux-x64.tar.gz"
+          echo "9046fdd4a31a524a0020298c55d9e155d4c22363ef268e8992574335a72c6a6f  $archive" | sha256sum --check
+          sudo tar -C /opt -xzf "$archive"
+          echo '/opt/dart-sass' >> "$GITHUB_PATH"
+          /opt/dart-sass/sass --version
 
       - uses: actions/setup-node@v7
         with:
