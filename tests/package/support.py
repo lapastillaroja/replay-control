@@ -114,11 +114,12 @@ class Container:
         return int(status), body
 
     def wait_http(self, path="/api/version", *, port=8443, expected=200, timeout=60):
-        return eventually(
-            lambda: (response if (response := self.http(path, port=port))[0] == expected else None),
-            f"HTTP {expected} at {path} on port {port}",
-            timeout=timeout,
-        )[1]
+        def ready():
+            status, body = self.http(path, port=port)
+            assert status == expected, f"HTTP {status}: {body[:300]}"
+            return body
+
+        return eventually(ready, f"HTTP {expected} at {path} on port {port}", timeout=timeout)
 
     def browser_url(self):
         if self.engine == "podman":

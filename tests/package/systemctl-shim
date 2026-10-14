@@ -12,6 +12,18 @@ if [[ "$action" == enable && -e /run/replay-control-fail-enable-once &&
     rm -f /run/replay-control-fail-enable-once
     exit 1
 fi
+
+get_pid() {
+    [[ -f "$pid_file" ]] || return 0
+    local pid stat_pid stat_name state rest
+    pid=$(cat "$pid_file")
+    [[ -r "/proc/$pid/stat" ]] || return 0
+    read -r stat_pid stat_name state rest < "/proc/$pid/stat"
+    if [[ "$state" != Z ]] && kill -0 "$pid" 2>/dev/null; then
+        printf '%s\n' "$pid"
+    fi
+}
+
 case "$action" in
     daemon-reload) exit 0 ;;
     enable) touch "$enabled_file"; exit 0 ;;
@@ -19,7 +31,20 @@ case "$action" in
     is-enabled) [[ -f "$enabled_file" ]] ;;
     stop|restart|start)
         if [[ -f "$pid_file" ]]; then
-            kill "$(cat "$pid_file")" 2>/dev/null || true
+            old_pid=$(cat "$pid_file")
+            kill "$old_pid" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                [[ -z "$(get_pid)" ]] && break
+                sleep 0.25
+            done
+            if [[ -n "$(get_pid)" ]]; then
+                kill -9 "$old_pid" 2>/dev/null || true
+                for _ in $(seq 1 20); do
+                    [[ -z "$(get_pid)" ]] && break
+                    sleep 0.25
+                done
+            fi
+            [[ -z "$(get_pid)" ]] || { echo 'Failed to stop Replay Control' >&2; exit 1; }
             rm -f "$pid_file"
         fi
         [[ "$action" == stop ]] && exit 0
@@ -45,7 +70,7 @@ case "$action" in
         echo $! > "$pid_file"
         ;;
     is-active)
-        [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")"
+        [[ -n "$(get_pid)" ]]
         ;;
     show)
         if [[ " $* " == *" ActiveState "* ]]; then

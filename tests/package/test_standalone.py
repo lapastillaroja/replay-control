@@ -166,7 +166,7 @@ def _check_fedora_metadata_and_route(container):
     assert status == 200, body
     configure(container, storage="/media/sd", https_port=9443, mock_updates=True)
     container.exec("systemctl", "restart", "replay-control")
-    container.wait_http(port=9443)
+    container.wait_http(port=9443, timeout=120)
     configure(container, storage="/media/sd", mock_updates=True)
     container.exec("systemctl", "restart", "replay-control")
     container.wait_http()
