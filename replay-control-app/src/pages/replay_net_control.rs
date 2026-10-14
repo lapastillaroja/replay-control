@@ -82,6 +82,9 @@ fn NetControlContent(
     let mode_result = RwSignal::new(Option::<(bool, String)>::None);
     let message_text = RwSignal::new(String::new());
     let message_duration = RwSignal::new(settings.message_duration_secs.to_string());
+    let saved_message_duration = RwSignal::new(settings.message_duration_secs.to_string());
+    let duration_saving = RwSignal::new(false);
+    let duration_save_failed = RwSignal::new(false);
     let kiosk_mode = RwSignal::new(settings.kiosk_mode);
     // "Re-enter code" affordance: re-open the setup sections while Active
     // (covers a TV-side code reset without waiting for a 401).
@@ -129,6 +132,32 @@ fn NetControlContent(
             server_fns::send_replayos_message(text, duration),
             || (),
         );
+    };
+    let on_message_duration_change = move |ev| {
+        if duration_saving.get_untracked() {
+            return;
+        }
+        let selected = event_target_value(&ev);
+        let Ok(duration) = selected.parse::<u8>() else {
+            return;
+        };
+        if selected == saved_message_duration.get_untracked() {
+            return;
+        }
+        let previous = saved_message_duration.get_untracked();
+        message_duration.set(selected.clone());
+        duration_saving.set(true);
+        duration_save_failed.set(false);
+        leptos::task::spawn_local(async move {
+            match server_fns::save_replayos_message_duration(duration).await {
+                Ok(()) => saved_message_duration.set(selected),
+                Err(_) => {
+                    message_duration.set(previous);
+                    duration_save_failed.set(true);
+                }
+            }
+            duration_saving.set(false);
+        });
     };
     let on_clear_message = move |_| {
         message_text.set(String::new());
@@ -288,11 +317,15 @@ fn NetControlContent(
                         bind:value=message_text
                     ></textarea>
                     <div class="replayos-inline-controls">
-                        <select class="form-input replayos-duration-select" bind:value=message_duration>
-                            <option value="1">"1s"</option>
-                            <option value="3">"3s"</option>
-                            <option value="5">"5s"</option>
-                            <option value="10">"10s"</option>
+                        <select
+                            class="form-input replayos-duration-select"
+                            disabled=move || duration_saving.get()
+                            on:change=on_message_duration_change
+                        >
+                            <option value="1" selected=move || message_duration.get() == "1">"1s"</option>
+                            <option value="3" selected=move || message_duration.get() == "3">"3s"</option>
+                            <option value="5" selected=move || message_duration.get() == "5">"5s"</option>
+                            <option value="10" selected=move || message_duration.get() == "10">"10s"</option>
                         </select>
                         <button
                             type="button"
@@ -311,6 +344,9 @@ fn NetControlContent(
                             {move || t(i18n.locale.get(), Key::ReplayOsMessageClear)}
                         </button>
                     </div>
+                    <Show when=move || duration_save_failed.get() fallback=|| ()>
+                        <p class="form-hint form-error">{move || t(i18n.locale.get(), Key::ReplayOsDurationSaveFailed)}</p>
+                    </Show>
                     <StatusMessage status=message_result />
                 </div>
 

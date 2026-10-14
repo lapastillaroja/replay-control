@@ -983,6 +983,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsMessagePlaceholder => "TV に表示するメッセージ",
         Key::ReplayOsMessageSend => "メッセージを送信",
         Key::ReplayOsMessageClear => "メッセージを消去",
+        Key::ReplayOsDurationSaveFailed => {
+            "メッセージの表示時間を保存できませんでした。以前の値に戻しました。"
+        }
         Key::ReplayOsRestartGame => "現在のゲームを再起動",
         Key::ReplayOsRestartGameConfirm => "現在のゲームを再起動しますか？",
         Key::ReplayOsDeviceTitle => "デバイス",

@@ -93,7 +93,7 @@ The same Net Control code is also the normal-user sign-in code for Replay Contro
 
 The status card always shows the current connection state, and a **Check again** action re-tests it. If the code is reset on the TV, Replay Control detects the old stored code being rejected on the next probe or Net Control action, shows the unauthorized state, and lets you reconnect from the same page. Background detection does not delete app sessions; sessions tied to the old code stop working after Replay Control stores a new Net Control code.
 
-The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seconds. Replay Control remembers the duration used for the next message.
+The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seconds. Replay Control saves the selected duration immediately and uses it for the next message.
 
 ### Link Play
 

@@ -981,6 +981,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsMessagePlaceholder => "Message shown on the TV",
         Key::ReplayOsMessageSend => "Send message",
         Key::ReplayOsMessageClear => "Clear message",
+        Key::ReplayOsDurationSaveFailed => {
+            "Could not save the message duration. The previous value has been restored."
+        }
         Key::ReplayOsRestartGame => "Restart current game",
         Key::ReplayOsRestartGameConfirm => "Restart the current game?",
         Key::ReplayOsDeviceTitle => "Device",

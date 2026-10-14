@@ -838,6 +838,7 @@ pub enum Key {
     ReplayOsMessagePlaceholder,
     ReplayOsMessageSend,
     ReplayOsMessageClear,
+    ReplayOsDurationSaveFailed,
     ReplayOsRestartGame,
     ReplayOsRestartGameConfirm,
     ReplayOsDeviceTitle,

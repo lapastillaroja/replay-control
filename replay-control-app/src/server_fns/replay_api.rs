@@ -489,6 +489,16 @@ pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> 
     })
 }
 
+#[server(prefix = "/sfn")]
+pub async fn save_replayos_message_duration(duration_secs: u8) -> Result<(), ServerFnError> {
+    if !matches!(duration_secs, 1 | 3 | 5 | 10) {
+        return Err(ServerFnError::new("Unsupported message duration"));
+    }
+    let state = super::app_state()?;
+    write_replayos_message_duration_secs(&state.settings, duration_secs)
+        .map_err(|error| ServerFnError::new(error.to_string()))
+}
+
 /// The RePlayOS UI log level (`system_log_level`), read live via the API.
 /// Returns `None` whenever it can't be read — standalone build, Net Control not
 /// connected, the key is absent, or the call errored — so the page shows
@@ -709,10 +719,6 @@ pub async fn send_replayos_message(
         ));
     }
     let duration_secs = duration_secs.clamp(1, 10);
-
-    if let Err(error) = write_replayos_message_duration_secs(&state.settings, duration_secs) {
-        tracing::warn!("Failed to save RePlayOS message duration: {error}");
-    }
 
     if let Err(error) = api.client().set_msg(text, duration_secs).await {
         api.report_error(&error);

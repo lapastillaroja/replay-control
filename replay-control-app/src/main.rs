@@ -44,9 +44,9 @@ mod ssr {
         Logout, LogoutAllBrowsers, PowerOffReplayosDevice, RegenerateTlsCertificateInfo,
         RemoveActiveOverrideSettings, RemoveGameResourceLink, ReprobeReplayApi,
         RestartReplayosGame, SaveActiveOverrideConfig, SaveLinkPlayConfig,
-        SaveReplayInsiderTokenAndRestart, SaveReplayosKioskMode, SendReplayPlayerCommand,
-        SendReplayosMessage, SetAdminSessionTimeout, StartSetupMetadataDownloads,
-        VerifyReplayApiToken,
+        SaveReplayInsiderTokenAndRestart, SaveReplayosKioskMode, SaveReplayosMessageDuration,
+        SendReplayPlayerCommand, SendReplayosMessage, SetAdminSessionTimeout,
+        StartSetupMetadataDownloads, VerifyReplayApiToken,
     };
     use replay_control_app::util::escape_html;
 
@@ -1051,6 +1051,7 @@ mod ssr {
         server_fn::axum::register_explicit::<GetLibraryPlaytime>();
         server_fn::axum::register_explicit::<GetGamePlaytime>();
         server_fn::axum::register_explicit::<GetReplayosSettings>();
+        server_fn::axum::register_explicit::<SaveReplayosMessageDuration>();
         server_fn::axum::register_explicit::<GetLinkPlayConfig>();
         server_fn::axum::register_explicit::<PowerOffReplayosDevice>();
         server_fn::axum::register_explicit::<ReprobeReplayApi>();

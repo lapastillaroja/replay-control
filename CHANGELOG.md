@@ -36,6 +36,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Fixed
 
+- RePlayOS on-screen message duration now saves when selected, without requiring a message to be sent. A failed save restores the previous selection and shows an error. (#142)
 - Net Control now verifies credentials against authenticated status rather than the public version endpoint, and distinguishes rate limiting from other connection failures without repeatedly retrying rejected setup requests.
 - Service startup no longer waits specifically for a USB mount when the library uses SD, NFS, or NVMe storage.
 - LaunchBox metadata extraction no longer depends on a system `unzip` executable. Extraction failures are reported instead of silently leaving metadata unavailable.
