@@ -167,12 +167,15 @@ fn ActiveGameSettingsForm(
                 entries
                     .iter()
                     .filter_map(|(setting, _, _, original, value)| {
-                        (original.get_untracked() != value.get_untracked()).then(|| {
-                            OverrideChange {
+                        let current = value.get_untracked();
+                        if original.get_untracked() != current {
+                            Some(OverrideChange {
                                 setting: *setting,
-                                value: value.get_untracked(),
-                            }
-                        })
+                                value: current,
+                            })
+                        } else {
+                            None
+                        }
                     })
                     .collect()
             }),
