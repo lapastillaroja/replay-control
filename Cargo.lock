@@ -905,12 +905,11 @@ checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
 name = "deadpool"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "883466cb8db62725aee5f4a6011e8a5d42912b42632df32aad57fc91127c6e04"
+checksum = "3e98a7e119cd347f4201e1159b19831029e203e2d8b790547708e8157b4acf1e"
 dependencies = [
  "deadpool-runtime",
- "num_cpus",
  "tokio",
 ]
 
@@ -1428,12 +1427,6 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
-name = "hermit-abi"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
 name = "html-escape"
@@ -2179,9 +2172,9 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lz4_flex"
-version = "0.11.6"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
 dependencies = [
  "twox-hash",
 ]
@@ -2371,9 +2364,9 @@ dependencies = [
 
 [[package]]
 name = "nod"
-version = "1.4.0"
+version = "1.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75b9bd092c2ebed932654aa6de256e39d2156ce8c87ace31191f8086f6d22f02"
+checksum = "9fbe592a5e74ed882c6d7373b4cc6beca6e84cf6b7f9fe5cba5d600255d965b5"
 dependencies = [
  "adler",
  "aes",
@@ -2483,16 +2476,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "num_cpus"
-version = "1.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
-dependencies = [
- "hermit-abi",
- "libc",
 ]
 
 [[package]]
@@ -3482,9 +3465,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
  "itoa",
  "memchr",
@@ -4850,14 +4833,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "7.2.0"
+version = "9.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
+checksum = "e49ade69c4434c55dd651d36fe05f38e0578db948b773cbc01c48c4b5e560692"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
 ]
 
