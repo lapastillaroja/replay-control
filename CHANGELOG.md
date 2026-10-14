@@ -27,6 +27,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Launch and Link Play controls now check the connected RePlayOS version and Insider availability; controls explain when a feature is unavailable on the current device.
 - GameCube, Wii, Triforce, and PS2 launch controls also check Vulkan capability and the selected renderer, with TV setup guidance when Vulkan is needed.
 - Running-game settings can switch between Game and System settings for the current display. The page explains when saved Game settings mask System settings, even with Default values. Each view can remove its own saved settings file, with a warning that emulator options in that file will also be deleted. LCD-only controls are hidden in explicit CRT mode.
+- Replay Control follows RePlayOS's separate data-location setting for saves, save states, and captures, and shows the selected location in RePlayOS settings.
 - Unified compact playback and settings controls, with more consistent spacing, mobile layout, and separation between the connection indicator and its text.
 - Installed and development-deployed services keep Replay Control off CPU 0, leaving it available for RePlayOS and using the remaining detected CPUs. Installation now requires at least two CPUs.
 - New installs no longer use the optional `REPLAY_EXTRA_ARGS` service setting; existing 1.0 installs can still be migrated. Use the dedicated port settings to change the listening ports.

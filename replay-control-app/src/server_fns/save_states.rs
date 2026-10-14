@@ -15,7 +15,7 @@ pub async fn get_save_state_slots(
     rom_filename: String,
 ) -> Result<Vec<SaveStateSlotStatus>, ServerFnError> {
     let state = super::app_state()?;
-    let saves_dir = state.storage().saves_dir();
+    let saves_dir = state.replay_data_storage().saves_dir();
     let files = tokio::task::spawn_blocking(move || {
         list_save_state_files(&saves_dir, &system, &rom_filename)
     })

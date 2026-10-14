@@ -112,6 +112,7 @@ pub enum ReplayPlayerCommand {
 pub struct ReplayOsSettings {
     pub kiosk_mode: bool,
     pub message_duration_secs: u8,
+    pub data_location: String,
 }
 
 use replay_control_core::replay_settings::ActiveGameIdentity;
@@ -212,7 +213,7 @@ pub async fn remove_active_override_settings(
     if !settings.configured {
         return Ok(false);
     }
-    let data_root = state.storage().root;
+    let data_root = state.replay_data_storage().root;
     let video_mode = global.get_value_string("video_mode");
     let display = VideoSettingsDisplay::from_video_mode(video_mode.as_deref());
     let removed =
@@ -482,10 +483,18 @@ pub async fn get_replayos_settings() -> Result<ReplayOsSettings, ServerFnError> 
         .expect("replay_config lock poisoned")
         .as_ref()
         .is_some_and(|config| config.system_kiosk_mode_enabled());
+    let data_location = state
+        .replay_config
+        .read()
+        .expect("replay_config lock poisoned")
+        .as_ref()
+        .map_or("storage_unit", |config| config.data_location())
+        .to_string();
 
     Ok(ReplayOsSettings {
         kiosk_mode,
         message_duration_secs: read_replayos_message_duration_secs(&state.settings),
+        data_location,
     })
 }
 

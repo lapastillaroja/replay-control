@@ -994,6 +994,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsPowerOffConfirm => "RePlayOS デバイスの電源を切りますか？",
         Key::ReplayOsRebootConfirm => "RePlayOS デバイスを再起動しますか？",
         Key::ReplayOsModeTitle => "モード",
+        Key::ReplayOsDataLocationTitle => "データの保存先",
+        Key::ReplayOsDataLocationStorage => "ROM ストレージ",
+        Key::ReplayOsDataLocationLocalSd => "ローカル SD カード",
+        Key::ReplayOsDataLocationHint => {
+            "RePlayOS はセーブデータ、ステート、キャプチャをここに保存します。変更は TV で行ってください。"
+        }
         Key::ReplayOsKioskMode => "キオスクモード",
         Key::ReplayOsKioskHint => "ゲストが TV 側でシステム設定を変更できないようにします。",
         Key::ReplayApiStatusConnected => "{0} に接続済み",

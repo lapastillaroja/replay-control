@@ -832,6 +832,10 @@ pub enum Key {
     // RePlayOS settings page + status banner
     ReplayOsSettingsTitle,
     ReplayOsConnectionTitle,
+    ReplayOsDataLocationTitle,
+    ReplayOsDataLocationStorage,
+    ReplayOsDataLocationLocalSd,
+    ReplayOsDataLocationHint,
     ReplayOsActionsTitle,
     ReplayOsConnectedHint,
     ReplayOsMessageTitle,

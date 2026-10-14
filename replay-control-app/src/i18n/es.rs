@@ -1010,6 +1010,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsPowerOffConfirm => "¿Apagar el dispositivo RePlayOS?",
         Key::ReplayOsRebootConfirm => "¿Reiniciar el dispositivo RePlayOS?",
         Key::ReplayOsModeTitle => "Modo",
+        Key::ReplayOsDataLocationTitle => "Ubicación de datos",
+        Key::ReplayOsDataLocationStorage => "Almacenamiento de ROMs",
+        Key::ReplayOsDataLocationLocalSd => "Tarjeta SD local",
+        Key::ReplayOsDataLocationHint => {
+            "RePlayOS guarda aquí las partidas, los estados y las capturas. Cambia este ajuste en la TV."
+        }
         Key::ReplayOsKioskMode => "Modo kiosco",
         Key::ReplayOsKioskHint => {
             "Limita la interfaz de la TV para que los invitados no cambien ajustes del sistema."

@@ -1051,6 +1051,23 @@ impl AppState {
             )
     }
 
+    /// RePlayOS may keep saves and captures on SD while ROMs live elsewhere.
+    /// Standalone libraries always keep both under their selected folder.
+    pub fn replay_data_storage(&self) -> StorageLocation {
+        let storage = self.storage();
+        if !self.host.is_replayos() {
+            return storage;
+        }
+        self.replay_config
+            .read()
+            .expect("replay_config lock poisoned")
+            .as_ref()
+            .map_or_else(
+                || storage.clone(),
+                |config| storage.replay_data_location(config),
+            )
+    }
+
     /// Check if either database has been flagged as corrupt.
     /// Returns `(library_corrupt, user_data_corrupt)`.
     pub fn is_db_corrupt(&self) -> (bool, bool) {

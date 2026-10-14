@@ -1252,7 +1252,7 @@ mod ssr {
                         return StatusCode::BAD_REQUEST.into_response();
                     }
 
-                    let storage = state.storage();
+                    let storage = state.replay_data_storage();
                     let file_path = storage.captures_dir().join(&path);
 
                     match tokio::fs::read(&file_path).await {

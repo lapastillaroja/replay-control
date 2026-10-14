@@ -86,6 +86,10 @@ fn NetControlContent(
     let duration_saving = RwSignal::new(false);
     let duration_save_failed = RwSignal::new(false);
     let kiosk_mode = RwSignal::new(settings.kiosk_mode);
+    let data_location_label = match settings.data_location.as_str() {
+        "local_sd" => Key::ReplayOsDataLocationLocalSd,
+        _ => Key::ReplayOsDataLocationStorage,
+    };
     // "Re-enter code" affordance: re-open the setup sections while Active
     // (covers a TV-side code reset without waiting for a 401).
     let reenter = RwSignal::new(false);
@@ -299,6 +303,12 @@ fn NetControlContent(
                     </div>
                 </section>
             </Show>
+
+            <section class="apply-section">
+                <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsDataLocationTitle)}</h3>
+                <p>{move || t(i18n.locale.get(), data_location_label)}</p>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::ReplayOsDataLocationHint)}</p>
+            </section>
 
             <section class="apply-section">
                 <h3 class="form-label">{move || t(i18n.locale.get(), Key::ReplayOsActionsTitle)}</h3>

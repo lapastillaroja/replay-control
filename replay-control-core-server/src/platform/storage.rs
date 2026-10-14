@@ -148,6 +148,15 @@ impl StorageLocation {
         Self { root, kind }
     }
 
+    /// Resolve RePlayOS save/capture storage independently of ROM storage.
+    pub fn replay_data_location(&self, config: &ReplayConfig) -> Self {
+        if config.data_location() == "local_sd" {
+            Self::from_path(PathBuf::from("/media/sd"), StorageKind::Sd)
+        } else {
+            self.clone()
+        }
+    }
+
     /// The `.replay-control/` data directory for the companion app.
     pub fn rc_dir(&self) -> PathBuf {
         self.root.join(RC_DIR)
@@ -593,6 +602,18 @@ mod tests {
     fn folder_is_local_and_tagged_folder() {
         assert!(StorageKind::Folder.is_local());
         assert_eq!(StorageKind::Folder.as_str(), "folder");
+    }
+
+    #[test]
+    fn replay_data_location_defaults_to_rom_storage_for_older_configs() {
+        let nfs = StorageLocation::from_path(PathBuf::from("/media/nfs"), StorageKind::Nfs);
+        let old_config = ReplayConfig::parse("system_storage = \"nfs\"").unwrap();
+        let local_sd = ReplayConfig::parse("system_data_location = \"local_sd\"").unwrap();
+
+        assert_eq!(nfs.replay_data_location(&old_config).root, nfs.root);
+        let resolved = nfs.replay_data_location(&local_sd);
+        assert_eq!(resolved.root, PathBuf::from("/media/sd"));
+        assert_eq!(resolved.kind, StorageKind::Sd);
     }
 
     #[test]

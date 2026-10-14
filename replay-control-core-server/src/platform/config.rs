@@ -236,6 +236,12 @@ impl ReplayConfig {
         self.inner.get("system_storage").unwrap_or("sd")
     }
 
+    pub fn data_location(&self) -> &str {
+        self.inner
+            .get("system_data_location")
+            .unwrap_or("storage_unit")
+    }
+
     pub fn wifi_name(&self) -> Option<&str> {
         self.inner.get("wifi_name")
     }

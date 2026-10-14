@@ -15,6 +15,8 @@ Replay Control reads the storage mode from the [RePlayOS](https://www.replayos.c
 
 The storage mode can be changed in the RePlayOS configuration. When the mode changes, the app detects it automatically and refreshes the library.
 
+RePlayOS can separately keep saves, save states, and captures on its local SD card while ROMs remain on another storage device. Replay Control follows that data-location setting and shows its current value on the RePlayOS settings page. Older RePlayOS versions that do not offer the setting continue using ROM storage.
+
 ## Automatic Library Updates
 
 On local storage (SD, USB, NVMe), the app monitors the `roms/` directory for changes. New, modified, or deleted ROMs trigger an automatic library update for the affected system after a short debounce window.
