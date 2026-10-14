@@ -54,9 +54,17 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .active-game-settings-apply {
-        flex: 1 1 100%;
-        width: 100%;
+    .active-game-settings-footer .form-btn {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .active-game-settings-remove {
+        margin-right: 0;
+    }
+
+    .active-game-settings-action-label {
+        display: none;
     }
 }
 

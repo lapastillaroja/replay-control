@@ -21,6 +21,8 @@ use crate::util::is_valid_net_control_code;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::replay_api::{ApiError, ReplayApiClient};
 #[cfg(feature = "ssr")]
+use replay_control_core_server::replay_game_settings::remove_override_settings;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::settings::{
     read_replayos_message_duration_secs, write_replay_api_token,
     write_replayos_message_duration_secs,
@@ -51,14 +53,17 @@ pub async fn get_replay_capabilities() -> Result<DeviceCapabilities, ServerFnErr
 
 #[cfg(feature = "ssr")]
 async fn read_replay_capabilities(api: &ReplayApi) -> Result<DeviceCapabilities, ServerFnError> {
-    api.client()
-        .get_info()
-        .await
-        .map(DeviceCapabilities::from)
-        .map_err(|error| {
-            api.report_error(&error);
-            ServerFnError::new(error.to_string())
-        })
+    let client = api.client();
+    let (info, config) =
+        tokio::try_join!(client.get_info(), client.get_config(ConfigKind::Replay),).map_err(
+            |error| {
+                api.report_error(&error);
+                ServerFnError::new(error.to_string())
+            },
+        )?;
+    let mut capabilities = DeviceCapabilities::from(info);
+    capabilities.video_engine = config.get_str("video_engine").map(str::to_string);
+    Ok(capabilities)
 }
 
 #[cfg(feature = "ssr")]
@@ -109,14 +114,16 @@ pub struct ReplayOsSettings {
     pub message_duration_secs: u8,
 }
 
-#[cfg(feature = "ssr")]
 use replay_control_core::replay_settings::ActiveGameIdentity;
 pub use replay_control_core::replay_settings::{
-    ActiveGameConfig, GameSettingsOutcome, LinkPlayConfig, SettingsOutcome,
+    ActiveOverrideConfig, ActiveOverrideConfigs, ActiveOverrideUpdate, LinkPlayConfig,
+    OverrideScope, OverrideSettingsOutcome, SettingsOutcome,
 };
+#[cfg(feature = "ssr")]
+use replay_control_core::replay_settings::{ReplaySetting, VideoSettingsDisplay};
 
 #[server(prefix = "/sfn")]
-pub async fn get_active_game_config() -> Result<ActiveGameConfig, ServerFnError> {
+pub async fn get_active_override_configs() -> Result<ActiveOverrideConfigs, ServerFnError> {
     let state = super::app_state()?;
     let api = require_active_replay_api(&state, "read game settings")?;
     let client = api.client();
@@ -137,30 +144,142 @@ pub async fn get_active_game_config() -> Result<ActiveGameConfig, ServerFnError>
     let identity = before
         .filter(|identity| Some(identity) == after.as_ref())
         .ok_or_else(|| ServerFnError::new("Active game changed while reading settings"))?;
-    Ok(ActiveGameConfig::from_snapshots(
-        identity, &game, &core, &global,
-    ))
+    Ok(ActiveOverrideConfigs {
+        game: ActiveOverrideConfig::from_snapshots(
+            identity.clone(),
+            OverrideScope::Game,
+            &game,
+            &core,
+            &global,
+        ),
+        system: ActiveOverrideConfig::from_snapshots(
+            identity,
+            OverrideScope::System,
+            &game,
+            &core,
+            &global,
+        ),
+    })
 }
 
 #[server(prefix = "/sfn")]
-pub async fn save_active_game_config(
-    config: ActiveGameConfig,
-) -> Result<GameSettingsOutcome, ServerFnError> {
+pub async fn save_active_override_config(
+    update: ActiveOverrideUpdate,
+) -> Result<OverrideSettingsOutcome, ServerFnError> {
     let state = super::app_state()?;
     let api = require_active_replay_api(&state, "change game settings")?;
-    apply_active_game_config(&api, config).await
+    apply_active_override_config(&api, update).await
+}
+
+#[server(prefix = "/sfn")]
+pub async fn remove_active_override_settings(
+    identity: ActiveGameIdentity,
+    scope: OverrideScope,
+) -> Result<bool, ServerFnError> {
+    let state = super::app_state()?;
+    let api = require_active_replay_api(&state, "remove saved settings")?;
+    let client = api.client();
+    let settings_kind = match scope {
+        OverrideScope::Game => ConfigKind::Game,
+        OverrideScope::System => ConfigKind::Core,
+    };
+    let scope_label = match scope {
+        OverrideScope::Game => "Game",
+        OverrideScope::System => "System",
+    };
+    let before = ActiveGameIdentity::from_status(&client.get_status().await.map_err(|error| {
+        api.report_error(&error);
+        ServerFnError::new(error.to_string())
+    })?);
+    let settings = client.get_config(settings_kind).await.map_err(|error| {
+        api.report_error(&error);
+        ServerFnError::new(error.to_string())
+    })?;
+    let global = client
+        .get_config(ConfigKind::Replay)
+        .await
+        .map_err(|error| {
+            api.report_error(&error);
+            ServerFnError::new(error.to_string())
+        })?;
+    let after = ActiveGameIdentity::from_status(&client.get_status().await.map_err(|error| {
+        api.report_error(&error);
+        ServerFnError::new(error.to_string())
+    })?);
+    if before.as_ref() != Some(&identity) || after != before {
+        return Err(ServerFnError::new("Active game changed; try again"));
+    }
+    if !settings.configured {
+        return Ok(false);
+    }
+    let data_root = state.storage().root;
+    let video_mode = global.get_value_string("video_mode");
+    let display = VideoSettingsDisplay::from_video_mode(video_mode.as_deref());
+    let removed =
+        remove_override_settings(&data_root, &identity, display, scope).map_err(|error| {
+            ServerFnError::new(format!("Could not remove {scope_label} settings: {error}"))
+        })?;
+    if !removed {
+        return Err(ServerFnError::new(format!(
+            "{scope_label} settings were reported by RePlayOS but the settings file was not found"
+        )));
+    }
+    let still_active = client.get_status().await.map_err(|error| {
+        api.report_error(&error);
+        ServerFnError::new(format!(
+            "{scope_label} settings removed; verify the game on the TV: {error}"
+        ))
+    })?;
+    if ActiveGameIdentity::from_status(&still_active).as_ref() != Some(&identity) {
+        return Err(ServerFnError::new(format!(
+            "{scope_label} settings removed, but the active game changed; launch it again to apply the remaining settings"
+        )));
+    }
+    client
+        .set_cmd(SetCommand::GameRestart)
+        .await
+        .map_err(|error| {
+            api.report_error(&error);
+            ServerFnError::new(format!(
+                "{scope_label} settings removed; restart the game on the TV: {error}"
+            ))
+        })?;
+    Ok(true)
 }
 
 #[cfg(feature = "ssr")]
-async fn apply_active_game_config(
+async fn apply_active_override_config(
     api: &ReplayApi,
-    config: ActiveGameConfig,
-) -> Result<GameSettingsOutcome, ServerFnError> {
-    if !config.is_valid() {
-        return Ok(GameSettingsOutcome::InvalidValue);
+    update: ActiveOverrideUpdate,
+) -> Result<OverrideSettingsOutcome, ServerFnError> {
+    if !update.is_valid() {
+        return Ok(OverrideSettingsOutcome::InvalidValue);
     }
-    let encoded: Vec<_> = config
-        .overrides
+    if update.changes.iter().any(|change| {
+        matches!(
+            change.setting,
+            ReplaySetting::IntegerScale | ReplaySetting::VideoFilter
+        )
+    }) {
+        let global = api
+            .client()
+            .get_config(ConfigKind::Replay)
+            .await
+            .map_err(|error| {
+                api.report_error(&error);
+                ServerFnError::new(error.to_string())
+            })?;
+        let video_mode = global.get_value_string("video_mode");
+        if update.changes.iter().any(|change| {
+            !change
+                .setting
+                .available_in_video_mode(video_mode.as_deref())
+        }) {
+            return Ok(OverrideSettingsOutcome::InvalidValue);
+        }
+    }
+    let encoded: Vec<_> = update
+        .changes
         .iter()
         .map(|entry| {
             (
@@ -180,35 +299,48 @@ async fn apply_active_game_config(
         api.report_error(&error);
         ServerFnError::new(error.to_string())
     })?;
-    if ActiveGameIdentity::from_status(&status).as_ref() != Some(&config.identity) {
-        return Ok(GameSettingsOutcome::GameChanged);
+    if ActiveGameIdentity::from_status(&status).as_ref() != Some(&update.identity) {
+        return Ok(OverrideSettingsOutcome::GameChanged);
     }
     let supports_target_guard = matches!(
         api.status(),
         ReplayApiStatus::Active { ref version }
             if parse_replayos_version(version).is_some_and(|version| version >= (2, 0, 0))
     );
+    let kind = match update.scope {
+        OverrideScope::Game => ConfigKind::Game,
+        OverrideScope::System => ConfigKind::Core,
+    };
     let result = if supports_target_guard {
-        api.client()
-            .set_game_config_for_target(&config.identity, &changes)
-            .await
+        match update.scope {
+            OverrideScope::Game => {
+                api.client()
+                    .set_game_config_for_target(&update.identity, &changes)
+                    .await
+            }
+            OverrideScope::System => {
+                api.client()
+                    .set_core_config_for_target(&update.identity, &changes)
+                    .await
+            }
+        }
     } else {
         // RePlayOS 1.8 has no conditional write; the status check above is
         // the best available protection on that version.
-        api.client().set_config(ConfigKind::Game, &changes).await
+        api.client().set_config(kind, &changes).await
     };
     match result {
         Err(ApiError::BadStatus {
             status: 409,
             message,
         }) if supports_target_guard && message.starts_with("Target Changed") => {
-            Ok(GameSettingsOutcome::GameChanged)
+            Ok(OverrideSettingsOutcome::GameChanged)
         }
         Err(error) => {
             api.report_error(&error);
             Err(ServerFnError::new(error.to_string()))
         }
-        Ok(()) => Ok(GameSettingsOutcome::Applied),
+        Ok(()) => Ok(OverrideSettingsOutcome::Applied),
     }
 }
 
@@ -937,7 +1069,7 @@ fn replay_api_status_detail(status: &ReplayApiStatus) -> String {
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
     use super::*;
-    use replay_control_core::replay_settings::{GameOverride, GameSetting};
+    use replay_control_core::replay_settings::{OverrideChange, ReplaySetting};
     use replay_control_core_server::test_utils::{mock_replay_api, refused_replay_api};
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -956,18 +1088,18 @@ mod tests {
         });
         api
     }
-    fn config() -> ActiveGameConfig {
-        ActiveGameConfig {
+    fn config() -> ActiveOverrideUpdate {
+        ActiveOverrideUpdate {
             identity: ActiveGameIdentity {
                 system: "nintendo_gc".to_string(),
                 game_file: "/media/nfs/roms/nintendo_gc/game.iso".to_string(),
             },
-            overrides: GameSetting::ALL
+            scope: OverrideScope::Game,
+            changes: ReplaySetting::ALL
                 .into_iter()
-                .map(|setting| GameOverride {
+                .map(|setting| OverrideChange {
                     setting,
                     value: None,
-                    inherited: None,
                 })
                 .collect(),
         }
@@ -1005,11 +1137,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insider_launch_guard_allows_public_or_active_insider_features() {
+    async fn insider_launch_guard_requires_active_access_for_vulkan_cores() {
         for system in ["nintendo_gc", "nintendo_wii", "arcade_triforce", "sony_ps2"] {
             let locked = api_for(mock_replay_api(
                 "200 OK",
-                r#"{"version":"2.0.52","insider_enabled":false,"insider_features":["gamecube","playstation2"]}"#,
+                r#"{"version":"2.0.52","model":"Raspberry Pi 5","insider_enabled":false,"insider_features":["gamecube","playstation2","vulkan"],"config":{"video_engine":"vulkan"}}"#,
             ));
             let error = ensure_game_launch_allowed(&locked, system, Locale::Es)
                 .await
@@ -1021,29 +1153,47 @@ mod tests {
             );
             let allowed = api_for(mock_replay_api(
                 "200 OK",
-                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":["gamecube","playstation2"]}"#,
+                r#"{"version":"2.0.52","model":"Raspberry Pi 5","insider_enabled":true,"insider_features":["gamecube","playstation2","vulkan"],"config":{"video_engine":"vulkan"}}"#,
             ));
             ensure_game_launch_allowed(&allowed, system, Locale::En)
                 .await
                 .unwrap();
-            for payload in [
-                r#"{"version":"2.0.52"}"#,
-                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":["vulkan"]}"#,
-                r#"{"version":"2.0.52","insider_enabled":true,"insider_features":[]}"#,
-            ] {
-                let public = api_for(mock_replay_api("200 OK", payload));
-                ensure_game_launch_allowed(&public, system, Locale::En)
-                    .await
-                    .unwrap();
-            }
             let public_without_insider = api_for(mock_replay_api(
                 "200 OK",
-                r#"{"version":"2.0.52","insider_enabled":false,"insider_features":["vulkan"]}"#,
+                r#"{"version":"2.0.52","model":"Raspberry Pi 5","insider_enabled":false,"insider_features":["vulkan"],"config":{"video_engine":"vulkan"}}"#,
             ));
-            ensure_game_launch_allowed(&public_without_insider, system, Locale::En)
+            let error = ensure_game_launch_allowed(&public_without_insider, system, Locale::En)
+                .await
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(t(Locale::En, Key::ReplayInsiderRequired))
+            );
+            let public_vulkan = api_for(mock_replay_api(
+                "200 OK",
+                r#"{"version":"2.0.52","model":"Raspberry Pi 5","insider_enabled":false,"insider_features":[],"config":{"video_engine":"vulkan"}}"#,
+            ));
+            ensure_game_launch_allowed(&public_vulkan, system, Locale::En)
                 .await
                 .unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn launch_guard_blocks_opengles_for_vulkan_cores() {
+        let api = api_for(mock_replay_api(
+            "200 OK",
+            r#"{"version":"2.0.59","model":"Raspberry Pi 5","insider_enabled":true,"insider_features":["gamecube","playstation2","vulkan"],"config":{"video_engine":"opengles"}}"#,
+        ));
+        let error = ensure_game_launch_allowed(&api, "nintendo_wii", Locale::En)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(t(Locale::En, Key::ReplayVulkanRequired))
+        );
     }
 
     #[tokio::test]
@@ -1109,8 +1259,8 @@ mod tests {
         ] {
             let api = api_for(mock_replay_api("200 OK", body));
             assert_eq!(
-                apply_active_game_config(&api, config()).await.unwrap(),
-                GameSettingsOutcome::GameChanged
+                apply_active_override_config(&api, config()).await.unwrap(),
+                OverrideSettingsOutcome::GameChanged
             );
         }
     }
@@ -1121,9 +1271,33 @@ mod tests {
             r#"{"system":"nintendo_gc","game_file":"/media/nfs/roms/nintendo_gc/game.iso"}"#,
         ));
         assert_eq!(
-            apply_active_game_config(&api, config()).await.unwrap(),
-            GameSettingsOutcome::Applied
+            apply_active_override_config(&api, config()).await.unwrap(),
+            OverrideSettingsOutcome::Applied
         );
+    }
+    #[tokio::test]
+    async fn system_override_targets_only_the_active_system() {
+        let (url, requests) = game_save_server("200 OK", "{}");
+        let api = api_for(url);
+        let mut system_config = config();
+        system_config.scope = OverrideScope::System;
+        system_config.changes = vec![OverrideChange {
+            setting: ReplaySetting::MonitorY,
+            value: Some(2),
+        }];
+        assert_eq!(
+            apply_active_override_config(&api, system_config)
+                .await
+                .unwrap(),
+            OverrideSettingsOutcome::Applied
+        );
+        let _status_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        let save_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(save_request.contains("type=core"));
+        assert!(save_request.contains("system=nintendo_gc"));
+        assert!(save_request.contains("option=replay_video_monitor_y&value=2"));
+        assert!(!save_request.contains("replay_video_ambiscan"));
+        assert!(!save_request.contains("game_file="));
     }
     #[tokio::test]
     async fn game_override_uses_legacy_write_on_replayos_1_8() {
@@ -1133,8 +1307,8 @@ mod tests {
             version: "RePlayOS v1.8.0".to_string(),
         });
         assert_eq!(
-            apply_active_game_config(&api, config()).await.unwrap(),
-            GameSettingsOutcome::Applied
+            apply_active_override_config(&api, config()).await.unwrap(),
+            OverrideSettingsOutcome::Applied
         );
         let _status_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
         let save_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -1150,8 +1324,8 @@ mod tests {
         );
         let api = api_for(url);
         assert_eq!(
-            apply_active_game_config(&api, config()).await.unwrap(),
-            GameSettingsOutcome::GameChanged
+            apply_active_override_config(&api, config()).await.unwrap(),
+            OverrideSettingsOutcome::GameChanged
         );
         let _status_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
         let save_request = requests.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -1162,10 +1336,10 @@ mod tests {
     async fn game_override_rejects_invalid_values_before_network() {
         let api = api_for(refused_replay_api());
         let mut invalid = config();
-        invalid.overrides[0].value = Some(100);
+        invalid.changes[0].value = Some(100);
         assert_eq!(
-            apply_active_game_config(&api, invalid).await.unwrap(),
-            GameSettingsOutcome::InvalidValue
+            apply_active_override_config(&api, invalid).await.unwrap(),
+            OverrideSettingsOutcome::InvalidValue
         );
     }
     #[tokio::test]

@@ -346,6 +346,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayCapabilitiesUnavailable => {
             "RePlayOSの機能を確認できませんでした。接続を確認して再試行してください。"
         }
+        Key::ReplayVulkanUnavailable => {
+            "このシステムにはVulkanが必要です。現在、RePlayOSがVulkanに対応しているのはRaspberry Pi 5のみです。"
+        }
+        Key::ReplayVulkanRequired => {
+            "このシステムにはVulkanが必要です。テレビでRePlay Options → Video → Preferred Rendererを開き、Vulkanを選択してから再試行してください。"
+        }
         Key::ReplayInsiderHint => {
             "RePlayOSから提供されたInsiderトークンを入力すると、対象のベータ版を利用できます。トークンは書き込み専用で、ブラウザーには返されません。"
         }
@@ -447,23 +453,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
         Key::GameDetailPlaytime => "プレイ時間",
-        Key::GameSettingsTitle => "実行中のゲーム設定",
-        Key::GameSettingsHint => {
-            "このゲームのRePlay映像・音声設定を上書きします。「ゲーム設定を適用」で保存・適用します。デフォルトはコアまたは全体設定を継承します。"
+        Key::GameSettingsTitle => "映像・音声設定",
+        Key::GameSettingsHint => "このゲームと画面用。",
+        Key::GameSettingsGameScope => "ゲーム",
+        Key::GameSettingsSystemScope => "システム",
+        Key::GameSettingsDefaultNotice => {
+            "「デフォルト」はシステム設定ではなく、RePlayOSの全体設定を使います。"
         }
+        Key::SystemSettingsHint => "このシステムと画面用。",
+        Key::SystemSettingsGameOverrideNotice => {
+            "ゲーム設定が優先されます。システム設定を使うには削除してください。"
+        }
+        Key::SystemSettingsApply => "適用",
+        Key::SystemSettingsSaved => "システム設定を保存しました",
         Key::GameSettingsInherit => "デフォルト",
         Key::GameSettingsOff => "オフ",
         Key::GameSettingsAmbiscan => "アンビスキャン",
         Key::GameSettingsAmbiscanFlat => "フラット",
         Key::GameSettingsAmbiscanRadial => "ラジアル",
         Key::GameSettingsAmbiscanSmart => "スマート",
-        Key::GameSettingsIntegerScale => "整数スケール",
+        Key::GameSettingsIntegerScale => "整数スケール（LCDのみ）",
         Key::GameSettingsScaleVertical => "垂直",
         Key::GameSettingsScaleHorizontal => "水平",
         Key::GameSettingsScaleFull => "フル",
         Key::GameSettingsScaleFullOverscan => "フルオーバースキャン",
         Key::GameSettingsScaleVerticalOverscan => "垂直オーバースキャン",
-        Key::GameSettingsVideoFilter => "映像フィルター",
+        Key::GameSettingsVideoFilter => "映像フィルター（LCDのみ）",
         Key::GameSettingsFilterLight => "弱",
         Key::GameSettingsFilterMedium => "中",
         Key::GameSettingsFilterStrong => "強",
@@ -471,8 +486,28 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameSettingsGamma => "ガンマ",
         Key::GameSettingsMonitorX => "水平位置",
         Key::GameSettingsMonitorY => "垂直位置",
-        Key::GameSettingsVolume => "システム音量",
-        Key::GameSettingsApply => "ゲーム設定を適用",
+        Key::GameSettingsVolume => "音量",
+        Key::GameSettingsResetAll => "すべてリセット",
+        Key::RemoveAndRestart => "削除して再起動",
+        Key::RemoveGameSettings => "ゲーム設定を削除",
+        Key::RemoveGameSettingsConfirm => {
+            "エミュレーターのオプションを含む、このゲームのすべての設定を削除して再起動しますか？未保存の進行状況が失われる可能性があります。"
+        }
+        Key::GameSettingsRemoved => "ゲーム設定を削除しました。ゲームを再起動しています",
+        Key::GameSettingsAlreadyRemoved => "このゲームに保存済みの設定はありません",
+        Key::GameSettingsRemovedRefresh => {
+            "ゲーム設定を削除しました。ゲームの再起動後にこのページを更新してください。"
+        }
+        Key::RemoveSystemSettings => "システム設定を削除",
+        Key::RemoveSystemSettingsConfirm => {
+            "エミュレーターのオプションを含む、このシステムと画面のすべての設定を削除してゲームを再起動しますか？未保存の進行状況が失われる可能性があります。"
+        }
+        Key::SystemSettingsRemoved => "システム設定を削除しました。ゲームを再起動しています",
+        Key::SystemSettingsAlreadyRemoved => "このシステムに保存済みの設定はありません",
+        Key::SystemSettingsRemovedRefresh => {
+            "システム設定を削除しました。ゲームの再起動後にこのページを更新してください。"
+        }
+        Key::GameSettingsApply => "適用",
         Key::GameSettingsUnavailable => "設定を取得できません。接続を確認して再試行してください。",
         Key::GameSettingsChanged => {
             "実行中のゲームが変わりました。設定は適用されていません。パネルを更新しました。"

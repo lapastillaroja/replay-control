@@ -348,6 +348,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayCapabilitiesUnavailable => {
             "No se pudieron comprobar las funciones de RePlayOS. Revisa la conexión e inténtalo de nuevo."
         }
+        Key::ReplayVulkanUnavailable => {
+            "Este sistema necesita Vulkan, que RePlayOS actualmente solo admite en Raspberry Pi 5."
+        }
+        Key::ReplayVulkanRequired => {
+            "Este sistema necesita Vulkan. En el televisor, abre Opciones de RePlay → Vídeo → Renderizador preferido y selecciona Vulkan. Después, inténtalo de nuevo."
+        }
         Key::ReplayInsiderHint => {
             "Introduce el token Insider proporcionado por RePlayOS para acceder a versiones beta disponibles. El token es de solo escritura y nunca se devuelve al navegador."
         }
@@ -449,23 +455,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
         Key::GameDetailPlaytime => "Tiempo de juego",
-        Key::GameSettingsTitle => "Ajustes del juego activo",
-        Key::GameSettingsHint => {
-            "Sobrescribe los ajustes de vídeo y audio de RePlay para este juego. Pulsa Aplicar ajustes del juego para guardar y aplicar. Predeterminado hereda los ajustes del núcleo o globales."
+        Key::GameSettingsTitle => "Ajustes de vídeo y audio",
+        Key::GameSettingsHint => "Para este juego y pantalla.",
+        Key::GameSettingsGameScope => "Juego",
+        Key::GameSettingsSystemScope => "Sistema",
+        Key::GameSettingsDefaultNotice => {
+            "«Predeterminado» usa el ajuste global de RePlayOS, no el del sistema."
         }
+        Key::SystemSettingsHint => "Para este sistema y pantalla.",
+        Key::SystemSettingsGameOverrideNotice => {
+            "Los ajustes del juego tienen prioridad. Elimínalos para usar los del sistema."
+        }
+        Key::SystemSettingsApply => "Aplicar",
+        Key::SystemSettingsSaved => "Ajustes del sistema guardados",
         Key::GameSettingsInherit => "Predeterminado",
         Key::GameSettingsOff => "Desactivado",
         Key::GameSettingsAmbiscan => "Ambiscan",
         Key::GameSettingsAmbiscanFlat => "Plano",
         Key::GameSettingsAmbiscanRadial => "Radial",
         Key::GameSettingsAmbiscanSmart => "Inteligente",
-        Key::GameSettingsIntegerScale => "Escala entera",
+        Key::GameSettingsIntegerScale => "Escala entera (solo LCD)",
         Key::GameSettingsScaleVertical => "Vertical",
         Key::GameSettingsScaleHorizontal => "Horizontal",
         Key::GameSettingsScaleFull => "Completa",
         Key::GameSettingsScaleFullOverscan => "Overscan completo",
         Key::GameSettingsScaleVerticalOverscan => "Overscan vertical",
-        Key::GameSettingsVideoFilter => "Filtro de vídeo",
+        Key::GameSettingsVideoFilter => "Filtro de vídeo (solo LCD)",
         Key::GameSettingsFilterLight => "Ligero",
         Key::GameSettingsFilterMedium => "Medio",
         Key::GameSettingsFilterStrong => "Fuerte",
@@ -473,8 +488,28 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameSettingsGamma => "Gamma",
         Key::GameSettingsMonitorX => "Posición horizontal",
         Key::GameSettingsMonitorY => "Posición vertical",
-        Key::GameSettingsVolume => "Volumen del sistema",
-        Key::GameSettingsApply => "Aplicar ajustes del juego",
+        Key::GameSettingsVolume => "Volumen",
+        Key::GameSettingsResetAll => "Restablecer todo",
+        Key::RemoveAndRestart => "Eliminar y reiniciar",
+        Key::RemoveGameSettings => "Eliminar ajustes del juego",
+        Key::RemoveGameSettingsConfirm => {
+            "¿Eliminar todos los ajustes de este juego, incluidas las opciones del emulador, y reiniciarlo? Puede perderse el progreso no guardado."
+        }
+        Key::GameSettingsRemoved => "Ajustes del juego eliminados; reiniciando el juego",
+        Key::GameSettingsAlreadyRemoved => "Este juego no tiene ajustes guardados",
+        Key::GameSettingsRemovedRefresh => {
+            "Ajustes del juego eliminados. Actualiza esta página después de que el juego se reinicie."
+        }
+        Key::RemoveSystemSettings => "Eliminar ajustes del sistema",
+        Key::RemoveSystemSettingsConfirm => {
+            "¿Eliminar todos los ajustes de este sistema y pantalla, incluidas las opciones del emulador, y reiniciar el juego? Puede perderse el progreso no guardado."
+        }
+        Key::SystemSettingsRemoved => "Ajustes del sistema eliminados; reiniciando el juego",
+        Key::SystemSettingsAlreadyRemoved => "Este sistema no tiene ajustes guardados",
+        Key::SystemSettingsRemovedRefresh => {
+            "Ajustes del sistema eliminados. Actualiza esta página después de que el juego se reinicie."
+        }
+        Key::GameSettingsApply => "Aplicar",
         Key::GameSettingsUnavailable => {
             "Los ajustes no están disponibles. Comprueba la conexión e inténtalo de nuevo."
         }

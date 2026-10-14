@@ -38,6 +38,7 @@ zip = { version = "7.2.0", default-features = false, features = [
 ], optional = true }
 reqwest = { workspace = true, features = ["stream", "query"] }
 tempfile = "3.27.0"
+rustix = { version = "1.1.5", features = ["fs"] }
 getrandom = "0.4.3"
 rcgen = "0.14.10"
 base64 = "0.23.1"

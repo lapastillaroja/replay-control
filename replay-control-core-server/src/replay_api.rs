@@ -188,7 +188,7 @@ impl ReplayApiClient {
         kind: ConfigKind,
         changes: &[(&str, &str)],
     ) -> Result<(), ApiError> {
-        self.set_config_with_game_target(kind, changes, None).await
+        self.set_config_for_target(kind, changes, None).await
     }
 
     /// RePlayOS 2 checks the full active game identity immediately before
@@ -199,11 +199,20 @@ impl ReplayApiClient {
         identity: &ActiveGameIdentity,
         changes: &[(&str, &str)],
     ) -> Result<(), ApiError> {
-        self.set_config_with_game_target(ConfigKind::Game, changes, Some(identity))
+        self.set_config_for_target(ConfigKind::Game, changes, Some(identity))
             .await
     }
 
-    async fn set_config_with_game_target(
+    pub async fn set_core_config_for_target(
+        &self,
+        identity: &ActiveGameIdentity,
+        changes: &[(&str, &str)],
+    ) -> Result<(), ApiError> {
+        self.set_config_for_target(ConfigKind::Core, changes, Some(identity))
+            .await
+    }
+
+    async fn set_config_for_target(
         &self,
         kind: ConfigKind,
         changes: &[(&str, &str)],
@@ -213,7 +222,9 @@ impl ReplayApiClient {
         query.push(("type", kind.as_str().to_string()));
         if let Some(target) = target {
             query.push(("system", target.system.clone()));
-            query.push(("game_file", target.game_file.clone()));
+            if kind == ConfigKind::Game {
+                query.push(("game_file", target.game_file.clone()));
+            }
         }
         for (option, value) in changes {
             query.push(("option", (*option).to_string()));

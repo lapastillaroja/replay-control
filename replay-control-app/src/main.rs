@@ -37,15 +37,16 @@ mod ssr {
     use replay_control_app::api;
     use replay_control_app::server_fns::{
         AddGameResourceLink, CompleteFirstSetup, DeleteUserCapture, DowngradeAdminToUser,
-        EnableReplayApiAssisted, GetActiveGameConfig, GetAdminSessionTimeout, GetAuthStatus,
+        EnableReplayApiAssisted, GetActiveOverrideConfigs, GetAdminSessionTimeout, GetAuthStatus,
         GetGamePlaytime, GetGameResourceLinks, GetLibraryPlaytime, GetLinkPlayConfig, GetLiveStats,
         GetReplayApiStatus, GetReplayCapabilities, GetReplayInsiderConfig, GetReplayosSettings,
         GetSaveStateSlots, GetTlsCertificateInfo, GetUserCaptures, LoginAdmin, LoginWithReplayCode,
         Logout, LogoutAllBrowsers, PowerOffReplayosDevice, RegenerateTlsCertificateInfo,
-        RemoveGameResourceLink, ReprobeReplayApi, RestartReplayosGame, SaveActiveGameConfig,
-        SaveLinkPlayConfig, SaveReplayInsiderTokenAndRestart, SaveReplayosKioskMode,
-        SendReplayPlayerCommand, SendReplayosMessage, SetAdminSessionTimeout,
-        StartSetupMetadataDownloads, VerifyReplayApiToken,
+        RemoveActiveOverrideSettings, RemoveGameResourceLink, ReprobeReplayApi,
+        RestartReplayosGame, SaveActiveOverrideConfig, SaveLinkPlayConfig,
+        SaveReplayInsiderTokenAndRestart, SaveReplayosKioskMode, SendReplayPlayerCommand,
+        SendReplayosMessage, SetAdminSessionTimeout, StartSetupMetadataDownloads,
+        VerifyReplayApiToken,
     };
     use replay_control_app::util::escape_html;
 
@@ -1046,7 +1047,7 @@ mod ssr {
         server_fn::axum::register_explicit::<EnableReplayApiAssisted>();
         server_fn::axum::register_explicit::<GetReplayApiStatus>();
         server_fn::axum::register_explicit::<GetReplayCapabilities>();
-        server_fn::axum::register_explicit::<GetActiveGameConfig>();
+        server_fn::axum::register_explicit::<GetActiveOverrideConfigs>();
         server_fn::axum::register_explicit::<GetLibraryPlaytime>();
         server_fn::axum::register_explicit::<GetGamePlaytime>();
         server_fn::axum::register_explicit::<GetReplayosSettings>();
@@ -1055,7 +1056,8 @@ mod ssr {
         server_fn::axum::register_explicit::<ReprobeReplayApi>();
         server_fn::axum::register_explicit::<RestartReplayosGame>();
         server_fn::axum::register_explicit::<SaveReplayosKioskMode>();
-        server_fn::axum::register_explicit::<SaveActiveGameConfig>();
+        server_fn::axum::register_explicit::<SaveActiveOverrideConfig>();
+        server_fn::axum::register_explicit::<RemoveActiveOverrideSettings>();
         server_fn::axum::register_explicit::<SaveLinkPlayConfig>();
         server_fn::axum::register_explicit::<GetSaveStateSlots>();
         server_fn::axum::register_explicit::<SendReplayPlayerCommand>();

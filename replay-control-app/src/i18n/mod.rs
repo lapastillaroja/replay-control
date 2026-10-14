@@ -20,6 +20,10 @@ pub fn feature_restriction_message(locale: Locale, restriction: FeatureRestricti
             t(locale, Key::ReplayFeatureUnknownVersion).to_string()
         }
         FeatureRestriction::InsiderRequired => t(locale, Key::ReplayInsiderRequired).to_string(),
+        FeatureRestriction::VulkanUnavailable => {
+            t(locale, Key::ReplayVulkanUnavailable).to_string()
+        }
+        FeatureRestriction::VulkanRequired => t(locale, Key::ReplayVulkanRequired).to_string(),
     }
 }
 

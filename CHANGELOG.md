@@ -16,7 +16,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Atari Jaguar CD support.** A separate `atari_jaguarcd` library for `.cue`, `.cdi`, and `.chd` games, with metadata, artwork, manuals, a dedicated icon, and RetroAchievements identification. Launching CHD images requires RePlayOS 2.0.59 or newer.
 - **Nintendo GameCube and PlayStation 2 support.** Browse GameCube games in `nintendo_gc` (`.rvz`, `.iso`) and PS2 games in `sony_ps2` (`.elf`, `.iso`, `.ciso`, `.cue`, `.gz`, `.chd`, `.cso`, `.zso`, `.m3u`), with metadata, artwork, and system icons. PS2 playlists group their discs and include their combined size. Launching requires a compatible RePlayOS build.
 - **RetroAchievements identification for GameCube and PS2 disc images**, including supported compressed formats, with bundled achievement catalogs. Library identification does not imply that the RePlayOS core supports earning achievements on-device.
-- **Running-game settings on the game detail page.** Adjust Ambiscan, integer scaling, filtering, gamma, screen position, and volume with compact controls and readable, translated values. Screen position moves in steps of two with press-and-hold support. Changes require **Apply Game Settings**; Replay Control checks that the same game is still running before saving.
+- **Running-game settings on the game detail page.** Adjust Ambiscan, integer scaling, filtering, gamma, screen position, and volume with compact controls and readable, translated values. Screen position moves in steps of two with press-and-hold support. Changes require **Apply**; Replay Control checks that the same game is still running before saving.
 - **RePlayOS Insider settings.** Eligible beta users can save or clear their Insider token from Settings. The token is write-only, and applying it reboots RePlayOS.
 - **Link Play settings.** Configure disabled, host, or client mode, host address, port, and LAN discovery together. Changes apply immediately without rebooting RePlayOS.
 - Expanded playtime summaries show lifetime, current-session and current-week totals, unique games played, and the longest session when supported by RePlayOS.
@@ -24,6 +24,9 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Changed
 
 - Updated the RePlayOS integration for the 2.x API, including configuration responses, public version discovery, and expanded playtime fields.
+- Launch and Link Play controls now check the connected RePlayOS version and Insider availability; controls explain when a feature is unavailable on the current device.
+- GameCube, Wii, Triforce, and PS2 launch controls also check Vulkan capability and the selected renderer, with TV setup guidance when Vulkan is needed.
+- Running-game settings can switch between Game and System settings for the current display. The page explains when saved Game settings mask System settings, even with Default values. Each view can remove its own saved settings file, with a warning that emulator options in that file will also be deleted. LCD-only controls are hidden in explicit CRT mode.
 - Unified compact playback and settings controls, with more consistent spacing, mobile layout, and separation between the connection indicator and its text.
 - Installed and development-deployed services keep Replay Control off CPU 0, leaving it available for RePlayOS and using the remaining detected CPUs. Installation now requires at least two CPUs.
 - New installs no longer use the optional `REPLAY_EXTRA_ARGS` service setting; existing 1.0 installs can still be migrated. Use the dedicated port settings to change the listening ports.

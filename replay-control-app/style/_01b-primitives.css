@@ -1108,7 +1108,7 @@
     --meta-text-font-size: var(--meta-text-font-size-info);
 }
 
-:where(.setup-task-hint, .setup-task-status, .setup-task-done, .save-states-slot-separator, .compact-control-value) {
+:where(.setup-task-hint, .setup-task-status, .setup-task-done, .compact-control-value) {
     --secondary-meta-line-height: 1.3;
 }
 
@@ -1247,7 +1247,6 @@
     .system-card-size,
     .fav-group-count,
     .coverage-row,
-    .save-states-slot-separator,
     .compact-control-value,
     .stat-value
 ) {
@@ -1305,7 +1304,7 @@
     --secondary-meta-color: var(--accent);
 }
 
-:where(.system-status-banner-reason, .rom-watcher-banner-reason, .save-states-slot-separator, .compact-control-value) {
+:where(.system-status-banner-reason, .rom-watcher-banner-reason, .compact-control-value) {
     --secondary-meta-size: var(--secondary-meta-size-banner);
 }
 

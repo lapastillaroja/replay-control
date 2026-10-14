@@ -454,6 +454,7 @@ fn is_admin_server_function(function: &str) -> bool {
             | "delete_rom"
             | "rename_rom"
             | "get_replayos_settings"
+            | "save_replayos_message_duration"
             | "get_link_play_config"
             | "save_link_play_config"
             | "get_replay_insider_config"
@@ -505,8 +506,9 @@ fn is_user_server_function(function: &str) -> bool {
                 | "get_game_playtime"
                 | "reprobe_replay_api"
                 | "send_replay_player_command"
-                | "get_active_game_config"
-                | "save_active_game_config"
+                | "get_active_override_configs"
+                | "save_active_override_config"
+                | "remove_active_override_settings"
                 | "send_replayos_message"
                 | "restart_replayos_game"
                 | "get_save_state_slots"
@@ -658,6 +660,10 @@ mod tests {
         );
         assert_eq!(
             server_function_required_role("/sfn/set_admin_session_timeout"),
+            Some(AuthRole::Admin)
+        );
+        assert_eq!(
+            server_function_required_role("/sfn/save_replayos_message_duration"),
             Some(AuthRole::Admin)
         );
         assert_eq!(

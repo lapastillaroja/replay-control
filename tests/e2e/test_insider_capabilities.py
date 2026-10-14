@@ -28,17 +28,19 @@ def open_authenticated(page, path):
 
 @pytest.mark.parametrize("system", ["nintendo_gc", "sony_ps2"])
 @pytest.mark.parametrize("version,enabled,features,locked", [
-    ("2.0.47", True, ["gamecube", "playstation2"], False),
-    ("2.0.47", False, ["gamecube", "playstation2"], True),
-    ("2.0.47", False, ["vulkan"], False),
-    ("2.0.0", None, [], False),
+    ("2.0.47", True, ["gamecube", "playstation2", "vulkan"], False),
+    ("2.0.47", False, ["gamecube", "playstation2", "vulkan"], True),
+    ("2.0.47", False, ["vulkan"], True),
+    ("2.0.0", None, ["vulkan"], True),
     ("2.0.47", "error", [], True),
     ("1.8.0", None, [], True),
     ("1.8.0", True, ["gamecube", "playstation2"], True),
     ("unknown", True, [], True),
 ])
 def test_launch_access_without_changing_device(page, system, version, enabled, features, locked):
-    payload = {} if enabled is None else {"insider_enabled": enabled, "insider_features": features}
+    payload = {"insider_features": features, "video_engine": "vulkan"}
+    if enabled is not None:
+        payload["insider_enabled"] = enabled
     payload["version"] = version
     reason = "Could not check RePlayOS capabilities" if enabled == "error" else "requires active RePlayOS Insider"
     if version == "1.8.0":
@@ -76,6 +78,28 @@ def test_launch_access_without_changing_device(page, system, version, enabled, f
     else:
         expect(launch).to_be_enabled()
     assert page.evaluate("window.__capabilityNavigation === true")
+
+
+def test_vulkan_required_launch_is_disabled_with_guidance(page):
+    payload = {
+        "version": "2.0.59",
+        "insider_enabled": True,
+        "insider_features": ["gamecube", "playstation2", "vulkan"],
+        "video_engine": "opengles",
+    }
+    def intercept(route):
+        if "get_replay_capabilities" in route.request.url:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+        else:
+            route.continue_()
+    page.route("**/sfn/**", intercept)
+    open_authenticated(page, "/games/nintendo_gc")
+    button = page.locator(".game-list-launch-btn").first
+    expect(button).to_be_disabled(timeout=30000)
+    expect(button).to_have_attribute("title", re.compile("Preferred Renderer"))
+    page.locator(".game-list-row-link").first.click()
+    expect(page.locator(".game-launch-action button.game-action-launch")).to_be_disabled()
+    expect(page.locator(".game-launch-action .game-action-note")).to_contain_text("Preferred Renderer")
 
 
 def test_insider_activation_is_separate_from_saved_token(page):

@@ -344,6 +344,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayCapabilitiesUnavailable => {
             "Could not check RePlayOS capabilities. Check the connection and try again."
         }
+        Key::ReplayVulkanUnavailable => {
+            "This system needs Vulkan, which RePlayOS currently supports only on Raspberry Pi 5."
+        }
+        Key::ReplayVulkanRequired => {
+            "This system needs Vulkan. On the TV, open RePlay Options → Video → Preferred Renderer and select Vulkan, then try again."
+        }
         Key::ReplayInsiderHint => {
             "Enter the insider token supplied by RePlayOS to access eligible beta builds. The token is write-only and is never returned to the browser."
         }
@@ -441,23 +447,32 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Genre",
         Key::GameDetailDeveloper => "Developer",
         Key::GameDetailPlaytime => "Play time",
-        Key::GameSettingsTitle => "Running Game Settings",
-        Key::GameSettingsHint => {
-            "Override RePlay video and audio settings for this game. Press Apply Game Settings to save and apply changes. Default inherits the core or global setting."
+        Key::GameSettingsTitle => "Video & Audio Settings",
+        Key::GameSettingsHint => "For this game and screen.",
+        Key::GameSettingsGameScope => "Game",
+        Key::GameSettingsSystemScope => "System",
+        Key::GameSettingsDefaultNotice => {
+            "Default uses the global RePlayOS setting, not the System setting."
         }
+        Key::SystemSettingsHint => "For this system and screen.",
+        Key::SystemSettingsGameOverrideNotice => {
+            "Game settings take priority. Remove them to use System settings."
+        }
+        Key::SystemSettingsApply => "Apply",
+        Key::SystemSettingsSaved => "System settings saved",
         Key::GameSettingsInherit => "Default",
         Key::GameSettingsOff => "Off",
         Key::GameSettingsAmbiscan => "Ambiscan",
         Key::GameSettingsAmbiscanFlat => "Flat",
         Key::GameSettingsAmbiscanRadial => "Radial",
         Key::GameSettingsAmbiscanSmart => "Smart",
-        Key::GameSettingsIntegerScale => "Integer scale",
+        Key::GameSettingsIntegerScale => "Integer scale (LCD only)",
         Key::GameSettingsScaleVertical => "Vertical",
         Key::GameSettingsScaleHorizontal => "Horizontal",
         Key::GameSettingsScaleFull => "Full",
         Key::GameSettingsScaleFullOverscan => "Full overscan",
         Key::GameSettingsScaleVerticalOverscan => "Vertical overscan",
-        Key::GameSettingsVideoFilter => "Video filter",
+        Key::GameSettingsVideoFilter => "Video filter (LCD only)",
         Key::GameSettingsFilterLight => "Light",
         Key::GameSettingsFilterMedium => "Medium",
         Key::GameSettingsFilterStrong => "Strong",
@@ -465,8 +480,28 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameSettingsGamma => "Gamma",
         Key::GameSettingsMonitorX => "Horizontal position",
         Key::GameSettingsMonitorY => "Vertical position",
-        Key::GameSettingsVolume => "System volume",
-        Key::GameSettingsApply => "Apply Game Settings",
+        Key::GameSettingsVolume => "Volume",
+        Key::GameSettingsResetAll => "Reset all",
+        Key::RemoveAndRestart => "Remove and restart",
+        Key::RemoveGameSettings => "Remove Game Settings",
+        Key::RemoveGameSettingsConfirm => {
+            "Remove all settings for this game, including emulator options, and restart? Unsaved progress may be lost."
+        }
+        Key::GameSettingsRemoved => "Game settings removed; restarting the game",
+        Key::GameSettingsAlreadyRemoved => "This game has no saved settings",
+        Key::GameSettingsRemovedRefresh => {
+            "Game settings removed. Refresh this page after the game restarts."
+        }
+        Key::RemoveSystemSettings => "Remove System Settings",
+        Key::RemoveSystemSettingsConfirm => {
+            "Remove all settings for this system and screen, including emulator options, and restart the game? Unsaved progress may be lost."
+        }
+        Key::SystemSettingsRemoved => "System settings removed; restarting the game",
+        Key::SystemSettingsAlreadyRemoved => "This system has no saved settings",
+        Key::SystemSettingsRemovedRefresh => {
+            "System settings removed. Refresh this page after the game restarts."
+        }
+        Key::GameSettingsApply => "Apply",
         Key::GameSettingsUnavailable => {
             "Settings are unavailable. Check the connection and try again."
         }

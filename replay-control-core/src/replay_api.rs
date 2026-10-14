@@ -289,6 +289,13 @@ pub enum ReplayFeature {
 }
 
 impl ReplayFeature {
+    pub fn requires_vulkan(self) -> bool {
+        matches!(
+            self,
+            Self::GameCube | Self::Wii | Self::Triforce | Self::PlayStation2
+        )
+    }
+
     pub fn for_system(system: &str) -> Option<Self> {
         match system {
             "nintendo_gc" => Some(Self::GameCube),
@@ -322,6 +329,8 @@ pub enum FeatureRestriction {
     RequiresVersion(u32, u32, u32),
     UnknownVersion,
     InsiderRequired,
+    VulkanUnavailable,
+    VulkanRequired,
 }
 
 /// Version support and Insider access are separate requirements.
@@ -331,6 +340,10 @@ pub struct DeviceCapabilities {
     pub version: String,
     #[serde(flatten)]
     pub insider: InsiderCapabilities,
+    #[serde(default)]
+    pub vulkan_available: bool,
+    #[serde(default)]
+    pub video_engine: Option<String>,
 }
 
 impl From<InfoResponse> for DeviceCapabilities {
@@ -338,6 +351,8 @@ impl From<InfoResponse> for DeviceCapabilities {
         Self {
             version: info.version,
             insider: info.insider,
+            vulkan_available: info.model.starts_with("Raspberry Pi 5"),
+            video_engine: None,
         }
     }
 }
@@ -358,6 +373,17 @@ impl DeviceCapabilities {
             .is_some_and(|key| self.insider.feature_locked(key))
         {
             return Some(FeatureRestriction::InsiderRequired);
+        }
+        if feature.requires_vulkan() {
+            if !self.vulkan_available {
+                return Some(FeatureRestriction::VulkanUnavailable);
+            }
+            if self.insider.feature_locked("vulkan") {
+                return Some(FeatureRestriction::InsiderRequired);
+            }
+            if self.video_engine.as_deref() != Some("vulkan") {
+                return Some(FeatureRestriction::VulkanRequired);
+            }
         }
         None
     }
@@ -912,8 +938,10 @@ mod tests {
             version: "RePlayOS v1.8.0".into(),
             insider: InsiderCapabilities {
                 insider_enabled: Some(true),
-                insider_features: vec![],
+                insider_features: vec!["vulkan".into()],
             },
+            vulkan_available: true,
+            video_engine: Some("vulkan".into()),
         };
         for feature in [
             ReplayFeature::GameCube,
@@ -933,12 +961,15 @@ mod tests {
             assert_eq!(capabilities.restriction(ReplayFeature::LinkPlay), None);
         }
         capabilities.insider.insider_enabled = Some(false);
-        capabilities.insider.insider_features = vec!["gamecube".into()];
+        capabilities.insider.insider_features = vec!["gamecube".into(), "vulkan".into()];
         assert_eq!(
             capabilities.restriction(ReplayFeature::GameCube),
             Some(FeatureRestriction::InsiderRequired)
         );
-        assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::PlayStation2),
+            Some(FeatureRestriction::InsiderRequired)
+        );
         capabilities.insider.insider_enabled = Some(true);
         assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
         assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
@@ -960,8 +991,10 @@ mod tests {
             version: "RePlayOS v2.0.51".into(),
             insider: InsiderCapabilities {
                 insider_enabled: Some(true),
-                insider_features: vec!["gamecube".into()],
+                insider_features: vec!["gamecube".into(), "vulkan".into()],
             },
+            vulkan_available: true,
+            video_engine: Some("vulkan".into()),
         };
         for feature in [
             ReplayFeature::Wii,
@@ -985,6 +1018,77 @@ mod tests {
         capabilities.insider.insider_enabled = Some(true);
         assert_eq!(capabilities.restriction(ReplayFeature::Wii), None);
         assert_eq!(capabilities.restriction(ReplayFeature::Triforce), None);
+    }
+
+    #[test]
+    fn vulkan_launch_gate_accepts_public_vulkan_and_checks_selected_renderer() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v2.0.59".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(false),
+                insider_features: vec![],
+            },
+            vulkan_available: true,
+            video_engine: Some("opengles".into()),
+        };
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::PlayStation2,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::VulkanRequired)
+            );
+        }
+        capabilities.video_engine = Some("vulkan".into());
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::PlayStation2,
+        ] {
+            assert_eq!(capabilities.restriction(feature), None);
+        }
+        capabilities.insider.insider_features.push("vulkan".into());
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::Wii),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::Wii), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+        capabilities.vulkan_available = false;
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::Wii),
+            Some(FeatureRestriction::VulkanUnavailable)
+        );
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+    }
+
+    #[test]
+    fn vulkan_hardware_gate_uses_model_not_insider_feature_membership() {
+        let info: InfoResponse = serde_json::from_str(
+            r#"{"version":"RePlayOS v2.0.59","model":"Raspberry Pi 5","insider_enabled":false,"insider_features":[]}"#,
+        )
+        .unwrap();
+        let mut capabilities = DeviceCapabilities::from(info);
+        assert!(capabilities.vulkan_available);
+        capabilities.video_engine = Some("vulkan".into());
+        assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+
+        let pi4: InfoResponse = serde_json::from_str(
+            r#"{"version":"RePlayOS v2.0.59","model":"Raspberry Pi 4 Model B Rev 1.5","insider_enabled":true,"insider_features":["vulkan"]}"#,
+        )
+        .unwrap();
+        let mut capabilities = DeviceCapabilities::from(pi4);
+        assert!(!capabilities.vulkan_available);
+        capabilities.video_engine = Some("vulkan".into());
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::VulkanUnavailable)
+        );
     }
 
     #[test]

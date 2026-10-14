@@ -473,7 +473,6 @@ fn SaveStatesSlotSummary(
             <span class="compact-control-label">
                 {move || format!("{} {}/18", t(i18n.locale.get(), Key::SaveStatesSlot), selected_slot.get())}
             </span>
-            <span class="save-states-slot-separator">{"-"}</span>
             <span class="compact-control-value">
                 {move || state.get()}
             </span>
@@ -608,7 +607,7 @@ fn schedule_save_state_refresh(refresh: RwSignal<u64>) {
 }
 
 fn save_state_target_label(locale: Locale, slot: u8, state: &str) -> String {
-    format!("{} {}/18 - {}", t(locale, Key::SaveStatesSlot), slot, state,)
+    format!("{} {}/18 {}", t(locale, Key::SaveStatesSlot), slot, state)
 }
 
 #[component]
