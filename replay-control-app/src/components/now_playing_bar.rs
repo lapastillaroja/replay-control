@@ -283,6 +283,7 @@ fn SaveStatesPanel(
             <SaveStatesSlotStepper selected_slot=slot decrement increment control_feedback />
             <Suspense fallback=move || view! {
                 <SaveStatesSlotSummary selected_slot=slot state=Signal::derive(loading_state) />
+                <SaveStatesPreview url=Signal::derive(|| None::<String>) />
                 <SaveStatesActionsLoading />
             }>
                 {move || Suspend::new(async move {
@@ -321,6 +322,16 @@ fn SaveStatesLoadedControls(
     let slots = StoredValue::new(snapshot);
     let selected_lookup =
         Memo::new(move |_| selected_save_slot(slots.get_value(), selected_slot.get()));
+    let preview_url = move || {
+        let SaveSlotsSnapshot::Ready(statuses) = slots.get_value() else {
+            return None;
+        };
+        statuses
+            .into_iter()
+            .find(|status| status.slot == selected_slot.get())
+            .and_then(|status| status.preview_url)
+            .map(|url| format!("{url}&refresh={}", refresh.get()))
+    };
     let slot_state = move || {
         let locale = i18n.locale.get();
         match selected_lookup.get() {
@@ -393,6 +404,7 @@ fn SaveStatesLoadedControls(
 
     view! {
         <SaveStatesSlotSummary selected_slot state=Signal::derive(slot_state) />
+        <SaveStatesPreview url=Signal::derive(preview_url) />
         <div class="compact-control-actions">
             <button
                 type="button"
@@ -416,6 +428,22 @@ fn SaveStatesLoadedControls(
                 <PlayerControlSvgIcon icon=PlayerControlIcon::Load />
                 <span class="visually-hidden">{move || t(i18n.locale.get(), Key::SaveStatesLoad)}</span>
             </button>
+        </div>
+    }
+}
+
+#[component]
+fn SaveStatesPreview(#[prop(into)] url: Signal<Option<String>>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <div class="save-states-preview">
+            {move || match url.get() {
+                Some(url) => view! { <img src=url alt="" loading="lazy" /> }.into_any(),
+                None => view! {
+                    <span>{move || t(i18n.locale.get(), Key::SaveStatesNoScreenshot)}</span>
+                }.into_any(),
+            }}
         </div>
     }
 }

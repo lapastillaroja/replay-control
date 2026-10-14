@@ -331,6 +331,49 @@
     }
 }
 
+@media (min-width: 900px) and (min-height: 600px) {
+    .now-playing-more-panel .compact-controls-panel {
+        --grid-columns:
+            var(--save-states-summary-column-width-spacious)
+            minmax(0, 1fr)
+            80px
+            minmax(var(--save-states-detail-column-width-spacious), auto);
+        align-items: center;
+    }
+
+    .save-states-preview {
+        display: flex;
+        grid-column: 3;
+        grid-row: 1;
+        align-items: center;
+        justify-content: center;
+        width: 80px;
+        height: var(--control-height);
+        overflow: hidden;
+        border: var(--control-border);
+        border-radius: var(--thumbnail-radius);
+        background: var(--surface-hover);
+    }
+
+    .save-states-preview span {
+        color: var(--text-secondary);
+        font-size: var(--tiny-text-font-size-default);
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    .now-playing-more-panel .compact-control-actions {
+        grid-column: 4;
+    }
+
+    .save-states-preview img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+}
+
 /* ── Desktop / landscape (1024px) ─────────────────────────────── */
 
 @media (min-width: 1024px) {

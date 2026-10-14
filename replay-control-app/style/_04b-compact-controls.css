@@ -110,6 +110,10 @@
     width: 100%;
 }
 
+.save-states-preview {
+    display: none;
+}
+
 .save-states-step-group {
     --grid-columns: var(--control-height) var(--control-height);
     --grid-rows: var(--control-height);
@@ -148,11 +152,11 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: right;
 }
 
 .compact-control-actions {
     --grid-columns: var(--control-height) var(--control-height);
-    text-align: right;
     --grid-rows: var(--control-height);
 }
 
@@ -176,10 +180,6 @@
     background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
 }
 
-.active-game-overrides-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-    gap: var(--control-gap);
 .active-game-settings-header {
     display: flex;
     align-items: center;
@@ -250,6 +250,10 @@
     display: none;
 }
 
+.active-game-overrides-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: var(--control-gap);
 }
 
 .game-override-row {
@@ -306,10 +310,6 @@
     gap: var(--control-gap);
 }
 
-.active-game-settings-footer .status-msg {
-    flex: 1 1 16rem;
-    margin: 0;
-}
 .active-game-settings-footer .form-btn {
     display: inline-flex;
     align-items: center;
@@ -351,6 +351,10 @@
     stroke-linejoin: round;
 }
 
+.active-game-settings-footer .status-msg {
+    flex: 1 1 16rem;
+    margin: 0;
+}
 
 .active-game-settings-apply {
     flex: 0 0 auto;

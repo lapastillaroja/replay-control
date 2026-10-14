@@ -19,6 +19,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - **Running-game settings on the game detail page.** Adjust Ambiscan, integer scaling, filtering, gamma, screen position, and volume with compact controls and readable, translated values. Screen position moves in steps of two with press-and-hold support. Changes require **Apply**; Replay Control checks that the same game is still running before saving.
 - **RePlayOS Insider settings.** Eligible beta users can save or clear their Insider token from Settings. The token is write-only, and applying it reboots RePlayOS.
 - **Link Play settings.** Configure disabled, host, or client mode, host address, port, and LAN discovery together. Changes apply immediately without rebooting RePlayOS.
+- **Save state screenshots.** On larger screens, the player bar shows the selected save slot's screenshot when RePlayOS has one.
 - Expanded playtime summaries show lifetime, current-session and current-week totals, unique games played, and the longest session when supported by RePlayOS.
 
 ### Changed

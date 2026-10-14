@@ -25,6 +25,8 @@ The player bar carries quick on-TV controls for the running game: take a screens
 
 - **Save states** - pick a slot (1-18) and save or load the game's state at that slot, straight from the browser. Loading is only offered for slots that already hold a state.
 
+On larger screens, the expanded panel reserves a space for RePlayOS's screenshot of the selected slot. It says “No screenshot” when none is available. The compact mobile controls remain unchanged.
+
 All controls act on whatever RePlayOS currently has loaded, so they work the same whether the game was launched from Replay Control or from the TV.
 
 ## How it works

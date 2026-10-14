@@ -23,6 +23,7 @@ mod ssr {
     use replay_control_core::runtime_env::HostKind;
     use replay_control_core::skins;
     use replay_control_core_server::replay_service::{detect_host, packaged_standalone};
+    use replay_control_core_server::save_states::{list_save_state_files, save_state_preview_path};
     use replay_control_core_server::security::tls::{
         ensure_self_signed_certificate, install_default_crypto_provider,
         regenerate_self_signed_certificate,
@@ -99,6 +100,13 @@ mod ssr {
         /// Path to the site root (where pkg/ and style.css live)
         #[arg(long, default_value = "target/site")]
         site_root: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SaveStatePreviewQuery {
+        system: String,
+        rom_filename: String,
+        slot: u8,
     }
 
     fn https_enabled(enable_https: bool, dangerous_disable_https: bool, host: HostKind) -> bool {
@@ -1271,6 +1279,44 @@ mod ssr {
             },
         );
 
+        let preview_state = app_state.clone();
+        let save_state_preview_handler = axum::routing::get(
+            move |axum::extract::Query(query): axum::extract::Query<SaveStatePreviewQuery>,
+                  headers: HeaderMap| {
+                let state = preview_state.clone();
+                async move {
+                    if !(1..=18).contains(&query.slot) {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+                    let saves_dir = state.replay_data_storage().saves_dir();
+                    let preview = tokio::task::spawn_blocking(move || {
+                        let state_file =
+                            list_save_state_files(&saves_dir, &query.system, &query.rom_filename)
+                                .into_iter()
+                                .find(|file| file.slot == query.slot && file.has_preview)?;
+                        let preview = save_state_preview_path(&state_file.path)
+                            .canonicalize()
+                            .ok()?;
+                        let root = saves_dir.canonicalize().ok()?;
+                        preview.starts_with(root).then_some(preview)
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    let Some(preview) = preview else {
+                        return StatusCode::NOT_FOUND.into_response();
+                    };
+                    serve_file_etagged(
+                        &preview,
+                        "image/png",
+                        &headers,
+                        api::CACHE_PRIVATE_REVALIDATE,
+                    )
+                    .await
+                }
+            },
+        );
+
         // Manuals handler: serves downloaded PDFs from <storage>/manuals/<system>/<file>
         let manuals_state = app_state.clone();
         let manuals_handler = axum::routing::get(
@@ -1428,6 +1474,7 @@ mod ssr {
             .route("/sse/now-playing", now_playing_sse_handler)
             .route("/sse/events", events_sse_handler)
             .route("/captures/*path", captures_handler)
+            .route("/save-state-preview", save_state_preview_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/owned-manuals/*path", owned_manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)

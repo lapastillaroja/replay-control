@@ -1047,6 +1047,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesJustNow => "たった今",
         Key::SaveStatesMinutesAgo => "{0}分前",
         Key::SaveStatesStatusPreview => "状態未取得",
+        Key::SaveStatesNoScreenshot => "画像なし",
         Key::SaveStatesPreviousSlot => "前のスロット",
         Key::SaveStatesNextSlot => "次のスロット",
         Key::SaveStatesSave => "ステートを保存",

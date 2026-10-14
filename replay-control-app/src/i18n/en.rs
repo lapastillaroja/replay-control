@@ -1047,6 +1047,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesJustNow => "just now",
         Key::SaveStatesMinutesAgo => "{0} min ago",
         Key::SaveStatesStatusPreview => "status not loaded",
+        Key::SaveStatesNoScreenshot => "No screenshot",
         Key::SaveStatesPreviousSlot => "Previous slot",
         Key::SaveStatesNextSlot => "Next slot",
         Key::SaveStatesSave => "Save state",

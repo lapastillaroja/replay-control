@@ -30,6 +30,7 @@ pub const CACHE_1D: &str = "public, max-age=86400";
 pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
 pub const CACHE_REVALIDATE: &str = "public, max-age=0, must-revalidate";
 pub const CACHE_PRIVATE_1D: &str = "private, max-age=86400";
+pub const CACHE_PRIVATE_REVALIDATE: &str = "private, max-age=0, must-revalidate";
 pub const CACHE_PRIVATE_IMMUTABLE: &str = "private, max-age=31536000, immutable";
 
 /// Read pool size for the library DB. WAL on ext4 SD lets concurrent reads

@@ -893,6 +893,7 @@ pub enum Key {
     SaveStatesJustNow,
     SaveStatesMinutesAgo,
     SaveStatesStatusPreview,
+    SaveStatesNoScreenshot,
     SaveStatesPreviousSlot,
     SaveStatesNextSlot,
     SaveStatesSave,
