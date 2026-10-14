@@ -9,11 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  # DISABLED: release-plz release-pr fails with cargo package on workspaces
-  # with internal path dependencies in git_only mode.
-  # Tracking: https://github.com/release-plz/release-plz/issues/2595
-  # Fix PR: https://github.com/release-plz/release-plz/pull/2789
-  # Re-enable once the fix is released.
+  # DISABLED: versions (especially betas) and CHANGELOG.md are curated manually.
+  # release-pr would propose automatic version bumps and changelog entries.
+  # The former git_only workspace blocker (release-plz#2595) was fixed in 0.3.168;
+  # it is no longer the reason this job is disabled. Revisit only if we choose to
+  # automate version proposals, with changelog_update = false to preserve the
+  # hand-written release notes.
   #
   # release-pr:
   #   runs-on: ubuntu-latest
