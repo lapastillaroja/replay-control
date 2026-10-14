@@ -27,13 +27,11 @@ The extract also records `num_achievements`, which the build ignores; only
 
 ## Scope
 
-Only the systems the catalog builds `canonical_game` metadata for are present —
-the same set `scripts/download-metadata.sh` fetches No-Intro DATs for. Disc
-systems (PlayStation, PS2, DS, Saturn, Dreamcast, …), Atari, NEC, SNK, and 3DO
-are not in the catalog, so RA data for them could never be ingested and is not
-fetched. Arcade is deferred: RA's "Arcade" console is keyed by RA display titles
-(hack-heavy) while `arcade_game` rows are MAME romset names, so title-matching is
-unreliable and needs a separate rom-name/hash approach.
+The extract includes cartridge systems, arcade, and disc systems with runtime
+`rc_hash` recipes. Disc entries populate the catalog's hash lookup independently
+of `canonical_game`, so they do not require No-Intro identification data. Virtual
+Boy also computes its whole-file RA hash at scan time, allowing homebrew and
+hacks absent from No-Intro to resolve by exact hash.
 
 ## Where the data comes from
 

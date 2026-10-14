@@ -44,6 +44,8 @@ fn classify_asset(name: &str) -> Option<AssetKind> {
 /// Download URLs for a specific release, resolved fresh from GitHub API.
 #[derive(Debug)]
 pub struct AssetUrls {
+    /// Package matching the installed package manager and architecture, if any.
+    pub package_url: Option<String>,
     pub binary_url: String,
     pub site_url: String,
     /// `None` for releases that predate the catalog asset (< v0.4.0-beta.3).
@@ -116,6 +118,11 @@ pub async fn github_get(
 
 /// Parse a GitHub release JSON object into an AvailableUpdate.
 pub fn parse_release(json: &serde_json::Value) -> Option<AvailableUpdate> {
+    // Repository-authorized tokens can see drafts before CI attaches assets.
+    // A draft must never be offered as an installable update.
+    if json.get("draft").and_then(|value| value.as_bool()) == Some(true) {
+        return None;
+    }
     let tag = json.get("tag_name")?.as_str()?;
     let version = tag.strip_prefix('v').unwrap_or(tag);
 
@@ -429,6 +436,7 @@ pub async fn resolve_asset_urls(
     base_url: &str,
     repo: &str,
     tag: &str,
+    package_name: Option<&str>,
     api_key: Option<&str>,
 ) -> Result<AssetUrls, Box<dyn std::error::Error + Send + Sync>> {
     let url = format!("{base_url}/repos/{repo}/releases/tags/{tag}");
@@ -443,6 +451,7 @@ pub async fn resolve_asset_urls(
     let mut site_url = None;
     let mut catalog_url = None;
     let mut checksums_url = None;
+    let mut package_url = None;
 
     for asset in assets {
         let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -450,6 +459,10 @@ pub async fn resolve_asset_urls(
         let Some(url) = download_url else { continue };
         if name == "checksums.sha256" {
             checksums_url = Some(url.to_string());
+            continue;
+        }
+        if package_name == Some(name) {
+            package_url = Some(url.to_string());
             continue;
         }
         if !name.ends_with(".tar.gz") {
@@ -464,6 +477,7 @@ pub async fn resolve_asset_urls(
     }
 
     Ok(AssetUrls {
+        package_url,
         binary_url: binary_url.ok_or("Binary asset not found in release")?,
         site_url: site_url.ok_or("Site asset not found in release")?,
         catalog_url,
@@ -772,6 +786,13 @@ DEF456 *replay-catalog.tar.gz
     }
 
     #[test]
+    fn parse_release_skips_draft() {
+        let mut json = make_release_json("v0.3.0-beta.1", true);
+        json["draft"] = serde_json::json!(true);
+        assert!(parse_release(&json).is_none());
+    }
+
+    #[test]
     fn parse_release_no_v_prefix() {
         let json = serde_json::json!({
             "tag_name": "1.0.0",
@@ -853,7 +874,7 @@ DEF456 *replay-catalog.tar.gz
     async fn resolve_asset_urls_includes_catalog_when_present() {
         let mut server = mockito::Server::new_async().await;
         mock_release_endpoint(&mut server, make_release_json("v0.5.0", false));
-        let assets = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None)
+        let assets = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None, None)
             .await
             .unwrap();
         assert!(assets.binary_url.ends_with("/binary.tar.gz"));
@@ -862,6 +883,42 @@ DEF456 *replay-catalog.tar.gz
             assets.catalog_url.as_deref(),
             Some("https://example.com/v0.5.0/catalog.tar.gz")
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_asset_urls_selects_requested_package() {
+        let mut release = make_release_json("v0.5.0", false);
+        let assets = release["assets"].as_array_mut().unwrap();
+        for arch in ["arm64", "amd64"] {
+            assets.push(serde_json::json!({
+                "name": format!("replay-control_0.5.0_{arch}.deb"),
+                "browser_download_url": format!("https://example.com/replay-control_0.5.0_{arch}.deb")
+            }));
+        }
+        assets.push(serde_json::json!({
+            "name": "replay-control-0.5.0-1.x86_64.rpm",
+            "browser_download_url": "https://example.com/replay-control-0.5.0-1.x86_64.rpm"
+        }));
+        assets.push(serde_json::json!({
+            "name": "replay-control_0.4.9_amd64.deb",
+            "browser_download_url": "https://example.com/replay-control_0.4.9_amd64.deb"
+        }));
+        let mut server = mockito::Server::new_async().await;
+        mock_release_endpoint(&mut server, release);
+        let arch = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "amd64"
+        };
+        for name in [
+            format!("replay-control_0.5.0_{arch}.deb"),
+            "replay-control-0.5.0-1.x86_64.rpm".to_string(),
+        ] {
+            let resolved = resolve_asset_urls(&server.url(), REPO, "v0.5.0", Some(&name), None)
+                .await
+                .unwrap();
+            assert!(resolved.package_url.unwrap().ends_with(&name));
+        }
     }
 
     #[tokio::test]
@@ -887,7 +944,7 @@ DEF456 *replay-catalog.tar.gz
             .with_header("content-type", "application/json")
             .with_body(legacy.to_string())
             .create();
-        let assets = resolve_asset_urls(&server.url(), REPO, "v0.4.0-beta.2", None)
+        let assets = resolve_asset_urls(&server.url(), REPO, "v0.4.0-beta.2", None, None)
             .await
             .unwrap();
         assert!(assets.catalog_url.is_none());
@@ -907,7 +964,7 @@ DEF456 *replay-catalog.tar.gz
         });
         let mut server = mockito::Server::new_async().await;
         mock_release_endpoint(&mut server, no_binary);
-        let err = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None)
+        let err = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None, None)
             .await
             .unwrap_err();
         assert!(err.to_string().contains("Binary asset not found"));
@@ -1061,6 +1118,28 @@ DEF456 *replay-catalog.tar.gz
         .await
         .unwrap();
         assert_eq!(result.unwrap().version, "0.3.0-beta.2");
+    }
+
+    #[tokio::test]
+    async fn check_beta_channel_skips_newer_draft() {
+        let mut draft = make_release_json("v0.4.0-beta.1", true);
+        draft["draft"] = serde_json::json!(true);
+        let gh = mock_github(
+            None,
+            serde_json::json!([draft, make_release_json("v0.3.0-beta.1", true),]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.2.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.3.0-beta.1");
     }
 
     #[tokio::test]

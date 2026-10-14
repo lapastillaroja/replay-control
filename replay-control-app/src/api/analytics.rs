@@ -103,6 +103,7 @@ pub fn mark_version_reported(store: &SettingsStore) {
 mod tests {
     use super::{
         AnalyticsClient, PingRequest, SettingsStore, build_analytics_ping, mark_version_reported,
+        settings,
     };
 
     fn settings_path(store: &SettingsStore) -> std::path::PathBuf {
@@ -154,6 +155,16 @@ mod tests {
         let store = make_store();
         write_settings(&store, "analytics = \"false\"\n");
         assert!(build_analytics_ping(&store).is_none());
+        std::fs::remove_dir_all(store.dir()).ok();
+    }
+
+    #[test]
+    fn analytics_preference_can_be_enabled_after_opt_out() {
+        let store = make_store();
+        settings::write_analytics(&store, false).unwrap();
+        assert!(build_analytics_ping(&store).is_none());
+        settings::write_analytics(&store, true).unwrap();
+        assert!(build_analytics_ping(&store).is_some());
         std::fs::remove_dir_all(store.dir()).ok();
     }
 

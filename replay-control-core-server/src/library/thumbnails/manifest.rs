@@ -67,6 +67,19 @@ pub fn collect_all_repos() -> Vec<RepoInfo> {
     repos
 }
 
+/// Whether every thumbnail repository required by the current system registry
+/// has been imported. This is the shared completeness check for startup and
+/// setup UI status, so adding a system cannot leave those paths disagreeing.
+pub fn all_repos_imported(conn: &Connection) -> bool {
+    collect_all_repos().into_iter().all(|repo| {
+        let source_name = thumbnails::libretro_source_name(&repo.display_name);
+        external_metadata::get_data_source(conn, &source_name)
+            .ok()
+            .flatten()
+            .is_some()
+    })
+}
+
 #[cfg(test)]
 mod collect_all_repos_tests {
     use super::*;
@@ -78,6 +91,44 @@ mod collect_all_repos_tests {
                 .iter()
                 .any(|repo| repo.display_name == "Sony - PlayStation Portable")
         );
+    }
+
+    #[test]
+    fn shared_jaguar_repo_is_collected_once() {
+        assert_eq!(
+            collect_all_repos()
+                .iter()
+                .filter(|repo| repo.display_name == "Atari - Jaguar")
+                .count(),
+            1
+        );
+        assert!(
+            collect_all_repos()
+                .iter()
+                .all(|repo| repo.display_name != "Atari - Jaguar CD")
+        );
+    }
+
+    #[test]
+    fn completeness_requires_every_registered_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = external_metadata::open_at(&dir.path().join("external.db")).unwrap();
+        assert!(!all_repos_imported(&conn));
+
+        for repo in collect_all_repos() {
+            let source_name = thumbnails::libretro_source_name(&repo.display_name);
+            external_metadata::upsert_data_source(
+                &conn,
+                &source_name,
+                "libretro-thumbnails",
+                "test-version",
+                default_branch(&repo.display_name),
+                1,
+            )
+            .unwrap();
+        }
+
+        assert!(all_repos_imported(&conn));
     }
 }
 
@@ -105,7 +156,124 @@ pub enum GhResponse {
         reset_unix: Option<u64>,
         message: String,
     },
-    Error(replay_control_core::error::Error),
+    Error(Error),
+}
+
+// Only log GitHub's JSON message, never arbitrary response bodies or request
+// headers. Keep remote text single-line and bounded, and redact credentials
+// defensively in case an upstream/proxy echoes them in its error message.
+fn github_error_message(body: &[u8], headers: &[(&str, &str)]) -> String {
+    let mut message = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|json| json.get("message")?.as_str().map(str::to_owned))
+        .unwrap_or_else(|| {
+            if body.is_empty() {
+                "empty response body".into()
+            } else {
+                "no JSON error message (body omitted)".into()
+            }
+        });
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("authorization") {
+            message = message.replace(value, "[redacted]");
+            if let Some((_, token)) = value.split_once(' ')
+                && !token.is_empty()
+            {
+                message = message.replace(token, "[redacted]");
+            }
+        }
+    }
+    message
+        .chars()
+        .take(512)
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+#[cfg(test)]
+mod github_diagnostics_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn messages_are_bounded_single_line_and_redacted() {
+        let body = serde_json::json!({"message": format!("Bearer secret-token\nsecret-token {}", "é".repeat(1000))}).to_string();
+        let message =
+            github_error_message(body.as_bytes(), &[("Authorization", "Bearer secret-token")]);
+        assert!(!message.contains("secret-token"));
+        assert!(!message.contains('\n'));
+        assert_eq!(message.chars().count(), 512);
+        assert!(message.contains("[redacted]"));
+        assert_eq!(github_error_message(b"", &[]), "empty response body");
+        assert_eq!(
+            github_error_message(b"<html>private debug data</html>", &[]),
+            "no JSON error message (body omitted)"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_500_retains_request_context_not_credentials() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/manifest")
+            .match_header("authorization", "Bearer secret-token")
+            .with_status(500)
+            .with_header("x-github-request-id", "TEST-500")
+            .with_header("x-ratelimit-remaining", "4995")
+            .with_header("retry-after", "30")
+            .create_async()
+            .await;
+        let response = gh_api_get(
+            &format!("{}/manifest", server.url()),
+            &[("Authorization", "Bearer secret-token")],
+            Duration::from_secs(5),
+        )
+        .await;
+        let GhResponse::Error(error) = response else {
+            panic!("500 must not be classified as rate limiting");
+        };
+        let message = error.to_string();
+        for expected in [
+            "500",
+            "empty response body",
+            "TEST-500",
+            "remaining=Some(4995)",
+            "retry_after_seconds=Some(30)",
+        ] {
+            assert!(message.contains(expected), "{message}");
+        }
+        assert!(!message.contains("secret-token"));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn rate_limit_retains_reset_and_safe_upstream_message() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/manifest")
+            .with_status(403)
+            .with_header("x-ratelimit-remaining", "0")
+            .with_header("x-ratelimit-reset", "1234567890")
+            .with_body(r#"{"message":"API rate limit exceeded"}"#)
+            .create_async()
+            .await;
+        let response = gh_api_get(
+            &format!("{}/manifest", server.url()),
+            &[],
+            Duration::from_secs(5),
+        )
+        .await;
+        let GhResponse::RateLimited {
+            reset_unix,
+            message,
+        } = response
+        else {
+            panic!("expected rate limiting");
+        };
+        assert_eq!(reset_unix, Some(1234567890));
+        assert!(message.contains("API rate limit exceeded"));
+        mock.assert_async().await;
+    }
 }
 
 /// GET a GitHub API endpoint and return a structured outcome that the
@@ -119,12 +287,11 @@ async fn gh_api_get(
     for (k, v) in headers {
         req = req.header(*k, *v);
     }
-    let resp = match req.send().await {
+    let mut resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
-            return GhResponse::Error(replay_control_core::error::Error::Other(format!(
-                "HTTP request failed for {url}: {e}"
-            )));
+            tracing::warn!(endpoint = url, error = %e, "GitHub manifest request failed");
+            return GhResponse::Error(Error::Other(format!("HTTP request failed for {url}: {e}")));
         }
     };
     let status = resp.status();
@@ -137,31 +304,48 @@ async fn gh_api_get(
     let rl_remaining = parse_header("x-ratelimit-remaining");
     let rl_reset = parse_header("x-ratelimit-reset");
 
-    if status.as_u16() == 403 && rl_remaining == Some(0) {
-        // Drain the body for the message field — best-effort.
-        let body = resp.text().await.unwrap_or_default();
-        let message = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
-            .unwrap_or_else(|| "GitHub API rate limit exceeded".into());
-        return GhResponse::RateLimited {
-            reset_unix: rl_reset,
-            message,
-        };
-    }
     if !status.is_success() {
-        return GhResponse::Error(replay_control_core::error::Error::Other(format!(
-            "HTTP {status} for {url}"
-        )));
+        let request_id = resp
+            .headers()
+            .get("x-github-request-id")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unavailable")
+            .to_string();
+        let retry_after = parse_header("retry-after");
+        let mut body = Vec::new();
+        // Error pages can be large; never allocate an unbounded HTML body.
+        while body.len() < 8192 {
+            match resp.chunk().await {
+                Ok(Some(chunk)) => {
+                    body.extend_from_slice(&chunk[..chunk.len().min(8192 - body.len())])
+                }
+                _ => break,
+            }
+        }
+        let message = github_error_message(&body, headers);
+        tracing::warn!(endpoint = url, status = status.as_u16(), %request_id,
+            remaining = ?rl_remaining, reset_unix = ?rl_reset, retry_after_seconds = ?retry_after,
+            %message, "GitHub manifest HTTP error");
+        let details = format!(
+            "HTTP {status} for {url}: {message} (request_id={request_id}, remaining={rl_remaining:?}, reset_unix={rl_reset:?}, retry_after_seconds={retry_after:?})"
+        );
+        if status.as_u16() == 403 && rl_remaining == Some(0) {
+            return GhResponse::RateLimited {
+                reset_unix: rl_reset,
+                message: details,
+            };
+        }
+        return GhResponse::Error(Error::Other(details));
     }
     match resp.json::<serde_json::Value>().await {
         Ok(body) => GhResponse::Json {
             body,
             rate_limit_remaining: rl_remaining,
         },
-        Err(e) => GhResponse::Error(replay_control_core::error::Error::Other(format!(
-            "JSON parse error for {url}: {e}"
-        ))),
+        Err(e) => {
+            tracing::warn!(endpoint = url, status = status.as_u16(), error = %e, "GitHub manifest JSON decode failed");
+            GhResponse::Error(Error::Other(format!("JSON parse error for {url}: {e}")))
+        }
     }
 }
 
@@ -414,9 +598,11 @@ pub async fn import_all_manifests(
                     mark_rate_limited(&mut stats, reset_unix, &message);
                     continue;
                 }
-                Err(_) => {
+                Err(first_error) => {
                     // Try the other branch before giving up.
                     let alt = if branch == "master" { "main" } else { "master" };
+                    tracing::warn!(repository = %repo.display_name, branch, fallback_branch = alt,
+                        error = ?first_error, "Manifest fetch failed; trying alternate branch");
                     match fetch_repo_tree(&repo.url_name, alt, api_key).await {
                         Ok((sha, entries)) => (sha, entries, alt),
                         Err(GhResponse::RateLimited {
@@ -427,7 +613,10 @@ pub async fn import_all_manifests(
                             continue;
                         }
                         Err(GhResponse::Error(e)) => {
-                            stats.errors.push(format!("{}: {e}", repo.display_name));
+                            stats.errors.push(format!(
+                                "{}: {branch}: {first_error:?}; {alt}: {e}",
+                                repo.display_name
+                            ));
                             consecutive_failures += 1;
                             continue;
                         }
@@ -505,6 +694,10 @@ pub async fn import_all_manifests(
     }
 
     on_progress(total, total, "");
+
+    for error in &stats.errors {
+        tracing::warn!(%error, "Thumbnail source import failed; source remains incomplete or stale");
+    }
 
     tracing::info!(
         "Manifest import: complete — {} repo(s) fetched, {} entries indexed, {} error(s){}",

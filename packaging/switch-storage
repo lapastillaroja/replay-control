@@ -1,0 +1,99 @@
+#!/bin/sh
+# Runs in its own transient systemd unit so restarting replay-control does not
+# kill the process responsible for checking and rolling back the switch.
+set -eu
+
+candidate=${1:?storage root required}
+state_dir=/var/lib/replay-control
+selection=$state_dir/standalone-storage-path
+status=$state_dir/storage-switch-status
+pending=$state_dir/storage-switch-pending
+previous=$state_dir/storage-switch-previous
+mkdir -p "$state_dir"
+exec 9>"$state_dir/storage-switch.lock"
+if ! flock -n 9; then
+    exit 1
+fi
+
+old_selection=$(mktemp "$state_dir/storage-selection-old.XXXXXX")
+new_selection=$(mktemp "$state_dir/storage-selection-new.XXXXXX")
+trap 'rm -f "$old_selection" "$new_selection"' EXIT HUP INT TERM
+had_selection=false
+if [ -f "$selection" ]; then
+    cp "$selection" "$old_selection"
+    had_selection=true
+fi
+
+# The wrapper recovers this journal on next startup if this unit is killed or
+# the machine loses power before the switch is committed.
+cp "$old_selection" "$previous"
+sync "$previous"
+printf '%s\n' "$candidate" > "$pending"
+sync "$pending"
+printf 'running\n' > "$status"
+printf '%s\n' "$candidate" > "$new_selection"
+chmod 600 "$new_selection"
+mv -f "$new_selection" "$selection"
+sync "$selection"
+
+# Probe the live process's effective arguments. The unit may override ports
+# through EnvironmentFile or a systemd drop-in.
+probe_live_service() {
+    probe_pid=$(systemctl show -p MainPID --value replay-control.service 2>/dev/null) || return 1
+    case "$probe_pid" in ''|*[!0-9]*) return 1 ;; esac
+    [ -r "/proc/$probe_pid/cmdline" ] || return 1
+    argv=$(tr '\000' '\n' < "/proc/$probe_pid/cmdline")
+    http_port=$(printf '%s\n' "$argv" | awk '
+        previous == "--port" { port = $0; previous = "" }
+        $0 == "--port" { previous = "--port" }
+        /^--port=/ { port = substr($0, 8) }
+        END { print port }
+    ')
+    https_port=$(printf '%s\n' "$argv" | awk '
+        previous == "--https-port" { port = $0; previous = "" }
+        $0 == "--https-port" { previous = "--https-port" }
+        /^--https-port=/ { port = substr($0, 14) }
+        END { print port }
+    ')
+    case "$http_port:$https_port" in *[!0-9:]*|:*|*:) return 1 ;; esac
+    if printf '%s\n' "$argv" | grep -qx -- '--dangerous-disable-https'; then
+        probe_url="http://127.0.0.1:$http_port/api/core/status"
+    else
+        probe_url="https://127.0.0.1:$https_port/api/core/status"
+    fi
+    curl --silent --show-error --fail --insecure --max-time 2 \
+        "$probe_url" >/dev/null 2>&1 && \
+        [ "$(curl --silent --show-error --fail --insecure --max-time 2 \
+            "${probe_url%/api/core/status}/storage-setup/active-root" 2>/dev/null)" = "$candidate" ]
+}
+
+healthy=false
+if systemctl restart replay-control.service; then
+    attempt=0
+    while [ "$attempt" -lt 30 ]; do
+        if systemctl is-active --quiet replay-control.service && probe_live_service; then
+            healthy=true
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+fi
+
+if [ "$healthy" = true ]; then
+    rm -f "$pending" "$previous"
+    sync "$state_dir"
+    printf 'ok\n' > "$status"
+    exit 0
+fi
+
+if [ "$had_selection" = true ]; then
+    cp "$old_selection" "$selection"
+else
+    rm -f "$selection"
+fi
+systemctl restart replay-control.service >/dev/null 2>&1 || true
+rm -f "$pending" "$previous"
+sync "$state_dir"
+printf 'error\nThe selected folder could not start Replay Control. The previous storage selection was restored.\n' > "$status"
+exit 1

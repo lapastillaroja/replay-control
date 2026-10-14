@@ -52,7 +52,8 @@ for endpoint in Developers Publishers Genres; do
         exit 1
     }
 
-    echo "$response" | python3 -c "
+    temp_file=$(mktemp "${dest}.tmp.XXXXXX")
+    if ! printf '%s' "$response" | python3 -c "
 import sys, json
 raw = json.load(sys.stdin)
 data = raw.get('data', {}).get('${lower}', {})
@@ -60,7 +61,12 @@ data = raw.get('data', {}).get('${lower}', {})
 result = {k: v['name'] for k, v in data.items()}
 json.dump(result, sys.stdout, indent=2, ensure_ascii=False, sort_keys=True)
 print()
-" > "$dest"
+" > "$temp_file"; then
+        rm -f "$temp_file"
+        echo "  FAILED to parse /v1/$endpoint; existing lookup preserved" >&2
+        exit 1
+    fi
+    mv "$temp_file" "$dest"
 
     count=$(python3 -c "import json; print(len(json.load(open('$dest'))))")
     echo "  Saved $count entries to $dest"

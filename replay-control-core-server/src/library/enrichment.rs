@@ -21,7 +21,7 @@ use replay_control_core::title_utils::{filename_stem, normalize_title_for_metada
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
 pub use crate::image_resolution::{
     ArcadeInfoLookup, BoxArtResult, ImageIndex, build_image_index, format_box_art_url,
-    resolve_box_art_with_hash,
+    resolve_box_art,
 };
 
 /// Composite version stamp identifying every bundled input the enrichment
@@ -434,12 +434,13 @@ pub fn enrich_system(input: EnrichSystemInput<'_>) -> EnrichmentResult {
         .iter()
         .filter_map(|filename| {
             let hash_name = hash_matched_names.get(filename).map(|s| s.as_str());
-            let art = match resolve_box_art_with_hash(
+            let art = match resolve_box_art(
                 index,
                 arcade_lookup,
                 system,
                 filename,
                 hash_name,
+                base_title_by_rom.get(filename).map(String::as_str),
             ) {
                 BoxArtResult::Found(path) => Some(format_box_art_url(system, &path)),
                 BoxArtResult::ManifestHit(m) => {

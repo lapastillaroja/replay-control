@@ -83,6 +83,10 @@ The **Advanced** section offers a CSV export for library audits and metadata cle
 
 Each row represents one ROM and includes identity fields, title and region information, content hash data, metadata coverage, media presence, RetroAchievements data, classification tags, grouping keys, and missing-field summaries.
 
+When RePlayOS play-time tracking is enabled, the library summary includes lifetime play time, the current RePlayOS session, the current calendar week, unique games played, and the longest session. Per-system rows show their individual tracked totals, and game detail pages show per-game totals.
+
+Older RePlayOS versions may not report every summary statistic. Missing statistics show as unavailable, rather than zero; the totals they do report remain visible.
+
 The export is built for ROM pack maintenance, source coverage comparisons, and spotting systems that need better metadata. It reflects the live library, including hacks and translations, instead of hiding anything.
 
 {{< screenshot "metadata-actions.png" "Advanced section with CSV export controls" >}}

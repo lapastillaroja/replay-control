@@ -120,6 +120,8 @@ PLAN.md
 # Build-time catalog (generated from data/ — not committed; only fixture is tracked)
 /catalog.sqlite
 /catalog.sqlite.*
+/replay-control_*.deb
+/replay-control-*.rpm
 *.sqlite-shm
 *.sqlite-wal
 

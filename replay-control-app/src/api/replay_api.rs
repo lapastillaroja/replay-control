@@ -101,41 +101,42 @@ impl ReplayApi {
         RestartWindowGuard { api: self }
     }
 
-    /// Probe `get_version` and update the status machine. Returns the new
+    /// Probe authenticated status and version, then update the status machine. Returns the new
     /// status. Used at startup, by the maintenance loop, and by "Check again".
     pub async fn probe(&self) -> ReplayApiStatus {
-        let status = if !self.client.has_token() {
-            ReplayApiStatus::NotConfigured
-        } else {
-            match self.client.get_version().await {
-                // A reachable, authorized device still fails the support gate if
-                // its version parses below the 1.8.0 floor. Unparseable versions fail open — see
-                // `is_supported_replayos_version`.
-                Ok(version) if is_supported_replayos_version(&version.version) => {
-                    ReplayApiStatus::Active {
-                        version: version.version,
-                    }
+        self.probe_checked().await.unwrap_or_else(|_| self.status())
+    }
+
+    pub async fn probe_checked(&self) -> Result<ReplayApiStatus, ApiError> {
+        let result = async {
+            self.client.get_status().await?;
+            self.client.get_version().await
+        }
+        .await;
+        let failure = result.as_ref().err().cloned();
+        let status = match result {
+            Ok(version) if is_supported_replayos_version(&version.version) => {
+                ReplayApiStatus::Active {
+                    version: version.version,
                 }
-                Ok(version) => ReplayApiStatus::Unsupported {
-                    version: Some(version.version),
-                },
-                Err(ApiError::MissingToken) => ReplayApiStatus::NotConfigured,
-                Err(ApiError::Unauthorized) => ReplayApiStatus::Unauthorized,
-                Err(ApiError::Unreachable { reason }) => {
-                    if self.restart_in_flight() {
-                        // Expected outage mid-restart: keep the current status
-                        // (typically `PendingRestart`).
-                        return self.status();
-                    }
-                    ReplayApiStatus::Error { reason }
-                }
-                Err(other) => ReplayApiStatus::Error {
-                    reason: other.to_string(),
-                },
             }
+            Ok(version) => ReplayApiStatus::Unsupported {
+                version: Some(version.version),
+            },
+            Err(ApiError::MissingToken) => ReplayApiStatus::NotConfigured,
+            Err(ApiError::Unauthorized) => ReplayApiStatus::Unauthorized,
+            Err(ApiError::Unreachable { .. }) if self.restart_in_flight() => {
+                return Ok(self.status());
+            }
+            Err(error) => ReplayApiStatus::Error {
+                reason: error.to_string(),
+            },
         };
         self.set_status(status.clone());
-        status
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(status),
+        }
     }
 
     /// Classify an error observed by a live call site (now-playing poll,
@@ -154,7 +155,10 @@ impl ReplayApi {
             }
             // MissingToken means we raced an onboarding reset; Bad/Decode are
             // call-specific failures, not connection-state changes.
-            ApiError::MissingToken | ApiError::BadStatus { .. } | ApiError::Decode { .. } => {}
+            ApiError::MissingToken
+            | ApiError::RateLimited { .. }
+            | ApiError::BadStatus { .. }
+            | ApiError::Decode { .. } => {}
         }
     }
 }

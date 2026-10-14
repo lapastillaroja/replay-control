@@ -109,16 +109,9 @@ pub struct System {
     /// (MAME cores — RA arcade is FBNeo only), and `arcade_stv` (mednafen_stv not an
     /// RA core).
     ///
-    /// This is NOT the whole story for whether a given game earns RA on-device: a
-    /// separate RePlayOS frontend bug fails RA hash generation for **`.chd`** disc
-    /// images on every disc core (`hash generation failed (Invalid state)`), while
-    /// track-sheet / raw images (`.cue`/`.gdi`/`.iso`/`.ccd`) work. So the disc cores
-    /// DO support RA (this flag is `true`) but `.chd` games can't earn it today. That
-    /// per-file `.chd` check lives in the game-detail view, not here. Verified on-device
-    /// 2026-06-19: same Beetle Saturn core, `.chd` (Daytona) fails while `.cue`/`.iso`/
-    /// `.ccd` work, and the `.chd` games still run — so the failing step is the
-    /// frontend's RA hash reader, not the core's CHD loading. `.chd` fails identically
-    /// across four cores (genesis_plus_gx, neocd, opera, mednafen_saturn).
+    /// RePlayOS 2.0.53 fixed the frontend dependency that prevented CHD images
+    /// from working with RetroAchievements. Format support and whether an exact
+    /// game hash matches an RA set remain separate from this core capability.
     #[serde(skip)]
     pub core_supports_retroachievements: bool,
 }
@@ -148,10 +141,10 @@ pub struct CartHashRule {
 /// Runtime RetroAchievements hash recipe for a system's ROMs, carried per
 /// system as [`System::rc_hash_kind`].
 ///
-/// Cart variants (NES/SNES/N64) hash header-stripped / byte-order-normalized
-/// ROM bytes at scan time; whole-file carts need no recipe because their RA
-/// hash equals the No-Intro md5, matched onto `rom_entry.ra_id` at catalog
-/// build. Disc variants read the boot file / disc structures. The recipe
+/// Cart variants hash ROM bytes at scan time; most whole-file carts also join
+/// their RA hash through No-Intro at catalog build. Virtual Boy hashes at scan
+/// time too, so homebrew and hacks absent from No-Intro can still match RA.
+/// Disc variants read the boot file / disc structures. The recipe
 /// implementations live in `replay_control_core_server::{rom_hash,
 /// rc_hash_disc}`; this enum is only the per-system dispatch key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +152,7 @@ pub enum RcHashKind {
     Nes,
     Snes,
     N64,
+    VirtualBoy,
     Psx,
     /// PSP UMD image: `PSP_GAME/PARAM.SFO` + `PSP_GAME/SYSDIR/EBOOT.BIN`
     /// hashed together (`.pbp` files hash as a whole file instead).
@@ -169,12 +163,16 @@ pub enum RcHashKind {
     ThreeDo,
     PceCd,
     NeoGeoCd,
+    JaguarCd,
+    GameCube,
+    Wii,
+    Ps2,
 }
 
 impl RcHashKind {
     /// Header carts whose rc_hash is computed from ROM bytes at scan time.
     pub fn is_cart(self) -> bool {
-        matches!(self, Self::Nes | Self::Snes | Self::N64)
+        matches!(self, Self::Nes | Self::Snes | Self::N64 | Self::VirtualBoy)
     }
 
     /// Disc systems whose rc_hash reads the boot file / disc structures.
@@ -313,6 +311,30 @@ pub static SYSTEMS: &[System] = &[
         core_supports_retroachievements: false,
     },
     System {
+        folder_name: "arcade_triforce",
+        shared_manuals_folder: Some("arcade"),
+        retrokit_manuals_folder: Some("arcade"),
+        cart_hash: None,
+        rc_hash_kind: None,
+        nointro_dats: &[],
+        tgdb_platform_ids: &[],
+        mister_manual_repos: &[],
+        display_name: "Arcade Triforce",
+        manufacturer: "Nintendo / Sega / Namco",
+        category: SystemCategory::Arcade,
+        abbreviation: "TRI",
+        placeholder_color: "#6b5f9f",
+        extensions: &[
+            "gcm", "iso", "ciso", "gcz", "elf", "dol", "dff", "tgc", "rvz", "m3u", "wia",
+        ],
+        launchbox_platforms: &["Arcade"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["MAME"],
+        has_retroachievements: false,
+        core_supports_retroachievements: false,
+    },
+    System {
         folder_name: "atari_2600",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("atari2600"),
@@ -388,7 +410,7 @@ pub static SYSTEMS: &[System] = &[
         rc_hash_kind: None,
         nointro_dats: &[],
         tgdb_platform_ids: &[28],
-        mister_manual_repos: &["manualsdb-jaguar", "manualsdb-jaguarcd"],
+        mister_manual_repos: &["manualsdb-jaguar"],
         display_name: "Atari Jaguar",
         manufacturer: "Atari",
         category: SystemCategory::Console,
@@ -401,6 +423,30 @@ pub static SYSTEMS: &[System] = &[
         thumbnail_repos: &["Atari - Jaguar"],
         has_retroachievements: false,
         core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "atari_jaguarcd",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: Some("atarijaguar"),
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::JaguarCd),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[29],
+        mister_manual_repos: &["manualsdb-jaguarcd"],
+        display_name: "Atari Jaguar CD",
+        manufacturer: "Atari",
+        category: SystemCategory::Console,
+        abbreviation: "JCD",
+        placeholder_color: "#8b4513",
+        extensions: &["cue", "cdi", "chd"],
+        launchbox_platforms: &["Atari Jaguar CD"],
+        hidden: false,
+        uses_megabit: false,
+        // libretro-thumbnails keeps Jaguar CD artwork in the shared Jaguar
+        // repository; there is no separate "Atari - Jaguar CD" repository.
+        thumbnail_repos: &["Atari - Jaguar"],
+        has_retroachievements: true,
+        core_supports_retroachievements: true,
     },
     System {
         folder_name: "atari_lynx",
@@ -649,6 +695,54 @@ pub static SYSTEMS: &[System] = &[
         core_supports_retroachievements: false,
     },
     System {
+        folder_name: "nintendo_gc",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::GameCube),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[2],
+        mister_manual_repos: &[],
+        display_name: "Nintendo GameCube",
+        manufacturer: "Nintendo",
+        category: SystemCategory::Console,
+        abbreviation: "GC",
+        placeholder_color: "#6355a5",
+        extensions: &[
+            "gcm", "iso", "ciso", "gcz", "elf", "dol", "dff", "tgc", "rvz", "m3u", "wia",
+        ],
+        launchbox_platforms: &["Nintendo GameCube"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Nintendo - GameCube"],
+        has_retroachievements: true,
+        core_supports_retroachievements: false,
+    },
+    System {
+        folder_name: "nintendo_wii",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Wii),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[9],
+        mister_manual_repos: &[],
+        display_name: "Nintendo Wii",
+        manufacturer: "Nintendo",
+        category: SystemCategory::Console,
+        abbreviation: "WII",
+        placeholder_color: "#95b8cf",
+        extensions: &[
+            "iso", "wbfs", "ciso", "gcz", "elf", "dol", "dff", "wad", "rvz", "m3u", "wia",
+        ],
+        launchbox_platforms: &["Nintendo Wii"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Nintendo - Wii"],
+        has_retroachievements: true,
+        core_supports_retroachievements: true,
+    },
+    System {
         folder_name: "nintendo_gb",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("gb"),
@@ -745,6 +839,31 @@ pub static SYSTEMS: &[System] = &[
         hidden: false,
         uses_megabit: true,
         thumbnail_repos: &["Nintendo - Nintendo 64"],
+        has_retroachievements: true,
+        core_supports_retroachievements: true,
+    },
+    System {
+        folder_name: "nintendo_vb",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: Some(CartHashRule {
+            extensions: &["vb", "vboy", "bin"],
+            excluded_name_markers: &[],
+        }),
+        rc_hash_kind: Some(RcHashKind::VirtualBoy),
+        nointro_dats: &["Nintendo - Virtual Boy.dat"],
+        tgdb_platform_ids: &[4918],
+        mister_manual_repos: &[],
+        display_name: "Virtual Boy",
+        manufacturer: "Nintendo",
+        category: SystemCategory::Console,
+        abbreviation: "VB",
+        placeholder_color: "#bb1826",
+        extensions: &["vb", "vboy", "bin"],
+        launchbox_platforms: &["Nintendo Virtual Boy"],
+        hidden: false,
+        uses_megabit: true,
+        thumbnail_repos: &["Nintendo - Virtual Boy"],
         has_retroachievements: true,
         core_supports_retroachievements: true,
     },
@@ -1173,6 +1292,30 @@ pub static SYSTEMS: &[System] = &[
         core_supports_retroachievements: false,
     },
     System {
+        folder_name: "sony_ps2",
+        shared_manuals_folder: None,
+        retrokit_manuals_folder: None,
+        cart_hash: None,
+        rc_hash_kind: Some(RcHashKind::Ps2),
+        nointro_dats: &[],
+        tgdb_platform_ids: &[11],
+        mister_manual_repos: &[],
+        display_name: "PlayStation 2",
+        manufacturer: "Sony",
+        category: SystemCategory::Console,
+        abbreviation: "PS2",
+        placeholder_color: "#003791",
+        extensions: &[
+            "elf", "iso", "ciso", "cue", "gz", "chd", "cso", "zso", "m3u",
+        ],
+        launchbox_platforms: &["Sony Playstation 2"],
+        hidden: false,
+        uses_megabit: false,
+        thumbnail_repos: &["Sony - PlayStation 2"],
+        has_retroachievements: true,
+        core_supports_retroachievements: false,
+    },
+    System {
         folder_name: "sony_psp",
         shared_manuals_folder: None,
         retrokit_manuals_folder: Some("psp"),
@@ -1509,6 +1652,7 @@ pub fn arcade_source_priority(folder_name: &str) -> &'static [ArcadeSource] {
         "arcade_mame_2k3p" => &[Mame2k3p, Mame, Fbneo],
         "arcade_dc" => &[Naomi, Mame, Mame2k3p, Fbneo],
         "arcade_stv" => &[Mame, Mame2k3p, Fbneo],
+        "arcade_triforce" => &[Mame, Mame2k3p, Fbneo],
         "snk_ng" => &[Mame, Mame2k3p, Fbneo],
         _ => &[],
     }
@@ -1619,6 +1763,7 @@ mod tests {
         // Saturn shares the Sega CD recipe.
         assert_eq!(kind("sega_st"), Some(SegaCd));
         assert!(kind("sega_dc").unwrap().is_disc());
+        assert_eq!(kind("atari_jaguarcd"), Some(JaguarCd));
         // Whole-file carts have no runtime recipe (RA hash = No-Intro md5).
         assert_eq!(kind("nintendo_gba"), None);
     }
@@ -1717,6 +1862,7 @@ mod tests {
         assert!(!find_system("sega_dc").unwrap().uses_megabit());
         assert!(!find_system("sega_cd").unwrap().uses_megabit());
         assert!(!find_system("sega_st").unwrap().uses_megabit());
+        assert!(!find_system("atari_jaguarcd").unwrap().uses_megabit());
         assert!(!find_system("nec_pcecd").unwrap().uses_megabit());
         assert!(!find_system("snk_ngcd").unwrap().uses_megabit());
         // Computer / floppy-based
@@ -1782,6 +1928,106 @@ mod tests {
         assert_eq!(psp.thumbnail_repos, &["Sony - PlayStation Portable"]);
         assert!(psp.has_retroachievements);
         assert!(psp.core_supports_retroachievements);
+    }
+
+    #[test]
+    fn jaguar_cd_is_registered_as_a_disc_system() {
+        let jaguar = find_system("atari_jaguar").expect("atari_jaguar must be in SYSTEMS");
+        let jaguar_cd = find_system("atari_jaguarcd").expect("atari_jaguarcd must be in SYSTEMS");
+        assert_eq!(jaguar_cd.display_name, "Atari Jaguar CD");
+        assert_eq!(jaguar_cd.category, SystemCategory::Console);
+        assert_eq!(jaguar_cd.extensions, &["cue", "cdi", "chd"]);
+        assert_eq!(jaguar_cd.tgdb_platform_ids, &[29]);
+        assert_eq!(jaguar_cd.launchbox_platforms, &["Atari Jaguar CD"]);
+        assert_eq!(jaguar_cd.thumbnail_repos, &["Atari - Jaguar"]);
+        assert_eq!(jaguar_cd.thumbnail_repos, jaguar.thumbnail_repos);
+        assert!(!jaguar_cd.uses_megabit);
+
+        assert_eq!(jaguar.mister_manual_repos, &["manualsdb-jaguar"]);
+        assert_eq!(jaguar_cd.mister_manual_repos, &["manualsdb-jaguarcd"]);
+    }
+
+    #[test]
+    fn gamecube_and_ps2_use_replayos_system_names_and_formats() {
+        for (folder, extensions, platform, repo, tgdb_id) in [
+            (
+                "nintendo_gc",
+                &[
+                    "gcm", "iso", "ciso", "gcz", "elf", "dol", "dff", "tgc", "rvz", "m3u", "wia",
+                ][..],
+                "Nintendo GameCube",
+                "Nintendo - GameCube",
+                2,
+            ),
+            (
+                "sony_ps2",
+                &[
+                    "elf", "iso", "ciso", "cue", "gz", "chd", "cso", "zso", "m3u",
+                ][..],
+                "Sony Playstation 2",
+                "Sony - PlayStation 2",
+                11,
+            ),
+        ] {
+            let system = find_system(folder).unwrap();
+            assert_eq!(system.extensions, extensions);
+            assert_eq!(system.category, SystemCategory::Console);
+            assert_eq!(system.launchbox_platforms, &[platform]);
+            assert_eq!(system.thumbnail_repos, &[repo]);
+            assert_eq!(system.tgdb_platform_ids, &[tgdb_id]);
+            assert!(!system.hidden);
+            assert!(!system.uses_megabit);
+            assert!(system.rc_hash_kind.is_some_and(RcHashKind::is_disc));
+            assert!(system.has_retroachievements);
+        }
+    }
+
+    #[test]
+    fn replayos_2_0_52_systems_are_registered() {
+        for (folder, extensions, platform, thumbnail_repo) in [
+            (
+                "nintendo_wii",
+                &[
+                    "iso", "wbfs", "ciso", "gcz", "elf", "dol", "dff", "wad", "rvz", "m3u", "wia",
+                ][..],
+                "Nintendo Wii",
+                "Nintendo - Wii",
+            ),
+            (
+                "arcade_triforce",
+                &[
+                    "gcm", "iso", "ciso", "gcz", "elf", "dol", "dff", "tgc", "rvz", "m3u", "wia",
+                ][..],
+                "Arcade",
+                "MAME",
+            ),
+            (
+                "nintendo_vb",
+                &["vb", "vboy", "bin"][..],
+                "Nintendo Virtual Boy",
+                "Nintendo - Virtual Boy",
+            ),
+        ] {
+            let system = find_system(folder).unwrap();
+            assert_eq!(system.extensions, extensions);
+            assert!(system.launchbox_platforms.contains(&platform));
+            assert!(system.thumbnail_repos.contains(&thumbnail_repo));
+        }
+        let wii = find_system("nintendo_wii").unwrap();
+        assert_eq!(wii.rc_hash_kind, Some(RcHashKind::Wii));
+        assert!(wii.has_retroachievements);
+        assert!(wii.core_supports_retroachievements);
+
+        let virtual_boy = find_system("nintendo_vb").unwrap();
+        assert_eq!(virtual_boy.rc_hash_kind, Some(RcHashKind::VirtualBoy));
+        assert_eq!(virtual_boy.nointro_dats, &["Nintendo - Virtual Boy.dat"]);
+        assert!(virtual_boy.has_retroachievements);
+        assert!(virtual_boy.core_supports_retroachievements);
+
+        // RA has no published Triforce game sets yet. Do not claim an arcade
+        // game is matched through the unrelated FBNeo/MAME arcade catalog.
+        let triforce = find_system("arcade_triforce").unwrap();
+        assert!(!triforce.has_retroachievements);
     }
 
     #[test]

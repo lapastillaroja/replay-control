@@ -1,0 +1,62 @@
+#!/bin/bash
+set -euo pipefail
+
+# Runs in its own transient systemd service, outside replay-control.service.
+deb=${1:?package path required}
+expected=${2:?version required}
+result=/var/lib/replay-control/update-result
+mkdir -p /var/lib/replay-control
+exec 9>/var/lib/replay-control/update-result.lock
+write_result() {
+    flock -x 9
+    printf '%s\n' "$1" > "$result"
+    flock -u 9
+}
+write_result running
+on_exit() {
+    flock -x 9
+    if [[ -f "$result" && $(cat "$result") == running ]]; then
+        printf 'failed:Package update was interrupted. Check APT and retry.\n' > "$result"
+    fi
+    flock -u 9
+    rm -f "$deb"
+}
+trap on_exit EXIT
+trap 'exit 1' TERM INT
+if ! output=$(DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$deb" 2>&1); then
+    if grep -qiE 'lock|could not get lock' <<< "$output"; then
+        reason='APT is busy. Retry when the other package operation finishes.'
+    elif grep -qiE 'no space left|not enough free space' <<< "$output"; then
+        reason='Insufficient space for the package. Free space and retry.'
+    else
+        reason="APT failed: $(tail -n 2 <<< "$output" | tr '\n' ' ')"
+    fi
+    write_result "failed:$reason"
+    exit 1
+fi
+installed=$(dpkg-query -W -f='${Version}' replay-control)
+package_expected=${expected/-/\~}
+if [[ "$installed" != "$package_expected" ]]; then
+    write_result "failed:Installed version $installed differs from $expected"
+    exit 1
+fi
+port=8443
+if [[ -f /etc/default/replay-control ]]; then
+    # Only read the numeric port, not arbitrary shell commands in the env file.
+    configured=$(sed -n 's/^REPLAY_HTTPS_PORT=//p' /etc/default/replay-control | tail -1)
+    case "$configured" in
+        \"*\") configured=${configured#\"}; configured=${configured%\"} ;;
+        \'*\') configured=${configured#\'}; configured=${configured%\'} ;;
+    esac
+    [[ "$configured" =~ ^[0-9]+$ ]] && port=$configured
+fi
+for _ in {1..30}; do
+    if curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/version" | grep -q "\"version\":\"$expected\"" &&
+       curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/core/status" >/dev/null; then
+        write_result "ok:$expected"
+        exit 0
+    fi
+    sleep 2
+done
+write_result 'failed:Package installed but service health check failed. Check journalctl -u replay-control.'
+exit 1

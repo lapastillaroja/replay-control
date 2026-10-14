@@ -46,7 +46,7 @@ jobs:
   # ── Build ───────────────────────────────────────────────────────────
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
 
@@ -60,7 +60,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli@0.2.127
+        run: cargo install wasm-bindgen-cli@0.2.129
 
       - name: Install WASM compression tools
         run: sudo apt-get install -y binaryen brotli
@@ -162,3 +162,63 @@ jobs:
             tests/e2e/test-results/
             tests/e2e/*.xml
           retention-days: 7
+
+  package-e2e:
+    name: Package E2E (${{ matrix.format }})
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [deb, rpm]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-artifacts
+
+      - name: Restore binary permission
+        run: chmod +x target/release/replay-control-app
+
+      - name: Install package tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev rpm
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright pytest
+          playwright install chromium --with-deps
+
+      - name: Read package version
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("replay-control-app/Cargo.toml", "rb"))["package"]["version"])')
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build Debian package
+        if: matrix.format == 'deb'
+        run: ./scripts/package-deb.sh "$PACKAGE_VERSION" amd64
+
+      - name: Build Fedora package
+        if: matrix.format == 'rpm'
+        run: ./scripts/package-rpm.sh "$PACKAGE_VERSION"
+
+      - name: Test Debian package and browser
+        if: matrix.format == 'deb'
+        env:
+          CONTAINER_ENGINE: docker
+          RUN_BROWSER_E2E: "1"
+        run: tests/package/run-debian.sh amd64 "replay-control_${PACKAGE_VERSION}_amd64.deb"
+
+      - name: Test Fedora package and browser
+        if: matrix.format == 'rpm'
+        env:
+          CONTAINER_ENGINE: docker
+          RUN_BROWSER_E2E: "1"
+        run: tests/package/run-fedora.sh x86_64 "replay-control-${PACKAGE_VERSION}-1.x86_64.rpm"

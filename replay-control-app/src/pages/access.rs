@@ -26,9 +26,9 @@ pub fn AccessSecurityPage() -> impl IntoView {
         || (),
         |_| async {
             let status = server_fns::get_auth_status().await?;
-            let on_device = server_fns::get_mode()
+            let on_replayos = server_fns::get_host_kind()
                 .await
-                .map(|profile| profile.is_device())
+                .map(|host| host.is_replayos())
                 .unwrap_or(false);
             let admin_timeout = if admin_settings_unlocked(&status) {
                 server_fns::get_admin_session_timeout().await.ok()
@@ -36,7 +36,7 @@ pub fn AccessSecurityPage() -> impl IntoView {
                 None
             };
             let certificate = server_fns::get_tls_certificate_info().await.ok();
-            Ok::<_, ServerFnError>((status, on_device, admin_timeout, certificate))
+            Ok::<_, ServerFnError>((status, on_replayos, admin_timeout, certificate))
         },
     );
 
@@ -52,12 +52,12 @@ pub fn AccessSecurityPage() -> impl IntoView {
             <div class="settings-form">
                 <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                     {move || match snapshot.get() {
-                        Some(Ok((status, on_device, admin_timeout, certificate))) => view! {
+                        Some(Ok((status, on_replayos, admin_timeout, certificate))) => view! {
                             <AccessSecurityContent
                                 initial_status=status
                                 initial_admin_timeout=admin_timeout
                                 initial_certificate=certificate
-                                on_device
+                                on_replayos
                             />
                         }
                             .into_any(),
@@ -76,7 +76,7 @@ fn AccessSecurityContent(
     initial_status: AuthStatus,
     initial_admin_timeout: Option<String>,
     initial_certificate: Option<TlsCertificateInfo>,
-    on_device: bool,
+    on_replayos: bool,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let status = RwSignal::new(initial_status);
@@ -187,7 +187,7 @@ fn AccessSecurityContent(
             <h3 class="form-label">{move || t(i18n.locale.get(), Key::AccessDevicePasswordTitle)}</h3>
             <p class="form-hint">{move || t(i18n.locale.get(), Key::AccessDevicePasswordHint)}</p>
             {move || {
-                if !on_device {
+                if !on_replayos {
                     view! { <DeviceOnlyNotice /> }.into_any()
                 } else if admin_unlocked() {
                     view! { <PasswordForm /> }.into_any()

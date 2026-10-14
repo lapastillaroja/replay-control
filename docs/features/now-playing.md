@@ -13,7 +13,7 @@ The companion app shows the game currently loaded in RePlayOS. Open browser tabs
 
 The app distinguishes between a loaded game, the RePlayOS menu, and RePlayOS being unavailable. During game launches or core transitions, the UI avoids briefly showing stale game information.
 
-For multi-disc games, the player bar also shows which disc is in use ("Disc 1/4"), and it updates as the disc changes on the TV.
+For multi-disc games, the player bar also shows which disc is in use ("Disc 1/4"), and it updates as the disc changes on the TV. This indicator is read-only; disc switching and tray controls are handled on RePlayOS.
 
 {{< screenshot "now-playing-shenmue-mobile.png" "Player bar showing the current disc of a multi-disc game" >}}
 
@@ -24,6 +24,8 @@ The player bar carries quick on-TV controls for the running game: take a screens
 {{< screenshot "now-playing-astro-more-mobile.png" "Save and load state slots" >}}
 
 - **Save states** - pick a slot (1-18) and save or load the game's state at that slot, straight from the browser. Loading is only offered for slots that already hold a state.
+
+On larger screens, the expanded panel reserves a space for RePlayOS's screenshot of the selected slot. It says “No screenshot” when none is available. The compact mobile controls remain unchanged.
 
 All controls act on whatever RePlayOS currently has loaded, so they work the same whether the game was launched from Replay Control or from the TV.
 

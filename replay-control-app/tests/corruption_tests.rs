@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use replay_control_core::runtime_env::HostKind;
 use server_fn::ServerFn;
 use tokio::time::timeout;
 use tower::ServiceExt;
@@ -92,7 +93,13 @@ impl StandaloneStorage {
     }
 
     fn build_state(&self) -> AppState {
-        AppState::new(Some(self.path.to_string_lossy().into_owned()), None, None).unwrap()
+        AppState::new(
+            HostKind::Standalone,
+            Some(self.path.to_string_lossy().into_owned()),
+            None,
+            None,
+        )
+        .unwrap()
     }
 }
 

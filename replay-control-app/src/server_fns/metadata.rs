@@ -4,13 +4,15 @@ use replay_control_core::auth::AuthRole;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::auth::{PasswordSubject, verify_os_password};
 #[cfg(feature = "ssr")]
-use replay_control_core_server::external_metadata::{
-    clear_launchbox, get_data_source_stats, launchbox_game_count,
-};
+use replay_control_core_server::external_metadata::{clear_launchbox, launchbox_game_count};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::replay_service::packaged_standalone;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::settings::write_setup_dismissed;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::thumbnail_manifest;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,8 +23,11 @@ pub struct SetupStatus {
     pub has_metadata: bool,
     /// Thumbnail index has entries.
     pub has_thumbnail_index: bool,
-    /// Running on the RePlayOS device rather than standalone development mode.
-    pub is_device: bool,
+    /// Running on RePlayOS.
+    pub is_replayos: bool,
+    /// A standalone package has a browser-selected library root.
+    #[serde(default)]
+    pub has_storage_step: bool,
     /// Current browser has admin access.
     #[serde(default)]
     pub admin_access: bool,
@@ -44,19 +49,21 @@ pub struct SetupStatus {
 #[server(prefix = "/sfn")]
 pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError> {
     let state = super::app_state()?;
-    let is_device = state.mode.is_device();
+    let is_replayos = state.host.is_replayos();
+    let has_storage_step = packaged_standalone(state.host);
     let admin_access = super::auth::current_auth_role(&state).await? == AuthRole::Admin;
 
     // Invited (non-admin) users on the device only browse and play games; the
     // setup checklist is admin-only work and would just confuse them, so never
     // show it to them — not even with ?setup. This also keeps the metadata scan
     // and the password KDF off the non-admin request path.
-    if is_device && !admin_access {
+    if is_replayos && !admin_access {
         return Ok(SetupStatus {
             show_setup: false,
             has_metadata: true,
             has_thumbnail_index: true,
-            is_device,
+            is_replayos,
+            has_storage_step,
             admin_access: false,
             replay_api_active: true,
             default_root_password_active: false,
@@ -74,7 +81,8 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
                 show_setup: false,
                 has_metadata: true,
                 has_thumbnail_index: true,
-                is_device,
+                is_replayos,
+                has_storage_step,
                 admin_access,
                 replay_api_active: true,
                 default_root_password_active: false,
@@ -89,18 +97,19 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
         _ => false,
     };
     let default_root_password_active =
-        is_device && verify_os_password(PasswordSubject::Root, "replayos").unwrap_or(false);
+        is_replayos && verify_os_password(PasswordSubject::Root, "replayos").unwrap_or(false);
 
     let show_setup = force
         || !has_metadata
         || !has_thumbnail_index
-        || (is_device && (!replay_api_active || default_root_password_active));
+        || (is_replayos && (!replay_api_active || default_root_password_active));
 
     Ok(SetupStatus {
         show_setup,
         has_metadata,
         has_thumbnail_index,
-        is_device,
+        is_replayos,
+        has_storage_step,
         admin_access,
         replay_api_active,
         default_root_password_active,
@@ -117,11 +126,7 @@ async fn setup_metadata_status(state: &crate::api::AppState) -> (bool, bool) {
 
     let has_thumbnail_index = state
         .external_metadata_reader
-        .read(|conn| {
-            get_data_source_stats(conn, "libretro-thumbnails")
-                .map(|s| s.total_entries > 0)
-                .unwrap_or(false)
-        })
+        .read(thumbnail_manifest::all_repos_imported)
         .await
         .unwrap_or(false);
 

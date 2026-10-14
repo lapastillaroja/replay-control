@@ -30,6 +30,7 @@ pub const CACHE_1D: &str = "public, max-age=86400";
 pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
 pub const CACHE_REVALIDATE: &str = "public, max-age=0, must-revalidate";
 pub const CACHE_PRIVATE_1D: &str = "private, max-age=86400";
+pub const CACHE_PRIVATE_REVALIDATE: &str = "private, max-age=0, must-revalidate";
 pub const CACHE_PRIVATE_IMMUTABLE: &str = "private, max-age=31536000, immutable";
 
 /// Read pool size for the library DB. WAL on ext4 SD lets concurrent reads
@@ -106,12 +107,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use replay_control_core::error::Result as CoreResult;
-use replay_control_core::runtime_env::Mode;
+use replay_control_core::runtime_env::HostKind;
 use replay_control_core::skins::{SkinId, theme_css};
 use replay_control_core_server::auth::{AuthStore, LoginRateLimiter};
 use replay_control_core_server::config::{ReplayConfig, replay_config_path};
 use replay_control_core_server::data_dir::DataDir;
-use replay_control_core_server::replay_service::detect_mode;
 use replay_control_core_server::roms::{StorageProbe, probe_storage_ready};
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
@@ -164,13 +164,8 @@ pub struct AppState {
     pub library: Arc<LibraryService>,
     /// Response-level cache for assembled recommendation payloads.
     pub response_cache: Arc<response_cache::ResponseCache>,
-    /// How the app is deployed (`Device` on RePlayOS, `Standalone` off-device).
-    /// Fixed at startup. The single source of truth for system-mutation gating,
-    /// storage auto-detection, and where `replay.cfg` lives. `Standalone`
-    /// carries the storage root as part of the variant, so the "where is
-    /// replay.cfg?" question is answered by pattern-matching on this field —
-    /// no parallel `Option<PathBuf>` to keep in sync, no panicking invariant.
-    pub mode: Mode,
+    pub host: HostKind,
+    standalone_root: Option<PathBuf>,
     /// Resolved settings store (owns the directory path for settings.cfg).
     pub settings: replay_control_core_server::settings::SettingsStore,
     /// Resolved data directory (per-host root for storage-id-keyed library DBs).
@@ -474,7 +469,7 @@ async fn reopen_user_data_or_mark_corrupt(
 /// 3. Pi production fallback -> `/etc/replay-control`
 fn resolve_settings_dir(
     settings_path: Option<&str>,
-    storage_path: Option<&str>,
+    standalone_root: Option<&std::path::Path>,
 ) -> replay_control_core_server::settings::SettingsStore {
     use replay_control_core_server::settings::SettingsStore;
     use replay_control_core_server::storage::RC_DIR;
@@ -482,8 +477,8 @@ fn resolve_settings_dir(
     if let Some(p) = settings_path {
         return SettingsStore::new(p);
     }
-    if let Some(s) = storage_path {
-        return SettingsStore::new(PathBuf::from(s).join(RC_DIR));
+    if let Some(root) = standalone_root {
+        return SettingsStore::new(root.join(RC_DIR));
     }
     SettingsStore::new("/etc/replay-control")
 }
@@ -496,30 +491,32 @@ fn resolve_settings_dir(
 ///    keeps the dev tree self-contained — does not collide with the
 ///    in-storage `.replay-control/` folder used by user_data + thumbnails)
 /// 3. Pi production fallback -> `/var/lib/replay-control`
-fn resolve_data_dir(data_dir: Option<&str>, storage_path: Option<&str>) -> DataDir {
+fn resolve_data_dir(data_dir: Option<&str>, standalone_root: Option<&std::path::Path>) -> DataDir {
     if let Some(p) = data_dir {
         return DataDir::new(p);
     }
-    if let Some(s) = storage_path {
-        return DataDir::new(PathBuf::from(s).join(".replay-control-data"));
+    if let Some(root) = standalone_root {
+        return DataDir::new(root.join(".replay-control-data"));
     }
     DataDir::default_root()
 }
 
 impl AppState {
     pub fn new(
+        host: HostKind,
         storage_path: Option<String>,
         settings_path: Option<String>,
         data_dir: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let storage_path_override = storage_path.as_ref().map(PathBuf::from);
-
-        // Decide the deployment mode once, from the marker + CLI override.
-        // Off-device with no `--storage-path` is an unrecoverable startup error
-        // (the app has no ROM library to point at).
-        let mode = detect_mode(storage_path_override.clone())?;
-
-        let data_dir = resolve_data_dir(data_dir.as_deref(), storage_path.as_deref());
+        let standalone_root = match host {
+            HostKind::ReplayOs => None,
+            HostKind::Standalone => {
+                Some(PathBuf::from(storage_path.as_deref().ok_or(
+                    "Standalone Replay Control requires a storage path",
+                )?))
+            }
+        };
+        let data_dir = resolve_data_dir(data_dir.as_deref(), standalone_root.as_deref());
         tracing::info!("Data dir: {}", data_dir.root().display());
         let auth = AuthRuntime::open(&data_dir)
             .map_err(|e| format!("Failed to open auth signing key store: {e}"))?;
@@ -528,24 +525,25 @@ impl AppState {
             Option<StorageLocation>,
             Option<ReplayConfig>,
             StorageStatus,
-        ) = if let Some(path) = storage_path {
+        ) = if let Some(ref storage_root) = standalone_root {
             // Standalone mode: the user pointed us at a folder. `storage_mode`
             // in replay.cfg is a RePlayOS-only concept (sd/usb/nvme/nfs control
             // device-side mount detection); off-device the folder is just a
             // folder. A replay.cfg may still exist alongside it (typical for
             // test fixtures), so we read it for general settings but ignore
             // its storage_mode.
-            let storage_root = PathBuf::from(&path);
             if !storage_root.exists() {
-                return Err(format!("Storage path does not exist: {path}").into());
+                return Err(
+                    format!("Storage path does not exist: {}", storage_root.display()).into(),
+                );
             }
 
-            let config_file = replay_config_path(Some(&storage_root));
+            let config_file = replay_config_path(Some(storage_root.as_path()));
             let config: Option<ReplayConfig> = ReplayConfig::from_file(&config_file).ok();
 
             (
                 Some(StorageLocation::from_path(
-                    storage_root,
+                    storage_root.clone(),
                     StorageKind::Folder,
                 )),
                 config,
@@ -747,18 +745,13 @@ impl AppState {
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
         // Resolve settings directory from CLI args.
-        let settings = resolve_settings_dir(
-            settings_path.as_deref(),
-            storage_path_override
-                .as_ref()
-                .map(|p| p.to_str().unwrap_or_default()),
-        );
+        let settings = resolve_settings_dir(settings_path.as_deref(), standalone_root.as_deref());
 
-        // On Pi (no --storage-path): migrate old per-storage settings if needed.
-        if storage_path_override.is_none()
+        // Copy v1 settings before serving; retain the source for rollback.
+        if host.is_replayos()
             && let Some(ref s) = storage
         {
-            let _ = settings.migrate_from_storage(&s.root);
+            settings.migrate_from_storage(&s.root)?;
         }
 
         // Load all user preferences from settings.cfg once at startup.
@@ -767,7 +760,7 @@ impl AppState {
         // RePlayOS API integration: device-only by construction. The stored
         // Net Control code (if onboarding happened) seeds the client; the
         // startup probe in `spawn_boot_tasks` resolves the status.
-        let replay_api = mode.is_device().then(|| {
+        let replay_api = host.is_replayos().then(|| {
             Arc::new(replay_api::ReplayApi::new(
                 replay_control_core_server::settings::read_replay_api_token(&settings),
                 events_tx.clone(),
@@ -798,7 +791,8 @@ impl AppState {
             db_pools::ExternalMetadataWritePool::from_pool(external_metadata_pool);
 
         let state = Self {
-            mode,
+            host,
+            standalone_root,
             storage: Arc::new(std::sync::RwLock::new(storage)),
             storage_status,
             rom_watcher_status,
@@ -1058,6 +1052,23 @@ impl AppState {
             )
     }
 
+    /// RePlayOS may keep saves and captures on SD while ROMs live elsewhere.
+    /// Standalone libraries always keep both under their selected folder.
+    pub fn replay_data_storage(&self) -> StorageLocation {
+        let storage = self.storage();
+        if !self.host.is_replayos() {
+            return storage;
+        }
+        self.replay_config
+            .read()
+            .expect("replay_config lock poisoned")
+            .as_ref()
+            .map_or_else(
+                || storage.clone(),
+                |config| storage.replay_data_location(config),
+            )
+    }
+
     /// Check if either database has been flagged as corrupt.
     /// Returns `(library_corrupt, user_data_corrupt)`.
     pub fn is_db_corrupt(&self) -> (bool, bool) {
@@ -1158,7 +1169,7 @@ impl AppState {
     }
 
     /// Whether first setup has been completed. Standalone mode bypasses
-    /// first-setup enforcement; this cached flag is used only in device mode.
+    /// first-setup enforcement; this cached flag is used only on RePlayOS.
     pub fn first_setup_done(&self) -> bool {
         self.prefs
             .read()
@@ -1293,7 +1304,7 @@ impl AppState {
     /// config did not. Returns `true` if the storage location actually changed;
     /// handles None->Some transitions (storage appearing after startup).
     pub async fn redetect_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
-        if let Some(root) = self.mode.standalone_root() {
+        if let Some(root) = self.standalone_root.as_deref() {
             // Standalone: the storage root is fixed at startup; no auto-detection
             // to run, but we still owe the user a liveness check — an external
             // mount (USB, NFS, SMB) can disappear out-of-band. Surface a missing
@@ -1519,14 +1530,8 @@ impl AppState {
         Ok(true)
     }
 
-    /// Resolve the path to `replay.cfg`. Device mode → the SD card's fixed
-    /// location (`DEFAULT_REPLAY_CFG`). Standalone mode → `<storage_root>/
-    /// config/replay.cfg`, where `storage_root` is owned by `Mode::Standalone`
-    /// itself (captured from `--storage-path` at startup, immutable). No
-    /// optional fields, no panicking invariant — `Mode::standalone_root()` is
-    /// `Some` iff we're in Standalone, by construction.
     pub(crate) fn config_file_path(&self) -> PathBuf {
-        replay_config_path(self.mode.standalone_root())
+        replay_config_path(self.standalone_root.as_deref())
     }
 }
 
@@ -1546,46 +1551,6 @@ fn storage_kind_is_downgrade(current: StorageKind, next: StorageKind) -> bool {
 
 fn storage_kind_is_safe_for_fallback_probe(kind: StorageKind) -> bool {
     kind.is_local()
-}
-
-/// Parse the `Accept-Language` header and return the best-matching supported locale.
-/// Returns `Locale::En` as fallback.
-fn resolve_locale_from_accept_language(
-    headers: &axum::http::HeaderMap,
-) -> replay_control_core::locale::Locale {
-    use replay_control_core::locale::Locale;
-
-    let Some(accept) = headers.get(axum::http::header::ACCEPT_LANGUAGE) else {
-        return Locale::En;
-    };
-    let Ok(value) = accept.to_str() else {
-        return Locale::En;
-    };
-    // Parse "es-ES,es;q=0.9,en;q=0.8,ja;q=0.7" style values
-    let mut langs: Vec<(&str, f32)> = value
-        .split(',')
-        .filter_map(|part| {
-            let mut parts = part.trim().splitn(2, ';');
-            let tag = parts.next()?.trim();
-            let q = parts
-                .next()
-                .and_then(|p| p.trim().strip_prefix("q="))
-                .and_then(|q| q.parse::<f32>().ok())
-                .unwrap_or(1.0);
-            Some((tag, q))
-        })
-        .collect();
-    langs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    for (tag, _) in &langs {
-        let primary = tag.split('-').next().unwrap_or(tag);
-        match primary {
-            "en" => return Locale::En,
-            "es" => return Locale::Es,
-            "ja" => return Locale::Ja,
-            _ => continue,
-        }
-    }
-    Locale::En
 }
 
 /// Build the application router with API routes, server function handler,
@@ -1612,7 +1577,7 @@ pub fn build_router(
 
     let ssr_handler = leptos_axum::render_app_to_stream_with_context(
         move || {
-            use crate::i18n::InitialLocale;
+            use crate::i18n::{InitialLocale, resolve_locale_from_accept_language};
             use replay_control_core::locale::Locale;
 
             let state = state_for_ssr.clone();
@@ -1702,6 +1667,7 @@ pub(crate) fn build_waiting_page_test_state(storage_root: &std::path::Path) -> A
     .unwrap();
 
     AppState::new(
+        HostKind::Standalone,
         Some(storage_root.to_string_lossy().into_owned()),
         None,
         None,

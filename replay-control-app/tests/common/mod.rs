@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use replay_control_app::api::AppState;
+use replay_control_core::runtime_env::HostKind;
 use replay_control_core::systems::visible_systems;
 use replay_control_core_server::library_db::{GameEntry, LibraryDb};
 
@@ -125,7 +126,13 @@ fn create_test_storage() -> PathBuf {
 }
 
 fn test_app_state(tmp: &std::path::Path) -> AppState {
-    AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap()
+    AppState::new(
+        HostKind::Standalone,
+        Some(tmp.to_string_lossy().into_owned()),
+        None,
+        None,
+    )
+    .unwrap()
 }
 
 /// Build the full application router (API + server functions + SSR fallback).
@@ -175,7 +182,7 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::DowngradeAdminToUser>();
     server_fn::axum::register_explicit::<server_fns::Logout>();
     server_fn::axum::register_explicit::<server_fns::LogoutAllBrowsers>();
-    server_fn::axum::register_explicit::<server_fns::GetMode>();
+    server_fn::axum::register_explicit::<server_fns::GetHostKind>();
     server_fn::axum::register_explicit::<server_fns::GetSystems>();
     server_fn::axum::register_explicit::<server_fns::GetFavorites>();
     server_fn::axum::register_explicit::<server_fns::GetRecents>();

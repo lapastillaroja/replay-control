@@ -37,9 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --- RePlayOS folder structure ---
 
-# Marker directory — gates is_replayos() checks
-RUN mkdir -p /opt/replay && touch /opt/replay/launcher
-
 # Storage mount points
 RUN mkdir -p /media/usb /media/sd/config
 
@@ -72,7 +69,10 @@ RUN mkdir -p /media/usb/roms \
     /media/usb/manuals \
     /media/usb/_favorites \
     /media/usb/_recents \
-    /media/usb/.replay-control/media
+    /media/usb/.replay-control/media \
+    && if [ ! -e /media/usb/.replay-control/settings.cfg ]; then \
+        printf 'analytics = "false"\n' > /media/usb/.replay-control/settings.cfg; \
+    fi
 
 # --- App binary + site assets ---
 ARG APP_BINARY=target/release/replay-control-app

@@ -7,6 +7,7 @@ use replay_control_core_server::save_states::list_save_state_files;
 pub struct SaveStateSlotStatus {
     pub slot: u8,
     pub modified_unix_secs: Option<u64>,
+    pub preview_url: Option<String>,
 }
 
 #[server(prefix = "/sfn")]
@@ -15,9 +16,11 @@ pub async fn get_save_state_slots(
     rom_filename: String,
 ) -> Result<Vec<SaveStateSlotStatus>, ServerFnError> {
     let state = super::app_state()?;
-    let saves_dir = state.storage().saves_dir();
+    let saves_dir = state.replay_data_storage().saves_dir();
+    let scan_system = system.clone();
+    let scan_filename = rom_filename.clone();
     let files = tokio::task::spawn_blocking(move || {
-        list_save_state_files(&saves_dir, &system, &rom_filename)
+        list_save_state_files(&saves_dir, &scan_system, &scan_filename)
     })
     .await
     .map_err(|e| ServerFnError::new(format!("Save state scan failed: {e}")))?;
@@ -26,11 +29,20 @@ pub async fn get_save_state_slots(
         .map(|slot| SaveStateSlotStatus {
             slot,
             modified_unix_secs: None,
+            preview_url: None,
         })
         .collect();
     for file in files {
         if let Some(status) = slots.get_mut(usize::from(file.slot.saturating_sub(1))) {
             status.modified_unix_secs = Some(file.modified_unix_secs);
+            if file.has_preview {
+                status.preview_url = Some(format!(
+                    "/save-state-preview?system={}&rom_filename={}&slot={}",
+                    urlencoding::encode(&system),
+                    urlencoding::encode(&rom_filename),
+                    file.slot
+                ));
+            }
         }
     }
     Ok(slots)

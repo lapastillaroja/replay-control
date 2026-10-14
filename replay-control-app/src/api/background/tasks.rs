@@ -216,7 +216,7 @@ pub fn spawn_boot_tasks(state: &AppState) {
 /// (booted `ConfigUnavailable`, then the SD appears) adopts the new
 /// `replay.cfg` along with the storage change.
 pub fn spawn_storage_watcher(state: AppState) {
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return;
     }
 

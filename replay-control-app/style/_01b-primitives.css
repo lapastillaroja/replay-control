@@ -4,7 +4,7 @@
 
 /* Component CSS should set layout and variants; these rules keep baseline
    behavior consistent across similar controls and surfaces. */
-:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent) {
+:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .compact-control, .setup-checklist .btn-accent) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -23,7 +23,7 @@
 .game-action-btn,
 .game-action-launch,
 .metadata-download-btn,
-.now-playing-control,
+.compact-control,
 .setup-checklist .btn-accent {
     font-size: var(--button-font-size, inherit);
     font-weight: var(--button-font-weight, inherit);
@@ -49,7 +49,7 @@
     --button-font-weight: 600;
 }
 
-:where(.game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent) {
+:where(.game-action-btn, .game-action-launch, .metadata-download-btn, .compact-control, .setup-checklist .btn-accent) {
     --button-gap: var(--control-gap);
 }
 
@@ -57,7 +57,7 @@
     --button-font-size: var(--button-font-size-primary);
 }
 
-:where(.now-playing-control) {
+:where(.compact-control) {
     --button-font-size: var(--font-size-emphasis-small-default);
     --button-font-weight: 700;
 }
@@ -70,16 +70,16 @@
     font-size: var(--font-size-compact-default);
 }
 
-:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent):disabled {
+:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .compact-control, .setup-checklist .btn-accent):disabled {
     cursor: default;
 }
 
-:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent):focus-visible {
+:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .compact-control, .setup-checklist .btn-accent):focus-visible {
     outline: var(--focus-ring);
     outline-offset: var(--focus-ring-offset);
 }
 
-:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .now-playing-control, .setup-checklist .btn-accent) {
+:where(.form-btn, .game-action-btn, .game-action-launch, .metadata-download-btn, .compact-control, .setup-checklist .btn-accent) {
     transition: border-color var(--motion-base), background var(--motion-base), color var(--motion-base), opacity var(--motion-base), box-shadow var(--motion-fast), transform var(--motion-fast);
 }
 
@@ -101,7 +101,7 @@
     .organize-preview,
     .import-progress-bar,
     .boxart-picker-sheet,
-    .save-states-slot,
+    .compact-control-summary,
     .manual-link,
     .organize-panel,
     .video-embed
@@ -740,7 +740,7 @@
     .driver-row,
     .footer-row,
     .import-progress-time,
-    .save-states-slot-label
+    .compact-control-label
 ) {
     font-variant-numeric: tabular-nums;
 }
@@ -751,7 +751,7 @@
     gap: var(--cluster-gap-md);
 }
 
-:where(.save-states-slot, .play-order-link) {
+:where(.compact-control-summary, .play-order-link) {
     display: flex;
     align-items: center;
     justify-content: var(--row-justify, flex-start);
@@ -792,14 +792,14 @@
     gap: var(--stack-gap, var(--control-gap));
 }
 
-:where(.now-playing-save-states, .save-states-step-group, .save-states-actions, .replayos-inline-controls) {
+:where(.compact-controls-panel, .save-states-step-group, .compact-control-actions, .replayos-inline-controls) {
     display: grid;
     grid-template-columns: var(--grid-columns, none);
     grid-template-rows: var(--grid-rows, auto);
     gap: var(--grid-gap, var(--control-gap));
 }
 
-:where(.now-playing-save-states, .save-states-step-group, .save-states-actions) {
+:where(.compact-controls-panel, .save-states-step-group, .compact-control-actions) {
     --grid-gap: var(--control-gap-compact);
 }
 
@@ -1108,7 +1108,7 @@
     --meta-text-font-size: var(--meta-text-font-size-info);
 }
 
-:where(.setup-task-hint, .setup-task-status, .setup-task-done, .save-states-slot-separator, .save-states-slot-state) {
+:where(.setup-task-hint, .setup-task-status, .setup-task-done, .compact-control-value) {
     --secondary-meta-line-height: 1.3;
 }
 
@@ -1247,8 +1247,7 @@
     .system-card-size,
     .fav-group-count,
     .coverage-row,
-    .save-states-slot-separator,
-    .save-states-slot-state,
+    .compact-control-value,
     .stat-value
 ) {
     color: var(--secondary-meta-color, var(--text-secondary));
@@ -1267,7 +1266,7 @@
     --secondary-meta-size: var(--font-size-tiny-default);
 }
 
-:where(.rom-count, .fav-filter-count, .developer-match-count, .system-card-size, .save-states-slot-state) {
+:where(.rom-count, .fav-filter-count, .developer-match-count, .system-card-size, .compact-control-value) {
     --secondary-meta-white-space: nowrap;
 }
 
@@ -1305,7 +1304,7 @@
     --secondary-meta-color: var(--accent);
 }
 
-:where(.system-status-banner-reason, .rom-watcher-banner-reason, .save-states-slot-separator, .save-states-slot-state) {
+:where(.system-status-banner-reason, .rom-watcher-banner-reason, .compact-control-value) {
     --secondary-meta-size: var(--secondary-meta-size-banner);
 }
 
@@ -1553,6 +1552,7 @@
 
 :where(
     .data-source-actions,
+    .net-control-status,
     .logs-controls,
     .video-add-form,
     .video-search-buttons,

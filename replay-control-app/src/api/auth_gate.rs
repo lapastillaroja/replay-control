@@ -29,7 +29,7 @@ pub fn with_auth_guard(app: axum::Router, app_state: AppState) -> axum::Router {
         move |request: Request<axum::body::Body>, next: Next| {
             let state = app_state.clone();
             async move {
-                if !state.mode.is_device() {
+                if !state.host.is_replayos() {
                     return next.run(request).await;
                 }
                 let path = request.uri().path().to_string();
@@ -454,6 +454,11 @@ fn is_admin_server_function(function: &str) -> bool {
             | "delete_rom"
             | "rename_rom"
             | "get_replayos_settings"
+            | "save_replayos_message_duration"
+            | "get_link_play_config"
+            | "save_link_play_config"
+            | "get_replay_insider_config"
+            | "save_replay_insider_token_and_restart"
             | "enable_replay_api_assisted"
             | "verify_replay_api_token"
             | "save_replayos_kiosk_mode"
@@ -481,7 +486,8 @@ fn is_user_server_function(function: &str) -> bool {
             function,
             "get_info"
                 | "get_live_stats"
-                | "get_mode"
+                | "get_host_kind"
+                | "get_standalone_storage_selector_available"
                 | "get_favorites"
                 | "get_system_favorites"
                 | "add_favorite"
@@ -495,10 +501,14 @@ fn is_user_server_function(function: &str) -> bool {
                 | "delete_user_capture"
                 | "launch_game"
                 | "get_replay_api_status"
+                | "get_replay_capabilities"
                 | "get_library_playtime"
                 | "get_game_playtime"
                 | "reprobe_replay_api"
                 | "send_replay_player_command"
+                | "get_active_override_configs"
+                | "save_active_override_config"
+                | "remove_active_override_settings"
                 | "send_replayos_message"
                 | "restart_replayos_game"
                 | "get_save_state_slots"
@@ -650,6 +660,10 @@ mod tests {
         );
         assert_eq!(
             server_function_required_role("/sfn/set_admin_session_timeout"),
+            Some(AuthRole::Admin)
+        );
+        assert_eq!(
+            server_function_required_role("/sfn/save_replayos_message_duration"),
             Some(AuthRole::Admin)
         );
         assert_eq!(

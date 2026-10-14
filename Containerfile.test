@@ -18,7 +18,7 @@
 # The binary path is passed as a build arg since it differs between
 # native builds (target/release/) and cross-compiled builds (target/<triple>/release/).
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -37,6 +37,10 @@ COPY target/site /app/site
 
 # Copy test fixture storage
 COPY tests/fixtures/storage /storage
+RUN mkdir -p /storage/.replay-control \
+    && if [ ! -e /storage/.replay-control/settings.cfg ]; then \
+        printf 'analytics = "false"\n' > /storage/.replay-control/settings.cfg; \
+    fi
 
 # Environment
 ENV RUST_LOG=replay_control_app=info,replay_control_core=info

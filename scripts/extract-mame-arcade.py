@@ -3,8 +3,8 @@
 Extract arcade game metadata from the full MAME listxml into a compact XML file.
 
 Filters out non-arcade entries (BIOS, devices, mechanical, non-runnable) and strips
-ROM/disk/chip details, keeping only the metadata fields needed by replay-control-core's
-build.rs: name, description, year, manufacturer, cloneof, rotation, players, and
+ROM/disk/chip details, keeping only the metadata fields needed by build-catalog:
+name, description, year, manufacturer, cloneof, rotation, players, and
 driver status.
 
 Usage: python3 extract-mame-arcade.py <input.xml> <output.xml>
@@ -28,7 +28,7 @@ def main():
 
     lines = []
     lines.append('<?xml version="1.0"?>')
-    lines.append('<mame version="0.285">')
+    lines.append('<mame version="0.289">')
 
     arcade_count = 0
     total_count = 0

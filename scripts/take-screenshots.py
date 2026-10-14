@@ -328,7 +328,7 @@ def wait_for_hydration(page):
 
 def detect_device_mode(page):
     """True when the target app runs on the RePlayOS device."""
-    resp = sfn(page, "get_mode", accept_json=True)
+    resp = sfn(page, "get_host_kind", accept_json=True)
     return resp.ok and "device" in resp.text().lower()
 
 
@@ -567,7 +567,7 @@ def launch_now_playing(page, rom):
     # The app has been observed dying right after heavy-core launches
     # (silently killed; systemd restarts it within seconds). Poll a cheap
     # endpoint that does NOT read recents until it's back.
-    wait_for_sfn(page, "get_mode")
+    wait_for_sfn(page, "get_host_kind")
     if os.environ.get("REPLAY_SHOTS_MARKER_REAPED") == "1":
         # An external reaper process on the Pi keeps the now-playing markers
         # deleted (survives the intermittent sshd outages) — nothing to do.

@@ -16,7 +16,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 ## Getting Started
 
 - [Getting Started](getting-started.md) — Prerequisites, quick install, first launch, adding ROMs
-- [Installation](install.md) — All install methods, update, uninstall, environment configuration
+- [Installation](install.md) — Install, update, and remove Replay Control, including experimental standalone use
 
 ## Browse & Play
 

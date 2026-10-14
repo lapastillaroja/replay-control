@@ -105,20 +105,35 @@ pub struct VersionResponse {
 /// `get_playtime` payload: cumulative tracked play time, optionally filtered to
 /// one `system` and/or `game_file`.
 ///
-/// Documented in the RePlayOS REST API but **not yet implemented on 1.7.4** (it
-/// 404s on-device), so callers must degrade gracefully. We read only the raw
-/// `*_seconds` counts and format them ourselves; RePlayOS's preformatted
-/// `all`/`time` strings are ignored (serde drops unknown fields).
+/// We read the raw `*_seconds` counts and format them ourselves; RePlayOS's
+/// preformatted `all`/`time` strings are intentionally ignored.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlaytimeResponse {
     /// Whether RePlayOS is tracking play time at all. When `false`, the counts
     /// are meaningless and the UI shows the unavailable placeholder.
     #[serde(default)]
     pub tracking_enabled: bool,
-    /// Total tracked seconds across the whole library, or across the filtered
-    /// subset when `system`/`game_file` narrow the query.
+    /// Global total; query filters affect only the systems and games arrays.
     #[serde(default)]
     pub all_seconds: u64,
+    #[serde(default)]
+    pub current_game_seconds: Option<u64>,
+    #[serde(default)]
+    pub session_seconds: Option<u64>,
+    #[serde(default)]
+    pub week_seconds: Option<u64>,
+    #[serde(default)]
+    pub games_played: Option<u64>,
+    #[serde(default)]
+    pub total_sessions: Option<u64>,
+    #[serde(default)]
+    pub most_played_game: Option<String>,
+    #[serde(default)]
+    pub most_played_system: Option<String>,
+    #[serde(default)]
+    pub average_session_seconds: Option<u64>,
+    #[serde(default)]
+    pub longest_session_seconds: Option<u64>,
     #[serde(default)]
     pub systems: Vec<PlaytimeSystem>,
     #[serde(default)]
@@ -211,10 +226,13 @@ pub struct Resolution {
 /// `get_info` payload (RePlayOS ≥ 1.7.4): hardware, resources, the connected
 /// display, and the running game's native resolution.
 ///
-/// `game_resolution` is `null` at the menu (no core loaded). Fields are
-/// `#[serde(default)]` so partial payloads still deserialize.
+/// `game_resolution` can describe the boot-menu core and is `null` only while
+/// no core has valid geometry (such as unload and failed-load transitions).
+/// Fields are `#[serde(default)]` so partial payloads still deserialize.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct InfoResponse {
+    #[serde(flatten)]
+    pub insider: InsiderCapabilities,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
@@ -237,6 +255,138 @@ pub struct InfoResponse {
     pub display_resolution: Option<Resolution>,
     #[serde(default)]
     pub game_resolution: Option<Resolution>,
+}
+
+/// Build/hardware feature IDs reported independently of Insider activation.
+/// RC's current policy gates known experimental systems when their ID is listed;
+/// an unlisted ID is treated as public once its minimum version is met.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InsiderCapabilities {
+    #[serde(default)]
+    pub insider_enabled: Option<bool>,
+    #[serde(default)]
+    pub insider_features: Vec<String>,
+}
+
+impl InsiderCapabilities {
+    pub fn feature_locked(&self, feature: &str) -> bool {
+        self.insider_enabled != Some(true)
+            && self.insider_features.iter().any(|name| name == feature)
+    }
+}
+
+/// RC features whose availability depends on the connected RePlayOS build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayFeature {
+    GameSettings,
+    BasicPlaytime,
+    GameCube,
+    Wii,
+    Triforce,
+    VirtualBoy,
+    PlayStation2,
+    LinkPlay,
+}
+
+impl ReplayFeature {
+    pub fn requires_vulkan(self) -> bool {
+        matches!(
+            self,
+            Self::GameCube | Self::Wii | Self::Triforce | Self::PlayStation2
+        )
+    }
+
+    pub fn for_system(system: &str) -> Option<Self> {
+        match system {
+            "nintendo_gc" => Some(Self::GameCube),
+            "nintendo_wii" => Some(Self::Wii),
+            "arcade_triforce" => Some(Self::Triforce),
+            "nintendo_vb" => Some(Self::VirtualBoy),
+            "sony_ps2" => Some(Self::PlayStation2),
+            _ => None,
+        }
+    }
+
+    pub fn minimum_version(self) -> (u32, u32, u32) {
+        match self {
+            Self::GameSettings | Self::BasicPlaytime => MIN_SUPPORTED,
+            Self::GameCube | Self::PlayStation2 | Self::LinkPlay => (2, 0, 0),
+            Self::Wii | Self::Triforce | Self::VirtualBoy => (2, 0, 52),
+        }
+    }
+
+    fn insider_key(self) -> Option<&'static str> {
+        match self {
+            Self::GameCube | Self::Wii | Self::Triforce => Some("gamecube"),
+            Self::PlayStation2 => Some("playstation2"),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRestriction {
+    RequiresVersion(u32, u32, u32),
+    UnknownVersion,
+    InsiderRequired,
+    VulkanUnavailable,
+    VulkanRequired,
+}
+
+/// Version support and Insider access are separate requirements.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceCapabilities {
+    #[serde(default)]
+    pub version: String,
+    #[serde(flatten)]
+    pub insider: InsiderCapabilities,
+    #[serde(default)]
+    pub vulkan_available: bool,
+    #[serde(default)]
+    pub video_engine: Option<String>,
+}
+
+impl From<InfoResponse> for DeviceCapabilities {
+    fn from(info: InfoResponse) -> Self {
+        Self {
+            version: info.version,
+            insider: info.insider,
+            vulkan_available: info.model.starts_with("Raspberry Pi 5"),
+            video_engine: None,
+        }
+    }
+}
+
+impl DeviceCapabilities {
+    pub fn restriction(&self, feature: ReplayFeature) -> Option<FeatureRestriction> {
+        let Some(version) = parse_replayos_version(&self.version) else {
+            return Some(FeatureRestriction::UnknownVersion);
+        };
+        let minimum = feature.minimum_version();
+        if version < minimum {
+            return Some(FeatureRestriction::RequiresVersion(
+                minimum.0, minimum.1, minimum.2,
+            ));
+        }
+        if feature
+            .insider_key()
+            .is_some_and(|key| self.insider.feature_locked(key))
+        {
+            return Some(FeatureRestriction::InsiderRequired);
+        }
+        if feature.requires_vulkan() {
+            if !self.vulkan_available {
+                return Some(FeatureRestriction::VulkanUnavailable);
+            }
+            if self.insider.feature_locked("vulkan") {
+                return Some(FeatureRestriction::InsiderRequired);
+            }
+            if self.video_engine.as_deref() != Some("vulkan") {
+                return Some(FeatureRestriction::VulkanRequired);
+            }
+        }
+        None
+    }
 }
 
 /// One disc entry in `get_media_status.images`.
@@ -284,7 +434,7 @@ pub struct DiscInfo {
     pub count: u32,
 }
 
-/// `get_config?type=…` payload: `{"modification_num": N, "config": {...}}`.
+/// `get_config?type=…` payload.
 ///
 /// `modification_num` is a session-local change counter (resets on frontend
 /// restart). The `wifi_*`/`nfs_*` families, passwords, and tokens are absent
@@ -299,6 +449,10 @@ pub struct DiscInfo {
 /// matches the docs is tolerated too.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReplayConfigSnapshot {
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub configured: bool,
     #[serde(default)]
     pub modification_num: u64,
     #[serde(default)]
@@ -308,6 +462,15 @@ pub struct ReplayConfigSnapshot {
 impl ReplayConfigSnapshot {
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.config.get(key).and_then(|value| value.as_str())
+    }
+
+    pub fn get_value_string(&self, key: &str) -> Option<String> {
+        match self.config.get(key)? {
+            serde_json::Value::String(value) => Some(value.clone()),
+            serde_json::Value::Number(value) => Some(value.to_string()),
+            serde_json::Value::Bool(value) => Some(value.to_string()),
+            _ => None,
+        }
     }
 
     /// The RePlayOS UI log verbosity (`system_log_level`), if present. Coerces
@@ -427,29 +590,6 @@ impl SetCommand {
     }
 }
 
-/// Commands accepted by `set_media`. `next`/`previous` return `409 Media
-/// Boundary` at the ends (no wraparound); `next` auto-closes the tray.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MediaCommand {
-    OpenTray,
-    CloseTray,
-    Next,
-    Previous,
-    SetIndex(u32),
-}
-
-impl MediaCommand {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            MediaCommand::OpenTray => "open_tray",
-            MediaCommand::CloseTray => "close_tray",
-            MediaCommand::Next => "next",
-            MediaCommand::Previous => "previous",
-            MediaCommand::SetIndex(_) => "set_index",
-        }
-    }
-}
-
 /// Classified client-side error for RePlayOS API calls.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ApiError {
@@ -458,19 +598,16 @@ pub enum ApiError {
     /// Token rejected (401). Manual-only rotation: the user reset the code on
     /// the TV. Never auto-recovered; surfaces as `ReplayApiStatus::Unauthorized`.
     Unauthorized,
+    /// Too many invalid authentication attempts (429). RePlayOS temporarily
+    /// rate-limits further attempts; callers should wait instead of retrying.
+    RateLimited { message: String },
     /// Connection refused / timed out. With the measured 0–3 ms localhost
     /// latencies, "slow" means the frontend is down or Net Control is off.
     Unreachable { reason: String },
-    /// Non-2xx other than 401 (e.g. `404 Invalid Game`, `409 Media Boundary`).
+    /// Non-2xx other than 401 (e.g. `404 Invalid Game`).
     BadStatus { status: u16, message: String },
     /// `200` body that didn't parse as the expected shape.
     Decode { reason: String },
-}
-
-impl ApiError {
-    pub fn is_media_boundary(&self) -> bool {
-        matches!(self, ApiError::BadStatus { status: 409, .. })
-    }
 }
 
 impl fmt::Display for ApiError {
@@ -478,6 +615,9 @@ impl fmt::Display for ApiError {
         match self {
             ApiError::MissingToken => write!(f, "RePlayOS API token is not configured"),
             ApiError::Unauthorized => write!(f, "RePlayOS rejected the Net Control code"),
+            ApiError::RateLimited { message } => {
+                write!(f, "RePlayOS temporarily rate-limited access: {message}")
+            }
             ApiError::Unreachable { reason } => write!(f, "RePlayOS API unreachable: {reason}"),
             ApiError::BadStatus { status, message } => {
                 write!(f, "RePlayOS API error (HTTP {status}): {message}")
@@ -705,12 +845,14 @@ mod tests {
 
     #[test]
     fn config_snapshot_tolerates_documented_shape() {
-        // Defensive: if a future firmware matches the docs ({type, configured, config}),
-        // it still deserializes (unknown fields ignored, modification_num defaults to 0).
+        // Current documented shape; the older modification counter remains
+        // optional for compatibility with deployed 1.7/1.8 builds.
         let snapshot: ReplayConfigSnapshot = serde_json::from_str(
             r#"{"type":"replay","configured":true,"config":{"system_storage":"nfs"}}"#,
         )
         .unwrap();
+        assert_eq!(snapshot.kind, "replay");
+        assert!(snapshot.configured);
         assert_eq!(snapshot.get_str("system_storage"), Some("nfs"));
     }
 
@@ -744,6 +886,33 @@ mod tests {
     }
 
     #[test]
+    fn listed_features_require_active_insider_access() {
+        let mut info: InfoResponse = serde_json::from_str(
+            r#"{"insider_enabled":false,"insider_features":["gamecube","playstation2","future_feature"]}"#,
+        ).unwrap();
+        assert!(info.insider.feature_locked("gamecube"));
+        assert!(info.insider.feature_locked("playstation2"));
+        assert!(!info.insider.feature_locked("dreamcast"));
+        assert!(info.insider.feature_locked("future_feature"));
+        info.insider.insider_enabled = Some(true);
+        assert!(!info.insider.feature_locked("gamecube"));
+        assert!(!info.insider.feature_locked("playstation2"));
+    }
+
+    #[test]
+    fn absent_insider_fields_and_unlisted_features_do_not_require_insider() {
+        for payload in [
+            "{}",
+            r#"{"insider_enabled":false}"#,
+            r#"{"insider_features":["gamecube"]}"#,
+            r#"{"insider_enabled":false,"insider_features":["replays","update_channel"]}"#,
+        ] {
+            let info: InfoResponse = serde_json::from_str(payload).unwrap();
+            assert!(!info.insider.feature_locked("playstation2"), "{payload}");
+        }
+    }
+
+    #[test]
     fn media_status_disc_info() {
         // Captured shape from the 4-disc Slam City session, 2026-06-07.
         let media: MediaStatus = serde_json::from_str(
@@ -761,6 +930,184 @@ mod tests {
         let unavailable: MediaStatus =
             serde_json::from_str(r#"{"available":false,"count":0}"#).unwrap();
         assert_eq!(unavailable.disc_info(), None);
+    }
+
+    #[test]
+    fn version_support_precedes_insider_access() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v1.8.0".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(true),
+                insider_features: vec!["vulkan".into()],
+            },
+            vulkan_available: true,
+            video_engine: Some("vulkan".into()),
+        };
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::PlayStation2,
+            ReplayFeature::LinkPlay,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::RequiresVersion(2, 0, 0))
+            );
+        }
+        assert_eq!(capabilities.restriction(ReplayFeature::GameSettings), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::BasicPlaytime), None);
+        for version in ["2.0", "RePlayOS v2.0.0-beta", "2.0.47", "3.0.0"] {
+            capabilities.version = version.into();
+            assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+            assert_eq!(capabilities.restriction(ReplayFeature::LinkPlay), None);
+        }
+        capabilities.insider.insider_enabled = Some(false);
+        capabilities.insider.insider_features = vec!["gamecube".into(), "vulkan".into()];
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::PlayStation2),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::PlayStation2), None);
+        capabilities.insider.insider_enabled = None;
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        capabilities.version = "unknown".into();
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::LinkPlay),
+            Some(FeatureRestriction::UnknownVersion)
+        );
+    }
+
+    #[test]
+    fn replayos_2_0_52_systems_have_version_and_dolphin_gates() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v2.0.51".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(true),
+                insider_features: vec!["gamecube".into(), "vulkan".into()],
+            },
+            vulkan_available: true,
+            video_engine: Some("vulkan".into()),
+        };
+        for feature in [
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::VirtualBoy,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::RequiresVersion(2, 0, 52))
+            );
+        }
+        capabilities.version = "RePlayOS v2.0.52".into();
+        capabilities.insider.insider_enabled = Some(false);
+        for feature in [ReplayFeature::Wii, ReplayFeature::Triforce] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::InsiderRequired)
+            );
+        }
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::Wii), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::Triforce), None);
+    }
+
+    #[test]
+    fn vulkan_launch_gate_accepts_public_vulkan_and_checks_selected_renderer() {
+        let mut capabilities = DeviceCapabilities {
+            version: "RePlayOS v2.0.59".into(),
+            insider: InsiderCapabilities {
+                insider_enabled: Some(false),
+                insider_features: vec![],
+            },
+            vulkan_available: true,
+            video_engine: Some("opengles".into()),
+        };
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::PlayStation2,
+        ] {
+            assert_eq!(
+                capabilities.restriction(feature),
+                Some(FeatureRestriction::VulkanRequired)
+            );
+        }
+        capabilities.video_engine = Some("vulkan".into());
+        for feature in [
+            ReplayFeature::GameCube,
+            ReplayFeature::Wii,
+            ReplayFeature::Triforce,
+            ReplayFeature::PlayStation2,
+        ] {
+            assert_eq!(capabilities.restriction(feature), None);
+        }
+        capabilities.insider.insider_features.push("vulkan".into());
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::Wii),
+            Some(FeatureRestriction::InsiderRequired)
+        );
+        capabilities.insider.insider_enabled = Some(true);
+        assert_eq!(capabilities.restriction(ReplayFeature::Wii), None);
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+        capabilities.vulkan_available = false;
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::Wii),
+            Some(FeatureRestriction::VulkanUnavailable)
+        );
+        assert_eq!(capabilities.restriction(ReplayFeature::VirtualBoy), None);
+    }
+
+    #[test]
+    fn vulkan_hardware_gate_uses_model_not_insider_feature_membership() {
+        let info: InfoResponse = serde_json::from_str(
+            r#"{"version":"RePlayOS v2.0.59","model":"Raspberry Pi 5","insider_enabled":false,"insider_features":[]}"#,
+        )
+        .unwrap();
+        let mut capabilities = DeviceCapabilities::from(info);
+        assert!(capabilities.vulkan_available);
+        capabilities.video_engine = Some("vulkan".into());
+        assert_eq!(capabilities.restriction(ReplayFeature::GameCube), None);
+
+        let pi4: InfoResponse = serde_json::from_str(
+            r#"{"version":"RePlayOS v2.0.59","model":"Raspberry Pi 4 Model B Rev 1.5","insider_enabled":true,"insider_features":["vulkan"]}"#,
+        )
+        .unwrap();
+        let mut capabilities = DeviceCapabilities::from(pi4);
+        assert!(!capabilities.vulkan_available);
+        capabilities.video_engine = Some("vulkan".into());
+        assert_eq!(
+            capabilities.restriction(ReplayFeature::GameCube),
+            Some(FeatureRestriction::VulkanUnavailable)
+        );
+    }
+
+    #[test]
+    fn expanded_playtime_preserves_missing_and_zero_values() {
+        let old: PlaytimeResponse =
+            serde_json::from_str(r#"{"tracking_enabled":true,"all_seconds":42}"#).unwrap();
+        assert_eq!(old.all_seconds, 42);
+        assert_eq!(old.session_seconds, None);
+        assert_eq!(old.week_seconds, None);
+        assert_eq!(old.games_played, None);
+        assert_eq!(old.longest_session_seconds, None);
+        let partial: PlaytimeResponse = serde_json::from_str(
+            r#"{"tracking_enabled":true,"session_seconds":0,"games_played":0,"week_seconds":null}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.session_seconds, Some(0));
+        assert_eq!(partial.games_played, Some(0));
+        assert_eq!(partial.week_seconds, None);
+        assert_eq!(partial.longest_session_seconds, None);
     }
 
     #[test]

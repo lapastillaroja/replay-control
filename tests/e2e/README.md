@@ -56,8 +56,8 @@ PI_IP=192.168.10.30 python -m pytest tests/e2e/test_update_install.py -v
 
 ## Container e2e (default)
 
-The feature behaviour tests run inside the RePlayOS test container, which boots
-the app in standalone mode (`--storage-path /media/usb`, auth bypassed) so the
+The feature behaviour tests run inside the test container, which boots
+the app as a standalone host with `/media/usb` selected (auth bypassed) so the
 seeding helpers can mutate `/media/usb` freely. The container runner builds the
 image, starts it, and runs Playwright against it:
 
@@ -84,8 +84,8 @@ The seeding helpers live in `conftest.py`:
 - `post_sfn` / `http_status` — raw server-fn / page probes used by the auth
   gating tests.
 
-`test_admin_gating.py` is the exception: its module fixture relaunches the app
-in **device mode** (no `--storage-path`, with first-setup marked done) so the
+`test_admin_gating.py` is the exception: its module fixture creates `/opt/replay`
+and relaunches the app as a **RePlayOS host** with first setup marked done, so the
 auth guard is active, then restores standalone on teardown. Run it on its own to
 avoid interleaving the mode flip with the standalone feature tests:
 
@@ -274,13 +274,13 @@ Drives the data-management actions on `/settings/game-library` (behind the
 These wait for the activity slot to be Idle first, since the maintenance server
 fns refuse to start while a scan/identity owns the slot.
 
-### `test_admin_gating.py` — Container only, relaunches in device mode
+### `test_admin_gating.py` — Container only, relaunches in RePlayOS host
 
-Relaunches the app in device mode (auth enforced) with first-setup done, then
+Relaunches the app in RePlayOS host (auth enforced) with first-setup done, then
 asserts the guard's fail-closed behaviour for an unauthenticated caller:
 
 - Non-public / unknown server fns reject anonymous with 401 (a 401 also
-  confirms device mode — standalone would bypass the guard)
+  confirms RePlayOS host — standalone would bypass the guard)
 - The guard lets public server fns through (not 401)
 - Admin and browsing pages redirect anonymous callers to `/login`
 - The health endpoint stays open
@@ -295,10 +295,10 @@ This requires `python3` + `libcrypt1` + `passwd` in `Containerfile.replayos`
 The classification completeness of every server fn is also guarded by the Rust
 meta-test `auth_guard_classifies_every_server_function_intentionally`.
 
-### `test_first_setup_completion.py` — Container only, relaunches in device mode
+### `test_first_setup_completion.py` — Container only, relaunches in RePlayOS host
 
 Covers completing first-setup (vs `test_first_setup.py`, which covers the gate).
-Uses the `device_mode_first_setup` fixture (device mode, first-setup pending, a
+Uses the `replayos_first_setup` fixture (RePlayOS host, first-setup pending, a
 known root password):
 
 - Wrong device password is rejected (`.login-field-error`, stays on /first-setup)

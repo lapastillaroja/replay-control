@@ -113,6 +113,58 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsTitle => "Ajustes",
         Key::SettingsSectionAppearance => "Apariencia",
         Key::SettingsSectionLibraryGames => "Biblioteca y juegos",
+        Key::StandaloneStorageLocation => "Ubicación de almacenamiento",
+        Key::StandaloneStorageLocalHint => {
+            "Para cambiar el almacenamiento, abre Replay Control en este ordenador usando localhost."
+        }
+        Key::StorageSetupTitle => "Elige la ubicación de almacenamiento",
+        Key::StorageSetupBack => "← Ajustes",
+        Key::StorageSetupStep => "CONFIGURACIÓN · PASO 1 DE 2",
+        Key::StorageSetupIntro => {
+            "Selecciona la carpeta que contiene roms/. Replay Control también usará carpetas del mismo nivel, como bios/, saves/ y captures/, si existen."
+        }
+        Key::StorageSetupNext => {
+            "Después, Replay Control descargará los metadatos de los juegos. La descarga y la base de datos se guardan en /var/lib/replay-control/ de este ordenador; las imágenes de la biblioteca permanecen en la ubicación elegida."
+        }
+        Key::StorageSetupPathLabel => "Carpeta raíz de almacenamiento en este ordenador",
+        Key::StorageSetupBrowse => "Examinar",
+        Key::StorageSetupParent => "Carpeta superior",
+        Key::StorageSetupSelect => "Usar esta carpeta",
+        Key::StorageSetupCurrent => "Almacenamiento actual: {0}",
+        Key::StorageSetupNone => "Aún no se ha elegido una ubicación de almacenamiento.",
+        Key::StorageSetupUnavailable => "El almacenamiento configurado no está disponible: {0}",
+        Key::StorageSetupFound => {
+            "Se encontró la carpeta raíz. Replay Control leerá los juegos de {0}/roms/."
+        }
+        Key::StorageSetupInvalid => "Esta carpeta no contiene un directorio roms/ legible.",
+        Key::StorageSetupBrowseFailed => "No se pudieron explorar las carpetas.",
+        Key::StorageSetupSwitching => {
+            "Cambiando el almacenamiento y comprobando la nueva biblioteca…"
+        }
+        Key::StorageSetupSwitchTimeout => {
+            "El cambio está tardando más de lo esperado. Comprueba replay-control.service en este ordenador y actualiza esta página."
+        }
+        Key::StorageSetupSwitchFailed => "El cambio de almacenamiento no terminó.",
+        Key::StorageSetupCouldNotSwitch => "No se pudo cambiar el almacenamiento.",
+        Key::StorageSetupSelectDirectory => "Selecciona un directorio.",
+        Key::StorageSetupAlreadySelected => "Esta carpeta ya está seleccionada.",
+        Key::StorageSetupInvalidPath => "La ruta contiene un carácter no válido.",
+        Key::StorageSetupSwitchBusy => {
+            "Ya hay un cambio de almacenamiento en curso. Vuelve a intentarlo cuando termine."
+        }
+        Key::StorageSetupValidationRequired => {
+            "Esta carpeta debe contener un directorio roms/ legible."
+        }
+        Key::StorageSetupSwitchRestored => {
+            "La carpeta seleccionada no pudo iniciar Replay Control. Se restauró la ubicación anterior."
+        }
+        Key::StorageSetupSwitchInterrupted => {
+            "El cambio de almacenamiento se detuvo sin informar del resultado. Reinicia Replay Control para restaurar la ubicación anterior."
+        }
+        Key::StorageSetupSwitchStartFailed => "No se pudo iniciar el cambio de almacenamiento.",
+        Key::StorageSetupPackageOnly => {
+            "El cambio de almacenamiento está disponible en instalaciones con paquete."
+        }
         Key::SettingsSectionDeviceNetwork => "Red del dispositivo",
         Key::SettingsSectionAccess => "Acceso y seguridad",
         Key::SettingsSectionSystem => "Sistema",
@@ -281,6 +333,55 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsSaveRestart => "Guardar y reiniciar RePlayOS",
         Key::RetroAchievementsClearRestart => "Borrar y reiniciar RePlayOS",
         Key::RetroAchievementsSaved => "Credenciales de RetroAchievements actualizadas",
+        Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderActive => "El acceso Insider está activo",
+        Key::ReplayInsiderInactive => "El acceso Insider no está activo",
+        Key::ReplayInsiderUnknown => "El estado de activación Insider no está disponible",
+        Key::ReplayInsiderRequired => {
+            "Iniciar este sistema requiere acceso activo a RePlayOS Insider. Puedes seguir consultando sus juegos y metadatos."
+        }
+        Key::ReplayCapabilitiesChecking => "Comprobando las funciones de RePlayOS…",
+        Key::ReplayFeatureRequiresVersion => "Esta función requiere RePlayOS {0} o posterior.",
+        Key::ReplayFeatureUnknownVersion => {
+            "No se pudo verificar la compatibilidad porque se desconoce la versión de RePlayOS."
+        }
+        Key::ReplayCapabilitiesUnavailable => {
+            "No se pudieron comprobar las funciones de RePlayOS. Revisa la conexión e inténtalo de nuevo."
+        }
+        Key::ReplayVulkanUnavailable => {
+            "Este sistema necesita Vulkan, que RePlayOS actualmente solo admite en Raspberry Pi 5."
+        }
+        Key::ReplayVulkanRequired => {
+            "Este sistema necesita Vulkan. En el televisor, abre Opciones de RePlay → Vídeo → Renderizador preferido y selecciona Vulkan. Después, inténtalo de nuevo."
+        }
+        Key::ReplayInsiderHint => {
+            "Introduce el token Insider proporcionado por RePlayOS para acceder a versiones beta disponibles. El token es de solo escritura y nunca se devuelve al navegador."
+        }
+        Key::ReplayInsiderToken => "Token Insider",
+        Key::ReplayInsiderTokenSaved => "Token Insider guardado",
+        Key::ReplayInsiderTokenMissing => "No hay ningún token Insider guardado",
+        Key::ReplayInsiderSaveRestart => "Guardar y reiniciar RePlayOS",
+        Key::ReplayInsiderClearRestart => "Borrar y reiniciar RePlayOS",
+        Key::ReplayInsiderSaved => "Token Insider de RePlayOS actualizado",
+        Key::LinkPlayTitle => "Juego enlazado",
+        Key::LinkPlayHint => {
+            "Juega entre dispositivos RePlay en la misma red con juegos cuyos núcleos admitan Juego enlazado. Configura un dispositivo como anfitrión y los demás como clientes. Los cambios se aplican inmediatamente."
+        }
+        Key::LinkPlayConfigGuide => "Guía de configuración de Juego enlazado de RePlayOS",
+        Key::LinkPlayMode => "Modo",
+        Key::LinkPlayDisabled => "Desactivado",
+        Key::LinkPlayHost => "Anfitrión",
+        Key::LinkPlayClient => "Cliente",
+        Key::LinkPlayAddress => "Dirección del anfitrión",
+        Key::LinkPlayAddressHint => {
+            "Obligatoria en modo cliente. Introduce un nombre de host o una dirección IP."
+        }
+        Key::LinkPlayPort => "Puerto",
+        Key::LinkPlayDiscovery => "Detección LAN",
+        Key::LinkPlayDiscoveryHint => {
+            "Anuncia los anfitriones activos y permite encontrarlos desde el menú Juego enlazado."
+        }
+        Key::LinkPlaySave => "Aplicar ajustes de Juego enlazado",
 
         // Skin
         Key::MoreSkin => "Tema visual",
@@ -354,6 +455,82 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "Género",
         Key::GameDetailDeveloper => "Desarrollador",
         Key::GameDetailPlaytime => "Tiempo de juego",
+        Key::GameSettingsTitle => "Ajustes de vídeo y audio",
+        Key::GameSettingsHint => "Para este juego y pantalla.",
+        Key::GameSettingsGameScope => "Juego",
+        Key::GameSettingsSystemScope => "Sistema",
+        Key::GameSettingsDefaultNotice => {
+            "«Predeterminado» usa el ajuste global de RePlayOS, no el del sistema."
+        }
+        Key::SystemSettingsHint => "Para este sistema y pantalla.",
+        Key::SystemSettingsGameOverrideNotice => {
+            "Los ajustes del juego tienen prioridad. Elimínalos para usar los del sistema."
+        }
+        Key::SystemSettingsApply => "Aplicar",
+        Key::SystemSettingsSaved => "Ajustes del sistema guardados",
+        Key::GameSettingsInherit => "Predeterminado",
+        Key::GameSettingsOff => "Desactivado",
+        Key::GameSettingsAmbiscan => "Ambiscan",
+        Key::GameSettingsAmbiscanFlat => "Plano",
+        Key::GameSettingsAmbiscanRadial => "Radial",
+        Key::GameSettingsAmbiscanSmart => "Inteligente",
+        Key::GameSettingsIntegerScale => "Escala entera (solo LCD)",
+        Key::GameSettingsScaleVertical => "Vertical",
+        Key::GameSettingsScaleHorizontal => "Horizontal",
+        Key::GameSettingsScaleFull => "Completa",
+        Key::GameSettingsScaleFullOverscan => "Overscan completo",
+        Key::GameSettingsScaleVerticalOverscan => "Overscan vertical",
+        Key::GameSettingsVideoFilter => "Filtro de vídeo (solo LCD)",
+        Key::GameSettingsFilterLight => "Ligero",
+        Key::GameSettingsFilterMedium => "Medio",
+        Key::GameSettingsFilterStrong => "Fuerte",
+        Key::GameSettingsFilterBlack => "Negro",
+        Key::GameSettingsGamma => "Gamma",
+        Key::GameSettingsMonitorX => "Posición horizontal",
+        Key::GameSettingsMonitorY => "Posición vertical",
+        Key::GameSettingsVolume => "Volumen",
+        Key::GameSettingsResetAll => "Restablecer todo",
+        Key::RemoveAndRestart => "Eliminar y reiniciar",
+        Key::RemoveGameSettings => "Eliminar ajustes del juego",
+        Key::RemoveGameSettingsConfirm => {
+            "¿Eliminar todos los ajustes de este juego, incluidas las opciones del emulador, y reiniciarlo? Puede perderse el progreso no guardado."
+        }
+        Key::GameSettingsRemoved => "Ajustes del juego eliminados; reiniciando el juego",
+        Key::GameSettingsAlreadyRemoved => "Este juego no tiene ajustes guardados",
+        Key::GameSettingsRemovedRefresh => {
+            "Ajustes del juego eliminados. Actualiza esta página después de que el juego se reinicie."
+        }
+        Key::RemoveSystemSettings => "Eliminar ajustes del sistema",
+        Key::RemoveSystemSettingsConfirm => {
+            "¿Eliminar todos los ajustes de este sistema y pantalla, incluidas las opciones del emulador, y reiniciar el juego? Puede perderse el progreso no guardado."
+        }
+        Key::SystemSettingsRemoved => "Ajustes del sistema eliminados; reiniciando el juego",
+        Key::SystemSettingsAlreadyRemoved => "Este sistema no tiene ajustes guardados",
+        Key::SystemSettingsRemovedRefresh => {
+            "Ajustes del sistema eliminados. Actualiza esta página después de que el juego se reinicie."
+        }
+        Key::GameSettingsApply => "Aplicar",
+        Key::GameSettingsUnavailable => {
+            "Los ajustes no están disponibles. Comprueba la conexión e inténtalo de nuevo."
+        }
+        Key::GameSettingsChanged => {
+            "El juego activo ha cambiado. No se aplicaron los ajustes; se ha actualizado el panel."
+        }
+        Key::GameSettingsInvalid => {
+            "Algunos valores no son válidos. Vuelve a cargar los ajustes e inténtalo de nuevo."
+        }
+        Key::LinkPlayApplied => "Ajustes de Juego enlazado aplicados",
+        Key::LinkPlayInvalidPort => "El puerto debe estar entre 1 y 65535",
+        Key::LinkPlayInvalidMode => "Selecciona un modo de Juego enlazado válido",
+        Key::LinkPlayInvalidAddress => {
+            "Introduce un nombre de host o una dirección IP válidos para el modo cliente"
+        }
+        Key::ReplaySettingsRestarting => "Ajustes guardados; RePlayOS se está reiniciando…",
+        Key::ReplaySettingsFailed => {
+            "No se pudo completar la solicitud. Comprueba la conexión y los ajustes guardados antes de reintentar."
+        }
+        Key::ReplayInsiderInvalid => "Token Insider no válido",
+        Key::GameSettingsApplied => "Ajustes del juego aplicados",
 
         Key::GameDetailEmulation => "Compatibilidad",
         Key::GameDetailRawCategory => "Categoría MAME",
@@ -562,6 +739,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryStorage => "Almacenamiento",
         Key::MetadataSummaryDownloadedArt => "Imágenes descargadas",
         Key::MetadataSummaryPlaytime => "Tiempo de juego",
+        Key::MetadataSummarySessionPlaytime => "Esta sesión",
+        Key::MetadataSummaryWeekPlaytime => "Esta semana",
+        Key::MetadataSummaryGamesPlayed => "Juegos jugados",
+        Key::MetadataSummaryLongestSession => "Sesión más larga",
         Key::PlaytimeUnavailable => "No disponible",
 
         // System accordion rows
@@ -764,13 +945,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "Recargando en {0} segundos...",
         Key::UpdateWaitingForServer => "Esperando al servidor...",
         Key::UpdateBackToSettings => "Volver a ajustes",
+        Key::UpdateComplete => "Actualización completada",
+        Key::UpdateContinue => "Continuar",
         Key::UpdatePageTitle => "Actualizando Replay Control",
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "\u{00a1}Bienvenido a Replay Control!",
+        Key::SetupKicker => "CONFIGURACIÓN",
+        Key::SetupProgress => "Progreso de la configuración",
+        Key::SetupFailed => "Error",
+        Key::SetupCancelled => "Cancelado",
+        Key::SetupNetNotConfigured => "RePlayOS Net Control no está configurado",
+        Key::SetupNetPendingRestart => "RePlayOS todavía se está reiniciando",
+        Key::SetupNetUnauthorized => "RePlayOS rechazó el código de Net Control",
+        Key::SetupNetUnsupported => "Esta versión de RePlayOS no admite el control remoto",
         Key::SetupIntro => {
             "Saca el m\u{00e1}ximo partido a tu biblioteca y conecta Replay Control con RePlayOS."
         }
+        Key::SetupStandaloneIntro => "Termina de configurar tu biblioteca de juegos.",
+        Key::SetupStorageTitle => "Elegir la carpeta de juegos",
+        Key::SetupStorageHint => "Las ROM y las car\u{00e1}tulas permanecen en la carpeta elegida",
         Key::SetupMetadataTitle => "Descargar fuentes de metadatos",
         Key::SetupMetadataHint => {
             "A\u{00f1}ade descripciones, valoraciones, fechas y car\u{00e1}tulas autom\u{00e1}ticas"
@@ -805,6 +999,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsMessagePlaceholder => "Mensaje que se muestra en la TV",
         Key::ReplayOsMessageSend => "Enviar mensaje",
         Key::ReplayOsMessageClear => "Borrar mensaje",
+        Key::ReplayOsDurationSaveFailed => {
+            "No se pudo guardar la duración del mensaje. Se ha restaurado el valor anterior."
+        }
         Key::ReplayOsRestartGame => "Reiniciar juego actual",
         Key::ReplayOsRestartGameConfirm => "¿Reiniciar el juego actual?",
         Key::ReplayOsDeviceTitle => "Dispositivo",
@@ -813,6 +1010,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsPowerOffConfirm => "¿Apagar el dispositivo RePlayOS?",
         Key::ReplayOsRebootConfirm => "¿Reiniciar el dispositivo RePlayOS?",
         Key::ReplayOsModeTitle => "Modo",
+        Key::ReplayOsDataLocationTitle => "Ubicación de datos",
+        Key::ReplayOsDataLocationStorage => "Almacenamiento de ROMs",
+        Key::ReplayOsDataLocationLocalSd => "Tarjeta SD local",
+        Key::ReplayOsDataLocationHint => {
+            "RePlayOS guarda aquí las partidas, los estados y las capturas. Cambia este ajuste en la TV."
+        }
         Key::ReplayOsKioskMode => "Modo kiosco",
         Key::ReplayOsKioskHint => {
             "Limita la interfaz de la TV para que los invitados no cambien ajustes del sistema."
@@ -862,6 +1065,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesJustNow => "ahora",
         Key::SaveStatesMinutesAgo => "hace {0} min",
         Key::SaveStatesStatusPreview => "estado no cargado",
+        Key::SaveStatesNoScreenshot => "Sin captura",
         Key::SaveStatesPreviousSlot => "Ranura anterior",
         Key::SaveStatesNextSlot => "Ranura siguiente",
         Key::SaveStatesSave => "Guardar estado",

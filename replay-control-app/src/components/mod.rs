@@ -1,7 +1,9 @@
+pub mod active_game_settings;
 pub mod asset_health_banner;
 pub mod boxart_picker;
 pub mod boxart_placeholder;
 pub mod captures;
+pub mod client_only;
 pub mod confirm_dialog;
 pub mod corruption_banner;
 pub mod device_only_notice;
@@ -23,6 +25,7 @@ pub mod search_controls;
 pub mod setup_checklist;
 pub mod stat_card;
 pub mod status_message;
+pub mod step_button;
 pub mod storage_status_banner;
 pub mod system_card;
 pub mod system_filter_chips;

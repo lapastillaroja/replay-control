@@ -54,7 +54,7 @@ jobs:
           for req in \
               fbneo-arcade.dat \
               mame2003plus.xml \
-              mame0285-arcade.xml \
+              mame0289-arcade.xml \
               no-intro \
               thegamesdb-latest.json \
               amiga/whdload_db.xml; do

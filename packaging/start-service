@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+# The app resolves a saved browser choice before the optional first-start
+# environment path. Keep this wrapper focused on the service environment.
+if [ ! -e /opt/replay ] && [ -f /var/lib/replay-control/storage-switch-pending ]; then
+    # If the switch helper still owns the lock, this restart is part of its
+    # health check. Otherwise the helper was interrupted: restore the last
+    # committed choice before the app reads it.
+    exec 8>/var/lib/replay-control/storage-switch.lock
+    if flock -n 8; then
+        if [ -s /var/lib/replay-control/storage-switch-previous ]; then
+            cp /var/lib/replay-control/storage-switch-previous \
+                /var/lib/replay-control/standalone-storage-path
+        else
+            rm -f /var/lib/replay-control/standalone-storage-path
+        fi
+        sync /var/lib/replay-control
+        rm -f /var/lib/replay-control/storage-switch-pending \
+            /var/lib/replay-control/storage-switch-previous
+        sync /var/lib/replay-control
+        printf 'error\nThe previous storage selection was restored after an interrupted switch.\n' \
+            > /var/lib/replay-control/storage-switch-status
+        flock -u 8
+    fi
+    exec 8>&-
+fi
+binary=/usr/bin/replay-control-app
+site=/usr/share/replay-control/site
+catalog=/usr/share/replay-control/catalog.sqlite
+if [ -n "${REPLAY_CONTROL_DEV_ROOT:-}" ]; then
+    dev_root=$(readlink -f "$REPLAY_CONTROL_DEV_ROOT")
+    binary=$dev_root/replay-control-app
+    site=$dev_root/site
+    catalog=$dev_root/catalog.sqlite
+    export REPLAY_CONTROL_DEV_MODE=1
+    if dpkg-query -S /usr/bin/replay-control-app >/dev/null 2>&1 ||
+       rpm -qf /usr/bin/replay-control-app >/dev/null 2>&1; then
+        export REPLAY_CONTROL_PACKAGED=1
+    else
+        unset REPLAY_CONTROL_PACKAGED
+    fi
+else
+    export REPLAY_CONTROL_PACKAGED=1
+fi
+[ -x "$binary" ] && [ -s "$catalog" ] && [ -d "$site/pkg" ] || {
+    echo 'Replay Control service artifacts are missing' >&2
+    exit 1
+}
+set -- --enable-https --port "${REPLAY_PORT:-8080}" --https-port "${REPLAY_HTTPS_PORT:-8443}" \
+    --site-root "$site" \
+    --catalog-path "$catalog"
+if [ ! -e /opt/replay ]; then
+    set -- "$@" --settings-path /etc/replay-control --data-dir /var/lib/replay-control
+fi
+if [ -e /opt/replay ]; then
+    cpu_count=$(getconf _NPROCESSORS_CONF)
+    if [ "$cpu_count" -le 1 ]; then
+        echo 'Replay Control needs at least two CPUs to reserve CPU 0' >&2
+        exit 1
+    fi
+    exec taskset -c "1-$((cpu_count - 1))" "$binary" "$@"
+fi
+exec "$binary" "$@"

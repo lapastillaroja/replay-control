@@ -1,11 +1,20 @@
 use super::*;
+use replay_control_core::runtime_env::StorageSelectorAccess;
 
+#[cfg(feature = "ssr")]
+use axum::extract::ConnectInfo;
+#[cfg(feature = "ssr")]
+use axum::http::request::Parts;
 #[cfg(feature = "ssr")]
 use replay_control_core::systems::visible_systems;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::recents;
 #[cfg(feature = "ssr")]
+use replay_control_core_server::replay_service::packaged_standalone;
+#[cfg(feature = "ssr")]
 use replay_control_core_server::storage::DiskUsage;
+#[cfg(feature = "ssr")]
+use std::net::SocketAddr;
 
 /// A recent entry enriched with box art URL for the home page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +69,7 @@ async fn gather_live_stats(state: &crate::api::AppState) -> SystemLiveStats {
         available_bytes: 0,
         used_bytes: 0,
     });
-    let (model, cpu_temperature_c, available_ram_mb) = if state.mode.is_device() {
+    let (model, cpu_temperature_c, available_ram_mb) = if state.host.is_replayos() {
         (
             read_pi_model(),
             read_cpu_temperature_c(),
@@ -124,7 +133,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         model: live.model,
         cpu_temperature_c: live.cpu_temperature_c,
         available_ram_mb: live.available_ram_mb,
-        mode: state.mode.clone(),
+        host: state.host,
     })
 }
 
@@ -179,12 +188,33 @@ fn read_uptime_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-/// Lightweight mode probe for pages that need to gate device-only features
+/// Lightweight host probe for pages that need to gate device-only features
 /// but don't load full `SystemInfo`. No DB/disk access.
 #[server(prefix = "/sfn")]
-pub async fn get_mode() -> Result<Mode, ServerFnError> {
+pub async fn get_host_kind() -> Result<HostKind, ServerFnError> {
     let state = super::app_state()?;
-    Ok(state.mode.clone())
+    Ok(state.host)
+}
+
+/// The browser storage selector is a package feature on standalone hosts.
+#[server(prefix = "/sfn")]
+pub async fn get_standalone_storage_selector_available()
+-> Result<StorageSelectorAccess, ServerFnError> {
+    let state = super::app_state()?;
+    if !packaged_standalone(state.host) {
+        return Ok(StorageSelectorAccess::Unavailable);
+    }
+    let local = use_context::<Parts>().is_some_and(|parts| {
+        parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .is_some_and(|ConnectInfo(address)| address.ip().is_loopback())
+    });
+    Ok(if local {
+        StorageSelectorAccess::Local
+    } else {
+        StorageSelectorAccess::Remote
+    })
 }
 
 #[cfg(feature = "ssr")]
@@ -433,7 +463,7 @@ pub async fn save_log_level_config(level: String) -> Result<LogLevelSaveResult, 
         // RUST_LOG is read once at process start (systemd reads EnvironmentFile
         // on start; the tracing filter is built once in main). A change only
         // applies after a restart — do it for the user, device only.
-        let restarting = changed && state.mode.is_device();
+        let restarting = changed && state.host.is_replayos();
         if restarting {
             schedule_service_restart();
         }

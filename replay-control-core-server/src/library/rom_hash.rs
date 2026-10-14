@@ -140,7 +140,7 @@ fn detect_header_skip(path: &Path) -> usize {
 /// the read cap. Every header-cart system (NES/SNES/N64) fits well under this.
 const RC_HASH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Whether `system` needs a runtime `rc_hash` (header carts only).
+/// Whether `system` needs a runtime `rc_hash` for its cart files.
 pub fn needs_rc_hash(system: &str) -> bool {
     find_system(system)
         .and_then(|sys| sys.rc_hash_kind)
@@ -216,6 +216,7 @@ fn rc_hash_from_buffer(system: &str, buf: &[u8]) -> Option<String> {
         RcHashKind::Nes => Some(rc_hash_nes(buf)),
         RcHashKind::Snes => Some(rc_hash_snes(buf)),
         RcHashKind::N64 => rc_hash_n64(buf),
+        RcHashKind::VirtualBoy => Some(md5_hex(buf)),
         _ => None,
     }
 }
@@ -454,8 +455,8 @@ pub async fn hash_and_identify_with_options_and_cancel(
                         }
                     }
 
-                    // Header carts (NES/SNES/N64) compute the RA rc_hash in the
-                    // same read; whole-file carts only need the CRC32.
+                    // Header carts and Virtual Boy compute the RA rc_hash in the
+                    // same read; other whole-file carts only need the CRC32.
                     let computed = if needs_rc_hash(&system_owned) {
                         compute_crc32_and_rc_hash(&system_owned, &abs_path)
                     } else {
@@ -602,6 +603,7 @@ mod tests {
         assert!(is_hash_eligible("nintendo_gbc"));
         assert!(is_hash_eligible("nintendo_gba"));
         assert!(is_hash_eligible("nintendo_n64"));
+        assert!(is_hash_eligible("nintendo_vb"));
         assert!(is_hash_eligible("sega_sms"));
         assert!(is_hash_eligible("sega_smd"));
         assert!(is_hash_eligible("sega_gg"));
@@ -670,10 +672,11 @@ mod tests {
     }
 
     #[test]
-    fn needs_rc_hash_only_header_carts() {
+    fn needs_rc_hash_for_header_carts_and_virtual_boy() {
         assert!(needs_rc_hash("nintendo_nes"));
         assert!(needs_rc_hash("nintendo_snes"));
         assert!(needs_rc_hash("nintendo_n64"));
+        assert!(needs_rc_hash("nintendo_vb"));
         // Whole-file carts resolve ra_id at build time, not via rc_hash.
         assert!(!needs_rc_hash("nintendo_gb"));
         assert!(!needs_rc_hash("sega_smd"));
@@ -744,6 +747,16 @@ mod tests {
         assert_eq!(crc, 0x0D4A_1185);
         // rc_hash strips the 16-byte header (magic present) → md5 of "hello world".
         assert_eq!(rc.unwrap(), md5_hex(b"hello world"));
+    }
+
+    #[test]
+    fn virtual_boy_hashes_whole_rom_even_without_nointro_identity() {
+        let tmp = tempdir();
+        let path = tmp.join("homebrew.vb");
+        fs::write(&path, b"virtual boy homebrew").unwrap();
+        let (crc, rc_hash) = compute_crc32_and_rc_hash("nintendo_vb", &path).unwrap();
+        assert_eq!(crc, crc32fast::hash(b"virtual boy homebrew"));
+        assert_eq!(rc_hash, Some(md5_hex(b"virtual boy homebrew")));
     }
 
     #[test]

@@ -384,7 +384,8 @@ pub fn fetch_upstream_head() -> HeadHeaders {
 
 /// Download LaunchBox Metadata.zip and extract to `launchbox-metadata.xml` in the given directory.
 ///
-/// Uses `curl` with streaming stdout for download progress and `unzip` for extraction.
+/// Uses `curl` with streaming stdout for download progress and extracts the
+/// single XML member in-process. No OS archive utility is required.
 /// The zip internally contains `Metadata.xml`, which is renamed after extraction.
 ///
 /// `content_length` — if the caller already did a HEAD request (e.g. for an ETag check),
@@ -409,7 +410,6 @@ pub fn download_metadata(
     })?;
 
     let zip_path = dest_dir.join("Metadata.zip");
-    let extracted_path = dest_dir.join("Metadata.xml"); // name inside the zip
     let xml_path = dest_dir.join(LAUNCHBOX_XML);
 
     let total_bytes = content_length.or_else(|| fetch_head_headers(METADATA_URL).content_length);
@@ -467,44 +467,100 @@ pub fn download_metadata(
     }
 
     // Extract Metadata.xml from the zip (upstream filename inside the archive).
+    // Always discard the large transient archive after the extraction attempt;
+    // a complete existing XML remains untouched when extraction fails.
     tracing::info!("Extracting Metadata.xml from {}", zip_path.display());
-    let output = std::process::Command::new("unzip")
-        .args(["-o", "-j"]) // overwrite, junk paths
-        .arg(&zip_path)
-        .arg("Metadata.xml")
-        .arg("-d")
-        .arg(dest_dir)
-        .output()
-        .map_err(|e| Error::Other(format!("Failed to run unzip: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!("Extraction failed: {stderr}")));
-    }
-
-    // Remove the zip to save space.
+    let extraction_result = extract_metadata_xml(&zip_path, &xml_path);
     let _ = std::fs::remove_file(&zip_path);
-
-    if !extracted_path.exists() {
-        return Err(Error::Other(
-            "Metadata.xml not found in archive".to_string(),
-        ));
-    }
-
-    // Rename from upstream name to our canonical name.
-    std::fs::rename(&extracted_path, &xml_path).map_err(|e| {
-        Error::Other(format!(
-            "Failed to rename Metadata.xml to {LAUNCHBOX_XML}: {e}"
-        ))
-    })?;
+    extraction_result?;
 
     tracing::info!("{LAUNCHBOX_XML} extracted to {}", xml_path.display());
     Ok(xml_path)
 }
 
+/// Extract the exact LaunchBox XML member to a temporary file beside the
+/// destination, then atomically replace the destination after a complete read.
+/// Reading the member to EOF also makes the ZIP crate validate its CRC.
+fn extract_metadata_xml(zip_path: &Path, xml_path: &Path) -> Result<()> {
+    use std::io::Write;
+
+    let archive_file = std::fs::File::open(zip_path).map_err(|e| Error::io(zip_path, e))?;
+    let mut archive = zip::ZipArchive::new(archive_file)
+        .map_err(|e| Error::Other(format!("Invalid metadata ZIP: {e}")))?;
+    let mut entry = archive
+        .by_name("Metadata.xml")
+        .map_err(|e| Error::Other(format!("Metadata.xml not found in archive: {e}")))?;
+    if entry.is_dir() {
+        return Err(Error::Other(
+            "Metadata.xml in archive is not a file".to_string(),
+        ));
+    }
+
+    let parent = xml_path
+        .parent()
+        .ok_or_else(|| Error::Other("Metadata destination has no parent directory".to_string()))?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| Error::Other(format!("Cannot create temporary metadata XML: {e}")))?;
+    std::io::copy(&mut entry, &mut temporary)
+        .map_err(|e| Error::Other(format!("Failed to extract Metadata.xml: {e}")))?;
+    temporary
+        .flush()
+        .map_err(|e| Error::Other(format!("Failed to flush metadata XML: {e}")))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|e| Error::Other(format!("Failed to sync metadata XML: {e}")))?;
+    temporary
+        .persist(xml_path)
+        .map_err(|e| Error::Other(format!("Failed to install metadata XML: {}", e.error)))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_metadata_zip(path: &Path, contents: &[u8]) {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("Metadata.xml", options).unwrap();
+        writer.write_all(contents).unwrap();
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn metadata_zip_extracts_in_process_and_replaces_existing_xml() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("Metadata.zip");
+        let xml_path = dir.path().join("launchbox-metadata.xml");
+        std::fs::write(&xml_path, b"old metadata").unwrap();
+        write_metadata_zip(&zip_path, b"<LaunchBox>new metadata</LaunchBox>");
+
+        extract_metadata_xml(&zip_path, &xml_path).unwrap();
+
+        assert_eq!(
+            std::fs::read(&xml_path).unwrap(),
+            b"<LaunchBox>new metadata</LaunchBox>"
+        );
+    }
+
+    #[test]
+    fn invalid_metadata_zip_preserves_existing_xml() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("Metadata.zip");
+        let xml_path = dir.path().join("launchbox-metadata.xml");
+        std::fs::write(&zip_path, b"not a ZIP archive").unwrap();
+        std::fs::write(&xml_path, b"known good metadata").unwrap();
+
+        assert!(extract_metadata_xml(&zip_path, &xml_path).is_err());
+        assert_eq!(std::fs::read(&xml_path).unwrap(), b"known good metadata");
+    }
 
     #[test]
     fn normalize_title_basic() {

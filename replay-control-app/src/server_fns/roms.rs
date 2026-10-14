@@ -1,3 +1,5 @@
+#[cfg(feature = "ssr")]
+use super::replay_api::ensure_game_launch_allowed;
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::error::Error as CoreError;
@@ -8,6 +10,8 @@ use replay_control_core::resource_kind;
 use replay_control_core::{systems, title_utils};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::favorites;
+#[cfg(feature = "ssr")]
+use replay_control_core_server::launch::{launch_parts, validate_rom_exists};
 #[cfg(feature = "ssr")]
 use replay_control_core_server::library_db::{GameEntry, LibraryDb, LibraryGameResource};
 #[cfg(feature = "ssr")]
@@ -344,7 +348,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         "get_rom_detail game_info resolved"
     );
 
-    let user_screenshots = screenshot_urls_for_rom(&storage, &system, &filename);
+    let user_screenshots =
+        screenshot_urls_for_rom(&state.replay_data_storage(), &system, &filename);
 
     let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
@@ -736,7 +741,7 @@ pub async fn get_user_captures(
     rom_filename: String,
 ) -> Result<Vec<ScreenshotUrl>, ServerFnError> {
     let state = super::app_state()?;
-    let storage = state.storage();
+    let storage = state.replay_data_storage();
     // Reads the captures directory (read_dir), which can stall on slow storage;
     // keep it off the async runtime.
     tokio::task::spawn_blocking(move || screenshot_urls_for_rom(&storage, &system, &rom_filename))
@@ -752,7 +757,7 @@ pub async fn delete_user_capture(
 ) -> Result<(), ServerFnError> {
     let state = super::app_state()?;
     super::require_storage_mutation_allowed(&state, "delete captures").await?;
-    let storage = state.storage();
+    let storage = state.replay_data_storage();
 
     screenshots::delete_screenshot_for_rom(&storage, &system, &rom_filename, &screenshot_filename)
         .map_err(|e| super::to_user_error("Failed to delete capture", e))?;
@@ -814,13 +819,14 @@ async fn delete_rom_cleanup(
     // stalling a tokio worker on slow USB/NFS.
     let _ = tokio::task::spawn_blocking({
         let storage = storage.clone();
+        let data_storage = state.replay_data_storage();
         let system = system.to_string();
         let rom_filename = rom_filename.to_string();
         move || {
             let fav_filename = format!("{system}@{rom_filename}.fav");
             delete_fav_recursive(&storage.favorites_dir(), &fav_filename);
 
-            let captures_dir = storage.captures_dir().join(&system);
+            let captures_dir = data_storage.captures_dir().join(&system);
             for (path, _) in find_matching_screenshots(&captures_dir, &rom_filename) {
                 let _ = std::fs::remove_file(path);
             }
@@ -996,6 +1002,7 @@ async fn rename_rom_cascade(
     // avoid stalling a tokio worker on slow USB/NFS.
     let _ = tokio::task::spawn_blocking({
         let storage = storage.clone();
+        let data_storage = state.replay_data_storage();
         let system = system.to_string();
         let old_filename = old_filename.to_string();
         let new_filename = new_filename.to_string();
@@ -1010,7 +1017,7 @@ async fn rename_rom_cascade(
                 &new_filename,
             );
 
-            let captures_dir = storage.captures_dir().join(&system);
+            let captures_dir = data_storage.captures_dir().join(&system);
             for (path, rest) in find_matching_screenshots(&captures_dir, &old_filename) {
                 let new_name = format!("{new_filename}{rest}");
                 let new_path = captures_dir.join(&new_name);
@@ -1092,7 +1099,7 @@ fn rename_fav_recursive(
 #[server(prefix = "/sfn")]
 pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         #[cfg(feature = "ssr")]
         redirect_after_progressive_form(&return_to);
         return Ok("Launch simulated (standalone mode)".into());
@@ -1113,11 +1120,19 @@ pub async fn launch_game(rom_path: String, return_to: String) -> Result<String, 
             )
         })?;
 
-    replay_control_core_server::launch::validate_rom_exists(&storage, &rom_path)
+    validate_rom_exists(&storage, &rom_path)
         .await
         .map_err(|e| super::to_user_error("Game file not found", e))?;
-    let (system, game_file) = replay_control_core_server::launch::launch_parts(&rom_path)
-        .map_err(|e| super::to_user_error("Invalid ROM path", e))?;
+    let (system, game_file) =
+        launch_parts(&rom_path).map_err(|e| super::to_user_error("Invalid ROM path", e))?;
+
+    let locale = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .locale
+        .unwrap_or_default();
+    ensure_game_launch_allowed(&api, system, locale).await?;
 
     tracing::info!(rom = %rom_path, system, game_file, "launching game via RePlayOS API");
     if let Err(e) = api.client().load_game(system, game_file).await {

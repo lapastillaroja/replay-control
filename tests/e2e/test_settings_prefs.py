@@ -59,6 +59,7 @@ def test_locale_selection_persists(page, clean_settings):
     )
     expect(locale_select).to_be_visible(timeout=15000)
     locale_select.select_option("es")
+    expect(page.get_by_text("Idioma guardado", exact=True)).to_be_visible(timeout=15000)
 
     # save_locale persists the choice; a fresh load reflects it.
     goto_hydrated(page, "/settings")

@@ -10,7 +10,7 @@ Replay Control documentation, organized into two sections:
 | Doc | Covers |
 |-----|--------|
 | [Getting Started](features/getting-started.md) | Prerequisites, quick install, first launch, adding ROMs |
-| [Installation](features/install.md) | All install methods, update, uninstall, environment configuration |
+| [Installation](features/install.md) | Install, update, and remove Replay Control |
 | [Game Library](features/game-library.md) | System browsing, game lists, ROM actions, multi-disc handling |
 | [Favorites](features/favorites.md) | Personal shortlist, grouped favorites, favorite-based discovery |
 | [Recently Played](features/recents.md) | Last played and recent games on the home page |
@@ -33,6 +33,7 @@ Replay Control documentation, organized into two sections:
 | [Overview](architecture/index.md) | Crate structure, key components |
 | [Design Decisions](architecture/design-decisions.md) | Performance decisions, memory budget, rejected alternatives |
 | [Technical Foundation](architecture/technical-foundation.md) | Stack, embedded databases, cross-compilation |
+| [Package Distribution](architecture/package-distribution.md) | Debian/RPM layout, migration, update helpers |
 | [Database Schema](architecture/database-schema.md) | Tables, indexes, migrations |
 | [Connection Pooling](architecture/connection-pooling.md) | Pool setup, WriteGate, journal modes |
 | [Server Functions](architecture/server-functions.md) | SSR, streaming, response caching |

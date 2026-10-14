@@ -4,6 +4,8 @@
 //! the library scan/enrichment pipeline. Free functions over `&AppState`, like
 //! the rest of the background work.
 
+use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 use replay_control_core_server::update as update_io;
@@ -20,6 +22,9 @@ const UPDATE_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 /// GitHub repository for release checks and downloads.
 pub(crate) const REPO: &str = "lapastillaroja/replay-control";
+const PACKAGE_RESULT: &str = "/var/lib/replay-control/update-result";
+const PACKAGE_RESULT_LOCK: &str = "/var/lib/replay-control/update-result.lock";
+const PACKAGE_HELPER_START_GRACE: Duration = Duration::from_secs(30);
 /// Maximum time for the entire StartUpdate operation (5 minutes).
 const UPDATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
@@ -105,7 +110,9 @@ async fn perform_update_check_background(
                 );
                 return Ok(());
             }
-            update_io::nuke_update_dir();
+            if !update_install_active(state) {
+                update_io::nuke_update_dir();
+            }
             update_io::write_available_update(&available).ok();
             let _ = state
                 .events_tx
@@ -113,7 +120,9 @@ async fn perform_update_check_background(
         }
         None => {
             // No update found — nuke stale state.
-            update_io::nuke_update_dir();
+            if !update_install_active(state) {
+                update_io::nuke_update_dir();
+            }
         }
     }
     Ok(())
@@ -126,7 +135,9 @@ pub async fn perform_update_check(
     Option<replay_control_core::update::AvailableUpdate>,
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    update_io::nuke_update_dir();
+    if !update_install_active(state) {
+        update_io::nuke_update_dir();
+    }
 
     let settings = state.settings.load();
     let channel =
@@ -153,6 +164,76 @@ pub async fn perform_update_check(
         }
         None => Ok(None),
     }
+}
+
+fn update_install_active(state: &AppState) -> bool {
+    if matches!(
+        &*state.activity.read().expect("activity lock"),
+        super::activity::Activity::Update { .. }
+    ) {
+        return true;
+    }
+    package_update_running()
+}
+
+fn package_update_running() -> bool {
+    let Ok(result) = std::fs::read_to_string(PACKAGE_RESULT) else {
+        return false;
+    };
+    if result.trim() == "starting" && package_helper_start_grace_active() {
+        return true;
+    }
+    if result.trim() != "starting" && result.trim() != "running" {
+        return false;
+    }
+    let active = Command::new("systemctl")
+        .args([
+            "show",
+            "-p",
+            "ActiveState",
+            "--value",
+            "replay-control-package-update.service",
+        ])
+        .output()
+        .is_ok_and(|output| {
+            output.status.success()
+                && matches!(
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    "active" | "activating" | "reloading"
+                )
+        });
+    if !active {
+        use std::os::fd::AsRawFd;
+
+        // The helper may finish between the initial read and systemctl show.
+        // Share its result lock so an observed ok/failed result wins that race.
+        if let Ok(lock) = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(PACKAGE_RESULT_LOCK)
+            && unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } == 0
+            && let Ok(current) = std::fs::read_to_string(PACKAGE_RESULT)
+        {
+            if current.trim() == "starting" && package_helper_start_grace_active() {
+                return true;
+            }
+            if matches!(current.trim(), "starting" | "running") {
+                let _ = std::fs::write(
+                    PACKAGE_RESULT,
+                    "failed:Package update helper stopped without a result. Check the package manager and retry.\n",
+                );
+            }
+        }
+    }
+    active
+}
+
+fn package_helper_start_grace_active() -> bool {
+    std::fs::metadata(PACKAGE_RESULT)
+        .and_then(|metadata| metadata.modified())
+        .and_then(|modified| modified.elapsed().map_err(std::io::Error::other))
+        .is_ok_and(|elapsed| elapsed < PACKAGE_HELPER_START_GRACE)
 }
 
 /// Generate the helper shell script that performs the actual file swap + restart.
@@ -183,11 +264,11 @@ validate_version() {{
 
 validate_version "{version}"
 
-# Source environment for PORT variable
+# Source environment for the configured HTTP port.
 if [ -f /etc/default/replay-control ]; then
     . /etc/default/replay-control
 fi
-PORT="${{PORT:-8080}}"
+PORT="${{REPLAY_PORT:-8080}}"
 
 BINARY_SRC="{binary_src}"
 SITE_SRC="{site_src}"
@@ -259,6 +340,12 @@ pub async fn start_update(
     state: &super::AppState,
     tag: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if std::env::var("REPLAY_CONTROL_DEV_MODE").as_deref() == Ok("1") {
+        return Err(
+            "A development build is active. Run dev.sh --pi --reset before using Update Now."
+                .into(),
+        );
+    }
     if !replay_control_core::update::validate_version(tag) {
         return Err(format!("Invalid version tag: {tag}").into());
     }
@@ -266,7 +353,9 @@ pub async fn start_update(
     match tokio::time::timeout(UPDATE_TIMEOUT, start_update_inner(state, tag)).await {
         Ok(result) => result,
         Err(_) => {
-            update_io::nuke_update_dir();
+            if !package_update_running() {
+                update_io::nuke_update_dir();
+            }
             Err("Update timed out after 5 minutes".into())
         }
     }
@@ -297,7 +386,7 @@ async fn start_update_inner(
     let result = start_update_download(state, tag, &guard, start_time).await;
 
     match result {
-        Ok(()) => {
+        Ok(execution) => {
             // Set Restarting and leak guard — process will be killed by helper script.
             state.update_activity(|act| {
                 if let super::activity::Activity::Update { progress } = act {
@@ -306,10 +395,33 @@ async fn start_update_inner(
                     progress.elapsed_secs = start_time.elapsed().as_secs();
                 }
             });
-            std::mem::forget(guard);
+            match execution {
+                UpdateExecution::Archive => std::mem::forget(guard),
+                UpdateExecution::Package => {
+                    tokio::spawn(async move {
+                        let mut deadline =
+                            tokio::time::Instant::now() + Duration::from_secs(15 * 60);
+                        loop {
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                            if let Ok(result) = tokio::fs::read_to_string(PACKAGE_RESULT).await
+                                && (result.starts_with("failed:") || result.starts_with("ok:"))
+                            {
+                                break;
+                            }
+                            if tokio::time::Instant::now() >= deadline {
+                                if !package_update_running() {
+                                    break;
+                                }
+                                deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+                            }
+                        }
+                        drop(guard);
+                    });
+                }
+            }
             Ok(())
         }
-        Err(ref e) => {
+        Err(e) => {
             let error_msg = e.to_string();
             guard.update(|act| {
                 if let super::activity::Activity::Update { progress } = act {
@@ -319,8 +431,10 @@ async fn start_update_inner(
                     progress.elapsed_secs = start_time.elapsed().as_secs();
                 }
             });
-            update_io::nuke_update_dir();
-            result
+            if !package_update_running() {
+                update_io::nuke_update_dir();
+            }
+            Err(e)
         }
     }
 }
@@ -330,7 +444,7 @@ async fn start_update_download(
     tag: &str,
     guard: &super::activity::ActivityGuard,
     start_time: std::time::Instant,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<UpdateExecution, Box<dyn std::error::Error + Send + Sync>> {
     use super::activity::UpdatePhase;
     use replay_control_core::update::{UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT};
 
@@ -346,12 +460,44 @@ async fn start_update_download(
         return Err("Another update is already in progress".into());
     }
 
+    if package_update_running() {
+        return Err(
+            "A package update is still running. Wait for it to finish before retrying.".into(),
+        );
+    }
+
     // Nuke update dir before starting.
     update_io::nuke_update_dir();
     tokio::fs::create_dir_all(&update_dir).await?;
 
-    // Resolve asset URLs.
-    let assets = update_io::resolve_asset_urls(&base_url, REPO, tag, github_key.as_deref()).await?;
+    let manager = package_manager()?;
+    let package_name = manager
+        .map(|manager| package_asset_name(manager, tag))
+        .transpose()?;
+    let assets = update_io::resolve_asset_urls(
+        &base_url,
+        REPO,
+        tag,
+        package_name.as_deref(),
+        github_key.as_deref(),
+    )
+    .await?;
+
+    // A Debian or RPM package owns the binary and assets. Update through its
+    // package manager so the ownership database remains accurate.
+    if let Some(manager) = manager {
+        start_package_update(
+            tag,
+            &assets,
+            &update_dir,
+            guard,
+            manager,
+            package_name.as_deref().unwrap(),
+        )
+        .await?;
+        return Ok(UpdateExecution::Package);
+    }
+    let _ = std::fs::remove_file(PACKAGE_RESULT);
 
     // Fetch the checksum manifest up front. Present on current releases;
     // absent on older ones (then we verify via TLS alone, as before).
@@ -535,6 +681,200 @@ async fn start_update_download(
     // Keep lock_file alive until here.
     drop(lock_file);
 
+    Ok(UpdateExecution::Archive)
+}
+
+enum UpdateExecution {
+    Archive,
+    Package,
+}
+
+#[derive(Clone, Copy)]
+enum PackageManager {
+    Apt,
+    Dnf,
+}
+
+fn package_asset_name(manager: PackageManager, tag: &str) -> Result<String, &'static str> {
+    let version = tag.strip_prefix('v').unwrap_or(tag);
+    match manager {
+        PackageManager::Apt => {
+            let arch = match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                "x86_64" => "amd64",
+                _ => return Err("No Debian package for this architecture"),
+            };
+            Ok(format!("replay-control_{version}_{arch}.deb"))
+        }
+        PackageManager::Dnf if cfg!(target_arch = "x86_64") => {
+            Ok(format!("replay-control-{version}-1.x86_64.rpm"))
+        }
+        PackageManager::Dnf => Err("No RPM package for this architecture"),
+    }
+}
+
+fn package_manager() -> Result<Option<PackageManager>, Box<dyn std::error::Error + Send + Sync>> {
+    let exe = std::env::current_exe()?;
+    let exe_path = exe.to_str().ok_or("Executable path is not valid UTF-8")?;
+    if let Ok(output) = Command::new("dpkg-query").args(["-S", exe_path]).output()
+        && output.status.success()
+    {
+        return if dpkg_owns_app(&String::from_utf8_lossy(&output.stdout), exe_path) {
+            Ok(Some(PackageManager::Apt))
+        } else {
+            Err(
+                format!("Another Debian package owns {exe_path}; refusing an archive update")
+                    .into(),
+            )
+        };
+    }
+    if let Ok(output) = Command::new("rpm")
+        .args(["-qf", "--queryformat", "%{NAME}", exe_path])
+        .output()
+        && output.status.success()
+    {
+        return if String::from_utf8_lossy(&output.stdout).trim() == "replay-control" {
+            Ok(Some(PackageManager::Dnf))
+        } else {
+            Err(format!("Another RPM package owns {exe_path}; refusing an archive update").into())
+        };
+    }
+    if exe == Path::new("/usr/bin/replay-control-app") {
+        return Err("Cannot verify package ownership of /usr/bin/replay-control-app; refusing an archive update".into());
+    }
+    Ok(None)
+}
+
+fn dpkg_owns_app(output: &str, exe_path: &str) -> bool {
+    output.lines().any(|line| {
+        line.split_once(": ").is_some_and(|(owner, path)| {
+            (owner == "replay-control" || owner.starts_with("replay-control:")) && path == exe_path
+        })
+    })
+}
+
+async fn start_package_update(
+    tag: &str,
+    assets: &update_io::AssetUrls,
+    update_dir: &Path,
+    guard: &super::activity::ActivityGuard,
+    manager: PackageManager,
+    expected_name: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use super::activity::UpdatePhase;
+
+    let url = assets.package_url.as_deref().ok_or_else(|| {
+        format!("Release {tag} has no package for this system. Try another release.")
+    })?;
+    let checksums_url = assets
+        .checksums_url
+        .as_deref()
+        .ok_or("Release has no checksum manifest; package update cannot be verified")?;
+    let checksums = update_io::fetch_checksums(checksums_url).await?;
+    let name = url.rsplit('/').next().unwrap_or("");
+    let expected_version = tag.strip_prefix('v').unwrap_or(tag);
+    if name != expected_name {
+        return Err(format!("Unexpected package asset name: {name}").into());
+    }
+    let checksum = checksums
+        .get(name)
+        .ok_or("Package missing from checksums.sha256")?;
+    let package = update_dir.join(expected_name);
+    update_io::download_asset(url, &package, &|_| {}).await?;
+    update_io::verify_sha256(&package, checksum).await?;
+
+    let stat = nix::sys::statvfs::statvfs(update_dir)?;
+    let available = stat.blocks_available() as u64 * stat.fragment_size() as u64;
+    let required = tokio::fs::metadata(&package)
+        .await?
+        .len()
+        .saturating_mul(5)
+        .saturating_add(64 * 1024 * 1024);
+    if available < required {
+        return Err(format!(
+            "Insufficient space for package installation: need {} MB, have {} MB",
+            required / 1_048_576,
+            available / 1_048_576
+        )
+        .into());
+    }
+
+    let package_path = package.to_str().ok_or("Invalid package path")?;
+    match manager {
+        PackageManager::Apt => {
+            let arch = match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                "x86_64" => "amd64",
+                _ => return Err("No Debian package for this architecture".into()),
+            };
+            let deb_version = expected_version.replacen('-', "~", 1);
+            for (field, expected) in [
+                ("Package", "replay-control"),
+                ("Version", deb_version.as_str()),
+                ("Architecture", arch),
+            ] {
+                let metadata = Command::new("dpkg-deb")
+                    .args(["--field", package_path, field])
+                    .output()?;
+                if !metadata.status.success()
+                    || String::from_utf8(metadata.stdout)?.trim() != expected
+                {
+                    return Err(format!("Unexpected Debian package {field}").into());
+                }
+            }
+        }
+        PackageManager::Dnf => {
+            let metadata = Command::new("rpm")
+                .args(["-qp", "--qf", "%{NAME}|%{VERSION}|%{ARCH}", package_path])
+                .output()?;
+            let rpm_version = expected_version.replacen('-', "~", 1);
+            let expected = format!("replay-control|{rpm_version}|x86_64");
+            if !metadata.status.success() || String::from_utf8(metadata.stdout)?.trim() != expected
+            {
+                return Err("Unexpected RPM package metadata".into());
+            }
+        }
+    }
+
+    guard.update(|act| {
+        if let super::activity::Activity::Update { progress } = act {
+            progress.phase = UpdatePhase::Installing;
+            progress.phase_detail = "Installing package...".to_string();
+        }
+    });
+    let result_path = Path::new(PACKAGE_RESULT);
+    let _ = std::fs::remove_file(result_path);
+    // The helper changes this to `running` after systemd has accepted the
+    // transient unit. Until then the in-process activity guard owns the job.
+    std::fs::write(result_path, "starting\n")?;
+    let helper = match manager {
+        PackageManager::Apt => "/usr/lib/replay-control/package-update-deb",
+        PackageManager::Dnf => "/usr/lib/replay-control/package-update-rpm",
+    };
+    let status = Command::new("systemd-run")
+        .args([
+            "--unit=replay-control-package-update",
+            "--collect",
+            "--no-block",
+            helper,
+            package_path,
+            expected_version,
+        ])
+        .status()
+        .map_err(|error| {
+            let _ = std::fs::write(
+                result_path,
+                format!("failed:Could not start the package update helper: {error}\n"),
+            );
+            error
+        })?;
+    if !status.success() {
+        let _ = std::fs::write(
+            result_path,
+            "failed:Could not start the package update helper\n",
+        );
+        return Err("Could not start the package update helper".into());
+    }
     Ok(())
 }
 
@@ -615,6 +955,47 @@ async fn find_extracted_dir_containing(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn package_asset_names_keep_release_version() {
+        use super::{PackageManager, package_asset_name};
+
+        let deb_arch = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "amd64"
+        };
+        assert_eq!(
+            package_asset_name(PackageManager::Apt, "v1.3.0-beta.1").unwrap(),
+            format!("replay-control_1.3.0-beta.1_{deb_arch}.deb")
+        );
+        if cfg!(target_arch = "x86_64") {
+            assert_eq!(
+                package_asset_name(PackageManager::Dnf, "v1.3.0-beta.1").unwrap(),
+                "replay-control-1.3.0-beta.1-1.x86_64.rpm"
+            );
+        }
+    }
+
+    #[test]
+    fn dpkg_owner_must_be_replay_control() {
+        assert!(super::dpkg_owns_app(
+            "replay-control: /usr/bin/replay-control-app\n",
+            "/usr/bin/replay-control-app"
+        ));
+        assert!(super::dpkg_owns_app(
+            "replay-control:arm64: /usr/bin/replay-control-app\n",
+            "/usr/bin/replay-control-app"
+        ));
+        assert!(!super::dpkg_owns_app(
+            "other: /usr/bin/replay-control-app\n",
+            "/usr/bin/replay-control-app"
+        ));
+        assert!(!super::dpkg_owns_app(
+            "replay-control: /usr/bin/other\n",
+            "/usr/bin/replay-control-app"
+        ));
+    }
+
     use std::path::Path;
 
     // ── generate_update_script ──────────────────────────────────────

@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+    mkdir -p /etc/replay-control /var/lib/replay-control/storages
+    if [ ! -e /etc/default/replay-control ]; then
+        cat > /etc/default/replay-control <<'EOF'
+REPLAY_PORT=8080
+REPLAY_HTTPS_PORT=8443
+# Optional: preselect a standalone storage root containing roms/.
+#REPLAY_STORAGE_PATH=/path/to/storage
+EOF
+    fi
+    systemctl daemon-reload || true
+    systemctl enable replay-control.service || true
+    systemctl restart replay-control.service
+fi

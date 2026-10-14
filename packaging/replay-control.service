@@ -1,0 +1,15 @@
+[Unit]
+Description=Replay Control
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/replay-control
+ExecStart=/usr/lib/replay-control/start-service
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/replay-control.log
+StandardError=append:/var/log/replay-control.log
+
+[Install]
+WantedBy=multi-user.target

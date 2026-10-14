@@ -4,6 +4,7 @@ use replay_control_core::locale::Locale;
 
 use crate::components::confirm_dialog::{ConfirmDialog, use_confirm_dialog};
 use crate::hooks::use_now_playing;
+use crate::hooks::use_replay_capabilities;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::types::NowPlayingState;
@@ -15,6 +16,7 @@ use crate::types::NowPlayingState;
 /// and its two state signals carry no such constraint, so they live here and
 /// are reused by both the game list and the favorites list.
 pub struct LaunchControl {
+    pub restriction: Signal<Option<String>>,
     pub launching: RwSignal<bool>,
     pub launch_failed: RwSignal<bool>,
     pub on_launch: Callback<()>,
@@ -31,6 +33,10 @@ pub fn use_launch_control(
     let confirm_dialog = use_confirm_dialog();
     let launching = RwSignal::new(false);
     let launch_failed = RwSignal::new(false);
+    let capabilities = use_replay_capabilities();
+    let restriction = Signal::derive(move || {
+        capabilities.launch_restriction(&system.get_value(), i18n.locale.get())
+    });
 
     let launch_game = Callback::new(move |()| {
         launching.set(true);
@@ -44,7 +50,9 @@ pub fn use_launch_control(
     });
 
     let on_launch = Callback::new(move |_: ()| {
-        if launching.get_untracked() {
+        if launching.get_untracked()
+            || capabilities.launch_restricted_untracked(&system.get_value())
+        {
             return;
         }
         // If a different game is running, confirm before replacing it. Read the
@@ -72,6 +80,7 @@ pub fn use_launch_control(
     });
 
     LaunchControl {
+        restriction,
         launching,
         launch_failed,
         on_launch,

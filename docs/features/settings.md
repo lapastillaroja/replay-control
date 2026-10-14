@@ -12,6 +12,8 @@ On desktop, the page uses a two-pane layout: a sticky sidebar with scroll-spy na
 
 The seven sections are: **Appearance**, **Library & Games**, **Device Network**, **Access & Security**, **RePlayOS**, **Updates**, and **System**.
 
+On standalone Debian and Fedora package installs, **Library & Games > Storage location** opens the same folder selector used at first startup. Open Replay Control through `localhost` on the computer running it. When you connect through a LAN address, the row stays visible but is disabled and explains how to open it locally; remote browsers cannot browse or change host folders. Choose the storage root containing `roms/`, with `bios/`, `saves/`, `captures/`, `config/`, and `skins/` as optional siblings. Replay Control checks the new location before switching; if it cannot start with the new library, it restores the previous selection. This control is not shown on RePlayOS.
+
 ## Navigation Rule
 
 The main Settings page should stay scannable. Keep summaries and low-risk, single-step preferences inline, such as text size, app language, region preference, update channel, analytics, connection status, and live system information.
@@ -71,6 +73,16 @@ Use **Save & Reboot RePlayOS** to apply changes. Rebooting RePlayOS stops any ru
 
 Wi-Fi, NFS, and RetroAchievements settings use the same apply flow: Replay Control sends the changes through the RePlayOS API, then asks RePlayOS to reboot so the new system-level settings take effect. On development systems outside RePlayOS, these system settings are skipped.
 
+On RePlayOS 2.0 and newer, Wi-Fi security is selected automatically, so the older security-mode control is hidden and is not sent when saving Wi-Fi settings.
+
+## RePlayOS Insider
+
+Eligible beta users can configure the token supplied by RePlayOS from **Settings > RePlayOS**. The token is write-only: the field is blank whenever the page opens, and Replay Control only reports whether a token is already saved.
+
+The page separately shows whether RePlayOS reports Insider access as active. A saved token does not necessarily mean access is active. If the device cannot report its activation status, Replay Control shows it as unavailable rather than inactive.
+
+Saving or clearing the token sends the change through the RePlayOS API and reboots RePlayOS. This stops any running game and briefly disconnects the TV frontend.
+
 ## RePlayOS Net Control
 
 The Net Control connection powers launching games from Replay Control, the Now Playing display, and the player controls. Set it up from **Settings > RePlayOS Net Control**, either automatically (Replay Control enables Net Control and restarts RePlayOS for you) or manually by enabling Net Control on the TV and typing the code it shows.
@@ -81,7 +93,15 @@ The same Net Control code is also the normal-user sign-in code for Replay Contro
 
 The status card always shows the current connection state, and a **Check again** action re-tests it. If the code is reset on the TV, Replay Control detects the old stored code being rejected on the next probe or Net Control action, shows the unauthorized state, and lets you reconnect from the same page. Background detection does not delete app sessions; sessions tied to the old code stop working after Replay Control stores a new Net Control code.
 
-The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seconds. Replay Control remembers the duration used for the next message.
+The RePlayOS controls can show a short message on the TV for 1, 3, 5, or 10 seconds. Replay Control saves the selected duration immediately and uses it for the next message.
+
+### Link Play
+
+Configure Link Play from the RePlayOS settings page on RePlayOS 2.0 or newer. It lets compatible games play together across RePlay devices on the same network. Set one device to Host and the others to Client, or disable it when not in use. Older or unrecognized versions show an explanation instead of configuration controls. The port defaults to `55435`. LAN discovery is enabled by default; it lets active hosts advertise themselves and lets clients find them while the Link Play menu is open. The page links to the [RePlayOS Link Play configuration guide](https://www.replayos.com/linkplay/#configuration-file).
+
+Replay Control sends the mode, address, port, and discovery setting as one atomic update. RePlayOS applies Link Play changes immediately, so no reboot is required.
+
+Reboot and power-off controls appear at the bottom of the RePlayOS settings page, after the other settings.
 
 ## Font Size
 

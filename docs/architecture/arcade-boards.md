@@ -22,7 +22,7 @@ How arcade games are attributed to a hardware board, stored, and surfaced.
 
 Invariants are test-pinned: every spelling round-trips to its board, and no spelling is shared across two boards (which would make the unordered scan order-dependent).
 
-**Maintaining mappings on upstream updates.** Driver sourcefile names change between MAME/FBNeo releases — MAME renamed `taito/taitof3.cpp` → `taito/taito_f3.cpp`, moved `cave/cave.cpp` → `atlus/cave.cpp`, and `sega/atomiswave.cpp` → `sega/dc_atomiswave.cpp`. When a spelling vanishes upstream, `from_sourcefile()` silently returns `None` and that board quietly empties — a board can drop to zero with no error. The round-trip tests only prove the list is self-consistent, **not** that it still matches the bundled data. So after refreshing `data/upstream/` (`scripts/download-arcade-data.sh`), compare per-board game counts (Metadata → coverage, or `library_report`) before/after the bump and add any renamed spelling to `sourcefiles()`. There is no automated guard.
+**Maintaining mappings on upstream updates.** Driver sourcefile names change between MAME/FBNeo releases — MAME renamed `taito/taitof3.cpp` → `taito/taito_f3.cpp`, moved `cave/cave.cpp` → `atlus/cave.cpp`, and `sega/atomiswave.cpp` → `sega/dc_atomiswave.cpp`. In 0.289, Neo Geo moved to `snk/neogeo.cpp`, Midway drivers moved under `williams/`, and DECO32 split into per-game drivers. When a spelling vanishes upstream, `from_sourcefile()` silently returns `None` and that board quietly empties — a board can drop to zero with no error. The round-trip tests only prove the list is self-consistent, **not** that it still matches the bundled data. So after refreshing `data/upstream/` (`scripts/download-arcade-data.sh`), compare per-board game counts (Metadata → coverage, or `library_report`) before/after the bump and add any renamed spelling to `sourcefiles()`. There is no automated guard.
 
 ## Catalog-build attribution
 
@@ -30,7 +30,7 @@ Invariants are test-pinned: every spelling round-trips to its board, and no spel
 
 | Source | Carries sourcefile? | Shape |
 |--------|--------------------|-------|
-| MAME 0.285 (`mame0285-arcade.xml`) | **Yes** — the extract keeps the `sourcefile` attribute | MAME-current `manufacturer/board.cpp` |
+| MAME 0.289 (`mame0289-arcade.xml`) | **Yes** — the extract keeps the `sourcefile` attribute | MAME-current `manufacturer/board.cpp` |
 | MAME 2003+ (`mame2003plus.xml`) | Yes | legacy `board.c` |
 | FBNeo (`fbneo-arcade.dat`) | Yes | `dir/d_board.cpp` |
 | Flycast (Naomi CSV) | n/a | explicit board tag curated per ROM from the MAME 0.285 Naomi, Naomi 2, Atomiswave, and System SP machine declarations |
@@ -47,7 +47,7 @@ The Flycast CSV is different because Naomi-family games share driver files and p
 BOARD_PRIORITY = [Naomi, FBNeo, MAME 2003+, MAME]
 ```
 
-A board is a physical property of the PCB — the same no matter which emulator's metadata names it — so it should not follow, say, `arcade_mame`'s "MAME first" preference. **FBNeo is preferred over MAME 2003+**: FBNeo is Replay's primary arcade core and carries the richest board coverage, while MAME 2003+ is legacy (enabled only on older Pis). MAME 0.285 sits last — its `sourcefile` (the extract keeps it) is used only when no higher-priority source carries the board, e.g. CoJag, which only MAME has. Naomi leads because its GD-ROM board hints live only in that source. An explicit sweep of any source not named in `BOARD_PRIORITY` follows, mirroring the metadata loop, so a newly added source still contributes a board rather than silently dropping.
+A board is a physical property of the PCB — the same no matter which emulator's metadata names it — so it should not follow, say, `arcade_mame`'s "MAME first" preference. **FBNeo is preferred over MAME 2003+**: FBNeo is Replay's primary arcade core and carries the richest board coverage, while MAME 2003+ is legacy (enabled only on older Pis). MAME 0.289 sits last — its `sourcefile` (the extract keeps it) is used only when no higher-priority source carries the board, e.g. CoJag, which only MAME has. Naomi leads because its GD-ROM board hints live only in that source. An explicit sweep of any source not named in `BOARD_PRIORITY` follows, mirroring the metadata loop, so a newly added source still contributes a board rather than silently dropping.
 
 ## Storage
 

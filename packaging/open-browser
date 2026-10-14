@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+replay_https_port=8443
+if [ -r /etc/default/replay-control ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            REPLAY_HTTPS_PORT=*)
+                key=${line%%=*}
+                value=${line#*=}
+                case "$value" in
+                    \"*\") value=${value#\"}; value=${value%\"} ;;
+                    \'*\') value=${value#\'}; value=${value%\'} ;;
+                esac
+                case "$key" in
+                    REPLAY_HTTPS_PORT) replay_https_port=$value ;;
+                esac ;;
+        esac
+    done < /etc/default/replay-control
+fi
+
+url="https://localhost:${replay_https_port:-8443}/"
+
+if command -v xdg-open >/dev/null 2>&1; then
+    exec xdg-open "$url"
+fi
+if command -v gio >/dev/null 2>&1; then
+    exec gio open "$url"
+fi
+echo 'Replay Control needs xdg-open or gio to open a browser.' >&2
+exit 1

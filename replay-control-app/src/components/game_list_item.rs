@@ -101,6 +101,7 @@ pub fn GameListItem(
     // inline below (a shared child component lost taps on iOS Safari after a
     // swipe-back); only the handler logic is shared.
     let LaunchControl {
+        restriction,
         launching,
         launch_failed,
         on_launch,
@@ -190,7 +191,9 @@ pub fn GameListItem(
                 class="game-action-launch game-list-launch-btn"
                 class:game-list-launch-pending=move || launching.get()
                 class:game-list-launch-error=move || launch_failed.get()
-                aria-label=move || t(i18n.locale.get(), Key::GameDetailLaunch)
+                disabled=move || launching.get() || restriction.get().is_some()
+                title=move || restriction.get().unwrap_or_else(|| t(i18n.locale.get(), Key::GameDetailLaunch).to_string())
+                aria-label=move || restriction.get().unwrap_or_else(|| t(i18n.locale.get(), Key::GameDetailLaunch).to_string())
                 on:click=move |_| on_launch.run(())
             >
                 <span class="game-action-icon">{"\u{25B6}"}</span>

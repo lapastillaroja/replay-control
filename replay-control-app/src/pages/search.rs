@@ -214,7 +214,8 @@ pub fn SearchPage() -> impl IntoView {
     let on_recent_click = move |query: String| {
         search_input.set(query.clone());
         debounced_query.set(query.clone());
-        update_url_params_if_hydrate(&UrlParams {
+        #[cfg(feature = "hydrate")]
+        update_url_params(&UrlParams {
             query: &query,
             hide_hacks: filters.hide_hacks.get_untracked(),
             hide_translations: filters.hide_translations.get_untracked(),
@@ -699,11 +700,8 @@ fn OtherBoardsList(
     }
 }
 
-/// Grouped URL parameters for search page state synchronization.
-///
-/// Fields are read only under `#[cfg(feature = "hydrate")]` (in `update_url_params`),
-/// but the struct is constructed on both targets so the wrapper compiles unconditionally.
-#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
+/// Grouped URL parameters for browser-side search page state synchronization.
+#[cfg(feature = "hydrate")]
 struct UrlParams<'a> {
     query: &'a str,
     hide_hacks: bool,
@@ -770,12 +768,6 @@ fn update_url_params(p: &UrlParams<'_>) {
             .history()
             .and_then(|h| h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url)));
     }
-}
-
-/// Wrapper that compiles on both targets -- calls the real function only on hydrate.
-fn update_url_params_if_hydrate(_p: &UrlParams<'_>) {
-    #[cfg(feature = "hydrate")]
-    update_url_params(_p);
 }
 
 // ── localStorage helpers for recent searches ──────────────────────

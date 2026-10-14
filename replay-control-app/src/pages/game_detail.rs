@@ -3,13 +3,14 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_location, use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::active_game_settings::ActiveGameSettings;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::confirm_dialog::use_confirm_dialog;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::resources_section::GameResourcesSection;
-use crate::hooks::confirm_replace_running_game;
+use crate::hooks::{confirm_replace_running_game, use_replay_capabilities};
 use crate::i18n::{Key, t, tf, use_i18n};
 #[cfg(feature = "hydrate")]
 use crate::server_fns::PlaytimeAvailability;
@@ -143,7 +144,7 @@ fn GameDetailContent(
     let base_title_sv = StoredValue::new(detail.base_title.clone());
 
     // Total play time for this game. Browser-only fetch so a slow or
-    // unimplemented `get_playtime` endpoint never blocks the SSR response.
+    // unavailable `get_playtime` endpoint never blocks the SSR response.
     #[cfg(feature = "hydrate")]
     let game_playtime = LocalResource::new(move || {
         server_fns::get_game_playtime(system_sv.get_value(), filename_sv.get_value())
@@ -599,6 +600,10 @@ fn GameDetailContent(
             </div>
         </section>
 
+        <Show when=move || is_now_playing.get() fallback=|| ()>
+            <ActiveGameSettings system=system_sv.get_value() rom_path=relative_path_sv.get_value() />
+        </Show>
+
         // Game Info Card
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailInfo)}</h2>
@@ -946,7 +951,10 @@ fn GameLaunchAction(
     let now_playing = crate::hooks::use_now_playing();
     let _ = return_to;
     let launch = ServerAction::<server_fns::LaunchGame>::new();
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
+    let capabilities = use_replay_capabilities();
+    let restriction =
+        move || capabilities.launch_restriction(&system.get_value(), i18n.locale.get());
+    let host_kind = Resource::new_blocking(|| (), |_| server_fns::get_host_kind());
     let initial_replay_api_status =
         Resource::new_blocking(|| (), |_| server_fns::get_replay_api_status());
     let replay_api_status = use_context::<RwSignal<ReplayApiStatus>>();
@@ -954,11 +962,11 @@ fn GameLaunchAction(
     let launch_result = launch.value();
     let launch_clicked = RwSignal::new(false);
     let launch_requires_setup = Memo::new(move |_| {
-        let on_device = mode
+        let on_replayos = host_kind
             .get()
             .and_then(Result::ok)
-            .is_some_and(|mode| mode.is_device());
-        if !on_device {
+            .is_some_and(|host| host.is_replayos());
+        if !on_replayos {
             return false;
         }
 
@@ -987,7 +995,9 @@ fn GameLaunchAction(
     let is_simulated =
         move || matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"));
     let is_error = move || matches!(launch_result.get(), Some(Err(_)));
-    let is_disabled = move || launching.get() || is_launched() || already_playing.get();
+    let is_disabled = move || {
+        launching.get() || is_launched() || already_playing.get() || restriction().is_some()
+    };
     let is_launching =
         move || launching.get() || (launch_clicked.get() && launch_result.get().is_none());
     let error_message = move || match launch_result.get() {
@@ -1073,6 +1083,9 @@ fn GameLaunchAction(
             </Show>
             <Show when=move || error_message().is_some() && !launch_requires_setup.get()>
                 <p class="game-action-error">{move || error_message().unwrap_or_default()}</p>
+            </Show>
+            <Show when=move || restriction().is_some() && !launch_requires_setup.get()>
+                <p class="game-action-note">{restriction}</p>
             </Show>
         </div>
     }

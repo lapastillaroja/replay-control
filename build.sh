@@ -7,23 +7,40 @@ TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
 TARGET=""
+TARGET_SET=false
+SERVER_ONLY=false
 
 # Parse arguments
-for arg in "$@"; do
-    case "$arg" in
-        --target)  shift_next=true ;;
-        aarch64)   TARGET="aarch64-unknown-linux-gnu" ;;
-        *)
-            if [[ "${shift_next:-}" == "true" ]]; then
-                TARGET="$arg"
-                shift_next=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --target)
+            [[ $# -ge 2 ]] || { echo "Missing target after --target" >&2; exit 1; }
+            TARGET="$2"
+            TARGET_SET=true
+            shift 2 ;;
+        aarch64)   TARGET="aarch64-unknown-linux-gnu"; TARGET_SET=true; shift ;;
+        amd64)
+            if [[ "$(uname -m)" != "x86_64" ]]; then
+                echo "amd64 builds require an x86_64 build host" >&2
+                exit 1
             fi
-            ;;
+            TARGET=""; TARGET_SET=true; shift ;;
+        --server-only) SERVER_ONLY=true; shift ;;
+        *) echo "Unknown build argument: $1" >&2; exit 1 ;;
     esac
 done
 
 # Allow TARGET env var as well
-TARGET="${TARGET:-${BUILD_TARGET:-}}"
+if [[ "$TARGET_SET" == false ]]; then
+    TARGET="${BUILD_TARGET:-}"
+fi
+
+if [[ "$SERVER_ONLY" == true && ! -d "${CARGO_TARGET_DIR:-target}/site/pkg" ]]; then
+    echo "--server-only requires an existing site build" >&2
+    exit 1
+fi
+
+if [[ "$SERVER_ONLY" == false ]]; then
 
 # ── Download data files if missing ─────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,7 +69,7 @@ else
         for req in \
             upstream/fbneo-arcade.dat \
             upstream/mame2003plus.xml \
-            upstream/mame0285-arcade.xml \
+            upstream/mame0289-arcade.xml \
             upstream/no-intro \
             upstream/thegamesdb-latest.json \
             upstream/catver.ini \
@@ -181,6 +198,8 @@ cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
 rm -rf "$OUT_DIR/icons" "$OUT_DIR/branding"
 cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
 cp -r "replay-control-app/static/branding" "$OUT_DIR/branding" 2>/dev/null || true
+
+fi
 
 echo "==> Building server (ssr)..."
 if [[ -n "$TARGET" ]]; then

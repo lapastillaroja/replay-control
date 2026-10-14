@@ -1,0 +1,59 @@
+#!/bin/bash
+set -euo pipefail
+rpm_file=${1:?package path required}
+expected=${2:?version required}
+result=/var/lib/replay-control/update-result
+mkdir -p /var/lib/replay-control
+exec 9>/var/lib/replay-control/update-result.lock
+write_result() {
+    flock -x 9
+    printf '%s\n' "$1" > "$result"
+    flock -u 9
+}
+write_result running
+on_exit() {
+    flock -x 9
+    if [[ -f "$result" && $(cat "$result") == running ]]; then
+        printf 'failed:Package update was interrupted. Check DNF and retry.\n' > "$result"
+    fi
+    flock -u 9
+    rm -f "$rpm_file"
+}
+trap on_exit EXIT
+trap 'exit 1' TERM INT
+if ! output=$(dnf install -y "$rpm_file" 2>&1); then
+    if grep -qiE 'lock|another app is currently holding' <<< "$output"; then
+        reason='DNF is busy. Retry when the other package operation finishes.'
+    elif grep -qiE 'no space left|not enough free space' <<< "$output"; then
+        reason='Insufficient space for the package. Free space and retry.'
+    else
+        reason="DNF failed: $(tail -n 2 <<< "$output" | tr '\n' ' ')"
+    fi
+    write_result "failed:$reason"
+    exit 1
+fi
+installed=$(rpm -q --qf '%{VERSION}' replay-control)
+rpm_expected=${expected/-/\~}
+if [[ "$installed" != "$rpm_expected" ]]; then
+    write_result "failed:Installed version $installed differs from $expected"
+    exit 1
+fi
+port=8443
+if [[ -f /etc/default/replay-control ]]; then
+    configured=$(sed -n 's/^REPLAY_HTTPS_PORT=//p' /etc/default/replay-control | tail -1)
+    case "$configured" in
+        \"*\") configured=${configured#\"}; configured=${configured%\"} ;;
+        \'*\') configured=${configured#\'}; configured=${configured%\'} ;;
+    esac
+    [[ "$configured" =~ ^[0-9]+$ ]] && port=$configured
+fi
+for _ in {1..30}; do
+    if curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/version" | grep -q "\"version\":\"$expected\"" &&
+       curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/core/status" >/dev/null; then
+        write_result "ok:$expected"
+        exit 0
+    fi
+    sleep 2
+done
+write_result 'failed:RPM installed but service health check failed. Check journalctl -u replay-control.'
+exit 1

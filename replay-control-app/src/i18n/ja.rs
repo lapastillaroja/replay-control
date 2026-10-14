@@ -113,6 +113,56 @@ pub fn translate(key: Key) -> &'static str {
         Key::SettingsTitle => "設定",
         Key::SettingsSectionAppearance => "外観",
         Key::SettingsSectionLibraryGames => "ライブラリとゲーム",
+        Key::StandaloneStorageLocation => "ストレージの場所",
+        Key::StandaloneStorageLocalHint => {
+            "ストレージを変更するには、このコンピューターで localhost から Replay Control を開いてください。"
+        }
+        Key::StorageSetupTitle => "ストレージの場所を選択",
+        Key::StorageSetupBack => "← 設定",
+        Key::StorageSetupStep => "セットアップ · ステップ1/2",
+        Key::StorageSetupIntro => {
+            "roms/ フォルダーがある場所を選んでください。同じ階層に bios/、saves/、captures/ などのフォルダーがあれば、Replay Control はそれらも使用します。"
+        }
+        Key::StorageSetupNext => {
+            "次にゲームのメタデータをダウンロードします。ダウンロードデータとデータベースはこのコンピューターの /var/lib/replay-control/ に保存され、ライブラリの画像は選択したストレージに保存されます。"
+        }
+        Key::StorageSetupPathLabel => "このコンピューターのストレージのルート",
+        Key::StorageSetupBrowse => "参照",
+        Key::StorageSetupParent => "親フォルダー",
+        Key::StorageSetupSelect => "このフォルダーを使用",
+        Key::StorageSetupCurrent => "現在のストレージ: {0}",
+        Key::StorageSetupNone => "ストレージの場所はまだ選択されていません。",
+        Key::StorageSetupUnavailable => "設定されたストレージを使用できません: {0}",
+        Key::StorageSetupFound => {
+            "ストレージが見つかりました。{0}/roms/ からゲームを読み込みます。"
+        }
+        Key::StorageSetupInvalid => {
+            "このフォルダーには読み取り可能な roms/ ディレクトリがありません。"
+        }
+        Key::StorageSetupBrowseFailed => "フォルダーを参照できませんでした。",
+        Key::StorageSetupSwitching => "ストレージを切り替え、新しいライブラリを確認しています…",
+        Key::StorageSetupSwitchTimeout => {
+            "切り替えに時間がかかっています。このコンピューターの replay-control.service を確認してから、ページを更新してください。"
+        }
+        Key::StorageSetupSwitchFailed => "ストレージの切り替えが完了しませんでした。",
+        Key::StorageSetupCouldNotSwitch => "ストレージを切り替えられませんでした。",
+        Key::StorageSetupSelectDirectory => "フォルダーを選択してください。",
+        Key::StorageSetupAlreadySelected => "このフォルダーはすでに選択されています。",
+        Key::StorageSetupInvalidPath => "パスに使用できない文字が含まれています。",
+        Key::StorageSetupSwitchBusy => {
+            "ストレージの切り替え中です。完了してからもう一度お試しください。"
+        }
+        Key::StorageSetupValidationRequired => {
+            "このフォルダーには読み取り可能な roms/ ディレクトリが必要です。"
+        }
+        Key::StorageSetupSwitchRestored => {
+            "選択したフォルダーでは Replay Control を起動できませんでした。以前のストレージ設定に戻しました。"
+        }
+        Key::StorageSetupSwitchInterrupted => {
+            "ストレージの切り替えが結果を報告せずに停止しました。Replay Control を再起動して以前の設定に戻してください。"
+        }
+        Key::StorageSetupSwitchStartFailed => "ストレージの切り替えを開始できませんでした。",
+        Key::StorageSetupPackageOnly => "ストレージの切り替えはパッケージ版で利用できます。",
         Key::SettingsSectionDeviceNetwork => "デバイスネットワーク",
         Key::SettingsSectionAccess => "アクセスとセキュリティ",
         Key::SettingsSectionSystem => "システム",
@@ -281,6 +331,55 @@ pub fn translate(key: Key) -> &'static str {
         Key::RetroAchievementsSaveRestart => "保存してRePlayOSを再起動",
         Key::RetroAchievementsClearRestart => "消去してRePlayOSを再起動",
         Key::RetroAchievementsSaved => "RetroAchievements認証情報を更新しました",
+        Key::ReplayInsiderTitle => "RePlayOS Insider",
+        Key::ReplayInsiderActive => "Insiderアクセスは有効です",
+        Key::ReplayInsiderInactive => "Insiderアクセスは有効ではありません",
+        Key::ReplayInsiderUnknown => "Insiderの有効化状態を取得できません",
+        Key::ReplayInsiderRequired => {
+            "このシステムの起動には有効なRePlayOS Insiderアクセスが必要です。ゲームやメタデータの閲覧は引き続き利用できます。"
+        }
+        Key::ReplayCapabilitiesChecking => "RePlayOSの機能を確認しています…",
+        Key::ReplayFeatureRequiresVersion => "この機能にはRePlayOS {0}以降が必要です。",
+        Key::ReplayFeatureUnknownVersion => {
+            "RePlayOSのバージョンが不明なため、機能の対応状況を確認できません。"
+        }
+        Key::ReplayCapabilitiesUnavailable => {
+            "RePlayOSの機能を確認できませんでした。接続を確認して再試行してください。"
+        }
+        Key::ReplayVulkanUnavailable => {
+            "このシステムにはVulkanが必要です。現在、RePlayOSがVulkanに対応しているのはRaspberry Pi 5のみです。"
+        }
+        Key::ReplayVulkanRequired => {
+            "このシステムにはVulkanが必要です。テレビでRePlay Options → Video → Preferred Rendererを開き、Vulkanを選択してから再試行してください。"
+        }
+        Key::ReplayInsiderHint => {
+            "RePlayOSから提供されたInsiderトークンを入力すると、対象のベータ版を利用できます。トークンは書き込み専用で、ブラウザーには返されません。"
+        }
+        Key::ReplayInsiderToken => "Insiderトークン",
+        Key::ReplayInsiderTokenSaved => "Insiderトークンは保存済みです",
+        Key::ReplayInsiderTokenMissing => "Insiderトークンは保存されていません",
+        Key::ReplayInsiderSaveRestart => "保存してRePlayOSを再起動",
+        Key::ReplayInsiderClearRestart => "消去してRePlayOSを再起動",
+        Key::ReplayInsiderSaved => "RePlayOS Insiderトークンを更新しました",
+        Key::LinkPlayTitle => "リンクプレイ",
+        Key::LinkPlayHint => {
+            "リンクプレイ対応コアのゲームを、同じネットワーク上のRePlayデバイス間で一緒に遊べます。1台をホスト、ほかをクライアントに設定してください。変更はすぐに適用されます。"
+        }
+        Key::LinkPlayConfigGuide => "RePlayOSリンクプレイの設定ガイド",
+        Key::LinkPlayMode => "モード",
+        Key::LinkPlayDisabled => "無効",
+        Key::LinkPlayHost => "ホスト",
+        Key::LinkPlayClient => "クライアント",
+        Key::LinkPlayAddress => "ホストアドレス",
+        Key::LinkPlayAddressHint => {
+            "クライアントモードで必要です。ホスト名またはIPアドレスを入力します。"
+        }
+        Key::LinkPlayPort => "ポート",
+        Key::LinkPlayDiscovery => "LAN検出",
+        Key::LinkPlayDiscoveryHint => {
+            "アクティブなホストを通知し、リンクプレイメニューから検出できるようにします。"
+        }
+        Key::LinkPlaySave => "リンクプレイ設定を適用",
 
         // Skin
         Key::MoreSkin => "スキン",
@@ -354,6 +453,80 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailGenre => "ジャンル",
         Key::GameDetailDeveloper => "開発元",
         Key::GameDetailPlaytime => "プレイ時間",
+        Key::GameSettingsTitle => "映像・音声設定",
+        Key::GameSettingsHint => "このゲームと画面用。",
+        Key::GameSettingsGameScope => "ゲーム",
+        Key::GameSettingsSystemScope => "システム",
+        Key::GameSettingsDefaultNotice => {
+            "「デフォルト」はシステム設定ではなく、RePlayOSの全体設定を使います。"
+        }
+        Key::SystemSettingsHint => "このシステムと画面用。",
+        Key::SystemSettingsGameOverrideNotice => {
+            "ゲーム設定が優先されます。システム設定を使うには削除してください。"
+        }
+        Key::SystemSettingsApply => "適用",
+        Key::SystemSettingsSaved => "システム設定を保存しました",
+        Key::GameSettingsInherit => "デフォルト",
+        Key::GameSettingsOff => "オフ",
+        Key::GameSettingsAmbiscan => "アンビスキャン",
+        Key::GameSettingsAmbiscanFlat => "フラット",
+        Key::GameSettingsAmbiscanRadial => "ラジアル",
+        Key::GameSettingsAmbiscanSmart => "スマート",
+        Key::GameSettingsIntegerScale => "整数スケール（LCDのみ）",
+        Key::GameSettingsScaleVertical => "垂直",
+        Key::GameSettingsScaleHorizontal => "水平",
+        Key::GameSettingsScaleFull => "フル",
+        Key::GameSettingsScaleFullOverscan => "フルオーバースキャン",
+        Key::GameSettingsScaleVerticalOverscan => "垂直オーバースキャン",
+        Key::GameSettingsVideoFilter => "映像フィルター（LCDのみ）",
+        Key::GameSettingsFilterLight => "弱",
+        Key::GameSettingsFilterMedium => "中",
+        Key::GameSettingsFilterStrong => "強",
+        Key::GameSettingsFilterBlack => "黒",
+        Key::GameSettingsGamma => "ガンマ",
+        Key::GameSettingsMonitorX => "水平位置",
+        Key::GameSettingsMonitorY => "垂直位置",
+        Key::GameSettingsVolume => "音量",
+        Key::GameSettingsResetAll => "すべてリセット",
+        Key::RemoveAndRestart => "削除して再起動",
+        Key::RemoveGameSettings => "ゲーム設定を削除",
+        Key::RemoveGameSettingsConfirm => {
+            "エミュレーターのオプションを含む、このゲームのすべての設定を削除して再起動しますか？未保存の進行状況が失われる可能性があります。"
+        }
+        Key::GameSettingsRemoved => "ゲーム設定を削除しました。ゲームを再起動しています",
+        Key::GameSettingsAlreadyRemoved => "このゲームに保存済みの設定はありません",
+        Key::GameSettingsRemovedRefresh => {
+            "ゲーム設定を削除しました。ゲームの再起動後にこのページを更新してください。"
+        }
+        Key::RemoveSystemSettings => "システム設定を削除",
+        Key::RemoveSystemSettingsConfirm => {
+            "エミュレーターのオプションを含む、このシステムと画面のすべての設定を削除してゲームを再起動しますか？未保存の進行状況が失われる可能性があります。"
+        }
+        Key::SystemSettingsRemoved => "システム設定を削除しました。ゲームを再起動しています",
+        Key::SystemSettingsAlreadyRemoved => "このシステムに保存済みの設定はありません",
+        Key::SystemSettingsRemovedRefresh => {
+            "システム設定を削除しました。ゲームの再起動後にこのページを更新してください。"
+        }
+        Key::GameSettingsApply => "適用",
+        Key::GameSettingsUnavailable => "設定を取得できません。接続を確認して再試行してください。",
+        Key::GameSettingsChanged => {
+            "実行中のゲームが変わりました。設定は適用されていません。パネルを更新しました。"
+        }
+        Key::GameSettingsInvalid => {
+            "無効な設定値があります。設定を再読み込みして再試行してください。"
+        }
+        Key::LinkPlayApplied => "リンクプレイ設定を適用しました",
+        Key::LinkPlayInvalidPort => "ポートは1〜65535で指定してください",
+        Key::LinkPlayInvalidMode => "有効なリンクプレイモードを選択してください",
+        Key::LinkPlayInvalidAddress => {
+            "クライアントモードの有効なホスト名またはIPアドレスを入力してください"
+        }
+        Key::ReplaySettingsRestarting => "設定を保存しました。RePlayOSを再起動しています…",
+        Key::ReplaySettingsFailed => {
+            "操作を完了できませんでした。再試行する前に接続と保存済み設定を確認してください。"
+        }
+        Key::ReplayInsiderInvalid => "Insiderトークンが無効です",
+        Key::GameSettingsApplied => "ゲーム設定を適用しました",
 
         Key::GameDetailEmulation => "互換性",
         Key::GameDetailRawCategory => "MAMEカテゴリ",
@@ -558,6 +731,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryStorage => "ストレージ",
         Key::MetadataSummaryDownloadedArt => "取得済み画像",
         Key::MetadataSummaryPlaytime => "プレイ時間",
+        Key::MetadataSummarySessionPlaytime => "今回のセッション",
+        Key::MetadataSummaryWeekPlaytime => "今週",
+        Key::MetadataSummaryGamesPlayed => "プレイしたゲーム",
+        Key::MetadataSummaryLongestSession => "最長セッション",
         Key::PlaytimeUnavailable => "利用不可",
 
         // System accordion rows
@@ -756,11 +933,26 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "{0}秒後にリロードします...",
         Key::UpdateWaitingForServer => "サーバーの応答を待っています...",
         Key::UpdateBackToSettings => "設定に戻る",
+        Key::UpdateComplete => "アップデートが完了しました",
+        Key::UpdateContinue => "続行",
         Key::UpdatePageTitle => "Replay Controlをアップデート中",
 
         // Setup checklist (first-run)
         Key::SetupWelcome => "Replay Controlへようこそ！",
+        Key::SetupKicker => "セットアップ",
+        Key::SetupProgress => "セットアップの進行状況",
+        Key::SetupFailed => "失敗",
+        Key::SetupCancelled => "キャンセル済み",
+        Key::SetupNetNotConfigured => "RePlayOS Net Control が設定されていません",
+        Key::SetupNetPendingRestart => "RePlayOS はまだ再起動中です",
+        Key::SetupNetUnauthorized => "RePlayOS が Net Control コードを拒否しました",
+        Key::SetupNetUnsupported => {
+            "このバージョンの RePlayOS はリモートコントロールに対応していません"
+        }
         Key::SetupIntro => "ライブラリを充実させ、Replay ControlをRePlayOSに接続します。",
+        Key::SetupStandaloneIntro => "ゲームライブラリの設定を完了します。",
+        Key::SetupStorageTitle => "ゲームライブラリのフォルダーを選択",
+        Key::SetupStorageHint => "ROMとライブラリの画像は選択したフォルダーに保存されます",
         Key::SetupMetadataTitle => "メタデータソースをダウンロード",
         Key::SetupMetadataHint => "説明、評価、発売日、自動カバーアートを追加します",
         Key::SetupReplayosTitle => "RePlayOS連携を有効化",
@@ -791,6 +983,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsMessagePlaceholder => "TV に表示するメッセージ",
         Key::ReplayOsMessageSend => "メッセージを送信",
         Key::ReplayOsMessageClear => "メッセージを消去",
+        Key::ReplayOsDurationSaveFailed => {
+            "メッセージの表示時間を保存できませんでした。以前の値に戻しました。"
+        }
         Key::ReplayOsRestartGame => "現在のゲームを再起動",
         Key::ReplayOsRestartGameConfirm => "現在のゲームを再起動しますか？",
         Key::ReplayOsDeviceTitle => "デバイス",
@@ -799,6 +994,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::ReplayOsPowerOffConfirm => "RePlayOS デバイスの電源を切りますか？",
         Key::ReplayOsRebootConfirm => "RePlayOS デバイスを再起動しますか？",
         Key::ReplayOsModeTitle => "モード",
+        Key::ReplayOsDataLocationTitle => "データの保存先",
+        Key::ReplayOsDataLocationStorage => "ROM ストレージ",
+        Key::ReplayOsDataLocationLocalSd => "ローカル SD カード",
+        Key::ReplayOsDataLocationHint => {
+            "RePlayOS はセーブデータ、ステート、キャプチャをここに保存します。変更は TV で行ってください。"
+        }
         Key::ReplayOsKioskMode => "キオスクモード",
         Key::ReplayOsKioskHint => "ゲストが TV 側でシステム設定を変更できないようにします。",
         Key::ReplayApiStatusConnected => "{0} に接続済み",
@@ -846,6 +1047,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::SaveStatesJustNow => "たった今",
         Key::SaveStatesMinutesAgo => "{0}分前",
         Key::SaveStatesStatusPreview => "状態未取得",
+        Key::SaveStatesNoScreenshot => "画像なし",
         Key::SaveStatesPreviousSlot => "前のスロット",
         Key::SaveStatesNextSlot => "次のスロット",
         Key::SaveStatesSave => "ステートを保存",

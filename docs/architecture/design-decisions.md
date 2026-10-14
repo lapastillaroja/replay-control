@@ -146,7 +146,7 @@ A pool-internal RAII guard that gates concurrent reads during a write. The pool 
 
 ### 10. Bundled `catalog.sqlite`
 
-No-Intro DATs (11 systems), TheGamesDB metadata, arcade databases (FBNeo, MAME 2003+, MAME 0.285, Flycast), Wikidata series data, and genre/category INI files are baked into a single read-only `catalog.sqlite` by `tools/build-catalog/src/main.rs` and shipped alongside the binary. Auto-update swaps the catalog atomically with the binary on each release (see [Release Updates](../features/release-updates.md)).
+No-Intro DATs (11 systems), TheGamesDB metadata, arcade databases (FBNeo, MAME 2003+, MAME 0.289, Flycast), Wikidata series data, and genre/category INI files are baked into a single read-only `catalog.sqlite` by `tools/build-catalog/src/main.rs` and shipped alongside the binary. Auto-update swaps the catalog atomically with the binary on each release (see [Release Updates](../features/release-updates.md)).
 
 ```rust
 // replay-control-core-server/src/catalog_pool.rs

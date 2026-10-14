@@ -169,10 +169,6 @@
         font-size: var(--font-size-regular-default);
     }
 
-    .info-grid .info-row {
-        grid-template-columns: minmax(6.5rem, 42%) minmax(0, 1fr);
-        column-gap: var(--control-gap);
-    }
 }
 
 /* ── Two-pane layout (desktop) ───────────────────────────────── */
@@ -386,4 +382,11 @@
 
 .analytics-section {
     padding-top: var(--panel-gap);
+}
+
+@media (max-width: 520px) {
+    .info-grid .info-row {
+        grid-template-columns: minmax(6.5rem, 42%) minmax(0, 1fr);
+        column-gap: var(--control-gap);
+    }
 }

@@ -401,7 +401,7 @@ impl ArcadeBoard {
             ArcadeBoard::Cps1 => &["capcom/cps1.cpp", "cps1.c"],
             ArcadeBoard::Cps2 => &["capcom/cps2.cpp", "cps2.c"],
             ArcadeBoard::Cps3 => &["capcom/cps3.cpp", "cps3/cps3.cpp", "cps3.c"],
-            ArcadeBoard::NeoGeoMvs => &["neogeo/neogeo.cpp", "neogeo.c"],
+            ArcadeBoard::NeoGeoMvs => &["neogeo/neogeo.cpp", "snk/neogeo.cpp", "neogeo.c"],
             ArcadeBoard::SegaSystemC2 => &["sega/segac2.cpp", "segac2.c"],
             ArcadeBoard::SegaSystem16a => &["sega/segas16a.cpp", "sega/sys16a.cpp", "segas16a.c"],
             ArcadeBoard::SegaSystem16b => &[
@@ -457,14 +457,27 @@ impl ArcadeBoard {
                 "cave/uopoko.cpp",
             ],
             ArcadeBoard::CaveCv1000 => &["cave/cv1k.cpp"],
-            ArcadeBoard::MidwayWolfUnit => {
-                &["midway/midwunit.cpp", "midway/wunit.cpp", "midwunit.c"]
-            }
-            ArcadeBoard::MidwayTUnit => &["midway/midtunit.cpp", "midway/tunit.cpp", "midtunit.c"],
-            ArcadeBoard::MidwayVUnit => &["midway/midvunit.cpp"],
-            ArcadeBoard::MidwayYUnit => &["midway/midyunit.cpp", "midway/yunit.cpp", "midyunit.c"],
-            ArcadeBoard::MidwaySeattle => &["midway/seattle.cpp"],
-            ArcadeBoard::MidwayVegas => &["midway/vegas.cpp"],
+            ArcadeBoard::MidwayWolfUnit => &[
+                "midway/midwunit.cpp",
+                "williams/midwunit.cpp",
+                "midway/wunit.cpp",
+                "midwunit.c",
+            ],
+            ArcadeBoard::MidwayTUnit => &[
+                "midway/midtunit.cpp",
+                "williams/midtunit.cpp",
+                "midway/tunit.cpp",
+                "midtunit.c",
+            ],
+            ArcadeBoard::MidwayVUnit => &["midway/midvunit.cpp", "williams/midvunit.cpp"],
+            ArcadeBoard::MidwayYUnit => &[
+                "midway/midyunit.cpp",
+                "williams/midyunit.cpp",
+                "midway/yunit.cpp",
+                "midyunit.c",
+            ],
+            ArcadeBoard::MidwaySeattle => &["midway/seattle.cpp", "williams/seattle.cpp"],
+            ArcadeBoard::MidwayVegas => &["midway/vegas.cpp", "williams/vegas.cpp"],
             ArcadeBoard::NamcoSystem1 => &["namco/namcos1.cpp", "pre90s/namcos1.cpp", "namcos1.c"],
             ArcadeBoard::NamcoSystem2 => &["namco/namcos2.cpp", "pst90s/namcos2.cpp", "namcos2.c"],
             ArcadeBoard::NamcoSystem10 => &["namco/namcos10.cpp", "namcos10.c"],
@@ -476,7 +489,12 @@ impl ArcadeBoard {
             ArcadeBoard::KonamiMysticWarriors => &["konami/mystwarr.cpp", "mystwarr.c"],
             ArcadeBoard::KonamiGq => &["konami/konamigq.cpp"],
             ArcadeBoard::KonamiM2 => &["konami/konamim2.cpp"],
-            ArcadeBoard::DataEastDeco32 => &["dataeast/deco32.cpp"],
+            ArcadeBoard::DataEastDeco32 => &[
+                "dataeast/deco32.cpp",
+                "dataeast/captaven.cpp",
+                "dataeast/dragngun.cpp",
+                "dataeast/fghthist.cpp",
+            ],
             // DECO Cassette System (BurgerTime, Burnin' Rubber). Previously this
             // pointed at dataeast/dec0.cpp by mistake — that's the MEC-M1 board
             // below, not the cassette system.
@@ -555,6 +573,7 @@ mod tests {
         let curated_paths: &[(&str, ArcadeBoard)] = &[
             ("capcom/cps2.cpp", ArcadeBoard::Cps2),
             ("neogeo/neogeo.cpp", ArcadeBoard::NeoGeoMvs),
+            ("snk/neogeo.cpp", ArcadeBoard::NeoGeoMvs),
             ("taito/taitof3.cpp", ArcadeBoard::TaitoF3),
             ("sony/zn.cpp", ArcadeBoard::SonyZn),
             ("zn.c", ArcadeBoard::SonyZn),
@@ -562,10 +581,19 @@ mod tests {
             ("sega/naomi2.cpp", ArcadeBoard::SegaNaomi2),
             ("sega/atomiswave.cpp", ArcadeBoard::SammyAtomiswave),
             ("midway/midwunit.cpp", ArcadeBoard::MidwayWolfUnit),
+            ("williams/midwunit.cpp", ArcadeBoard::MidwayWolfUnit),
+            ("williams/midtunit.cpp", ArcadeBoard::MidwayTUnit),
+            ("williams/midvunit.cpp", ArcadeBoard::MidwayVUnit),
+            ("williams/midyunit.cpp", ArcadeBoard::MidwayYUnit),
+            ("williams/seattle.cpp", ArcadeBoard::MidwaySeattle),
             ("midway/vegas.cpp", ArcadeBoard::MidwayVegas),
+            ("williams/vegas.cpp", ArcadeBoard::MidwayVegas),
             ("namco/namcos10.cpp", ArcadeBoard::NamcoSystem10),
             ("gaelco/gaelco3d.cpp", ArcadeBoard::Gaelco3d),
             ("dataeast/decocass.cpp", ArcadeBoard::DataEastDecoCassette),
+            ("dataeast/captaven.cpp", ArcadeBoard::DataEastDeco32),
+            ("dataeast/dragngun.cpp", ArcadeBoard::DataEastDeco32),
+            ("dataeast/fghthist.cpp", ArcadeBoard::DataEastDeco32),
             ("jaleco/megasys1.cpp", ArcadeBoard::JalecoMegaSystem1),
         ];
         for (sf, expected) in curated_paths {

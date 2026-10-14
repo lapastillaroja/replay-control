@@ -1,143 +1,97 @@
 # Installation
 
-How to install, update, and uninstall Replay Control on a Raspberry Pi running RePlayOS.
+Replay Control runs alongside RePlayOS on a Raspberry Pi. You can install it from the Pi or from another computer on the same network.
 
-## Install
+## Install on the Pi
 
-These steps work on **Windows 10+, macOS, and Linux**. On Windows, open **PowerShell** or **Windows Terminal**.
+On Windows 10+, macOS, or Linux, open PowerShell, Terminal, or another shell and connect to the Pi:
 
-First, connect to the Pi:
-
-```bash
+```sh
 ssh root@replay.local
+# default password: replayos
 ```
 
-If SSH asks whether you trust the host, type `yes` and press Enter.
+If SSH asks whether to trust the host, type `yes`. Your password will not appear while you type it. Once the Pi shell opens, run:
 
-When it asks for a password, type:
-
-```text
-replayos
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash
 ```
 
-You will not see the password characters while typing. That is normal.
+When installation finishes, open **https://replay.local:8443** in your browser. Approve the certificate exception on your first visit.
 
-After you are connected to the Pi, paste this command:
+If `replay.local` does not work, use the Pi's IP address for SSH and the browser. You can find it in your router's connected devices list.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+## Install from another computer
+
+On Linux or macOS, the installer can connect to the Pi for you. Run this on a computer on the same network:
+
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash
 ```
 
-The installer downloads the latest stable release, installs the service, and starts Replay Control. When it finishes, type `exit`, then open `https://replay.local:8443` in your browser.
+It uses the Pi's root password, which is `replayos` on a fresh RePlayOS image. If the Pi's name cannot be found, provide its IP address:
 
-Replay Control uses a local self-signed HTTPS certificate. Your browser will show a security warning the first time you open it; choose the advanced or continue option to approve the exception for your Pi.
-
-On the first browser visit after install or after upgrading to the access-control release, Replay Control shows a first setup page. Enter the current RePlayOS root password to confirm admin access; on a fresh image the default password is `replayos`. Password changes are optional and can be done later from **Settings > Access & Security**.
-
-### If `replay.local` doesn't resolve
-
-Some Windows networks cannot find `replay.local`. Use the Pi's IP address instead:
-
-```bash
-ssh root@192.168.1.50
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash -s -- --ip 192.168.1.50
 ```
 
-Replace `192.168.1.50` with your Pi's real IP address. After you are connected, paste the installer:
+On Windows, use the SSH steps above from PowerShell or Windows Terminal.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+## Update
+
+Use **Settings > Updates > Update Now** in Replay Control, or run the installation command again. Replay Control updates independently of RePlayOS. Your settings and game library are preserved.
+
+## Remove
+
+To remove Replay Control while keeping its settings and library data, connect to the Pi:
+
+```sh
+ssh root@replay.local
+# default password: replayos
 ```
 
-Find the IP in your router's connected-devices list. Use the same IP in the browser too: `https://192.168.1.50:8443`.
+Then run:
 
-## Install from another computer (no SSH session)
-
-If you'd rather skip logging into the Pi yourself, you can run the installer from any Linux or macOS computer on the same network — it will SSH into the Pi for you and run the same steps:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash -s -- --uninstall
 ```
 
-Pass `--ip ADDRESS` if mDNS discovery fails. This flow runs bash on your local machine, so on Windows use the SSH-first flow above instead.
+**Purge deletes your Replay Control settings, library databases, and downloaded media.** You will lose app preferences and library data, and Replay Control will need to rebuild or download that data if you reinstall it. Your ROMs, saves, captures, and BIOS files are kept. If you need the Replay Control data later, back it up before running:
 
-## Update / Uninstall
-
-Re-run the install command to update; the binary and site assets are replaced and the service is restarted, while `/etc/default/replay-control` is preserved.
-
-To remove the app:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --uninstall
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh |
+  bash -s -- --purge
 ```
 
-The service is stopped and disabled, and the binary, site assets, systemd unit, and Avahi service are removed. The environment file is preserved in case you reinstall.
+The installer lists the paths it will delete and asks you to confirm. For an unattended purge, add `--yes` to skip that prompt.
 
-To wipe everything Replay Control has put on the Pi — binary, service files, environment file, and the on-storage `.replay-control/` directory (DBs, settings, downloaded media, LaunchBox XML):
+## Other options
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --purge --yes
+Use `--version VERSION` to install a specific release, `--pi-pass PASSWORD` if you changed the Pi password, or `--dry-run` to preview the install. Add these after `bash -s --` in the commands above.
+
+## Standalone use
+
+Replay Control can run without RePlayOS on **Debian 13 (amd64 or arm64)** and **Fedora 42 (x86_64)**. Standalone mode is **work in progress and unsupported**.
+
+Download the package for your system from a [Replay Control release](https://github.com/lapastillaroja/replay-control/releases), then install the downloaded file:
+
+```sh
+# Debian 13: use the amd64 or arm64 .deb for your computer
+sudo apt install ./replay-control_VERSION_ARCH.deb
+
+# Fedora 42, x86_64
+sudo dnf install ./replay-control-VERSION-1.x86_64.rpm
 ```
 
-`--purge` prompts for confirmation when run interactively; pass `--yes` to skip the prompt (required when piping from `curl`). ROMs, saves, captures, and BIOS files are not touched.
+Replace the example filename with the exact file you downloaded. Open **https://localhost:8443** on that computer. On first use, choose the folder that contains your `roms/` directory. You can change it later in **Settings > Library & Games > Storage location**. The package also adds a Replay Control shortcut to desktop application menus.
 
-## Options
-
-Append flags after `bash -s --`:
-
-| Flag | Effect |
-|---|---|
-| `--ip ADDRESS` | Skip mDNS discovery and use this address. |
-| `--pi-pass PASSWORD` | SSH password for the Pi (default: `replayos`). |
-| `--version v0.3.0` | Install a specific release. Use `beta` for the latest pre-release. |
-| `--dry-run` | Print what would happen without making changes. |
-| `--uninstall` | Remove the app from the Pi. Preserves `.replay-control/` data and the env file. |
-| `--purge` | Like `--uninstall` but also wipes `.replay-control/` and `/etc/default/replay-control`. ROMs/saves/captures/BIOS untouched. |
-| `--yes` | Skip the confirmation prompt (required for `--purge` when piping from `curl`). |
-
-Or set environment variables before the curl call:
-
-| Variable | Default | Effect |
-|---|---|---|
-| `PI_PASS` | `replayos` | Same as `--pi-pass`. |
-| `REPLAY_PI_ADDR` | (mDNS) | Same as `--ip`. |
-| `REPLAY_CONTROL_VERSION` | `latest` | Same as `--version`. |
-
-Combining options:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword --version v0.3.0
-```
-
-## What gets installed
-
-| Path | Contents |
-|---|---|
-| `/usr/local/bin/replay-control-app` | Application binary. |
-| `/usr/local/bin/catalog.sqlite` | Read-only embedded game catalog. The service won't start without it. |
-| `/usr/local/share/replay/site/` | Static web assets (CSS, WASM, icons). |
-| `/etc/systemd/system/replay-control.service` | Systemd service unit. |
-| `/etc/default/replay-control` | Environment configuration. |
-| `/etc/avahi/services/replay-control.service` | mDNS service advertisement. |
-
-The service starts automatically on boot. The app listens on HTTPS port `8443`; HTTP port `8080` shows a page that points browsers to HTTPS. Customise behaviour by editing `/etc/default/replay-control`:
-
-| Variable | Default | Effect |
-|---|---|---|
-| `REPLAY_PORT` | `8080` | HTTP guidance page port. |
-| `REPLAY_HTTPS_PORT` | `8443` | HTTPS app/API port. |
-| `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static-assets path. |
-| `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path. |
-| `REPLAY_CONFIG_PATH` | (auto-detected) | Override the RePlayOS config path. |
-| `REPLAY_CONTROL_IDENTITY_WORKERS` | `2` | Advanced: hash-identification workers for library rebuilds and rescans. Valid range: 1-4. |
-| `REPLAY_EXTRA_ARGS` | (empty) | Extra CLI flags. Dangerous debugging flags must be explicit here, such as `--dangerous-disable-https --dangerous-allow-insecure-auth-over-http`. |
-| `RUST_LOG` | `replay_control_app=info,replay_control_core=info` | Log level. |
-
-## Troubleshooting
-
-**Pi not found.** Make sure the Pi is powered on and on the same network. Check your router for its IP and pass `--ip <addr>`.
-
-**SSH authentication failed.** The default password is `replayos`. If you've changed it, pass `--pi-pass yourpassword`.
-
-**Windows: `ssh` command not found.** OpenSSH client ships with Windows 10 build 1809 (Oct 2018) and later, and with all Windows 11 versions. If it's missing, enable it from **Settings → Apps → Optional Features → Add a feature → OpenSSH Client**.
-
-**Windows: `replay.local` doesn't resolve.** Use the Pi's IP address from your router's connected-devices list, then `ssh root@<ip>` and `https://<ip>:8443`. Common on Windows in VMs, where multicast often doesn't cross between host and guest.
+To remove a standalone install, run `sudo apt remove replay-control` on Debian or `sudo dnf remove replay-control` on Fedora. Your settings and library data remain available for a later reinstall.

@@ -1,10 +1,8 @@
 """
 End-to-end coverage for the auth guard's role gating.
 
-The container normally boots in standalone mode (`--storage-path`), where the
-guard is bypassed and everything is open. To exercise the real gating this
-module relaunches the in-container app in *device* mode (no `--storage-path`,
-which trips `is_device()` via the `/opt/replay` marker) with first-setup already
+The container normally boots in standalone mode. To exercise the real gating this
+module relaunches the app with a RePlayOS marker at `/opt/replay` and first setup
 completed, then asserts the middleware's decisions for an unauthenticated
 caller:
 
@@ -15,8 +13,8 @@ caller:
 
 It also covers the positive login path (correct password grants a session;
 wrong password is rejected), enabled by python3 + a known root password in the
-test image. The shared `device_mode_app` fixture (in conftest) relaunches the
-app in device mode and restores standalone on teardown.
+test image. The shared `replayos_app` fixture (in conftest) restores
+standalone on teardown.
 """
 
 import pytest
@@ -32,23 +30,23 @@ from conftest import (
 
 pytestmark = pytest.mark.skipif(
     not CONTAINER,
-    reason="admin-gating e2e relaunches the in-container app in device mode",
+    reason="admin-gating e2e relaunches the in-container app in RePlayOS host",
 )
 
 
-def test_admin_server_fn_rejects_anonymous(device_mode_app):
+def test_admin_server_fn_rejects_anonymous(replayos_app):
     # Non-public server fn + anonymous caller -> guard returns 401 (fail-closed).
-    # A 401 here also confirms the instance is in device mode (standalone would
+    # A 401 here also confirms the instance is in RePlayOS host (standalone would
     # bypass the guard and return 200).
     assert post_sfn("clear_images") == 401
 
 
-def test_unknown_server_fn_is_fail_closed_for_anonymous(device_mode_app):
+def test_unknown_server_fn_is_fail_closed_for_anonymous(replayos_app):
     # An unclassified /sfn path defaults to Admin, so anonymous gets 401, not 404.
     assert post_sfn("definitely_not_a_real_server_fn") == 401
 
 
-def test_guard_lets_public_server_fn_through(device_mode_app):
+def test_guard_lets_public_server_fn_through(replayos_app):
     # The guard classifies by normalized name: a public fn (get_auth_status) is
     # NOT blocked with 401, unlike an admin fn. It passes through to Leptos,
     # which returns 400 here only because the real handler is registered at a
@@ -59,19 +57,19 @@ def test_guard_lets_public_server_fn_through(device_mode_app):
     assert status in (200, 400), f"unexpected status for public server fn: {status}"
 
 
-def test_admin_page_redirects_anonymous_to_login(device_mode_app):
+def test_admin_page_redirects_anonymous_to_login(replayos_app):
     status, location = http_status("/settings/access")
     assert status in (302, 303, 307), f"expected redirect, got {status}"
     assert "/login" in location, f"admin page should redirect to /login, got {location!r}"
 
 
-def test_browsing_page_redirects_anonymous_to_login(device_mode_app):
+def test_browsing_page_redirects_anonymous_to_login(replayos_app):
     status, location = http_status("/")
     assert status in (302, 303, 307), f"expected redirect, got {status}"
     assert "/login" in location, f"browsing page should redirect anonymous to /login, got {location!r}"
 
 
-def test_health_endpoint_stays_open(device_mode_app):
+def test_health_endpoint_stays_open(replayos_app):
     status, _ = http_status("/api/version")
     assert status == 200
 
@@ -79,7 +77,7 @@ def test_health_endpoint_stays_open(device_mode_app):
 # ── Positive login path (needs python3 + a known root password) ───────────
 
 
-def test_admin_login_with_correct_password_grants_access(device_mode_app, page):
+def test_admin_login_with_correct_password_grants_access(replayos_app, page):
     # Sign in with the device password; success navigates away from /login.
     goto_hydrated(page, "/login")
     page.fill("#login-admin-password", ADMIN_PW)
@@ -96,7 +94,7 @@ def test_admin_login_with_correct_password_grants_access(device_mode_app, page):
     )
 
 
-def test_admin_login_with_wrong_password_is_rejected(device_mode_app, page):
+def test_admin_login_with_wrong_password_is_rejected(replayos_app, page):
     goto_hydrated(page, "/login")
     page.fill("#login-admin-password", "definitely-the-wrong-password")
     page.get_by_role("button", name="Sign in as admin").click()

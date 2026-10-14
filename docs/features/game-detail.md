@@ -19,13 +19,25 @@ A summary card displays:
 - ROM capacity (Mbit/Kbit) for cartridge and ROM-chip systems where that historical unit is meaningful
 - Developer, release year, genre
 - Player count and co-op support
-- A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). Compressed disc images (`.chd`) are also affected for now, pending a RePlayOS fix
+- A 🏆 **RetroAchievements** indicator when the game has a known achievement set. The match is by content, so it reflects the exact version you own. A short note appears when RePlay can't actually award those achievements — for example on systems whose emulator doesn't support them (PlayStation, PC Engine CD, arcade MAME). RePlayOS 2.0.53 and newer can also identify supported compressed disc images (`.chd`) for achievements; Jaguar CD CHD playback requires 2.0.59 or newer. Jaguar CD CHDs must also preserve the disc's sessions: older flattened conversions may appear in the library but fail to launch. Reconvert those images from the original CUE/BIN files with a compatible converter.
 - For arcade games, the hardware **board** with its manufacturer (e.g. "CPS-2 (Capcom)") — a link to that board's page. See [Arcade Boards](arcade-boards.md).
 - For arcade games, a **Mature category** flag when the source category data marks the entry with `* Mature *`.
 
 ## Launch on TV
 
 A "Play" button sends the game to RePlayOS for immediate launch on the connected TV. Available when the Pi is running RePlayOS with a supported core.
+
+Launching requires a RePlayOS version that supports the system. When RePlayOS also reports it as an Insider-only feature, active Insider access is required. Launch buttons explain version and access restrictions; browsing, metadata, and artwork remain available. Replay Control checks access again before launching. If the RePlayOS version cannot be verified, version-dependent launches are unavailable until it can be checked.
+
+GameCube, Wii, Triforce, and PlayStation 2 also need Vulkan. When RePlayOS reports that Vulkan is unavailable or that OpenGL ES is selected, Play is disabled with instructions to change the preferred renderer on the TV: **RePlay Options → Video → Preferred Renderer**. Vulkan is a device-wide setting, so it cannot be changed for one game or system.
+
+While the game is running, its detail page also exposes RePlay-owned video and audio overrides. Ambiscan, gamma, monitor position, and volume can be changed for that game. Integer scaling and video filtering are LCD-only controls. Volume steps from 0% to 100%, then **Default**. Use **Apply** to save your changes; adjusting a control does not save it. Screen position moves in steps of two and supports press-and-hold, starting from the displayed value.
+
+The panel has **Game** and **System** views. Game settings affect only the running game; System settings apply to that system. Both are saved for the current screen. RePlayOS uses one complete set of saved settings at a time: Game takes priority over Folder, then System. Even if every Game option says **Default**, saved Game settings still take priority; those values use the global RePlay settings. Each view offers a **Remove** action when that scope has saved settings. Removing settings deletes the entire saved file for that game or system and screen, including any emulator options, then restarts the game.
+
+**Reset all** returns the visible Game or System video and audio settings to Default; use **Apply** to save the change. The System reset is highlighted when System settings have been saved. It preserves emulator options. Existing Folder settings can still take priority over System settings.
+
+Replay Control checks that the same game is still running before applying settings. On RePlayOS 2.0 or newer, it also asks RePlayOS to check the target at the moment the settings are written. If the target changed, the save is rejected and the panel refreshes. On older versions, a game switch at the exact moment of application can still occur. A settings connection error stays inside this panel; the rest of the detail page remains available.
 
 ## User Screenshots
 

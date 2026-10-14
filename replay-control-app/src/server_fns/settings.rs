@@ -1,9 +1,14 @@
 use super::*;
+use replay_control_core::replay_settings::SettingsOutcome;
+#[cfg(feature = "ssr")]
+use replay_control_core::runtime_env::HostKind;
 
 #[cfg(feature = "ssr")]
 use crate::api::response_cache::TtlSlot;
 #[cfg(feature = "ssr")]
-use replay_control_core::replay_api::{ConfigKind, ReplayApiStatus, SetCommand};
+use replay_control_core::replay_api::{
+    ConfigKind, ReplayApiStatus, SetCommand, parse_replayos_version,
+};
 use replay_control_core::skins::SkinId;
 #[cfg(feature = "ssr")]
 use replay_control_core::skins::{SKINS, SkinDefinition, definition, theme_css};
@@ -19,12 +24,16 @@ use replay_control_core_server::security::tls::{
     TlsCertificateStatus, regenerate_self_signed_certificate, tls_certificate_status,
 };
 
+#[cfg(feature = "ssr")]
+const STANDALONE_SAVE_SKIPPED: &str = "Save skipped (standalone mode)";
+
 /// WiFi configuration (password is never sent to the client).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WifiConfig {
     pub ssid: String,
     pub country: String,
     pub mode: String,
+    pub mode_available: bool,
     pub hidden: bool,
 }
 
@@ -42,6 +51,13 @@ pub struct NfsConfig {
 pub struct RetroAchievementsConfig {
     pub username: String,
     pub password_configured: bool,
+}
+
+/// RePlayOS insider token status. The token itself is write-only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayInsiderConfig {
+    pub token_configured: bool,
+    pub enabled: Option<bool>,
 }
 
 /// Skin info for the skin page.
@@ -112,17 +128,29 @@ fn config_unavailable() -> ServerFnError {
 #[server(prefix = "/sfn")]
 pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
     let state = super::app_state()?;
-    let guard = state
-        .replay_config
-        .read()
-        .expect("replay_config lock poisoned");
-    let config = guard.as_ref().ok_or_else(config_unavailable)?;
-    Ok(WifiConfig {
-        ssid: config.wifi_name().unwrap_or("").to_string(),
-        country: config.wifi_country().unwrap_or("").to_string(),
-        mode: config.wifi_mode().unwrap_or("transition").to_string(),
-        hidden: config.wifi_hidden(),
-    })
+    let mut wifi = {
+        let guard = state
+            .replay_config
+            .read()
+            .expect("replay_config lock poisoned");
+        let config = guard.as_ref().ok_or_else(config_unavailable)?;
+        WifiConfig {
+            ssid: config.wifi_name().unwrap_or("").to_string(),
+            country: config.wifi_country().unwrap_or("").to_string(),
+            mode: config.wifi_mode().unwrap_or("transition").to_string(),
+            mode_available: false,
+            hidden: config.wifi_hidden(),
+        }
+    };
+    if let Some(api) = &state.replay_api {
+        wifi.mode_available = api
+            .client()
+            .get_version()
+            .await
+            .ok()
+            .is_some_and(|response| wifi_mode_available(&response.version));
+    }
+    Ok(wifi)
 }
 
 #[server(prefix = "/sfn")]
@@ -130,26 +158,50 @@ pub async fn save_wifi_config(
     ssid: String,
     password: String,
     country: String,
-    auth_mode: String,
+    auth_mode: Option<String>,
     hidden: bool,
 ) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    let (ssid, password, country, auth_mode) =
-        validate_wifi_config(&ssid, &password, &country, &auth_mode)?;
-    apply_replay_api_config_change(
-        &state,
-        vec![
-            ("wifi_name", ssid),
-            ("wifi_pwd", password),
-            ("wifi_country", country),
-            ("wifi_mode", auth_mode),
-            (
-                "wifi_hidden",
-                if hidden { "true" } else { "false" }.to_string(),
-            ),
-        ],
-    )
-    .await
+    if !state.host.is_replayos() {
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
+    }
+    let api = state
+        .replay_api
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("RePlayOS Net Control is unavailable"))?;
+    let version =
+        api.client().get_version().await.map_err(|error| {
+            ServerFnError::new(format!("Cannot check RePlayOS version: {error}"))
+        })?;
+    let mode_available = wifi_mode_available(&version.version);
+    let (ssid, password, country, auth_mode) = validate_wifi_config(
+        &ssid,
+        &password,
+        &country,
+        if mode_available {
+            auth_mode.as_deref().unwrap_or("")
+        } else {
+            "transition"
+        },
+    )?;
+    let mut writes = vec![
+        ("wifi_name", ssid),
+        ("wifi_pwd", password),
+        ("wifi_country", country),
+    ];
+    if mode_available {
+        writes.push(("wifi_mode", auth_mode));
+    }
+    writes.push((
+        "wifi_hidden",
+        if hidden { "true" } else { "false" }.to_string(),
+    ));
+    apply_replay_api_config_change(&state, writes).await
+}
+
+#[cfg(feature = "ssr")]
+fn wifi_mode_available(version: &str) -> bool {
+    parse_replayos_version(version).is_some_and(|version| version < (2, 0, 0))
 }
 
 #[server(prefix = "/sfn")]
@@ -256,6 +308,50 @@ pub async fn save_retroachievements_config_and_restart(
     .await
 }
 
+#[server(prefix = "/sfn")]
+pub async fn get_replay_insider_config() -> Result<ReplayInsiderConfig, ServerFnError> {
+    let state = super::app_state()?;
+    let fresh = ReplayConfig::from_file(&state.config_file_path()).ok();
+    let token_configured = match fresh {
+        Some(config) => config.replay_insider_token_configured(),
+        None => {
+            let guard = state
+                .replay_config
+                .read()
+                .expect("replay_config lock poisoned");
+            guard
+                .as_ref()
+                .ok_or_else(config_unavailable)?
+                .replay_insider_token_configured()
+        }
+    };
+    let enabled = match super::get_replay_capabilities().await {
+        Ok(capabilities) => capabilities.insider.insider_enabled,
+        Err(error) => {
+            tracing::warn!(%error, "could not read Insider activation status");
+            None
+        }
+    };
+    Ok(ReplayInsiderConfig {
+        token_configured,
+        enabled,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_replay_insider_token_and_restart(
+    token: String,
+) -> Result<SettingsOutcome, ServerFnError> {
+    let token = token.trim().to_string();
+    if token.len() > 512 || token.chars().any(char::is_control) {
+        return Ok(SettingsOutcome::InvalidToken);
+    }
+    let state = super::app_state()?;
+    apply_replay_api_config_change(&state, vec![("replay_insider_token", token)])
+        .await
+        .map(|_| SettingsOutcome::Restarting)
+}
+
 #[cfg(feature = "ssr")]
 type ConfigWrite = (&'static str, String);
 
@@ -264,8 +360,8 @@ async fn apply_replay_api_config_change(
     state: &crate::api::AppState,
     writes: Vec<ConfigWrite>,
 ) -> Result<String, ServerFnError> {
-    if !state.mode.is_device() {
-        return Ok("Save skipped (standalone mode)".to_string());
+    if !state.host.is_replayos() {
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
     }
 
     let Some(api) = state.replay_api.clone() else {
@@ -372,34 +468,28 @@ fn validate_nfs_config(
 /// calls and the config file I/O are all blocking, so the whole sequence runs
 /// on a blocking thread to avoid stalling the async runtime.
 ///
-/// `is_device` is a bool, not the full `Mode`, because this function only
-/// branches on "does the OS own this config?" — pre-resolving it at the call
-/// site (`state.mode.is_device()`) keeps the signature honest about what it
-/// actually needs.
 #[cfg(feature = "ssr")]
 pub(crate) async fn apply_replay_config_change<F>(
-    is_device: bool,
+    host: HostKind,
     write_config: F,
 ) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || {
-        apply_replay_config_change_blocking(is_device, write_config)
-    })
-    .await
-    .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
+    tokio::task::spawn_blocking(move || apply_replay_config_change_blocking(host, write_config))
+        .await
+        .map_err(|e| ServerFnError::new(format!("config change task failed: {e}")))?
 }
 
 #[cfg(feature = "ssr")]
 fn apply_replay_config_change_blocking<F>(
-    is_device: bool,
+    host: HostKind,
     write_config: F,
 ) -> Result<String, ServerFnError>
 where
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
 {
-    if !is_device {
+    if !host.is_replayos() {
         // Standalone is documented as having system-mutation features disabled —
         // no `replay.service` to restart, no `replay.cfg` we're meant to own, no
         // surrounding RePlayOS state to keep in sync. Refuse the write entirely
@@ -407,7 +497,7 @@ where
         // skipped result the device path would have for an inert call. The UI
         // hides these pages off-device; a direct /sfn POST hits this guard.
         let _ = write_config;
-        return Ok("Save skipped (standalone mode)".to_string());
+        return Ok(STANDALONE_SAVE_SKIPPED.to_string());
     }
 
     replay_control_core_server::replay_service::stop()
@@ -470,7 +560,7 @@ impl Drop for StartReplayOnDrop {
 #[server(prefix = "/sfn")]
 pub async fn reboot_system() -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Reboot skipped (standalone mode)".to_string());
     }
 
@@ -520,7 +610,7 @@ pub async fn get_hostname() -> Result<String, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Hostname change skipped (standalone mode)".to_string());
     }
 
@@ -612,7 +702,7 @@ pub async fn regenerate_tls_certificate_info() -> Result<TlsCertificateInfo, Ser
 /// wait on a restart that kills this process. No-op off-device.
 #[cfg(feature = "ssr")]
 fn restart_for_new_certificate(state: &crate::api::AppState) {
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return;
     }
     tokio::task::spawn(async {
@@ -923,7 +1013,7 @@ pub async fn change_root_password(
     use std::process::{Command, Stdio};
 
     let state = super::app_state()?;
-    if !state.mode.is_device() {
+    if !state.host.is_replayos() {
         return Ok("Password change skipped (standalone mode)".to_string());
     }
 
@@ -1066,15 +1156,14 @@ pub async fn get_update_channel() -> Result<String, ServerFnError> {
     )
 }
 
-/// Save the update channel. Nukes the update dir and triggers an immediate re-check.
+/// Save the update channel and trigger an immediate re-check.
 #[server(prefix = "/sfn")]
 pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
     let state = super::app_state()?;
     let channel_val = replay_control_core::update::UpdateChannel::from_str_value(&channel);
     replay_control_core_server::settings::write_update_channel(&state.settings, channel_val)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // Nuke stale update state and trigger re-check with new channel.
-    replay_control_core_server::update::nuke_update_dir();
+    // The re-check handles stale state unless an install owns the directory.
     let state_clone = state.clone();
     tokio::spawn(async move {
         match crate::api::updates::perform_update_check(&state_clone).await {
@@ -1195,6 +1284,14 @@ mod tests {
     #[test]
     fn wifi_validation_rejects_bad_country() {
         assert!(validate_wifi_config("ReplayNet", "", "USA", "wpa2").is_err());
+    }
+
+    #[test]
+    fn wifi_security_mode_is_only_available_before_replayos_2() {
+        assert!(wifi_mode_available("RePlayOS v1.8.0"));
+        assert!(!wifi_mode_available("RePlayOS v2.0.0"));
+        assert!(!wifi_mode_available("RePlayOS v2.0.52"));
+        assert!(!wifi_mode_available("unknown"));
     }
 
     #[test]

@@ -236,6 +236,12 @@ impl ReplayConfig {
         self.inner.get("system_storage").unwrap_or("sd")
     }
 
+    pub fn data_location(&self) -> &str {
+        self.inner
+            .get("system_data_location")
+            .unwrap_or("storage_unit")
+    }
+
     pub fn wifi_name(&self) -> Option<&str> {
         self.inner.get("wifi_name")
     }
@@ -314,6 +320,10 @@ impl ReplayConfig {
 
     pub fn retroachievements_password_configured(&self) -> bool {
         self.inner.get_non_empty("rcheevos_password").is_some()
+    }
+
+    pub fn replay_insider_token_configured(&self) -> bool {
+        self.inner.get_non_empty("replay_insider_token").is_some()
     }
 
     // ── Write methods ───────────────────────────────────────────
@@ -758,6 +768,14 @@ mod tests {
                 .unwrap();
         assert_eq!(config.retroachievements_username(), Some("player"));
         assert!(!config.retroachievements_password_configured());
+    }
+
+    #[test]
+    fn replay_insider_token_reports_only_non_empty_values() {
+        let configured = ReplayConfig::parse("replay_insider_token = \"secret\"\n").unwrap();
+        assert!(configured.replay_insider_token_configured());
+        let empty = ReplayConfig::parse("replay_insider_token = \"\"\n").unwrap();
+        assert!(!empty.replay_insider_token_configured());
     }
 
     #[test]

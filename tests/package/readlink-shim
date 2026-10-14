@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+
+# Linux reports QEMU as /proc/<pid>/exe for emulated arm64 binaries. Expose the
+# guest executable only for the package migration check; the Pi uses real proc.
+if [[ $# == 1 && $1 =~ ^/proc/[0-9]+/exe$ ]] &&
+   [[ $(/usr/bin/readlink "$1" 2>/dev/null) == /usr/bin/qemu-aarch64-static ]]; then
+    pid=${1#/proc/}
+    pid=${pid%/exe}
+    mapfile -d '' -t arguments < "/proc/$pid/cmdline"
+    if [[ ${arguments[1]:-} == /usr/bin/replay-control-app ]]; then
+        printf '%s\n' /usr/bin/replay-control-app
+        exit 0
+    fi
+fi
+exec /usr/bin/readlink "$@"

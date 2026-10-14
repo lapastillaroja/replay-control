@@ -11,7 +11,7 @@ use crate::server_fns;
 pub fn NfsPage() -> impl IntoView {
     let i18n = use_i18n();
     let nfs = Resource::new_blocking(|| (), |_| server_fns::get_nfs_config());
-    let mode = Resource::new_blocking(|| (), |_| server_fns::get_mode());
+    let host_kind = Resource::new_blocking(|| (), |_| server_fns::get_host_kind());
 
     view! {
         <div class="page settings-page">
@@ -24,7 +24,7 @@ pub fn NfsPage() -> impl IntoView {
 
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
-                    if !mode.await.map(|p| p.is_device()).unwrap_or(false) {
+                    if !host_kind.await.map(|host| host.is_replayos()).unwrap_or(false) {
                         return Ok::<_, ServerFnError>(view! { <DeviceOnlyNotice /> }.into_any());
                     }
                     let config = nfs.await?;

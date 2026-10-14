@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::{AdminSessionTimeout, AppSettings};
 use crate::storage::{RC_DIR, SETTINGS_FILE};
-use replay_control_core::error::Result;
+use replay_control_core::error::{Error, Result};
 use replay_control_core::locale::Locale;
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::skins::SkinId;
@@ -49,16 +49,12 @@ impl SettingsStore {
     /// race (last writer wins). Acceptable for this single-user app; the
     /// in-memory `UserPreferences` cache in `AppState` avoids repeated reads.
     pub fn save(&self, settings: &AppSettings) -> Result<()> {
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|e| replay_control_core::error::Error::io(&self.dir, e))?;
+        std::fs::create_dir_all(&self.dir).map_err(|e| Error::io(&self.dir, e))?;
         settings.save(&self.settings_path())
     }
 
-    //TODO remove this migration for 1.0
     /// One-time migration from old storage-level settings to this store.
-    /// Moves settings.cfg from `<storage_root>/.replay-control/` to this
-    /// store's directory. Uses atomic rename when possible, falls back to
-    /// copy + delete for cross-filesystem moves.
+    /// Keeps the old file so a failed package activation can start the v1 service.
     pub fn migrate_from_storage(&self, storage_root: &Path) -> Result<()> {
         let old_path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
 
@@ -78,21 +74,12 @@ impl SettingsStore {
             return Ok(());
         }
 
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|e| replay_control_core::error::Error::io(&self.dir, e))?;
+        std::fs::create_dir_all(&self.dir).map_err(|e| Error::io(&self.dir, e))?;
 
-        // Try atomic rename first; falls back to copy+delete across filesystems.
         let dest = self.settings_path();
-        if std::fs::rename(&old_path, &dest).is_err() {
-            std::fs::copy(&old_path, &dest)
-                .map_err(|e| replay_control_core::error::Error::io(&dest, e))?;
-            if let Err(e) = std::fs::remove_file(&old_path) {
-                tracing::warn!(
-                    "Failed to delete old settings at {}: {e}",
-                    old_path.display()
-                );
-            }
-        }
+        let staged = dest.with_extension("cfg.migrating");
+        std::fs::copy(&old_path, &staged).map_err(|e| Error::io(&staged, e))?;
+        std::fs::rename(&staged, &dest).map_err(|e| Error::io(&dest, e))?;
 
         tracing::info!(
             "Settings migrated: {} -> {}",
@@ -923,7 +910,7 @@ mod tests {
     // --- Migration tests ---
 
     #[test]
-    fn migrate_copies_and_deletes_old() {
+    fn migrate_copies_and_keeps_old_for_rollback() {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         let base =
             std::env::temp_dir().join(format!("replay-migrate-test-{}-{id}", std::process::id()));
@@ -950,8 +937,7 @@ mod tests {
         assert!(content.contains("locale = \"ja\""));
         assert!(content.contains("install_id = \"abc\""));
 
-        // Old file is deleted
-        assert!(!old_dir.join(SETTINGS_FILE).exists());
+        assert!(old_dir.join(SETTINGS_FILE).exists());
 
         let _ = std::fs::remove_dir_all(&base);
     }

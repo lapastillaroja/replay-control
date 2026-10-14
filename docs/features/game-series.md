@@ -10,7 +10,7 @@ Replay Control identifies games that belong to the same series or franchise and 
 
 ### Wikidata (Primary)
 
-The primary source is [Wikidata](https://www.wikidata.org/), with ~5,345 entries across 194+ series covering both console and arcade systems. The data includes franchise membership, sequel/prequel chains, and series ordinals.
+The primary source is [Wikidata](https://www.wikidata.org/), with ~5,720 entries covering both console and arcade systems. The data includes franchise membership, sequel/prequel chains, and series ordinals.
 
 ### Algorithmic Fallback
 

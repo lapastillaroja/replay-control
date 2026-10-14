@@ -12,6 +12,7 @@ pub mod db_pool;
 pub mod external_metadata;
 pub mod launch;
 pub mod replay_api;
+pub mod replay_game_settings;
 pub mod replay_service;
 pub mod security;
 pub mod settings;

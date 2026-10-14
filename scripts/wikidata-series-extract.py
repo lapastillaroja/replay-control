@@ -353,18 +353,18 @@ def load_arcade_names(script_dir):
                 elem.clear()
         print(f"  Arcade names: MAME 2003+ loaded {count} names", file=sys.stderr)
 
-    # 3. MAME 0.285 compact XML (uses <m> with <d> child)
-    mame285_path = os.path.join(upstream_dir, 'mame0285-arcade.xml')
-    if os.path.exists(mame285_path):
+    # 3. MAME 0.289 compact XML (uses <m> with <d> child)
+    mame_path = os.path.join(upstream_dir, 'mame0289-arcade.xml')
+    if os.path.exists(mame_path):
         count = 0
-        for event, elem in ET.iterparse(mame285_path, events=['end']):
+        for event, elem in ET.iterparse(mame_path, events=['end']):
             if elem.tag == 'm':
                 desc = elem.find('d')
                 if desc is not None and desc.text:
                     names.add(fuzzy_key(desc.text))
                     count += 1
                 elem.clear()
-        print(f"  Arcade names: MAME 0.285 loaded {count} names", file=sys.stderr)
+        print(f"  Arcade names: MAME 0.289 loaded {count} names", file=sys.stderr)
 
     # 4. Flycast CSV (Naomi/Atomiswave)
     flycast_path = os.path.join(core_data_dir, 'flycast_games.csv')

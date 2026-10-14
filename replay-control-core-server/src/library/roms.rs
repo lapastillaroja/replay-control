@@ -1717,9 +1717,57 @@ impl RomUploadStaging {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::StorageKind;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::{PermissionsExt, symlink};
+
+    #[tokio::test]
+    async fn gamecube_and_ps2_scan_registered_formats() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = StorageLocation::from_path(temp.path().to_path_buf(), StorageKind::Sd);
+        for folder in ["nintendo_gc", "sony_ps2"] {
+            let system = systems::find_system(folder).unwrap();
+            let directory = storage.roms_dir().join(folder);
+            fs::create_dir_all(&directory).unwrap();
+            let mut expected = Vec::new();
+            for extension in system
+                .extensions
+                .iter()
+                .filter(|extension| **extension != "m3u")
+            {
+                let filename = format!("Game-{extension}.{}", extension.to_uppercase());
+                fs::write(directory.join(&filename), b"test image").unwrap();
+                expected.push(filename);
+            }
+            fs::write(directory.join("Unsupported.zip"), b"archive").unwrap();
+            let roms = list_roms(&storage, folder, RegionPreference::default(), None)
+                .await
+                .unwrap();
+            let mut actual: Vec<_> = roms.into_iter().map(|rom| rom.game.rom_filename).collect();
+            actual.sort();
+            expected.sort();
+            assert_eq!(actual, expected, "discovery for {folder}");
+        }
+    }
+
+    #[tokio::test]
+    async fn ps2_playlist_hides_discs_and_sums_their_sizes() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = StorageLocation::from_path(temp.path().to_path_buf(), StorageKind::Sd);
+        let directory = storage.roms_dir().join("sony_ps2");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("Game (Disc 1).iso"), [0; 10]).unwrap();
+        fs::write(directory.join("Game (Disc 2).chd"), [0; 20]).unwrap();
+        let playlist = "Game (Disc 1).iso\nGame (Disc 2).chd\n";
+        fs::write(directory.join("Game.m3u"), playlist).unwrap();
+        let roms = list_roms(&storage, "sony_ps2", RegionPreference::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(roms.len(), 1);
+        assert_eq!(roms[0].game.rom_filename, "Game.m3u");
+        assert_eq!(roms[0].size_bytes, 30 + playlist.len() as u64);
+    }
 
     fn rom_with_mtime(index: usize, mtime_nanos: Option<i128>) -> RomEntry {
         let filename = format!("Game {index}.nes");

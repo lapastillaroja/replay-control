@@ -1575,7 +1575,7 @@ mod tests {
     //   3. Apply thumbnail_filename() normalization
     //   4. Try exact match, colon variants, fuzzy (strip_tags), version-stripped
 
-    /// Helper: simulate the full matching pipeline used by resolve_box_art_with_hash.
+    /// Helper: simulate the full matching pipeline used by resolve_box_art.
     /// Returns (thumb_name, base_title) for a given ROM filename + system.
     async fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
         let stem = filename_stem(rom_filename);

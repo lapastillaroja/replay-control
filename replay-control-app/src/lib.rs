@@ -26,7 +26,7 @@ pub mod api;
 use leptos::prelude::*;
 use leptos_router::components::{A, Redirect, Route, Router, Routes};
 use leptos_router::hooks::use_location;
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 use leptos_router::hooks::use_navigate;
 use leptos_router::path;
 
@@ -68,9 +68,9 @@ use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
 use replay_control_core::replay_api::ReplayApiStatus;
 use replay_control_core::skins::SkinId;
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 use replay_control_core::skins::theme_color;
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 use replay_control_core::update::AvailableUpdate;
 use replay_control_core::{asset_health::AssetHealthIssue, update::UpdateState};
 use server_fns::{Activity, CorruptionStatus};
@@ -151,7 +151,9 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(StorageStatus::default()));
     provide_context(RwSignal::new(RomWatcherStatus::default()));
     provide_context(RwSignal::new(Vec::<AssetHealthIssue>::new()));
-    provide_context(RwSignal::new(ReplayApiStatus::default()));
+    let replay_api_status = RwSignal::new(ReplayApiStatus::default());
+    provide_context(replay_api_status);
+    hooks::provide_replay_capabilities(replay_api_status);
     hooks::provide_now_playing(initial_now_playing_state());
     provide_context(Clock::install());
 
@@ -276,6 +278,7 @@ fn InitialLoadingShell() -> impl IntoView {
     let i18n = use_i18n();
     let hidden = RwSignal::new(false);
 
+    #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
         hidden.set(true);
     });
@@ -344,7 +347,7 @@ fn initial_now_playing_from_window() -> Option<NowPlayingState> {
     serde_json::from_str(&json).ok()
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStatus {
     let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
     CorruptionStatus {
@@ -354,7 +357,7 @@ fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStat
     }
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn asset_health_from_payload(payload: &serde_json::Value) -> Vec<AssetHealthIssue> {
     // Init carries the snapshot under `asset_health`; the
     // `AssetHealthChanged` event carries it under `issues`. Try both.
@@ -367,7 +370,7 @@ fn asset_health_from_payload(payload: &serde_json::Value) -> Vec<AssetHealthIssu
         .unwrap_or_default()
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn storage_status_from_payload(payload: &serde_json::Value) -> StorageStatus {
     // Init carries `storage_status`; StorageStatusChanged carries `status`.
     payload
@@ -378,7 +381,7 @@ fn storage_status_from_payload(payload: &serde_json::Value) -> StorageStatus {
         .unwrap_or_default()
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn rom_watcher_status_from_payload(payload: &serde_json::Value) -> RomWatcherStatus {
     // Init carries `rom_watcher_status`; RomWatcherStatusChanged carries `status`.
     payload
@@ -389,7 +392,7 @@ fn rom_watcher_status_from_payload(payload: &serde_json::Value) -> RomWatcherSta
         .unwrap_or_default()
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 fn apply_skin_payload(payload: &serde_json::Value) -> Option<SkinId> {
     let skin_id = payload
         .get("skin_id")
@@ -425,7 +428,7 @@ fn apply_skin_payload(payload: &serde_json::Value) -> Option<SkinId> {
 /// - `CorruptionChanged`: writes to the `RwSignal<CorruptionStatus>` context
 #[component]
 fn SseEventsListener() -> impl IntoView {
-    #[cfg(feature = "hydrate")]
+    #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::prelude::*;
 
@@ -542,6 +545,7 @@ fn SseEventsListener() -> impl IntoView {
                                 payload.get("version").and_then(|v| v.as_str())
                                 && server_version != crate::VERSION
                                 && let Some(window) = web_sys::window()
+                                && window.location().pathname().ok().as_deref() != Some("/updating")
                             {
                                 let _ = window.location().reload();
                             }
@@ -639,7 +643,7 @@ fn SseEventsListener() -> impl IntoView {
 /// router context.
 #[component]
 fn SearchShortcut() -> impl IntoView {
-    #[cfg(feature = "hydrate")]
+    #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::JsCast;
         use wasm_bindgen::prelude::*;
@@ -692,7 +696,7 @@ fn SearchShortcut() -> impl IntoView {
     }
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
     console_error_panic_hook::set_once();

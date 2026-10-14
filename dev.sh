@@ -1,655 +1,403 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# ── Replay Control Dev Script ────────────────────────────────────────────────
-#
-# Primary script for day-to-day development iteration.
-# Supports local development with auto-reload AND fast Pi deployment.
-#
-# Usage:
-#   ./dev.sh [--storage-path /path/to/roms] [--port 8091]
-#   ./dev.sh --pi [IP]
-#   ./dev.sh --build-only             # build fast dev artifacts, do not run
-#
-#   ./dev.sh --clean                  # clear cargo + sccache caches before build
-#
-# Local mode (default):
-#   Builds WASM (wasm-dev-fast) + SSR (dev-fast) and runs with cargo-watch auto-reload.
-#
-# Pi mode (--pi):
-#   Cross-compiles for aarch64 using fast dev profiles, deploys to Pi.
-#
-
-# ── Constants ────────────────────────────────────────────────────────────────
-
-CRATE="replay-control-app"
-CRATE_SNAKE="${CRATE//-/_}"
-TARGET_DIR="${CARGO_TARGET_DIR:-target}"
-OUT_DIR="$TARGET_DIR/site"
-PKG_DIR="$OUT_DIR/pkg"
-PORT="${PORT:-8091}"
-TARGET_TRIPLE="aarch64-unknown-linux-gnu"
-DEV_SERVER_PROFILE="${REPLAY_DEV_SERVER_PROFILE:-dev-fast}"
-DEV_WASM_PROFILE="${REPLAY_DEV_WASM_PROFILE:-wasm-dev-fast}"
-
-PI_USER="root"
-PI_PASSWORD="${PI_PASS:-replayos}"
-PI_DEFAULT_IP="replay.local"
-PI_INSTALL_DIR="/usr/local/bin"
-PI_SITE_DIR="/usr/local/share/replay/site"
-PI_SERVICE="replay-control"
-
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
-
-# Prefer cargo-installed tools over image-level defaults when both are present.
-if [[ -d "$HOME/.cargo/bin" ]]; then
-    export PATH="$HOME/.cargo/bin:$PATH"
-fi
-
-# ── Colors ───────────────────────────────────────────────────────────────────
-
-if [[ -t 1 ]] && [[ -n "${TERM:-}" ]] && command -v tput &>/dev/null; then
-    RED=$(tput setaf 1)
-    GREEN=$(tput setaf 2)
-    YELLOW=$(tput setaf 3)
-    BLUE=$(tput setaf 4)
-    CYAN=$(tput setaf 6)
-    BOLD=$(tput bold)
-    DIM=$(tput dim)
-    RESET=$(tput sgr0)
-else
-    RED="" GREEN="" YELLOW="" BLUE="" CYAN="" BOLD="" DIM="" RESET=""
-fi
-
-# ── Output helpers ───────────────────────────────────────────────────────────
-
-phase()   { echo ""; echo "${BOLD}${BLUE}==> $*${RESET}"; }
-info()    { echo "${CYAN}    $*${RESET}"; }
-success() { echo "${GREEN}    ok${RESET} $*"; }
-warn()    { echo "${YELLOW}    !!${RESET} $*"; }
-error()   { echo "${RED}    !!${RESET} $*" >&2; }
-fatal()   { error "$@"; exit 1; }
-
-# ── Globals ──────────────────────────────────────────────────────────────────
-
-MODE="local"        # local or pi
-PI_IP=""
-CLEAN=false
+CRATE=replay-control-app
+TARGET_TRIPLE=aarch64-unknown-linux-gnu
+TARGET_DIR=${CARGO_TARGET_DIR:-target}
+SITE_DIR=$TARGET_DIR/site
+WASM_PROFILE=${REPLAY_DEV_WASM_PROFILE:-wasm-dev-fast}
+SERVER_PROFILE=${REPLAY_DEV_SERVER_PROFILE:-dev-fast}
+PI_HOST=replay.local
+PI_USER=root
+PI_PASSWORD=${PI_PASS:-replayos}
+DEV_ROOT=/var/lib/replay-control/dev
+DROPIN=/etc/systemd/system/replay-control.service.d/90-replay-control-dev.conf
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10)
 BUILD_ONLY=false
+RESET=false
+CLEAN=false
+SSH_SOCKET_DIR=
+ASKPASS_FILE=
+STAGE_LOCAL=
+STAGE_REMOTE=
 
-SERVER_ARGS=""
-
-# Enable sccache for faster incremental dev builds (if available).
-if command -v sccache &>/dev/null; then
+if command -v sccache >/dev/null 2>&1; then
     export RUSTC_WRAPPER=sccache
 fi
 
+usage() {
+    cat <<'USAGE'
+Usage: ./dev.sh [--pi [HOST]] [--clean]
+       ./dev.sh --build-only [--clean]
+       ./dev.sh --pi [HOST] --reset
 
-# SSH ControlMaster socket for connection reuse
-SSH_CONTROL_DIR=""
-SSH_CONTROL_SOCK=""
-ASKPASS_FILE=""
-
-# ── Argument parsing ─────────────────────────────────────────────────────────
+Build the latest code with fast profiles and deploy it to the Pi. --build-only
+builds native test artifacts without deploying. --reset removes the Pi's
+development override and returns to the installed service.
+USAGE
+}
 
 parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
+    while (($#)); do
+        case $1 in
             --pi)
-                MODE="pi"
                 shift
-                # Optional IP argument (next arg if it doesn't start with --)
-                if [[ $# -gt 0 ]] && [[ "$1" != --* ]]; then
-                    PI_IP="$1"
-                    shift
-                fi
-                ;;
-            --clean)
-                CLEAN=true
-                shift
-                ;;
-            --build-only)
-                BUILD_ONLY=true
-                shift
-                ;;
-
-            --port)
-                [[ $# -lt 2 ]] && fatal "Missing value after --port"
-                PORT="$2"
-                shift 2
-                ;;
-            *)
-                SERVER_ARGS="$SERVER_ARGS $1"
-                shift
-                ;;
+                if (($#)) && [[ $1 != --* ]]; then PI_HOST=$1; shift; fi ;;
+            --build-only) BUILD_ONLY=true; shift ;;
+            --reset) RESET=true; shift ;;
+            --clean) CLEAN=true; shift ;;
+            --package) echo 'Use install.sh --package FILE for a prebuilt package.' >&2; exit 2 ;;
+            --help|-h) usage; exit 0 ;;
+            *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
         esac
     done
-
-    # Default Pi IP
-    if [[ "$MODE" == "pi" ]] && [[ -z "$PI_IP" ]]; then
-        PI_IP="$PI_DEFAULT_IP"
+    if $BUILD_ONLY && $RESET; then
+        echo '--build-only and --reset cannot be combined' >&2
+        exit 2
+    fi
+    if $CLEAN && $RESET; then
+        echo '--clean and --reset cannot be combined' >&2
+        exit 2
     fi
 }
 
-# ── Timing helper ────────────────────────────────────────────────────────────
-
-_timer_start=""
-
-timer_start() {
-    _timer_start=$(date +%s)
+profile_dir() {
+    if [[ $1 == dev ]]; then printf 'debug'; else printf '%s' "$1"; fi
 }
 
-timer_elapsed() {
-    local end now elapsed
-    now=$(date +%s)
-    elapsed=$(( now - _timer_start ))
-    if (( elapsed >= 60 )); then
-        echo "$(( elapsed / 60 ))m$(( elapsed % 60 ))s"
-    else
-        echo "${elapsed}s"
+ensure_catalog() {
+    if [[ ! -s catalog.sqlite ]]; then
+        cargo run -p build-catalog -- --output catalog.sqlite
     fi
+    [[ -s catalog.sqlite ]] || { echo 'catalog.sqlite is missing' >&2; exit 1; }
 }
 
-# ── File size helper ─────────────────────────────────────────────────────────
-
-human_size() {
-    local bytes="$1"
-    if (( bytes >= 1048576 )); then
-        echo "$(( bytes / 1048576 )).$((( bytes % 1048576) * 10 / 1048576 ))M"
-    elif (( bytes >= 1024 )); then
-        echo "$(( bytes / 1024 ))K"
-    else
-        echo "${bytes}B"
+validate_catalog_for_pi() {
+    local is_stub
+    is_stub=$(python3 -c 'import sqlite3; print(sqlite3.connect("catalog.sqlite").execute("SELECT value FROM db_meta WHERE key=\x27is_stub\x27").fetchone()[0])') || {
+        echo 'Could not validate catalog.sqlite' >&2
+        exit 1
+    }
+    if [[ $is_stub == 1 ]]; then
+        echo 'Refusing to deploy a stub catalog to the Pi' >&2
+        exit 1
     fi
-}
-
-# Cargo uses `debug` as the artifact directory for the built-in dev profile.
-# Custom dev profiles use their profile name directly.
-cargo_profile_dir() {
-    if [[ "$1" == "dev" ]]; then
-        echo "debug"
-    else
-        echo "$1"
-    fi
-}
-
-# ── Build functions ──────────────────────────────────────────────────────────
-
-ssr_features() {
-    echo "ssr"
 }
 
 build_wasm() {
-    local wasm_profile_dir
-    wasm_profile_dir=$(cargo_profile_dir "$DEV_WASM_PROFILE")
-
-    phase "Building WASM (${DEV_WASM_PROFILE})"
-    cargo build -p "$CRATE" --lib \
-        --target wasm32-unknown-unknown \
-        --profile "$DEV_WASM_PROFILE" \
-        --features hydrate \
-        --no-default-features
-
-    info "Running wasm-bindgen..."
-    mkdir -p "$PKG_DIR"
-    # Drop previously hashed assets so old hashes don't accumulate locally.
-    rm -f "$PKG_DIR/${CRATE_SNAKE}".*.wasm "$PKG_DIR/${CRATE_SNAKE}".*.wasm.gz "$PKG_DIR/${CRATE_SNAKE}".*.js
-    # --remove-name-section strips the WASM "name" custom section (mangled
-    # monomorphized symbol names). At opt-level 0 that section is ~72% of the dev
-    # bundle (~64MB of ~89MB), so dropping it shrinks the served bundle ~3x with
-    # no recompile and no optimization passes -- big hydration win over wifi. The
-    # only cost is numeric (un-named) frames in WASM stack traces; panic messages
-    # still work (they live in the data section).
-    wasm-bindgen \
-        "$TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm" \
-        --out-dir "$PKG_DIR" \
-        --out-name "${CRATE_SNAKE}" \
-        --target web \
-        --no-typescript \
-        --remove-name-section
-
-    info "Hashing assets..."
-    local wasm_file="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
-    local js_file="$PKG_DIR/${CRATE_SNAKE}.js"
-    local wasm_hash hashed_wasm js_hash hashed_js
+    echo "==> Building WASM ($WASM_PROFILE)"
+    cargo build -p "$CRATE" --lib --target wasm32-unknown-unknown \
+        --profile "$WASM_PROFILE" --features hydrate --no-default-features
+    local wasm_dir
+    wasm_dir=$(profile_dir "$WASM_PROFILE")
+    mkdir -p "$SITE_DIR/pkg"
+    rm -f "$SITE_DIR/pkg/replay_control_app."*.wasm \
+        "$SITE_DIR/pkg/replay_control_app."*.wasm.gz \
+        "$SITE_DIR/pkg/replay_control_app."*.js
+    wasm-bindgen "$TARGET_DIR/wasm32-unknown-unknown/$wasm_dir/replay_control_app.wasm" \
+        --out-dir "$SITE_DIR/pkg" --out-name replay_control_app \
+        --target web --no-typescript --remove-name-section
+    local wasm_file=$SITE_DIR/pkg/replay_control_app_bg.wasm
+    local js_file=$SITE_DIR/pkg/replay_control_app.js
+    local wasm_hash js_hash
     wasm_hash=$(sha256sum "$wasm_file" | cut -c1-16)
-    hashed_wasm="$PKG_DIR/${CRATE_SNAKE}.${wasm_hash}.wasm"
-    mv "$wasm_file" "$hashed_wasm"
-    sed -i "s|${CRATE_SNAKE}_bg\.wasm|${CRATE_SNAKE}.${wasm_hash}.wasm|g" "$js_file"
+    mv "$wasm_file" "$SITE_DIR/pkg/replay_control_app.$wasm_hash.wasm"
+    sed -i "s|replay_control_app_bg\.wasm|replay_control_app.$wasm_hash.wasm|g" "$js_file"
     js_hash=$(sha256sum "$js_file" | cut -c1-16)
-    hashed_js="$PKG_DIR/${CRATE_SNAKE}.${js_hash}.js"
-    mv "$js_file" "$hashed_js"
-    printf 'js: %s\nwasm: %s\n' "$js_hash" "$wasm_hash" > "$OUT_DIR/hash.txt"
-
-    if [[ -f "$hashed_wasm" ]]; then
-        local size
-        size=$(stat -c%s "$hashed_wasm" 2>/dev/null || echo 0)
-        success "WASM: $(human_size "$size")  hash: ${wasm_hash}"
-    fi
+    mv "$js_file" "$SITE_DIR/pkg/replay_control_app.$js_hash.js"
+    printf 'js: %s\nwasm: %s\n' "$js_hash" "$wasm_hash" > "$SITE_DIR/hash.txt"
+    cat replay-control-app/style/_*.css > "$SITE_DIR/style.css"
+    rm -rf "$SITE_DIR/icons" "$SITE_DIR/branding"
+    cp -r replay-control-app/static/icons "$SITE_DIR/icons"
+    cp -r replay-control-app/static/branding "$SITE_DIR/branding"
 }
 
-build_ssr_local() {
-    local features
-    features=$(ssr_features)
-    local server_profile_dir
-    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
-
-    phase "Building server (${DEV_SERVER_PROFILE})"
-    cargo build -p "$CRATE" --bin "$CRATE" \
-        --profile "$DEV_SERVER_PROFILE" \
-        --features "$features" \
-        --no-default-features
-
-    local bin="$TARGET_DIR/$server_profile_dir/$CRATE"
-    if [[ -f "$bin" ]]; then
-        local size
-        size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
-        success "Binary: $(human_size "$size")"
-    fi
-}
-
-build_ssr_aarch64() {
-    local features
-    features=$(ssr_features)
-    local server_profile_dir
-    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
-
-    phase "Building server (${DEV_SERVER_PROFILE}, aarch64)"
-    check_aarch64_sysroot
-
-    cargo build -p "$CRATE" --bin "$CRATE" \
-        --profile "$DEV_SERVER_PROFILE" \
-        --target "$TARGET_TRIPLE" \
-        --features "$features" \
-        --no-default-features
-
-    local bin="$TARGET_DIR/$TARGET_TRIPLE/$server_profile_dir/$CRATE"
-    if [[ -f "$bin" ]]; then
-        local size
-        size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
-        success "Binary: $(human_size "$size") (aarch64)"
-    fi
-}
-
-copy_assets() {
-    mkdir -p "$OUT_DIR"
-    cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
-    rm -rf "$OUT_DIR/icons" "$OUT_DIR/branding"
-    cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
-    cp -r "replay-control-app/static/branding" "$OUT_DIR/branding" 2>/dev/null || true
-}
-
-# ── aarch64 cross-compilation setup ─────────────────────────────────────────
-
-check_aarch64_sysroot() {
-    AARCH64_SYSROOT="${AARCH64_SYSROOT:-}"
-    AARCH64_INCLUDE=""
-    if [[ -z "$AARCH64_SYSROOT" ]]; then
-        # Auto-detect across layouts:
-        #   Fedora:            /usr/aarch64-linux-gnu/sys-root/usr/include/stdio.h
-        #   Ubuntu/older Deb:  /usr/aarch64-linux-gnu/usr/include/stdio.h
-        #   Debian trixie+:    /usr/aarch64-linux-gnu/include/stdio.h     (no /usr/)
-        for _sysroot in "/usr/aarch64-linux-gnu/sys-root" "/usr/aarch64-linux-gnu"; do
-            for _inc in "$_sysroot/usr/include" "$_sysroot/include"; do
-                if [[ -f "$_inc/stdio.h" ]]; then
-                    AARCH64_SYSROOT="$_sysroot"
-                    AARCH64_INCLUDE="$_inc"
-                    break 2
-                fi
-            done
+check_cross_sysroot() {
+    local sysroot=${AARCH64_SYSROOT:-}
+    if [[ -z $sysroot ]]; then
+        for candidate in /usr/aarch64-linux-gnu/sys-root /usr/aarch64-linux-gnu; do
+            if [[ -f $candidate/usr/include/stdio.h || -f $candidate/include/stdio.h ]]; then
+                sysroot=$candidate
+                break
+            fi
         done
-    elif [[ -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
-        AARCH64_INCLUDE="$AARCH64_SYSROOT/usr/include"
-    elif [[ -f "$AARCH64_SYSROOT/include/stdio.h" ]]; then
-        AARCH64_INCLUDE="$AARCH64_SYSROOT/include"
     fi
-    if [[ -z "$AARCH64_SYSROOT" || -z "$AARCH64_INCLUDE" ]]; then
-        echo ""
-        echo "  aarch64 cross-compile sysroot not found."
-        echo ""
-        echo "  Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
-        echo "           /usr/aarch64-linux-gnu           (Debian/Ubuntu)"
-        echo ""
-        echo "  Set AARCH64_SYSROOT to override. See CONTRIBUTING.md for cross-compilation setup."
-        echo ""
-        fatal "aarch64 sysroot missing."
-    fi
-    info "Sysroot: $AARCH64_SYSROOT (include: $AARCH64_INCLUDE)"
+    [[ -n $sysroot && ( -f $sysroot/usr/include/stdio.h || -f $sysroot/include/stdio.h ) ]] || {
+        echo 'aarch64 cross-compilation sysroot missing; see CONTRIBUTING.md' >&2
+        exit 1
+    }
 }
 
-# ── SSH helpers ──────────────────────────────────────────────────────────────
+build_server() {
+    if $BUILD_ONLY; then
+        echo "==> Building native server ($SERVER_PROFILE)"
+        cargo build -p "$CRATE" --bin "$CRATE" --profile "$SERVER_PROFILE" \
+            --features ssr --no-default-features
+    else
+        check_cross_sysroot
+        echo "==> Building arm64 server ($SERVER_PROFILE)"
+        cargo build -p "$CRATE" --bin "$CRATE" --profile "$SERVER_PROFILE" \
+            --target "$TARGET_TRIPLE" --features ssr --no-default-features
+    fi
+}
 
 setup_ssh() {
-    # SSH askpass for password authentication
-    ASKPASS_FILE="$(mktemp)"
-    printf '#!/bin/sh\necho "%s"\n' "$PI_PASSWORD" > "$ASKPASS_FILE"
-    chmod +x "$ASKPASS_FILE"
-    export SSH_ASKPASS="$ASKPASS_FILE"
-    export SSH_ASKPASS_REQUIRE="force"
-    export DISPLAY=
-
-    # ControlMaster for SSH connection reuse
-    SSH_CONTROL_DIR="$(mktemp -d)"
-    SSH_CONTROL_SOCK="$SSH_CONTROL_DIR/cm-%r@%h:%p"
+    ASKPASS_FILE=$(mktemp)
+    printf '#!/bin/sh\nprintf "%%s\\n" "$REPLAY_DEV_PI_PASS"\n' > "$ASKPASS_FILE"
+    chmod 700 "$ASKPASS_FILE"
+    export REPLAY_DEV_PI_PASS=$PI_PASSWORD
+    export SSH_ASKPASS=$ASKPASS_FILE SSH_ASKPASS_REQUIRE=force DISPLAY=
+    SSH_SOCKET_DIR=$(mktemp -d)
 }
 
 teardown_ssh() {
-    # Close the ControlMaster connection
-    if [[ -n "${SSH_CONTROL_SOCK:-}" ]]; then
-        # shellcheck disable=SC2086
-        ssh $SSH_OPTS \
-            -o "ControlPath=$SSH_CONTROL_SOCK" \
-            -O exit "${PI_USER}@${PI_IP}" 2>/dev/null || true
+    if [[ -n $SSH_SOCKET_DIR ]]; then
+        ssh "${SSH_OPTS[@]}" -o "ControlPath=$SSH_SOCKET_DIR/socket" \
+            -O exit "$PI_USER@$PI_HOST" >/dev/null 2>&1 || true
+        rm -rf "$SSH_SOCKET_DIR"
     fi
-    [[ -n "${SSH_CONTROL_DIR:-}" ]] && rm -rf "$SSH_CONTROL_DIR"
-    [[ -n "${ASKPASS_FILE:-}" ]] && rm -f "$ASKPASS_FILE"
+    [[ -z $ASKPASS_FILE ]] || rm -f "$ASKPASS_FILE"
+    unset REPLAY_DEV_PI_PASS
 }
 
-run_ssh() {
-    # shellcheck disable=SC2086
-    ssh $SSH_OPTS \
-        -o "ControlMaster=auto" \
-        -o "ControlPath=$SSH_CONTROL_SOCK" \
-        -o "ControlPersist=300" \
-        "${PI_USER}@${PI_IP}" "$@"
-}
-
-run_rsync() {
-    # shellcheck disable=SC2086
-    rsync -e "ssh $SSH_OPTS -o ControlMaster=auto -o ControlPath=$SSH_CONTROL_SOCK -o ControlPersist=300" "$@"
-}
-
-check_pi_connectivity() {
-    phase "Connecting to Pi at ${PI_IP}"
-    if ! run_ssh true 2>/dev/null; then
-        fatal "Cannot SSH to ${PI_USER}@${PI_IP}. Is the Pi powered on and on the network?"
+cleanup() {
+    [[ -z $STAGE_LOCAL ]] || rm -rf "$STAGE_LOCAL"
+    if [[ $STAGE_REMOTE == "$DEV_ROOT/releases/.staging."* ]]; then
+        remote "rm -rf '$STAGE_REMOTE'" >/dev/null 2>&1 || true
     fi
-    success "SSH connection established (ControlMaster active)"
+    teardown_ssh
 }
 
-# ── Pi deployment ────────────────────────────────────────────────────────────
+remote() {
+    ssh "${SSH_OPTS[@]}" -o ControlMaster=auto \
+        -o "ControlPath=$SSH_SOCKET_DIR/socket" -o ControlPersist=300 \
+        "$PI_USER@$PI_HOST" "$@"
+}
 
-# Write the systemd unit + env file on the Pi when missing. Mirrors what
-# install.sh emits via systemd_service_content + env_file_content; keep them
-# in sync. No-op when the unit already exists, so it stays cheap on every run.
-bootstrap_pi_if_needed() {
-    if run_ssh "systemctl cat $PI_SERVICE 2>/dev/null | grep -q -- '--https-port'"; then
-        return 0
-    fi
-    info "Service unit missing or outdated on Pi — writing systemd unit + env file..."
-    run_ssh "bash -s" <<'BOOTSTRAP'
+sync_remote() {
+    rsync -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=$SSH_SOCKET_DIR/socket -o ControlPersist=300" "$@"
+}
+
+reset_overlay() {
+    remote bash -s -- "$DROPIN" "$DEV_ROOT" <<'REMOTE'
 set -euo pipefail
-
-mkdir -p /etc/systemd/system /etc/default
-# Ensure central data dir exists (per-storage library DBs land here).
-mkdir -p /var/lib/replay-control/storages
-
-cat > /etc/systemd/system/replay-control.service <<'UNIT'
-[Unit]
-Description=Replay Control
-After=network.target
-After=media-sd.mount media-usb.mount
-
-[Service]
-Type=simple
-Environment=REPLAY_PORT=8080
-Environment=REPLAY_HTTPS_PORT=8443
-Environment=REPLAY_EXTRA_ARGS=
-EnvironmentFile=-/etc/default/replay-control
-ExecStart=/usr/local/bin/replay-control-app \
-    --port ${REPLAY_PORT} \
-    --https-port ${REPLAY_HTTPS_PORT} \
-    --site-root ${REPLAY_SITE_ROOT} \
-    $REPLAY_EXTRA_ARGS
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:/var/log/replay-control.log
-StandardError=append:/var/log/replay-control.log
-SyslogIdentifier=replay-control
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-if [ ! -f /etc/default/replay-control ]; then
-    cat > /etc/default/replay-control <<'ENV'
-# Port for the web UI
-REPLAY_PORT=8080
-
-# HTTPS port for the main app
-REPLAY_HTTPS_PORT=8443
-
-# Path to static site assets
-REPLAY_SITE_ROOT=/usr/local/share/replay/site
-
-# Extra CLI args. Dangerous debug flags must be explicit here, for example:
-#REPLAY_EXTRA_ARGS=--dangerous-disable-https --dangerous-allow-insecure-auth-over-http
-REPLAY_EXTRA_ARGS=
-
-# Advanced: hash-identification workers for library rebuilds/rescans.
-# Default is 2 workers for every storage class. Valid range: 1-4.
-#REPLAY_CONTROL_IDENTITY_WORKERS=2
-
-# Log level (trace, debug, info, warn, error)
-# dev.sh seeds debug for the project crates so dev-deploy logs show
-# enrichment / scan / orchestrator traces — production install.sh keeps
-# the leaner info-only default.
-RUST_LOG=info,replay_control_app=debug,replay_control_core=debug,replay_control_core_server=debug
-ENV
+dropin=$1
+root=$2
+mkdir -p "$root"
+exec 9>"$root/deploy.lock"
+flock -n 9 || { echo 'Another development deployment is running' >&2; exit 1; }
+if systemctl is-active --quiet replay-control-package-update.service; then
+    echo 'A package update is running; retry after it finishes' >&2
+    exit 1
 fi
-
-systemctl daemon-reload
-systemctl enable replay-control >/dev/null 2>&1 || true
-BOOTSTRAP
-    success "Bootstrapped systemd unit"
+if [[ -e $dropin ]]; then
+    saved=$(mktemp -d)
+    trap 'rm -rf "$saved"' EXIT
+    [[ ! -e $dropin ]] || cp -a "$dropin" "$saved/dev.conf"
+    rm -f "$dropin"
+    changed=true
+    if ! systemctl daemon-reload || ! systemctl restart replay-control.service; then
+        changed=false
+    fi
+    port=$(sed -n 's/^REPLAY_HTTPS_PORT=//p' /etc/default/replay-control 2>/dev/null | tail -1)
+    [[ $port =~ ^[0-9]+$ ]] || port=8443
+    http_port=$(sed -n 's/^REPLAY_PORT=//p' /etc/default/replay-control 2>/dev/null | tail -1)
+    [[ $http_port =~ ^[0-9]+$ ]] || http_port=8080
+    healthy=false
+    if $changed; then
+        for _ in {1..30}; do
+            pid=$(systemctl show -p MainPID --value replay-control.service)
+            if [[ $pid =~ ^[1-9][0-9]*$ ]] &&
+               [[ $(readlink -f "/proc/$pid/exe" 2>/dev/null) != "$root/releases/"* ]] &&
+               { curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/version" >/dev/null 2>&1 ||
+                 curl -fsS --max-time 3 "http://127.0.0.1:$http_port/api/version" >/dev/null 2>&1; }; then
+                healthy=true
+                break
+            fi
+            sleep 2
+        done
+    fi
+    if ! $healthy; then
+        [[ ! -e $saved/dev.conf ]] || cp -a "$saved/dev.conf" "$dropin"
+        systemctl daemon-reload
+        systemctl restart replay-control.service || true
+        echo 'Installed service failed; development override restored' >&2
+        exit 1
+    fi
+fi
+systemctl is-active --quiet replay-control.service
+REMOTE
+    echo 'Pi is running its installed Replay Control service'
 }
 
-deploy_to_pi() {
-    local server_profile_dir
-    server_profile_dir=$(cargo_profile_dir "$DEV_SERVER_PROFILE")
-    local bin_path="$TARGET_DIR/$TARGET_TRIPLE/$server_profile_dir/$CRATE"
-
-    if [[ ! -f "$bin_path" ]]; then
-        fatal "Binary not found: $bin_path"
+bootstrap_if_needed() {
+    local binary=$1
+    if remote 'systemctl cat replay-control.service >/dev/null 2>&1'; then
+        return
     fi
-    if [[ ! -d "$OUT_DIR" ]]; then
-        fatal "Site assets not found: $OUT_DIR"
-    fi
-
-    # Validate the catalog BEFORE touching the device — these used to sit in
-    # the transfer section below, but failing there leaves the service
-    # stopped with a half-deployed install.
-    #
-    # Hard fail if missing — shipping with an absent (or zero-byte) catalog
-    # leaves SQLite to silently open an empty DB and every catalog query then
-    # fails with "no such table: arcade_games".
-    if [[ ! -s catalog.sqlite ]]; then
-        fatal "catalog.sqlite not found or empty — run: cargo run -p build-catalog -- --output catalog.sqlite"
-    fi
-    # Refuse to ship a stub catalog (BUILD_CATALOG_STUB=1 / --stub, the CI
-    # pipeline-validation build). It only holds a handful of fixture games, so
-    # deploying it wipes the device's catalog-derived metadata (names, genres,
-    # RA flags, box-art matching) on the next re-enrichment.
-    if [[ "$(python3 -c "import sqlite3; print(sqlite3.connect('catalog.sqlite').execute(\"SELECT value FROM db_meta WHERE key='is_stub'\").fetchone()[0])" 2>/dev/null)" == "1" ]]; then
-        fatal "catalog.sqlite is a stub fixture build — rebuild the real catalog first: cargo run --release -p build-catalog -- --output catalog.sqlite"
-    fi
-
-    local bin_size
-    bin_size=$(stat -c%s "$bin_path" 2>/dev/null || echo 0)
-
-    phase "Deploying to Pi (${PI_IP})"
-
-    # Bootstrap the service unit + env file if missing (e.g. fresh OS image
-    # or after `install.sh --purge`). Keep this in sync with install.sh's
-    # systemd_service_content / env_file_content — drift here means dev.sh
-    # would deploy onto a Pi that disagrees with what install.sh produces.
-    bootstrap_pi_if_needed
-
-    # Stop service before overwriting binary
-    info "Stopping service..."
-    run_ssh "systemctl stop $PI_SERVICE 2>/dev/null || true"
-    run_ssh "rm -rf /var/tmp/replay-control-update /var/tmp/replay-control-update.lock /var/tmp/replay-control-do-update.sh 2>/dev/null || true"
-
-    # Ensure install dirs exist — rsync only auto-creates the last component
-    # of the destination path, so a missing $PI_SITE_DIR parent (e.g. after
-    # `install.sh --purge`) makes the site sync below fail.
-    run_ssh "mkdir -p $PI_INSTALL_DIR $PI_SITE_DIR"
-
-    # Transfer binary
-    info "Syncing binary ($(human_size "$bin_size"))..."
-    run_rsync --compress "$bin_path" "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app"
-    run_ssh "chmod +x ${PI_INSTALL_DIR}/replay-control-app"
-
-    # Transfer catalog (validated before the service was stopped, above).
-    info "Syncing catalog..."
-    run_rsync --compress catalog.sqlite "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/catalog.sqlite"
-
-    # Transfer site assets (rsync only changed files)
-    info "Syncing site assets..."
-    run_rsync -r --compress --delete \
-        "$OUT_DIR/" "${PI_USER}@${PI_IP}:${PI_SITE_DIR}/"
-
-    # Restart service
-    info "Starting service..."
-    run_ssh "systemctl start $PI_SERVICE"
-
-    # Quick health check.
-    if run_ssh "systemctl is-active $PI_SERVICE" &>/dev/null; then
-        success "Service is running"
-    else
-        warn "Service may not have started. Check: ssh ${PI_USER}@${PI_IP} journalctl -u $PI_SERVICE -n 20"
-    fi
-
-    echo ""
-    echo "    ${GREEN}${BOLD}https://${PI_IP}:8443${RESET}"
-    echo ""
-}
-
-# ── Local mode ───────────────────────────────────────────────────────────────
-
-ensure_catalog_local() {
-    # Build the real catalog (not the stub fixture). Stub data only has a
-    # handful of games; shipping it to a real Pi hides most ROMs' metadata
-    # and looks like a regression. Missing data files are a hard error so
-    # the caller notices instead of silently running with a broken catalog.
-    if [[ ! -f catalog.sqlite ]]; then
-        phase "Building game catalog (catalog.sqlite not found)"
-        if ! cargo run -p build-catalog -- --output catalog.sqlite; then
-            fatal "Failed to build catalog.sqlite. Run ./build.sh first, or \
-check that data/ is populated (run ./scripts/download-arcade-data.sh and \
-./scripts/download-metadata.sh)."
-        fi
-    fi
-    if [[ ! -s catalog.sqlite ]]; then
-        fatal "catalog.sqlite is empty or missing after build step."
-    fi
-}
-
-run_local() {
-    timer_start
-    ensure_catalog_local
-    phase "Initial build (local)"
-    build_wasm
-    build_ssr_local
-    copy_assets
-    echo ""
-    info "Build completed in ${BOLD}$(timer_elapsed)${RESET}"
-    echo ""
-
-    if $BUILD_ONLY; then
-        return 0
-    fi
-
-    phase "Starting cargo-watch on port ${PORT}"
-    info "Watching: replay-control-app/src, replay-control-core/src, replay-control-app/style"
-    info "Press Ctrl+C to stop."
-    echo ""
-
-    local features
-    features=$(ssr_features)
-    local wasm_profile_dir
-    wasm_profile_dir=$(cargo_profile_dir "$DEV_WASM_PROFILE")
-
-    exec cargo watch \
-        -w replay-control-app/src \
-        -w replay-control-core/src \
-        -w replay-control-app/style \
-        -s "$(cat <<INNER
+    remote bash -s <<'REMOTE'
 set -e
-BUILD_START=\$(date +%s)
-cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile $DEV_WASM_PROFILE --features hydrate --no-default-features
-rm -f $PKG_DIR/${CRATE_SNAKE}.*.wasm $PKG_DIR/${CRATE_SNAKE}.*.wasm.gz $PKG_DIR/${CRATE_SNAKE}.*.js
-wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/$wasm_profile_dir/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript --remove-name-section
-WASM_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}_bg.wasm | cut -c1-16)
-mv $PKG_DIR/${CRATE_SNAKE}_bg.wasm $PKG_DIR/${CRATE_SNAKE}.\${WASM_HASH}.wasm
-sed -i "s|${CRATE_SNAKE}_bg\\.wasm|${CRATE_SNAKE}.\${WASM_HASH}.wasm|g" $PKG_DIR/${CRATE_SNAKE}.js
-JS_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}.js | cut -c1-16)
-mv $PKG_DIR/${CRATE_SNAKE}.js $PKG_DIR/${CRATE_SNAKE}.\${JS_HASH}.js
-printf 'js: %s\nwasm: %s\n' "\${JS_HASH}" "\${WASM_HASH}" > $OUT_DIR/hash.txt
-cat replay-control-app/style/_*.css > $OUT_DIR/style.css
-cargo build -p $CRATE --bin $CRATE --profile $DEV_SERVER_PROFILE --features $features --no-default-features
-BUILD_END=\$(date +%s)
-echo ""
-echo "    Rebuilt in \$(( BUILD_END - BUILD_START ))s"
-echo ""
-cargo run -p $CRATE --profile $DEV_SERVER_PROFILE --features $features --no-default-features -- --port $PORT $SERVER_ARGS
-INNER
-)"
+if [ ! -e /etc/replay-control/settings.cfg ] &&
+   [ ! -e /usr/local/bin/replay-control-app ] &&
+   [ ! -e /usr/bin/replay-control-app ]; then
+    for storage in /media/*; do
+        if [ -e "$storage/.replay-control/settings.cfg" ]; then
+            exit 0
+        fi
+    done
+    mkdir -p /etc/replay-control
+    printf 'analytics = "false"\n' > /etc/replay-control/settings.cfg
+fi
+REMOTE
+    echo '==> Installing Replay Control archive service on a clean Pi'
+    REPLAY_LOCAL_BINARY=$(realpath "$binary") PI_PASS=$PI_PASSWORD \
+        "$(dirname "$0")/install.sh" --local "$(pwd)" --ip "$PI_HOST"
 }
 
-# ── Pi mode ──────────────────────────────────────────────────────────────────
-
-run_pi() {
-    trap teardown_ssh EXIT
-    setup_ssh
-    check_pi_connectivity
-
-    pi_build_and_deploy
+deploy() {
+    local binary=$1
+    [[ -x $binary && -s catalog.sqlite && -d $SITE_DIR/pkg ]] || {
+        echo 'Built binary, catalog, or site is missing' >&2
+        exit 1
+    }
+    "$(dirname "$0")/scripts/verify-package-server-routes.sh" "$binary" "$SITE_DIR"
+    if remote 'systemctl is-active --quiet replay-control-package-update.service'; then
+        echo 'A package update is running on the Pi; retry after it finishes' >&2
+        exit 1
+    fi
+    bootstrap_if_needed "$binary"
+    remote "mkdir -p '$DEV_ROOT/releases'"
+    local remote_stage
+    remote_stage=$(remote "mktemp -d '$DEV_ROOT/releases/.staging.XXXXXX'")
+    STAGE_REMOTE=$remote_stage
+    local local_stage
+    local_stage=$(mktemp -d)
+    STAGE_LOCAL=$local_stage
+    ln -s "$(realpath "$binary")" "$local_stage/replay-control-app"
+    ln -s "$(realpath catalog.sqlite)" "$local_stage/catalog.sqlite"
+    ln -s "$(realpath "$SITE_DIR")" "$local_stage/site"
+    ln -s "$(realpath packaging/start-service)" "$local_stage/start-service"
+    echo "==> Syncing current development build to $PI_HOST"
+    local previous_root
+    previous_root=$(remote "if [ -L '$DEV_ROOT/current' ]; then readlink -f '$DEV_ROOT/current'; fi")
+    local link_args=()
+    [[ -z $previous_root ]] || link_args=(--link-dest="$previous_root")
+    sync_remote -aL "${link_args[@]}" "$local_stage/" \
+        "$PI_USER@$PI_HOST:$remote_stage/"
+    remote bash -s -- "$remote_stage" "$DEV_ROOT" "$DROPIN" <<'REMOTE'
+set -euo pipefail
+stage=$1
+root=$2
+dropin=$3
+exec 9>"$root/deploy.lock"
+flock -n 9 || { echo 'Another development deployment is running' >&2; exit 1; }
+if systemctl is-active --quiet replay-control-package-update.service; then
+    echo 'A package update is running; retry after it finishes' >&2
+    exit 1
+fi
+new="$root/releases/$(date +%s)-$$"
+previous=''
+if [[ -L $root/current ]]; then previous=$(readlink -f "$root/current"); fi
+expected=$(printf '[Service]\nEnvironment=REPLAY_CONTROL_DEV_ROOT=%s/current\nExecStart=\nExecStart=%s/current/start-service\n' "$root" "$root")
+if [[ -e $dropin ]] && [[ $(cat "$dropin") != "$expected" ]]; then
+    echo "Unexpected systemd development override: $dropin" >&2
+    exit 1
+fi
+had_dropin=false
+[[ ! -e $dropin ]] || had_dropin=true
+changed=false
+rollback() {
+    if $changed; then
+        if [[ -n $previous ]]; then
+            link="$root/.rollback.$$"
+            ln -s "$previous" "$link"
+            mv -Tf "$link" "$root/current"
+        else
+            rm -f "$root/current"
+        fi
+        if ! $had_dropin; then rm -f "$dropin"; fi
+        systemctl daemon-reload || true
+        systemctl restart replay-control.service || true
+    fi
+    rm -rf "$new"
+    echo 'Development deployment failed; previous service restored' >&2
 }
-
-pi_build_and_deploy() {
-    timer_start
-
-    # Build the catalog before anything else so the Pi always receives a
-    # real, non-empty DB. deploy_to_pi hard-fails if catalog.sqlite is
-    # missing, but preflighting here gives a cleaner failure earlier.
-    ensure_catalog_local
-
-    # WASM is architecture-independent, same build for both local and Pi
-    build_wasm
-    build_ssr_aarch64
-    copy_assets
-
-    echo ""
-    info "Build completed in ${BOLD}$(timer_elapsed)${RESET}"
-
-    deploy_to_pi
+on_exit() {
+    status=$?
+    trap - EXIT
+    if (( status != 0 )); then rollback; fi
+    exit "$status"
 }
-
-# ── Main ─────────────────────────────────────────────────────────────────────
+trap on_exit EXIT
+mv "$stage" "$new"
+chmod 755 "$new/start-service" "$new/replay-control-app"
+mkdir -p "$(dirname "$dropin")"
+changed=true
+if [[ ! -e $dropin ]]; then printf '%s\n' "$expected" > "$dropin"; fi
+link="$root/.current.$$"
+ln -s "$new" "$link"
+mv -Tf "$link" "$root/current"
+if ! systemctl daemon-reload || ! systemctl restart replay-control.service; then
+    exit 1
+fi
+port=$(sed -n 's/^REPLAY_HTTPS_PORT=//p' /etc/default/replay-control 2>/dev/null | tail -1)
+[[ $port =~ ^[0-9]+$ ]] || port=8443
+http_port=$(sed -n 's/^REPLAY_PORT=//p' /etc/default/replay-control 2>/dev/null | tail -1)
+[[ $http_port =~ ^[0-9]+$ ]] || http_port=8080
+healthy=false
+for _ in {1..30}; do
+    pid=$(systemctl show -p MainPID --value replay-control.service)
+    if [[ $pid =~ ^[1-9][0-9]*$ ]] &&
+       [[ $(readlink -f "/proc/$pid/exe" 2>/dev/null) == "$new/replay-control-app" ]] &&
+       { curl -kfsS --max-time 3 "https://127.0.0.1:$port/api/version" >/dev/null 2>&1 ||
+         curl -fsS --max-time 3 "http://127.0.0.1:$http_port/api/version" >/dev/null 2>&1; }; then
+        healthy=true
+        break
+    fi
+    sleep 2
+done
+if ! $healthy; then exit 1; fi
+for old in "$root/releases/"*; do
+    if [[ -d $old && $old != "$new" && $old != "$previous" ]]; then rm -rf "$old"; fi
+done
+trap - EXIT
+echo "Development build active: $new"
+REMOTE
+    STAGE_REMOTE=
+    rm -rf "$local_stage"
+    STAGE_LOCAL=
+    echo "Development build is running on $PI_HOST"
+}
 
 main() {
     parse_args "$@"
-
     if $CLEAN; then
-        phase "Cleaning build cache"
-        cargo clean 2>/dev/null
-        if command -v sccache &>/dev/null; then
-            sccache --stop-server 2>/dev/null || true
-            rm -rf "${SCCACHE_DIR:-$HOME/.cache/sccache}" 2>/dev/null
-            info "sccache cache cleared"
-        fi
-        success "Clean complete"
+        cargo clean
+        if command -v sccache >/dev/null; then sccache --stop-server || true; fi
     fi
-
-    case "$MODE" in
-        local)
-            run_local
-            ;;
-        pi)
-            run_pi
-            ;;
-    esac
+    if $RESET; then
+        setup_ssh
+        trap cleanup EXIT
+        remote true
+        if remote 'systemctl is-active --quiet replay-control-package-update.service'; then
+            echo 'A package update is running on the Pi; retry reset after it finishes' >&2
+            exit 1
+        fi
+        reset_overlay
+        return
+    fi
+    ensure_catalog
+    build_wasm
+    build_server
+    if $BUILD_ONLY; then
+        echo 'Fast native build complete'
+        return
+    fi
+    validate_catalog_for_pi
+    setup_ssh
+    trap cleanup EXIT
+    remote true
+    deploy "$TARGET_DIR/$TARGET_TRIPLE/$(profile_dir "$SERVER_PROFILE")/$CRATE"
 }
 
 main "$@"

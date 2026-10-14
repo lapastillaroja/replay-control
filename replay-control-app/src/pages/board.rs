@@ -331,7 +331,7 @@ pub fn BoardPage() -> impl IntoView {
     }
 }
 
-#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
+#[cfg(feature = "hydrate")]
 struct BoardUrlParams<'a> {
     system: &'a str,
     hide_hacks: bool,
