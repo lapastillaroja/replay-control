@@ -23,6 +23,7 @@ beachspi,Beach Spikers (GDS-0014),2001,CRI / Sega,0,0,unknown,false,,,sega_naomi
 bingogal,Bingo Galaxy (main),2009,Sega,0,0,unknown,false,,,sega_system_sp
 bingogals,Bingo Galaxy (satellite),2009,Sega,0,0,unknown,false,,,sega_system_sp
 blokpong,Block Pong-Pong,2004,MOSS / Sammy,0,270,unknown,false,,,sammy_atomiswave
+brickppl,Brick People / Block PeePoo (Ver 1.002),2009,Sega,2,0,preliminary,false,,,sega_system_sp
 btlracer,Saikyou Saisoku Battle Racer,2009,Sega,0,0,unknown,false,,,sega_system_sp
 capsnk,Capcom Vs. SNK: Millennium Fight 2000 (Rev C),2000,Capcom / SNK,0,0,unknown,false,,,sega_naomi
 capsnka,Capcom Vs. SNK: Millennium Fight 2000 (Rev A),2000,Capcom / SNK,0,0,unknown,true,capsnk,,sega_naomi
@@ -57,9 +58,15 @@ deathcox,Death Crimson OX (USA),2000,Ecole Software,0,0,unknown,false,,,sega_nao
 deathcoxj,"Death Crimson OX (Japan, Rev A)",2000,Ecole Software,0,0,unknown,true,deathcox,,sega_naomi
 deathcoxo,Death Crimson OX (Japan),2000,Ecole Software,0,0,unknown,true,deathcox,,sega_naomi
 demofist,Demolish Fist,2003,Polygon Magic / Dimps,0,0,unknown,false,,,sammy_atomiswave
+derbyo2k,"Derby Owners Club 2000 Ver.2 (Japan, Rev A)",2000,Sega,2,0,preliminary,false,,,sega_naomi
 derbyoc,"Derby Owners Club (Japan, Rev B)",1999,Sega,0,0,unknown,false,,,sega_naomi
 derbyoc2,"Derby Owners Club II Ver.2.1 (Japan, Rev B)",2001,Sega,0,0,unknown,false,,,sega_naomi
+derbyocw,Derby Owners Club World Edition EX (Rev D),2005,Sega,2,0,preliminary,false,,,sega_naomi
+dinoki25,"Dinosaur King - D-Team VS. the Alpha Fortress (Export, Ver 2.500) (MDA-C0047)",2008,Sega,2,0,preliminary,false,,,sega_system_sp
+dinoki4,"Kodai Ouja Kyouryuu King - Mezame yo! Arata-naru Chikara!! (Japan, Ver 4.000) (MDA-C0061)",2008,Sega,2,0,preliminary,false,,,sega_system_sp
+dinokich,"Konglongwang - D-Kids VS Alpha Yaosai (China, Ver 2.501) (MDA-C0081)",2010,Sega,2,0,preliminary,true,dinoki25,,sega_system_sp
 dinoking,Dinosaur King (USA),2005,Sega,0,0,unknown,false,,,sega_system_sp
+dinokior,"Dinosaur King - Operation: Dinosaur Rescue (USA, Export) (MDA-C0021)",2006,Sega,2,0,preliminary,false,,,sega_system_sp
 dirtypig,Dirty Pigskin Football,2006,Sammy,0,0,unknown,false,,,sammy_atomiswave
 doa2,Dead or Alive 2,1999,Tecmo,0,0,unknown,true,doa2m,,sega_naomi
 doa2a,Dead or Alive 2 (Rev A),1999,Tecmo,0,0,unknown,true,doa2m,,sega_naomi
@@ -69,9 +76,14 @@ dragntr,Dragon Treasure (Rev B) (GDS-0030B),2003,Sega,0,0,unknown,false,,,sega_n
 dragntr2,Dragon Treasure 2 (Rev A) (GDS-0037A),2004,Sega,0,0,unknown,false,,,sega_naomi
 dragntr3,Dragon Treasure 3 (Rev A) (GDS-0041A),2005,Sega,0,0,unknown,false,,,sega_naomi
 dragntra,Dragon Treasure (Rev A) (GDS-0030A),2003,Sega,0,0,unknown,true,dragntr,,sega_naomi
+drbyocwa,Derby Owners Club World Edition (Rev A),2001,Sega,2,0,preliminary,true,derbyocw,,sega_naomi
+drbyocwb,Derby Owners Club World Edition (Rev B),2001,Sega,2,0,preliminary,true,derbyocw,,sega_naomi
+drbyocwc,Derby Owners Club World Edition (Rev C),2001,Sega,2,0,preliminary,true,derbyocw,,sega_naomi
+drbyocwt,Derby Owners Club World Edition (Rev T),2001,Sega,2,0,preliminary,true,derbyocw,,sega_naomi
 dybb99,"Dynamite Baseball '99 (Japan, Rev B)",1999,Sega,0,0,unknown,false,,,sega_naomi
 dybbnao,Dynamite Baseball NAOMI (Japan),1998,Sega,0,0,unknown,false,,,sega_naomi
 dygolf,Virtua Golf / Dynamic Golf (Rev A) (GDS-0009A),2001,Sega,0,0,unknown,false,,,sega_naomi
+dygolfp,Virtua Golf / Dynamic Golf (prototype),2001,Sega,2,0,preliminary,true,dygolf,,sega_naomi
 f355,"Ferrari F355 Challenge (deluxe, no link)",1999,Sega,0,0,unknown,false,,,sega_naomi
 f355twin,Ferrari F355 Challenge (twin/deluxe),1999,Sega,0,0,unknown,false,,,sega_naomi
 f355twinp,"Ferrari F355 Challenge (twin/deluxe, preview)",1999,Sega,0,0,unknown,true,f355twin,,sega_naomi
@@ -97,8 +109,15 @@ gunsur2j,"Gun Survivor 2 Biohazard Code: Veronica (Japan, BHF1 Ver.E)",2001,Capc
 gwing2,Giga Wing 2,2000,Takumi / Capcom,0,0,unknown,false,,,sega_naomi
 hmgeo,Heavy Metal: Geomatrix (Rev B),2001,Capcom,0,0,unknown,false,,,sega_naomi
 hopper,SWP Hopper Board,2002,Sega,0,0,unknown,false,,,sega_naomi
+hotd2,The House of the Dead 2 (USA),1998,Sega,2,0,preliminary,false,,,sega_naomi
+hotd2e,The House of the Dead 2 (Export),1998,Sega,2,0,preliminary,true,hotd2,,sega_naomi
+hotd2o,The House of the Dead 2,1998,Sega,2,0,preliminary,true,hotd2,,sega_naomi
+hotd2p,The House of the Dead 2 (prototype),1998,Sega,2,0,preliminary,true,hotd2,,sega_naomi
+huhimage,Heat Up Hockey Image (Ver.1.003R),2019,Sega,2,270,preliminary,false,,,sega_system_sp
 ikaruga,Ikaruga (GDL-0010),2001,Treasure,0,270,unknown,false,,,sega_naomi
 illvelo,Illvelo (Illmatic Envelope) (Japan),2008,Milestone,0,270,unknown,false,,,sega_naomi
+inidv3ca,"Initial D Arcade Stage Ver. 3 Cycraft Edition (Export, Rev A) (GDS-0039A)",2004,Sega,2,0,preliminary,true,inidv3cy,,sega_naomi_2
+inidv3cy,"Initial D Arcade Stage Ver. 3 Cycraft Edition (Export, Rev B) (GDS-0039B)",2006,Sega,2,0,preliminary,false,,,sega_naomi_2
 initd,"Initial D Arcade Stage (Japan, Rev B) (GDS-0020B)",2002,Sega,0,0,unknown,false,,,sega_naomi_2
 initdexp,"Initial D Arcade Stage (Export, Rev A) (GDS-0025A)",2002,Sega,0,0,unknown,false,,,sega_naomi_2
 initdexpo,Initial D Arcade Stage (Export) (GDS-0025),2002,Sega,0,0,unknown,true,initdexp,,sega_naomi_2
@@ -116,20 +135,27 @@ jambo,Jambo! Safari (Rev A),1999,Sega,0,0,unknown,false,,,sega_naomi
 jingystm,Jingi Storm - The Arcade (Japan) (GDL-0037),2006,Atrativa Japan,0,0,unknown,false,,,sega_naomi
 karous,Karous (Japan) (GDL-0040),2006,Milestone,0,270,unknown,false,,,sega_naomi
 keyboard,La Keyboard (GDS-0017),2001,Sega / G.Rev,0,0,unknown,false,,,sega_naomi
+kick4csh,Kick '4' Cash (Export),2004,Sega,2,0,preliminary,false,,,sega_naomi
 kingrt66,The King of Route 66 (Rev A),2002,Sega,0,0,unknown,false,,,sega_naomi_2
 kingrt66p,The King of Route 66 (prototype),2002,Sega,0,0,unknown,true,kingrt66,,sega_naomi_2
+kingyo,"Yataimura Kingyosukui (1-player, Japan, Ver 1.005)",2009,Sega,2,0,preliminary,false,,,sega_system_sp
+kingyoch,"Yataimura Kingyosukui (4-player, China, Ver 1.000)",2009,Sega,2,0,preliminary,true,kingyo,,sega_system_sp
 kofnw,The King of Fighters Neowave,2004,Sammy / SNK Playmore,0,0,unknown,false,,,sammy_atomiswave
 kofnwj,The King of Fighters Neowave (Japan),2004,Sammy / SNK Playmore,0,0,unknown,true,kofnw,,sammy_atomiswave
 kofxi,The King of Fighters XI,2005,Sammy / SNK Playmore,0,0,unknown,false,,,sammy_atomiswave
 kov7sprt,Knights of Valour - The Seven Spirits,2003,IGS / Sammy,0,0,unknown,false,,,sammy_atomiswave
 kurucham,Kurukuru Chameleon (Japan) (GDL-0034),2006,Able,0,0,unknown,false,,,sega_naomi
+loveber3,"Love And Berry - 3rd-5th Collection (USA, Export, Ver 1.002) (MDA-C0042)",2007,Sega,2,0,preliminary,false,,,sega_system_sp
+loveber3cn,"Love And Berry - 3rd-5th Collection (China, Ver 1.001) (MDA-C0071)",2010,Sega,2,0,preliminary,true,loveber3,,sega_system_sp
 lovebero,"Love And Berry - 1st-2nd Collection (Export, Ver 1.003)",2006,Sega,0,0,unknown,true,lovebery,,sega_system_sp
+lovebery,"Love And Berry - 1st-2nd Collection (Export, Ver 2.000)",2006,Sega,2,0,preliminary,false,,,sega_system_sp
 lupinsho,Lupin The Third - The Shooting (Rev A) (GDS-0018A),2001,Sega / Eighting,0,0,unknown,false,,,sega_naomi
 lupinshoo,Lupin The Third - The Shooting (GDS-0018),2001,Sega / Eighting,0,0,unknown,true,lupinsho,,sega_naomi
 luptype,Lupin The Third - The Typing (Rev A) (GDS-0021A),2002,Sega,0,0,unknown,false,,,sega_naomi
 magicpop,Magical Poppins,2009,Sega,0,0,unknown,false,,,sega_system_sp
 mamonoro,Mamoru-kun wa Norowarete Shimatta! (Japan),2008,G.Rev,0,270,unknown,false,,,sega_naomi
 manicpnc,"Manic Panic Ghosts! (USA, Export)",2007,Sega,0,0,unknown,false,,,sega_naomi
+manpuku,Manpuku Suizokukan,2013,Sega,2,0,preliminary,false,,,sega_system_sp
 marstv,Kasei Channel Mars TV (Japan),1999,Sega,0,0,unknown,false,,,sega_naomi
 maxspeed,Maximum Speed,2003,SIMS / Sammy,0,0,unknown,false,,,sammy_atomiswave
 mazan,"Mazan: Flash of the Blade (World, MAZ2 Ver.A)",2002,Namco,0,0,unknown,false,,,sega_naomi
@@ -149,14 +175,18 @@ monomedal,Monopoly the Medal 2nd Edition (MDA-C0056A),2008,Sega,0,0,unknown,fals
 mslug6,Metal Slug 6,2006,Sega / SNK Playmore,0,0,unknown,false,,,sammy_atomiswave
 mushi2eo,Mushiking The King Of Beetles - Mushiking II / III / III+ (Ver. 1.001) (World),2005,Sega,0,0,unknown,true,mushik2e,,sega_naomi
 mushi2k3,Mushiking The King Of Beetles 2003 Second (Japan),2003,Sega,0,0,unknown,false,,,sega_naomi
+mushi2k4,Mushiking The King Of Beetles 2004 Second (Japan),2004,Sega,2,0,preliminary,false,,,sega_naomi
+mushi2k5,Mushiking The King Of Beetles 2005 First (Japan),2005,Sega,2,0,preliminary,false,,,sega_naomi
 mushi2k61,Mushiking The King Of Beetles 2006 First (Japan),2006,Sega,0,0,unknown,false,,,sega_naomi
 mushi2k62,Mushiking The King Of Beetles 2006 Second (Japan),2006,Sega,0,0,unknown,false,,,sega_naomi
 mushik2e,Mushiking The King Of Beetles - Mushiking II / III / III+ (Ver. 2.001) (World),2005,Sega,0,0,unknown,false,,,sega_naomi
 mushik2k,Mushiking The King Of Beetles - Mushiking II / III / III+ (Ver. 1.000-) (Korea),2005,Sega,0,0,unknown,true,mushik2e,,sega_naomi
 mushik4e,Mushiking The King Of Beetles - Mushiking IV / V / VI (World),2007,Sega,0,0,unknown,false,,,sega_naomi
 mushik4t,Mushiking The King Of Beetles - Mushiking IV / V / VI (Taiwan),2007,Sega,0,0,unknown,true,mushik4e,,sega_naomi
+mushikc,"Mushiking The King Of Beetle (2K3 2ND Ver. 1.000-, China)",2004,Sega,2,0,preliminary,true,mushik2e,,sega_naomi
 mushike,"Mushiking The King Of Beetle (2K3 2ND Ver. 1.003-, World)",2004,Sega,0,0,unknown,false,,,sega_naomi
 mushikeo,"Mushiking The King Of Beetle (2K3 2ND Ver. 1.002-, World)",2004,Sega,0,0,unknown,true,mushike,,sega_naomi
+mushikep,"Mushiking The King Of Beetle (MUSHIUSA '04 1ST, Prototype)",2004,Sega,2,0,preliminary,true,mushike,,sega_naomi
 mushikk,"Mushiking The King Of Beetle (2K3 2ND Ver. 1.000-, Korea)",2004,Sega,0,0,unknown,true,mushike,,sega_naomi
 mvsc2,"Marvel Vs. Capcom 2: New Age of Heroes (Export, Korea, Rev A)",2000,Capcom / Marvel,0,0,unknown,false,,,sega_naomi
 mvsc2u,"Marvel Vs. Capcom 2: New Age of Heroes (USA, Rev A)",2000,Capcom / Marvel,0,0,unknown,true,mvsc2,,sega_naomi
@@ -168,6 +198,7 @@ ninjasltj,"Ninja Assault (Japan, NJA1 Ver.A)",2000,Namco,0,0,unknown,true,ninjas
 ninjasltu,"Ninja Assault (US, NJA3 Ver.A)",2000,Namco,0,0,unknown,true,ninjaslt,,sega_naomi
 ntvmys,"Nittere Shiki! Mirai Yosou Studio / NTV Future Forecast Studio (Japan, Rev A)",2000,Sega / NTV,0,0,unknown,false,,,sega_naomi
 ochaken,Ocha-Ken Hot Medal,2007,Sega,0,0,unknown,false,,,sega_system_sp
+oinori,Oinori-daimyoujin Matsuri,2003,Sega,2,0,preliminary,false,,,sega_naomi
 otrigger,OutTrigger,1999,Sega,0,0,unknown,false,,,sega_naomi
 pjustic,Project Justice / Moero! Justice Gakuen (Rev B),2000,Capcom,0,0,unknown,false,,,sega_naomi
 pjustica,Project Justice / Moero! Justice Gakuen (Rev A),2000,Capcom,0,0,unknown,true,pjustic,,sega_naomi
@@ -179,6 +210,7 @@ psyvar2,Psyvariar 2 - The Will To Fabricate (Japan) (GDL-0024),2003,Success,0,27
 puyoda,Puyo Puyo Da! (Japan),1999,Compile,0,0,unknown,false,,,sega_naomi
 puyofev,Puyo Pop Fever (World) (GDS-0034),2003,Sega,0,0,unknown,false,,,sega_naomi
 puyofevj,Puyo Puyo Fever (Japan) (GDS-0031),2003,Sega,0,0,unknown,true,puyofev,,sega_naomi
+puyofevp,Puyo Puyo Fever (prototype ver 0.01),2003,Sega,2,0,preliminary,true,puyofev,,sega_naomi
 puyomedal,Puyo Puyo! The Medal Edition,2009,Sega,0,0,unknown,false,,,sega_system_sp
 qmegamis,Quiz Aa! Megami-sama ~Tatakau Tsubasa to Tomoni~ (Japan),2000,Sega,0,0,unknown,false,,,sega_naomi
 quizqgd,Quiz Keitai Q mode (GDL-0017),2002,Amedio (Taito license),0,270,unknown,false,,,sega_naomi
@@ -208,16 +240,31 @@ sgtetris,Sega Tetris,1999,Sega,0,0,unknown,false,,,sega_naomi
 shaktam,Shakatto Tambourine (Rev B) (GDS-0002B),2000,Sega,0,0,unknown,false,,,sega_naomi
 shaktamb,Shakatto Tambourine Cho Powerup Chu (2K1 AUT) (GDS-0016),2001,Sega,0,0,unknown,false,,,sega_naomi
 shaktmsp,Shakatto Tambourine Motto Norinori Shinkyoku Tsuika (2K1 SPR) (GDS-0013),2001,Sega,0,0,unknown,false,,,sega_naomi
+shangril,Dengen Tenshi Taisen Janshi Shangri-la,1999,Marvelous Ent.,1,0,preliminary,false,,,sega_naomi
+shateki,"Yataimura Shateki (1-player, Japan, Ver 1.000)",2010,Sega,2,0,preliminary,false,,,sega_system_sp
 shikgam2,Shikigami no Shiro II / The Castle of Shikigami II (GDL-0021),2003,Alfa System,0,270,unknown,false,,,sega_naomi
 shootopl,Shootout Pool,2002,Sega,0,0,unknown,false,,,sega_naomi
 shootpl,"Shootout Pool Prize (Export) / Shootout Pool The Medal (Japan, Rev A)",2003,Sega,0,0,unknown,false,,,sega_naomi
 shootplm,Shootout Pool Prize (Export) / Shootout Pool The Medal (Japan) Version B,2004,Sega,0,0,unknown,false,,,sega_naomi
 shootplmp,Shootout Pool Prize (Export) / Shootout Pool The Medal (Japan) Version B (prototype),2004,Sega,0,0,unknown,true,shootplm,,sega_naomi
+shors2k1,"Star Horse 2001 (satellite, Rev B)",2002,Sega,2,270,preliminary,false,,,sega_naomi
 shors2k2,"Star Horse 2002 (sound, Export/Taiwan)",2002,Sega,0,0,unknown,false,,,sega_naomi
+shors2k2l,Star Horse 2002 (live),2002,Sega,2,0,preliminary,false,,,sega_naomi
+shors2k2m,Star Horse 2002 (main screens),2002,Sega,2,0,preliminary,false,,,sega_naomi
+shors2k2s,"Star Horse 2002 (sound and backup, Rev A)",2002,Sega,2,0,preliminary,false,,,sega_naomi
+shorse,Star Horse (satellite),2000,Sega,2,270,preliminary,false,,,sega_naomi
+shorsel,Star Horse (live and backup),2000,Sega,2,0,preliminary,true,shorse,,sega_naomi
+shorsem,Star Horse (main screens),2000,Sega,2,0,preliminary,true,shorse,,sega_naomi
+shorsep,"Star Horse Progress (satellite, Rev A)",2003,Sega,2,270,preliminary,false,,,sega_naomi
+shorsepb,Star Horse Progress (backup data),2000,Sega,2,0,preliminary,true,shorsep,,sega_naomi
+shorsepl,"Star Horse Progress (live, Rev A)",2003,Sega,2,0,preliminary,true,shorsep,,sega_naomi
+shorsepm,"Star Horse Progress (main screens, Rev B)",2003,Sega,2,0,preliminary,true,shorsep,,sega_naomi
 shorsepr,Star Horse Progress Returns (satellite),2009,Sega,0,270,unknown,false,,,sega_naomi
+shorseps,"Star Horse Progress (sound & backup, Rev A)",2003,Sega,2,0,preliminary,true,shorsep,,sega_naomi
 sl2007,Shooting Love 2007 (Japan),2007,Triangle Service,0,270,unknown,false,,,sega_naomi
 slasho,Slashout,2000,Sega,0,0,unknown,false,,,sega_naomi
 slashout,Slashout (GDS-0004),2000,Sega,0,0,unknown,false,,,sega_naomi
+smarinef,Sega Marine Fishing,2000,Sega,2,0,preliminary,false,,,sega_naomi
 smlg99,World Series 99 / Super Major League 99,1999,Sega,0,0,unknown,false,,,sega_naomi
 soulsurf,Soul Surfer (Rev A),2002,Sega,0,0,unknown,false,,,sega_naomi_2
 spawn,Spawn: In the Demon's Hand (Rev B),1999,Todd McFarlane / Capcom,0,0,unknown,false,,,sega_naomi
@@ -235,8 +282,11 @@ takoron,Noukone Puzzle Takoron (Japan) (GDL-0042),2006,Compile Heart,0,0,unknown
 tduno,Touch de Uno! / Unou Nouryoku Check Machine (Japan),1999,Sega,0,0,unknown,false,,,sega_naomi
 tduno2,Touch de Uno! 2 (Japan),2000,Sega,0,0,unknown,false,,,sega_naomi
 tetgiano,Tetris Giant / Tetris Dekaris (MDA-C0076),2009,Sega,0,0,unknown,true,tetgiant,,sega_system_sp
+tetgiant,Tetris Giant / Tetris Dekaris (Ver.2.000),2009,Sega,2,0,preliminary,false,,,sega_system_sp
 tetkiwam,Tetris Kiwamemichi (Japan) (GDL-0020),2004,Success,0,0,unknown,false,,,sega_naomi
 tokyobus,"Tokyo Bus Guide (Japan, Rev A)",1999,Fortyfive,0,0,unknown,false,,,sega_naomi
+totd,The Typing of the Dead (Rev A),2000,Sega,2,0,preliminary,false,,,sega_naomi
+totdo,The Typing of the Dead,2000,Sega,2,0,preliminary,true,totd,,sega_naomi
 toukon4,"Shin Nihon Pro Wrestling Toukon Retsuden 4 Arcade Edition (Japan, TRF1 Ver.A)",2000,Namco,0,0,unknown,false,,,sega_naomi
 toyfight,Toy Fighter,1999,Sega / Anchor Inc.,0,0,unknown,false,,,sega_naomi
 trgheart,Trigger Heart Exelica Ver.A (Japan) (GDL-0036A),2006,Warashi,0,270,unknown,false,,,sega_naomi
@@ -258,6 +308,7 @@ vf4tuned,Virtua Fighter 4: Final Tuned (Ver. B) (GDS-0036F),2004,Sega,0,0,unknow
 vf4tuneda,Virtua Fighter 4: Final Tuned (Rev A) (GDS-0036A),2004,Sega,0,0,unknown,true,vf4tuned,,sega_naomi_2
 vf4tunedd,Virtua Fighter 4: Final Tuned (Ver. A) (GDS-0036D),2004,Sega,0,0,unknown,true,vf4tuned,,sega_naomi_2
 vfurlong,Net@Select: Horse Racing - Victory Furlong,2005,Progress / Sammy,0,0,unknown,false,,,sammy_atomiswave
+virnba,Virtua NBA (USA),2000,Sega,2,0,preliminary,false,,,sega_naomi
 virnbao,Virtua NBA,2000,Sega,0,0,unknown,true,virnba,,sega_naomi
 virnbap,Virtua NBA (prototype),1999,Sega,0,0,unknown,true,virnba,,sega_naomi
 virnbapa,"Virtua NBA (prototype, 15.11)",1999,Sega,0,0,unknown,true,virnba,,sega_naomi
@@ -290,6 +341,7 @@ wldkickspj,"World Kicks PCB (Japan, WKC1 Ver.A)",2000,Namco,0,0,unknown,true,wld
 wldkickspw,"World Kicks PCB (World, WKC2 Ver.A)",2000,Namco,0,0,unknown,true,wldkicks,,sega_naomi
 wldkicksu,"World Kicks (US, WK3 Ver.A)",2000,Namco,0,0,unknown,true,wldkicks,,sega_naomi
 wldrider,Wild Riders,2001,Wow Entertainment / Sega,0,0,unknown,false,,,sega_naomi_2
+wrungp,Wave Runner GP,2001,CRI / Sega,2,0,preliminary,false,,,sega_naomi
 wrungpo,"Wave Runner GP (USA, Rev A)",2001,CRI / Sega,0,0,unknown,true,wrungp,,sega_naomi
 wsbbgd,World Series Baseball / Super Major League (GDS-0010),2001,Sega,0,0,unknown,false,,,sega_naomi
 wwfroyal,WWF Royal Rumble,2000,Sega,0,0,unknown,false,,,sega_naomi
