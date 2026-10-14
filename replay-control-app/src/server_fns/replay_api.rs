@@ -1110,13 +1110,10 @@ mod tests {
                 game_file: "/media/nfs/roms/nintendo_gc/game.iso".to_string(),
             },
             scope: OverrideScope::Game,
-            changes: ReplaySetting::ALL
-                .into_iter()
-                .map(|setting| OverrideChange {
-                    setting,
-                    value: None,
-                })
-                .collect(),
+            changes: vec![OverrideChange {
+                setting: ReplaySetting::MonitorY,
+                value: None,
+            }],
         }
     }
 
