@@ -18,6 +18,12 @@ command -v flatpak-builder >/dev/null || {
     echo 'flatpak-builder is required.' >&2
     exit 1
 }
+builder_version=$(flatpak-builder --version)
+if [[ ! $builder_version =~ ([0-9]+)\.([0-9]+) ]] ||
+    (( ${BASH_REMATCH[1]} < 1 || (${BASH_REMATCH[1]} == 1 && ${BASH_REMATCH[2]} < 4) )); then
+    echo "flatpak-builder 1.4 or newer is required (found $builder_version)." >&2
+    exit 1
+fi
 command -v flatpak >/dev/null || {
     echo 'flatpak is required.' >&2
     exit 1

@@ -61,7 +61,7 @@ On an x86_64 machine with `rpmbuild` installed, build the Fedora RPM from the cu
 
 The RPM is written to the repository root. On the Ubuntu 22.04 package baseline, run `./scripts/package-deb.sh amd64` after the same build to create the Debian package. For the Pi's arm64 package, run `./build.sh aarch64` and `./scripts/package-deb.sh arm64` with the cross-toolchain installed. See [Package Distribution](docs/architecture/package-distribution.md#building-packages-locally) for the compatibility baseline and release packaging flow.
 
-For an experimental standalone desktop Flatpak on x86_64, install `flatpak` and `flatpak-builder`, add the Flathub remote, and run:
+For an experimental standalone desktop Flatpak on x86_64, install `flatpak` and `flatpak-builder` 1.4 or newer, add the Flathub remote, and run:
 
 ```bash
 ./build.sh amd64
@@ -70,7 +70,7 @@ flatpak install --user ./replay-control-VERSION-x86_64.flatpak
 ```
 
 The Flatpak needs the `org.freedesktop.Platform//25.08` runtime and a desktop file chooser portal. Its app data stays in the user's Flatpak data directory, and the selected storage folder must contain `roms/`.
-Run `python3 tests/package/flatpak_smoke.py` from a disposable account after installation to exercise HTTPS, storage switching, restart, and the home page. The release workflow runs this test automatically; test the native folder chooser separately in a desktop session.
+Run `python3 tests/package/flatpak_smoke.py` from a disposable account after installation to exercise HTTPS, storage switching, restart, and the home page. Normal CI runs this test; test the native folder chooser separately in a desktop session.
 
 ### Development build
 

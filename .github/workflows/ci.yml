@@ -222,3 +222,32 @@ jobs:
           CONTAINER_ENGINE: docker
           RUN_BROWSER_E2E: "1"
         run: tests/package/run-fedora.sh x86_64 "replay-control-${PACKAGE_VERSION}-1.x86_64.rpm"
+
+  flatpak-e2e:
+    name: Flatpak E2E
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-artifacts
+
+      - name: Restore binary permission
+        run: chmod +x target/release/replay-control-app
+
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder dbus-user-session
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build and test installed Flatpak
+        run: |
+          ./scripts/package-flatpak.sh
+          dbus-run-session -- bash -e -c '
+            flatpak install --user -y ./replay-control-*.flatpak
+            python3 tests/package/flatpak_smoke.py
+          '

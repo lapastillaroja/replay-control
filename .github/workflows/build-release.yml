@@ -121,8 +121,28 @@ jobs:
           retention-days: 1
           path: release-${{ matrix.arch }}.tar.gz
 
+  flatpak:
+    needs: server
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-site
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-amd64
+
+      - name: Restore server binary
+        run: |
+          mkdir -p target/release
+          tar -xzf release-amd64.tar.gz -C target/release
+
       - name: Install Flatpak build tools
-        if: matrix.arch == 'amd64'
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
@@ -130,24 +150,16 @@ jobs:
             https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Build Flatpak bundle
-        if: matrix.arch == 'amd64'
         run: ./scripts/package-flatpak.sh
 
-      - name: Test installed Flatpak
-        if: matrix.arch == 'amd64'
-        run: |
-          flatpak install --user -y ./replay-control-*.flatpak
-          python3 tests/package/flatpak_smoke.py
-
       - uses: actions/upload-artifact@v7
-        if: matrix.arch == 'amd64'
         with:
           name: release-flatpak
           retention-days: 1
           path: replay-control-*.flatpak
 
   publish:
-    needs: server
+    needs: [server, flatpak]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
