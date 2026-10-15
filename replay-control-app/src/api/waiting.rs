@@ -123,11 +123,16 @@ pub fn waiting_page_html(state: &AppState) -> String {
     let skin_css = skins::theme_css(&skin_id).unwrap_or_default();
     let theme_color = skins::theme_color(&skin_id);
     let status = state.storage_status();
-    // ConfigUnavailable isn't about a storage *type* (we have no config to know
-    // it), so don't claim "Waiting for SD storage…" — give it its own title.
     let title = match &status {
         StorageStatus::ConfigUnavailable { .. } => "Configuration unavailable".to_string(),
-        _ => format!("Waiting for {storage_label} storage..."),
+        StorageStatus::Error { .. } => "Storage error".to_string(),
+        StorageStatus::Misconfigured { wanted, .. } => {
+            format!("{} storage unavailable", storage_kind_label(wanted))
+        }
+        StorageStatus::Activating => format!("Opening {storage_label} storage..."),
+        StorageStatus::WaitingForMount | StorageStatus::Ready => {
+            format!("Waiting for {storage_label} storage...")
+        }
     };
     let (subtitle, error_html) = match status {
         StorageStatus::Error { message } => (
@@ -309,6 +314,8 @@ mod tests {
 
         let html = waiting_page_html(&state);
 
+        assert!(html.contains("Storage error"));
+        assert!(!html.contains("Waiting for SD storage"));
         assert!(
             html.contains("Storage was detected, but Replay Control could not open its database.")
         );
@@ -343,6 +350,7 @@ mod tests {
 
         let html = waiting_page_html(&state);
 
+        assert!(html.contains("NVMe storage unavailable"));
         assert!(html.contains("The configured storage device is not available."));
         assert!(html.contains("Configured storage: NVMe"));
         assert!(html.contains("change the storage selection in RePlayOS settings"));

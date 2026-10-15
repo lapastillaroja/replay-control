@@ -1,7 +1,7 @@
 //! Startup orchestration and device watchers.
 //!
 //! Free functions over `&AppState`: boot-task spawning, populate/enrichment
-//! kickoff, and the storage/ROM `notify` watchers. The heavier pipeline /
+//! kickoff, and the storage/ROM watchers. The heavier pipeline /
 //! identity / metadata function bodies live in the parent `background` module;
 //! this layer drives them via their `pub(crate)` entry points.
 
@@ -16,7 +16,7 @@ use super::{
 use crate::api::AppState;
 use crate::api::activity::RebuildPhase;
 use crate::api::library::ScanOptions;
-use crate::types::RomWatcherStatus;
+use crate::types::{RomWatcherStatus, StorageStatus};
 
 /// Re-enrich game library after a metadata or thumbnail import.
 ///
@@ -171,7 +171,7 @@ pub fn spawn_populate(
 }
 
 /// Spawn every long-running background task at boot (or when storage first
-/// appears): the startup library pipeline, the storage + ROM watchers, the
+/// appears): the startup library pipeline, the ROM watcher, the
 /// update checker, the now-playing detector, and RePlayOS API maintenance.
 /// App-startup orchestration; the parent `background` module provides the
 /// individual task bodies.
@@ -181,8 +181,8 @@ pub fn spawn_boot_tasks(state: &AppState) {
 
     state.spawn_startup_pipeline();
 
-    // Watchers are independent of the pipeline.
-    spawn_storage_watcher(state.clone());
+    // The storage watcher is started once by main, even when boot begins
+    // without storage. Do not start a second copy on the None -> Some path.
     spawn_rom_watcher(state);
 
     // Update checker (independent of the pipeline, no activity lock needed).
@@ -208,13 +208,11 @@ pub fn spawn_boot_tasks(state: &AppState) {
 
 /// Spawn the device-side storage-detection watchers: a `notify` watcher
 /// on `replay.cfg` (config-file edits) and a `/proc/self/mountinfo`
-/// POLLPRI watcher (mount-table changes — Linux only). Standalone has
+/// POLLPRI watcher (mount-table changes — Linux only), plus a low-frequency
+/// catch-up check. Standalone has
 /// nothing to watch: replay.cfg is RePlayOS-owned and irrelevant
 /// off-device, and the `--storage-path` folder's liveness surfaces at
-/// request time via IO errors. The mountinfo watcher does a full
-/// `reload_config_and_redetect_storage` so the boot-recovery case
-/// (booted `ConfigUnavailable`, then the SD appears) adopts the new
-/// `replay.cfg` along with the storage change.
+/// request time via IO errors.
 pub fn spawn_storage_watcher(state: AppState) {
     if !state.host.is_replayos() {
         return;
@@ -222,17 +220,56 @@ pub fn spawn_storage_watcher(state: AppState) {
 
     crate::api::mountinfo_watcher::spawn(state.clone());
 
+    let retry_state = state.clone();
+    tokio::spawn(async move {
+        const CHECK_INTERVAL: Duration = Duration::from_secs(10);
+        let mut healthy_ticks = 0;
+        loop {
+            tokio::time::sleep(CHECK_INTERVAL).await;
+            if !storage_check_due(&retry_state.storage_status(), &mut healthy_ticks) {
+                continue;
+            }
+            if let Err(error) = retry_state.reload_config_and_redetect_storage().await {
+                tracing::warn!("Storage retry failed: {error}");
+            }
+        }
+    });
+
     let config_path = state.config_file_path();
     tokio::spawn(async move {
         if try_start_config_watcher(state, config_path).await {
             tracing::info!("Config file watcher active");
         } else {
             tracing::warn!(
-                "Config file watcher unavailable; replay.cfg edits will only \
-                     be picked up via mount-table events or user-triggered refresh"
+                "Config file watcher unavailable; replay.cfg edits will be \
+                     picked up by mount-table events or the periodic catch-up check"
             );
         }
     });
+}
+
+/// Retry unavailable storage every 10 seconds. While healthy, re-check the
+/// SD-hosted config and mount table once per minute in case an inotify or
+/// mountinfo event was missed. The unchanged-storage path never reads ROMs.
+fn storage_check_due(status: &StorageStatus, healthy_ticks: &mut u8) -> bool {
+    match status {
+        StorageStatus::Activating => {
+            *healthy_ticks = 0;
+            false
+        }
+        StorageStatus::Ready => {
+            *healthy_ticks += 1;
+            if *healthy_ticks < 6 {
+                return false;
+            }
+            *healthy_ticks = 0;
+            true
+        }
+        _ => {
+            *healthy_ticks = 0;
+            true
+        }
+    }
 }
 
 /// Try to set up a `notify` filesystem watcher on the config file.
@@ -730,5 +767,56 @@ fn collect_rom_event_systems(
         }
 
         affected_systems.insert(system_name.into_owned());
+    }
+}
+
+#[cfg(test)]
+mod storage_retry_tests {
+    use super::*;
+
+    #[test]
+    fn retries_unavailable_storage_and_checks_healthy_storage_once_per_minute() {
+        let mut healthy_ticks = 0;
+        assert!(storage_check_due(
+            &StorageStatus::WaitingForMount,
+            &mut healthy_ticks
+        ));
+        assert!(storage_check_due(
+            &StorageStatus::ConfigUnavailable {
+                reason: "config missing".into(),
+            },
+            &mut healthy_ticks
+        ));
+        assert!(storage_check_due(
+            &StorageStatus::Misconfigured {
+                wanted: "usb".into(),
+                current_kind: Some("sd".into()),
+                reason: "not mounted".into(),
+            },
+            &mut healthy_ticks
+        ));
+        assert!(storage_check_due(
+            &StorageStatus::Error {
+                message: "database unavailable".into(),
+            },
+            &mut healthy_ticks
+        ));
+        for _ in 0..5 {
+            assert!(!storage_check_due(
+                &StorageStatus::Ready,
+                &mut healthy_ticks
+            ));
+        }
+        assert!(storage_check_due(&StorageStatus::Ready, &mut healthy_ticks));
+        assert_eq!(healthy_ticks, 0);
+        assert!(!storage_check_due(
+            &StorageStatus::Ready,
+            &mut healthy_ticks
+        ));
+        assert!(!storage_check_due(
+            &StorageStatus::Activating,
+            &mut healthy_ticks
+        ));
+        assert_eq!(healthy_ticks, 0);
     }
 }

@@ -8,6 +8,7 @@ For background see [Activity System](activity-system.md), [Connection Pooling](c
 
 - **Activity mutex** — `AppState::try_start_activity` (`replay-control-app/src/api/activity.rs`). At most one `Activity != Idle` at a time. The returned `ActivityGuard` resets to `Idle` on drop, so a panic still releases the slot.
 - **`storage_generation: AtomicU64`** on `AppState`. Bumped inside `redetect_storage` (and the deferred-storage paths in `cancel_storage_scans_if_ready`). Long scans capture the generation at start, thread it through `ScanInputs`/`ScanCancellation`, and call `state.ensure_storage_generation(expected)` at every system boundary plus before each writer transaction.
+- **`storage_redetect_lock`** on `AppState`. Serializes config reload, mount probing, and pool activation across config/mount events, unavailable-storage retries, and user actions.
 - **`rom_watcher_generation: AtomicU64`** on `AppState`. Bumped by `restart_rom_watcher`; the watcher loop self-terminates on mismatch. Independent of `storage_generation`.
 - **`is_idle()` gate** on `AppState`. Used by the ROM watcher to suppress its own work during any non-`Idle` activity.
 - **`identity_can_run()` gate** on `AppState`. Identity workers are allowed while `Activity::Identity` owns the activity slot, but stop when any foreground activity or storage-generation change appears.
@@ -82,7 +83,7 @@ Pairs with non-trivial overlap. "OK" means existing guards prevent the bad outco
 | `regenerate_metadata` clear (E7) ↔ concurrent `Activity::Rebuild` reading enrichment (LIB5) | Yes — E7 clears provider metadata without claiming activity, then *tries* to claim `RefreshExternalMetadata` | If the spawn-claim fails (busy), provider tables are gone and re-enrichment silently runs against an empty source | **Gap F-2** |
 | `rebuild_corrupt_library` (LIB13) ↔ in-flight Rebuild | Yes — LIB13 calls `reset_to_empty` without claiming `Rebuild` | Pool drain blocks until rebuild's writer connection releases; on timeout, LIB13 aborts cleanly | OK (drain semantics) |
 | `repair_corrupt_user_data` / `restore_user_data_backup` ↔ user mutations | Yes — none claim activity | Pool drain blocks; on timeout aborts cleanly | OK |
-| Concurrent `reload_config_and_redetect_storage` invocations (config-file watcher + mountinfo watcher + mutation gate + HTTP refresh_storage) | Yes — `redetect_storage` is not protected by a serializing mutex | Two callers can both bump `storage_generation`, both `reopen` pools, both emit `StorageChanged`. Storage status oscillates `Activating → Ready → Activating → Ready`. Correctness preserved (each bump invalidates its predecessor's scans) but pool warmup cost doubles. | **Gap F-4** |
+| Concurrent `reload_config_and_redetect_storage` invocations (config-file watcher + mountinfo watcher + retry + mutation gate + HTTP refresh_storage) | No — `storage_redetect_lock` serializes config reload through activation | A second caller observes the first caller's completed storage state before deciding whether to reopen pools. | OK |
 | In-memory cache invalidation during Rebuild (favorites/recents inotify cache wipes) ↔ Rebuild populating DB | Yes — favorites/recents in-memory invalidations are deliberately ungated | Rebuild does not own those caches; next request rebuilds them | OK |
 
 ## 3. Findings
@@ -114,11 +115,11 @@ The retry helper exists for the inverse case (`claim_startup_activity` retries o
 
 **Fix**: move the `clear_launchbox` call inside `phase_auto_import_inner` (after the guard is claimed), guarded by a `force_clear: bool` flag that `regenerate_metadata` passes through. The user-visible operation becomes "claim slot or fail loudly", and the clear+refresh stays atomic relative to other activities.
 
-### F-4: `redetect_storage` is not single-flight
+### F-4: `redetect_storage` is not single-flight — resolved
 
 **Severity: low (UI flicker + duplicated pool warmup).**
 
-After the watcher simplification, four sources call `reload_config_and_redetect_storage` (which calls `redetect_storage`) without a serializing mutex:
+Previously, four sources called `reload_config_and_redetect_storage` (which calls `redetect_storage`) without a serializing mutex:
 
 - the `notify` config-file watcher (debounced)
 - `mountinfo_watcher` (debounced)
@@ -127,17 +128,17 @@ After the watcher simplification, four sources call `reload_config_and_redetect_
 
 `redetect_storage` reads `self.storage` under a short read-lock, awaits `probe_storage_ready` (NFS-bound, can take seconds), then takes the write-lock. Two callers that both observe a real change run the full reopen sequence in sequence, double-warming the pools and double-emitting `ConfigEvent::StorageChanged`. On a flapping mount the storage status oscillates `Activating → Ready → Activating → Ready` publicly visible to clients.
 
-(The previous 10 s / 60 s poll was removed; that takes one chronic source off the table but does not close the race between the remaining four.)
+The storage catch-up task adds another caller, so the config reload and detection now hold `storage_redetect_lock` together. While healthy, the once-per-minute check reads only the SD-hosted config and mount table, not ROM directories or an unchanged NFS share.
 
 Correctness is preserved (each `bump_storage_generation` invalidates its own predecessor's scans), but the duplicated pool reopens are observable as longer "Activating" windows on the UI banner, and any background pipeline that wedged into the gap between two reopens is operating against a pool that will be yanked.
 
-**Fix**: add a `tokio::sync::Mutex<()>` (e.g. `redetect_storage_lock` on `AppState`) and acquire it at the top of `redetect_storage`. Concurrent callers serialize and the second one re-reads the now-current state, almost always returning `Ok(false)` immediately. Every existing call site keeps working without changes.
+**Resolution**: `storage_redetect_lock` serializes all activation callers. The second one re-reads the current config and state before deciding whether to reopen pools.
 
 ## 4. Recommended action order
 
 1. **F-1** — silent failure-to-populate after storage swap; small fix (route through existing retry helper).
 2. **F-2** — silent metadata wipe; small structural change (clear inside guard).
-3. **F-4** — low-severity polish; add a serializing mutex.
+3. **F-4** — resolved; config reload and storage activation are serialized.
 
 Each is a self-contained patch; none depends on the others.
 

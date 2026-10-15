@@ -10,6 +10,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - The Flycast arcade game list can now be synced from upstream; a monthly job proposes board-classification updates in a reviewable pull request, including the correction needed for Initial D Cycraft. (#163)
 
+### Fixed
+
+- Storage detection now follows RePlayOS's selected SD, USB, NVMe, or NFS location instead of reporting a missing USB device when another location is selected. If the selected storage is unavailable, Replay Control identifies it, keeps retrying, and safely reopens its library and user data when the mount returns or is replaced.
+
 ## [1.3.0-beta.1]
 
 > Expanded RePlayOS 2.x support, including new systems and game formats.

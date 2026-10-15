@@ -1,18 +1,19 @@
 # Startup Pipeline
 
-`BackgroundManager::start()` in `replay-control-app/src/api/background.rs` orchestrates an ordered background pipeline and independent filesystem watchers.
+The app starts the storage watcher once from `main.rs`. When storage is available, `spawn_boot_tasks()` starts the ordered background pipeline and the other long-running tasks.
 
 ## Entry Point
 
 ```
-BackgroundManager::start(state)
-  -> tokio::spawn(run_pipeline)    // sequential phases
-  -> spawn_storage_watcher()       // independent
-  -> spawn_rom_watcher()           // independent
-  -> tokio::spawn(update_check_loop)
+main
+  -> spawn_storage_watcher()       // independent, also runs without storage
+  -> spawn_boot_tasks()            // immediately if storage is available
+       -> tokio::spawn(run_pipeline) // sequential phases
+       -> spawn_rom_watcher()        // independent
+       -> tokio::spawn(update_check_loop)
 ```
 
-If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `reload_config_and_redetect_storage()`), the full pipeline starts.
+If storage is unavailable at boot, only the storage watcher is spawned. When storage appears (None -> Some transition via `reload_config_and_redetect_storage()`), the remaining boot tasks start without starting a duplicate storage watcher.
 
 ## Phase 0.3: Legacy Manuals-Layout Migration
 
@@ -135,14 +136,14 @@ Skips entirely when both tables are empty (first-time setup).
 
 **Method**: `spawn_storage_watcher()` (Device mode only — Standalone has nothing to watch off-device)
 
-Two event sources, both kernel-driven, no periodic poll:
+Two event sources plus a recovery retry:
 
 1. **`notify` watcher** (inotify on Linux): watches `replay.cfg` for immediate config change detection (skin changes, storage mode changes, wifi/NFS/RetroAchievements writes triggered from the TV UI). Calls `reload_config_and_redetect_storage()` on change.
 2. **`mountinfo_watcher`** (`POLLPRI` on `/proc/self/mountinfo`, Linux only): wakes on every mount-table change. Also calls `reload_config_and_redetect_storage()` — this covers the boot-recovery case where the app started in `ConfigUnavailable` and the SD mount arrives carrying a fresh `replay.cfg`, so both the storage *and* the config need re-detection together.
 
-The previous 10s / 60s belt-and-suspenders poll was removed: on RePlayOS the kernel watchers cover all real events, and on dev hosts where mountinfo is a no-op, storage issues surface at request time via IO errors. User-triggered `refresh_storage` server fn (`reload_config_and_redetect_storage`) is also available for explicit re-detection.
+Mount-table events re-read `replay.cfg` as well as the mount state, so a storage selection made during a remount cannot remain stuck in the old in-memory config. While storage is unavailable or in error, a 10-second retry re-reads the config and checks only its selected storage target. A 60-second catch-up check does the same while healthy, covering missed config/mount notifications; it does not walk ROM directories or probe an unchanged NFS share. The watcher is started once at service boot, including when storage is initially absent. User-triggered `refresh_storage` also re-detects immediately.
 
-On storage transition (None -> Some), opens DB pools and starts the full background pipeline. On disappearance (Some -> None), closes pools.
+On storage transition (None -> Some), opens DB pools and starts the full background pipeline. If the selected storage disappears after activation, the app retains the last opened storage for read-only browsing where possible, blocks storage-scoped mutations, and retries the selected mount automatically. Recovery at the same path probes the ROM directories, resolves the storage ID, reopens both DB pools, invalidates cached library views, and restarts verification and the local ROM watcher. The last activated mount instance is tracked so a direct replacement at the same path also takes this full path, even if no unavailable interval was observed; a healthy unchanged mount skips the probe.
 
 On a **standalone host**, the RePlayOS config watcher is inactive. The selected folder is fixed for the process lifetime; `refresh_storage` checks whether it is still available.
 

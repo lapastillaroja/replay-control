@@ -1188,14 +1188,11 @@ mod ssr {
         // The external_metadata DB pool is constructed inside AppState::new
         // (alongside library_pool / user_data_pool); no extra wiring here.
 
-        // Start background pipeline only if storage is available.
-        // When no storage, the mount/config watchers (and the fallback poll)
-        // start the pipeline on the None->Some transition via
-        // reload_config_and_redetect_storage().
+        // Watch storage exactly once, including boots without a usable mount.
+        // In that case the watcher starts the pipeline on None -> Some.
+        api::background::spawn_storage_watcher(app_state.clone());
         if app_state.has_storage() {
             api::background::spawn_boot_tasks(&app_state);
-        } else {
-            api::background::spawn_storage_watcher(app_state.clone());
         }
 
         register_server_functions();

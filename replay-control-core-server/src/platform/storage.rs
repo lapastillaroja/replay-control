@@ -214,6 +214,20 @@ impl StorageLocation {
         is_mount_point(&self.root)
     }
 
+    /// Identity of this particular mount instance. Unlike the stable storage
+    /// id, the kernel mount id changes when media is detached and reattached.
+    /// This lets a running server reopen its pools even when the path stays
+    /// `/media/usb` or `/media/nfs` and no unavailable tick was observed.
+    pub fn mount_instance_signature(&self) -> Option<String> {
+        let entry = mount_entry_for(&self.root)?;
+        (Path::new(&entry.mount_point) == self.root).then(|| {
+            format!(
+                "{}|{}|{}|{}",
+                entry.mount_id, entry.mount_point, entry.fs_type, entry.source
+            )
+        })
+    }
+
     /// Probe whether this storage can use file mtimes as a startup-scan
     /// change detector. Failure is conservative: callers must scan normally.
     pub fn probe_mtime_reliability(&self) -> MtimeProbeResult {
@@ -441,6 +455,7 @@ fn timestamp_grain_ns(first: SystemTime, second: SystemTime) -> u128 {
 /// Resolved mount entry for a path: the source (block device or NFS export)
 /// and filesystem type.
 struct MountEntry {
+    mount_id: u64,
     mount_point: String,
     source: String,
     fs_type: String,
@@ -452,17 +467,26 @@ struct MountEntry {
 /// `/proc/self/mountinfo` is unreadable (non-Linux test environments).
 fn mount_entry_for(path: &Path) -> Option<MountEntry> {
     let content = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+    mount_entry_from(path, &content)
+}
+
+fn mount_entry_from(path: &Path, content: &str) -> Option<MountEntry> {
     let path_str = path.to_str()?;
-    let mut best: Option<(usize, MountEntry)> = None;
+    let mut best: Option<MountEntry> = None;
     for line in content.lines() {
         // mountinfo line: id parent dev path mount_point options - fs_type source super_options
         // The " - " separator splits the optional-fields head from the tail.
-        let (head, tail) = line.split_once(" - ")?;
+        let Some((head, tail)) = line.split_once(" - ") else {
+            continue;
+        };
         let head_parts: Vec<&str> = head.split(' ').collect();
         let tail_parts: Vec<&str> = tail.split(' ').collect();
         if head_parts.len() < 5 || tail_parts.len() < 2 {
             continue;
         }
+        let Ok(mount_id) = head_parts[0].parse::<u64>() else {
+            continue;
+        };
         let mount_point = head_parts[4];
         let fs_type = tail_parts[0];
         let source = tail_parts[1];
@@ -470,20 +494,22 @@ fn mount_entry_for(path: &Path) -> Option<MountEntry> {
             || path_str.starts_with(&format!("{mount_point}/"))
             || mount_point == "/"
         {
-            let len = mount_point.len();
-            if best.as_ref().map(|(l, _)| len > *l).unwrap_or(true) {
-                best = Some((
-                    len,
-                    MountEntry {
-                        mount_point: mount_point.to_string(),
-                        source: source.to_string(),
-                        fs_type: fs_type.to_string(),
-                    },
-                ));
+            // Equal-length entries can be stacked overmounts. The newer
+            // mount has the larger kernel mount id and is the visible one.
+            if best.as_ref().is_none_or(|entry| {
+                mount_point.len() > entry.mount_point.len()
+                    || (mount_point.len() == entry.mount_point.len() && mount_id > entry.mount_id)
+            }) {
+                best = Some(MountEntry {
+                    mount_id,
+                    mount_point: mount_point.to_string(),
+                    source: source.to_string(),
+                    fs_type: fs_type.to_string(),
+                });
             }
         }
     }
-    best.map(|(_, m)| m)
+    best
 }
 
 /// True if `path` is itself a distinct mount point (its longest-prefix mount
@@ -560,31 +586,44 @@ async fn disk_usage_for(path: &Path) -> Result<DiskUsage> {
 }
 
 fn find_usb_storage() -> Result<PathBuf> {
-    // RePlayOS mounts USB storage at /media/usb
-    let path = PathBuf::from("/media/usb");
-    if path.exists() {
-        return Ok(path);
-    }
+    find_usb_storage_at(PathBuf::from("/media/usb"))
+}
 
-    // Fallback: scan /media for any mounted USB
-    let media = Path::new("/media");
-    if media.exists()
-        && let Ok(entries) = std::fs::read_dir(media)
-    {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p != Path::new("/media/sd") && p.join(ROMS_DIR).exists() {
-                return Ok(p);
-            }
-        }
-    }
-
-    Err(Error::StorageNotFound)
+fn find_usb_storage_at(path: PathBuf) -> Result<PathBuf> {
+    // RePlayOS has a fixed USB mount path. A different /media/* directory
+    // containing ROMs is not evidence that it is the selected USB device.
+    path.exists().then_some(path).ok_or(Error::StorageNotFound)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stacked_mounts_resolve_to_the_visible_newer_mount() {
+        let mountinfo = "42 1 0:1 / / rw - ext4 /dev/root rw\n\
+            50 42 0:2 / /media/usb rw - exfat /dev/sda1 rw\n\
+            51 50 0:3 / /media/usb rw - exfat /dev/sdb1 rw\n";
+        let entry = mount_entry_from(Path::new("/media/usb"), mountinfo).unwrap();
+        assert_eq!(entry.mount_id, 51);
+        assert_eq!(entry.source, "/dev/sdb1");
+    }
+
+    #[test]
+    fn usb_detection_does_not_choose_another_media_folder() {
+        let media = tempfile::tempdir().unwrap();
+        let usb = media.path().join("usb");
+        let nfs_roms = media.path().join("nfs/roms");
+        std::fs::create_dir_all(&nfs_roms).unwrap();
+
+        assert!(matches!(
+            find_usb_storage_at(usb.clone()),
+            Err(Error::StorageNotFound)
+        ));
+
+        std::fs::create_dir(&usb).unwrap();
+        assert_eq!(find_usb_storage_at(usb.clone()).unwrap(), usb);
+    }
 
     #[test]
     fn is_local_returns_true_for_local_storage() {

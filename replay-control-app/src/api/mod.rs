@@ -230,6 +230,12 @@ pub struct AppState {
     /// rebuild/rescan/startup tasks to stop before writing into a DB that no
     /// longer belongs to the active storage.
     pub(crate) storage_generation: Arc<AtomicU64>,
+    /// Mount instance whose databases are currently open. A replacement can
+    /// appear at the same `/media/*` path without an observed unavailable tick.
+    active_mount_signature: Arc<std::sync::RwLock<Option<String>>>,
+    /// Config/mount events and retry ticks must not reopen storage pools at
+    /// the same time. The lock covers config reload through activation.
+    storage_redetect_lock: Arc<tokio::sync::Mutex<()>>,
     /// Serializes deferred identity hashing batches. Hashing is intentionally
     /// background work, but multiple rebuild/rescan/startup batches must not
     /// compete with each other.
@@ -790,6 +796,9 @@ impl AppState {
         let external_metadata_writer =
             db_pools::ExternalMetadataWritePool::from_pool(external_metadata_pool);
 
+        let active_mount_signature = storage
+            .as_ref()
+            .and_then(StorageLocation::mount_instance_signature);
         let state = Self {
             host,
             standalone_root,
@@ -826,6 +835,8 @@ impl AppState {
             now_playing_tx,
             rom_watcher_generation: Arc::new(AtomicU64::new(0)),
             storage_generation: Arc::new(AtomicU64::new(0)),
+            active_mount_signature: Arc::new(std::sync::RwLock::new(active_mount_signature)),
+            storage_redetect_lock: Arc::new(tokio::sync::Mutex::new(())),
             identity_phase: Arc::new(tokio::sync::Mutex::new(())),
             asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
@@ -910,13 +921,6 @@ impl AppState {
     pub(crate) fn storage_generation(&self) -> u64 {
         self.storage_generation
             .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub(crate) fn has_replay_config(&self) -> bool {
-        self.replay_config
-            .read()
-            .expect("replay_config lock poisoned")
-            .is_some()
     }
 
     fn bump_storage_generation(&self) {
@@ -1008,34 +1012,6 @@ impl AppState {
             .expect("storage lock poisoned")
             .as_ref()
             .map(|storage| storage.kind.as_str().to_string())
-    }
-
-    async fn suspected_storage_fallback_reason(&self, next: &StorageLocation) -> Option<String> {
-        let current = self
-            .storage
-            .read()
-            .expect("storage lock poisoned")
-            .clone()?;
-
-        if current.root == next.root
-            || current.kind == next.kind
-            || !storage_kind_is_downgrade(current.kind, next.kind)
-            || !storage_kind_is_safe_for_fallback_probe(current.kind)
-            || !current.is_ready()
-        {
-            return None;
-        }
-
-        match probe_storage_ready(&current).await {
-            StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => Some(format!(
-                "RePlayOS reported {} storage at {}, but current {} storage at {} is still readable; keeping the current storage online to avoid adopting an OS fallback.",
-                next.kind.as_str(),
-                next.root.display(),
-                current.kind.as_str(),
-                current.root.display()
-            )),
-            StorageProbe::NotReady => None,
-        }
     }
 
     /// Read-lock storage and clone the current StorageLocation.
@@ -1287,6 +1263,7 @@ impl AppState {
     pub async fn reload_config_and_redetect_storage(
         &self,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let _redetect_guard = self.storage_redetect_lock.lock().await;
         let config_adopted = self.reload_replay_config();
         let storage_changed = self.redetect_storage().await?;
         // Report change when either the in-memory config rolled forward or the
@@ -1298,12 +1275,11 @@ impl AppState {
     }
 
     /// Re-detect the active storage location from the current in-memory config
-    /// (unless a CLI override was given). Does NOT re-read `replay.cfg` — call
-    /// [`Self::reload_replay_config`] first if the file may have changed. Used
-    /// directly by the mount-table watcher, where the mounts changed but the
-    /// config did not. Returns `true` if the storage location actually changed;
-    /// handles None->Some transitions (storage appearing after startup).
-    pub async fn redetect_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
+    /// (unless a CLI override was given). Called with
+    /// `storage_redetect_lock` held after re-reading `replay.cfg`. Returns
+    /// `true` if the storage location actually changed; handles None->Some
+    /// transitions (storage appearing after startup).
+    async fn redetect_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
         if let Some(root) = self.standalone_root.as_deref() {
             // Standalone: the storage root is fixed at startup; no auto-detection
             // to run, but we still owe the user a liveness check — an external
@@ -1360,13 +1336,16 @@ impl AppState {
         let new_storage = match StorageLocation::detect(&config) {
             Ok(storage) => storage,
             Err(e) => {
-                tracing::warn!("redetect_storage: configured storage unavailable: {e}");
-                self.cancel_storage_scans_if_ready();
-                self.set_storage_status(StorageStatus::Misconfigured {
+                let status = StorageStatus::Misconfigured {
                     wanted,
                     current_kind,
                     reason: e.to_string(),
-                });
+                };
+                if self.storage_status() != status {
+                    tracing::warn!("redetect_storage: configured storage unavailable: {e}");
+                }
+                self.cancel_storage_scans_if_ready();
+                self.set_storage_status(status);
                 return Ok(false);
             }
         };
@@ -1390,62 +1369,53 @@ impl AppState {
             });
             return Ok(false);
         }
-        if let Some(reason) = self.suspected_storage_fallback_reason(&new_storage).await {
-            tracing::warn!("redetect_storage: {reason}");
-            self.cancel_storage_scans_if_ready();
-            self.set_storage_status(StorageStatus::Misconfigured {
-                wanted,
-                current_kind,
-                reason,
-            });
-            return Ok(false);
-        }
         let had_storage = self.has_storage();
-
-        let changed = {
+        let previous_status = self.storage_status();
+        let new_mount_signature = new_storage.mount_instance_signature();
+        let activate = {
             let current = self.storage.read().expect("storage lock poisoned");
-            match current.as_ref() {
-                Some(s) => s.root != new_storage.root || s.kind != new_storage.kind,
-                None => true, // None -> Some is always a change
-            }
+            let active_mount_signature = self
+                .active_mount_signature
+                .read()
+                .expect("mount signature lock poisoned");
+            storage_activation_required(
+                current.as_ref(),
+                &new_storage,
+                &previous_status,
+                active_mount_signature.as_deref(),
+                new_mount_signature.as_deref(),
+            )
         };
 
-        if !changed {
-            self.set_storage_status(StorageStatus::Ready);
+        if activate {
+            // A mount can appear before its ROM directories are readable.
+            // Check a newly selected location and a recovered mount, but never
+            // walk an unchanged healthy NFS share on the catch-up tick.
+            if probe_storage_ready(&new_storage).await == StorageProbe::NotReady {
+                tracing::debug!(
+                    "redetect_storage: probe at {} not yet ready; deferring",
+                    new_storage.root.display()
+                );
+                self.cancel_storage_scans_if_ready();
+                self.set_storage_status(StorageStatus::Misconfigured {
+                    wanted,
+                    current_kind,
+                    reason: format!(
+                        "{} is mounted but its roms directory is not readable yet",
+                        new_storage.root.display()
+                    ),
+                });
+                return Ok(false);
+            }
+        }
+
+        if !activate {
             return Ok(false);
         }
 
         {
-            // Confirm the storage is fully usable before flipping the
-            // middleware gate. A mount point can show up in
-            // /proc/self/mountinfo while subdir dirent caches are still
-            // cold (NFS partial-mount window) — opening the gate then
-            // lets request handlers see zero ROMs and poison library.db
-            // with all-zero rows. The probe walks roms_dir + system
-            // subdirs with a bounded retry so the gate only opens once
-            // the dirent cache stabilizes.
-            match probe_storage_ready(&new_storage).await {
-                StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => {}
-                StorageProbe::NotReady => {
-                    tracing::debug!(
-                        "redetect_storage: probe at {} not yet ready; deferring",
-                        new_storage.root.display()
-                    );
-                    self.cancel_storage_scans_if_ready();
-                    self.set_storage_status(StorageStatus::Misconfigured {
-                        wanted,
-                        current_kind,
-                        reason: format!(
-                            "{} is mounted but its roms directory is not readable yet",
-                            new_storage.root.display()
-                        ),
-                    });
-                    return Ok(false);
-                }
-            }
-
             tracing::info!(
-                "Storage changed: {:?} at {}",
+                "Storage activated: {:?} at {}",
                 new_storage.kind,
                 new_storage.root.display()
             );
@@ -1486,6 +1456,10 @@ impl AppState {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
                 *guard = Some(new_storage);
             }
+            *self
+                .active_mount_signature
+                .write()
+                .expect("mount signature lock poisoned") = new_mount_signature;
             self.set_storage_status(StorageStatus::Ready);
 
             // Back up user_data.db after opening at the new location.
@@ -1535,22 +1509,19 @@ impl AppState {
     }
 }
 
-fn storage_kind_rank(kind: StorageKind) -> u8 {
-    match kind {
-        StorageKind::Sd => 0,
-        StorageKind::Usb => 1,
-        StorageKind::Nvme => 2,
-        StorageKind::Nfs => 3,
-        StorageKind::Folder => 4,
-    }
-}
-
-fn storage_kind_is_downgrade(current: StorageKind, next: StorageKind) -> bool {
-    storage_kind_rank(next) < storage_kind_rank(current)
-}
-
-fn storage_kind_is_safe_for_fallback_probe(kind: StorageKind) -> bool {
-    kind.is_local()
+fn storage_activation_required(
+    current: Option<&StorageLocation>,
+    next: &StorageLocation,
+    previous_status: &StorageStatus,
+    active_mount_signature: Option<&str>,
+    new_mount_signature: Option<&str>,
+) -> bool {
+    current.is_none_or(|storage| storage.root != next.root || storage.kind != next.kind)
+        || !matches!(previous_status, StorageStatus::Ready)
+        || matches!(
+            (active_mount_signature, new_mount_signature),
+            (Some(active), Some(new)) if active != new
+        )
 }
 
 /// Build the application router with API routes, server function handler,
@@ -1678,6 +1649,64 @@ pub(crate) fn build_waiting_page_test_state(storage_root: &std::path::Path) -> A
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selecting_sd_after_usb_is_a_storage_change_even_if_usb_remains_available() {
+        let usb = StorageLocation::from_path(PathBuf::from("/media/usb"), StorageKind::Usb);
+        let sd = StorageLocation::from_path(PathBuf::from("/media/sd"), StorageKind::Sd);
+
+        assert!(storage_activation_required(
+            Some(&usb),
+            &sd,
+            &StorageStatus::Ready,
+            Some("mount-1"),
+            Some("mount-2"),
+        ));
+        assert!(!storage_activation_required(
+            Some(&sd),
+            &sd,
+            &StorageStatus::Ready,
+            Some("mount-1"),
+            Some("mount-1"),
+        ));
+        assert!(storage_activation_required(
+            None,
+            &sd,
+            &StorageStatus::Ready,
+            None,
+            Some("mount-1"),
+        ));
+    }
+
+    #[test]
+    fn recovered_or_replaced_same_path_reopens_storage_pools() {
+        let usb = StorageLocation::from_path(PathBuf::from("/media/usb"), StorageKind::Usb);
+        assert!(storage_activation_required(
+            Some(&usb),
+            &usb,
+            &StorageStatus::Misconfigured {
+                wanted: "usb".into(),
+                current_kind: Some("usb".into()),
+                reason: "mount disappeared".into(),
+            },
+            Some("mount-1"),
+            Some("mount-1"),
+        ));
+        assert!(storage_activation_required(
+            Some(&usb),
+            &usb,
+            &StorageStatus::Ready,
+            Some("mount-1"),
+            Some("mount-2"),
+        ));
+        assert!(!storage_activation_required(
+            Some(&usb),
+            &usb,
+            &StorageStatus::Ready,
+            Some("mount-1"),
+            None,
+        ));
+    }
 
     /// `redetect_storage`'s symmetric pre-flight: when the re-attached
     /// storage has a clobbered user_data.db magic header, the helper
@@ -1809,15 +1838,6 @@ mod tests {
             rx.try_recv().is_err(),
             "duplicate status should not broadcast"
         );
-    }
-
-    #[test]
-    fn fallback_probe_skips_nfs_storage() {
-        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Sd));
-        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Usb));
-        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Nvme));
-        assert!(storage_kind_is_safe_for_fallback_probe(StorageKind::Folder));
-        assert!(!storage_kind_is_safe_for_fallback_probe(StorageKind::Nfs));
     }
 
     #[tokio::test(flavor = "multi_thread")]
