@@ -4,7 +4,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [Unreleased]
+## [1.3.0-beta.2]
 
 ### Changed
 
@@ -13,6 +13,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Fixed
 
 - Storage detection now follows RePlayOS's selected SD, USB, NVMe, or NFS location instead of reporting a missing USB device when another location is selected. If the selected storage is unavailable, Replay Control identifies it, keeps retrying, and safely reopens its library and user data when the mount returns or is replaced.
+- HTTPS startup no longer fails when the listener must be nonblocking.
 
 ## [1.3.0-beta.1]
 
