@@ -5,6 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use ashpd::desktop::ResponseError;
+use ashpd::desktop::file_chooser::SelectedFiles;
+use ashpd::{Error as AshpdError, PortalError};
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::Request;
 use axum::http::{HeaderMap, StatusCode, header::HOST};
@@ -14,17 +17,58 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use replay_control_app::i18n::{Key, resolve_locale_from_accept_language, t};
+use replay_control_core::locale::Locale;
 use replay_control_core_server::data_dir::DataDir;
 use replay_control_core_server::security::tls::ensure_self_signed_certificate;
 use replay_control_core_server::settings::{SettingsStore, read_locale};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use url::Url;
 
-const SELECTION_FILE: &str = "/var/lib/replay-control/standalone-storage-path";
-const STATUS_FILE: &str = "/var/lib/replay-control/storage-switch-status";
-const PENDING_FILE: &str = "/var/lib/replay-control/storage-switch-pending";
 const SWITCH_HELPER: &str = "/usr/lib/replay-control/switch-storage";
 static SWITCH_REQUEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static RESTART_REQUESTED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+fn data_root() -> PathBuf {
+    std::env::var_os("REPLAY_CONTROL_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/var/lib/replay-control"))
+}
+
+fn data_file(name: &str) -> PathBuf {
+    data_root().join(name)
+}
+
+pub fn portable() -> bool {
+    std::env::var_os("REPLAY_CONTROL_PORTABLE").is_some()
+}
+
+pub async fn wait_for_restart() {
+    RESTART_REQUESTED.notified().await;
+}
+
+pub fn finish_portable_restart() {
+    if portable()
+        && std::fs::read_to_string(data_file("storage-switch-status"))
+            .is_ok_and(|status| status.starts_with("running\n"))
+    {
+        let _ = std::fs::write(data_file("storage-switch-status"), "ok\n");
+        let _ = std::fs::remove_file(data_file("restart-requested"));
+    }
+}
+
+fn fail_portable_restart(storage_error: &str) {
+    if portable()
+        && std::fs::read_to_string(data_file("storage-switch-status"))
+            .is_ok_and(|status| status.starts_with("running\n"))
+    {
+        let _ = std::fs::write(
+            data_file("storage-switch-status"),
+            format!("error\nSelected storage is unavailable: {storage_error}\n"),
+        );
+        let _ = std::fs::remove_file(data_file("restart-requested"));
+    }
+}
 
 #[derive(Clone)]
 struct SetupState {
@@ -65,7 +109,7 @@ pub fn resolve_storage_path(packaged: bool, preconfigured: Option<String>) -> Op
     if !packaged {
         return preconfigured;
     }
-    let saved = std::fs::read_to_string(SELECTION_FILE)
+    let saved = std::fs::read_to_string(data_file("standalone-storage-path"))
         .ok()
         .and_then(|content| parse_saved_path(&content));
     saved.or(preconfigured)
@@ -97,6 +141,7 @@ fn router_with_state(state: SetupState) -> Router {
         .route("/storage-setup/app.css", get(stylesheet))
         .route("/storage-setup/messages", get(messages))
         .route("/storage-setup/list", get(list_directory))
+        .route("/storage-setup/pick", post(pick_directory))
         .route("/storage-setup/select", post(select_directory))
         .route("/storage-setup/status", get(selection_status))
         .route("/storage-setup/active-root", get(active_root))
@@ -127,9 +172,16 @@ async fn page() -> Html<&'static str> {
     Html(include_str!("../static/storage-setup.html"))
 }
 
+fn storage_locale(headers: &HeaderMap) -> Locale {
+    let settings_root = std::env::var_os("REPLAY_CONTROL_SETTINGS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/etc/replay-control"));
+    read_locale(&SettingsStore::new(settings_root))
+        .unwrap_or_else(|| resolve_locale_from_accept_language(headers))
+}
+
 async fn messages(headers: HeaderMap) -> Json<Value> {
-    let locale = read_locale(&SettingsStore::new("/etc/replay-control"))
-        .unwrap_or_else(|| resolve_locale_from_accept_language(&headers));
+    let locale = storage_locale(&headers);
     Json(json!({
         "locale": locale.code(),
         "title": t(locale, Key::StorageSetupTitle),
@@ -160,6 +212,7 @@ async fn messages(headers: HeaderMap) -> Json<Value> {
         "switch_interrupted": t(locale, Key::StorageSetupSwitchInterrupted),
         "switch_start_failed": t(locale, Key::StorageSetupSwitchStartFailed),
         "package_only": t(locale, Key::StorageSetupPackageOnly),
+        "portable": portable(),
     }))
 }
 
@@ -217,7 +270,10 @@ fn inspect_directory(input: &str) -> Result<DirectoryInfo, String> {
     })
 }
 
-async fn list_directory(Query(query): Query<DirectoryQuery>) -> Json<DirectoryInfo> {
+async fn list_directory(Query(query): Query<DirectoryQuery>) -> Response {
+    if portable() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let requested = query.path.unwrap_or_else(|| "/".to_string());
     let inspected = tokio::task::spawn_blocking({
         let requested = requested.clone();
@@ -233,6 +289,72 @@ async fn list_directory(Query(query): Query<DirectoryQuery>) -> Json<DirectoryIn
         valid: false,
         error: Some(error),
     }))
+    .into_response()
+}
+
+async fn pick_directory(headers: HeaderMap) -> Response {
+    if !portable() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if headers
+        .get("x-replay-control-portal")
+        .is_none_or(|value| value != "pick-storage")
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let request = match SelectedFiles::open_file()
+        .title(t(storage_locale(&headers), Key::StorageSetupTitle))
+        .directory(true)
+        .send()
+        .await
+    {
+        Ok(request) => request,
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                format!("Cannot open folder chooser: {error}"),
+            )
+                .into_response();
+        }
+    };
+    let selection = match request.response() {
+        Ok(selection) => selection,
+        Err(AshpdError::Response(ResponseError::Cancelled))
+        | Err(AshpdError::Portal(PortalError::Cancelled(_))) => {
+            return StatusCode::NO_CONTENT.into_response();
+        }
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                format!("Folder chooser failed: {error}"),
+            )
+                .into_response();
+        }
+    };
+    let Some(uri) = selection.uris().first() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let path = match portal_uri_path(uri.as_str()) {
+        Some(path) => path,
+        None => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                "Folder chooser returned an invalid path.",
+            )
+                .into_response();
+        }
+    };
+    let info =
+        tokio::task::spawn_blocking(move || inspect_directory(&path.to_string_lossy())).await;
+    match info {
+        Ok(Ok(info)) => Json(info).into_response(),
+        Ok(Err(error)) => (StatusCode::BAD_REQUEST, error).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
+}
+
+fn portal_uri_path(uri: &str) -> Option<PathBuf> {
+    Url::parse(uri).ok()?.to_file_path().ok()
 }
 
 fn validate_selection(input: &str) -> Result<PathBuf, String> {
@@ -287,7 +409,7 @@ async fn select_directory(
                 .into_response();
         }
     };
-    if !Path::new(SWITCH_HELPER).is_file() {
+    if !portable() && !Path::new(SWITCH_HELPER).is_file() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             "Storage switching is available in packaged installs.",
@@ -297,12 +419,38 @@ async fn select_directory(
     if state.current.as_deref() == root.to_str() {
         return (StatusCode::OK, "This folder is already selected.").into_response();
     }
-    if let Err(error) = std::fs::write(STATUS_FILE, "running\n") {
+    if let Err(error) = std::fs::write(data_file("storage-switch-status"), "running\n") {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Cannot save switch status: {error}"),
         )
             .into_response();
+    }
+    if portable() {
+        let choice = data_file("standalone-storage-path");
+        let pending = data_file("standalone-storage-path.next");
+        if let Err(error) = std::fs::write(data_file("restart-requested"), "1\n") {
+            let _ = std::fs::write(
+                data_file("storage-switch-status"),
+                format!("error\nCannot request a restart: {error}\n"),
+            );
+            return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
+        }
+        if let Err(error) = std::fs::write(&pending, format!("{}\n", root.display()))
+            .and_then(|()| std::fs::rename(&pending, &choice))
+        {
+            let _ = std::fs::remove_file(data_file("restart-requested"));
+            let _ = std::fs::write(
+                data_file("storage-switch-status"),
+                format!("error\nCannot save storage selection: {error}\n"),
+            );
+            return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
+        }
+        tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            RESTART_REQUESTED.notify_one();
+        });
+        return StatusCode::ACCEPTED.into_response();
     }
     let unit = format!(
         "replay-control-storage-switch-{}-{}",
@@ -327,7 +475,10 @@ async fn select_directory(
         Ok(output) if output.status.success() => StatusCode::ACCEPTED.into_response(),
         Ok(output) => {
             let error = String::from_utf8_lossy(&output.stderr);
-            let _ = std::fs::write(STATUS_FILE, "error\nCould not start the storage switch.\n");
+            let _ = std::fs::write(
+                data_file("storage-switch-status"),
+                "error\nCould not start the storage switch.\n",
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Cannot start storage switch: {error}"),
@@ -335,7 +486,10 @@ async fn select_directory(
                 .into_response()
         }
         Err(error) => {
-            let _ = std::fs::write(STATUS_FILE, "error\nCould not start the storage switch.\n");
+            let _ = std::fs::write(
+                data_file("storage-switch-status"),
+                "error\nCould not start the storage switch.\n",
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Cannot start storage switch: {error}"),
@@ -346,13 +500,15 @@ async fn select_directory(
 }
 
 fn switch_is_running() -> bool {
-    if Path::new(PENDING_FILE).exists() {
+    if data_file("storage-switch-pending").exists() {
         return true;
     }
-    if !std::fs::read_to_string(STATUS_FILE).is_ok_and(|status| status.starts_with("running\n")) {
+    if !std::fs::read_to_string(data_file("storage-switch-status"))
+        .is_ok_and(|status| status.starts_with("running\n"))
+    {
         return false;
     }
-    std::fs::metadata(STATUS_FILE)
+    std::fs::metadata(data_file("storage-switch-status"))
         .and_then(|metadata| metadata.modified())
         .ok()
         .and_then(|modified| modified.elapsed().ok())
@@ -361,7 +517,8 @@ fn switch_is_running() -> bool {
 
 async fn selection_status(State(state): State<SetupState>) -> Json<SelectionResponse> {
     let current = state.current;
-    let status_text = std::fs::read_to_string(STATUS_FILE).unwrap_or_default();
+    let status_text =
+        std::fs::read_to_string(data_file("storage-switch-status")).unwrap_or_default();
     let mut lines = status_text.lines();
     let mut status = lines.next().unwrap_or("idle").to_string();
     let mut message = lines.next().map(str::to_string);
@@ -435,10 +592,14 @@ pub async fn serve_bootstrap(
     current: Option<String>,
     storage_error: Option<String>,
 ) -> Result<(), String> {
+    if let Some(ref error) = storage_error {
+        fail_portable_restart(error);
+    }
     let recovery_path = current.clone();
     let app = bootstrap_router(current, storage_error);
+    let bind_host = if portable() { "127.0.0.1" } else { "0.0.0.0" };
     if !serve_https {
-        let listener = tokio::net::TcpListener::bind(("0.0.0.0", http_port))
+        let listener = tokio::net::TcpListener::bind((bind_host, http_port))
             .await
             .map_err(|error| error.to_string())?;
         return tokio::select! {
@@ -446,10 +607,11 @@ pub async fn serve_bootstrap(
                 listener,
                 app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
             ) => result.map_err(|error| error.to_string()),
-            () = wait_for_recovery(recovery_path) => Err("Configured storage returned; restarting the package service".to_string()),
+            () = wait_for_recovery(recovery_path) => restart_after_recovery(),
+            () = wait_for_restart(), if portable() => Ok(()),
         };
     }
-    let data_dir = DataDir::default_root();
+    let data_dir = DataDir::new(data_root());
     let certificates = ensure_self_signed_certificate(&data_dir)
         .map_err(|error| format!("Cannot prepare setup HTTPS certificate: {error}"))?;
     let tls = RustlsConfig::from_pem_file(&certificates.cert, &certificates.key)
@@ -458,18 +620,40 @@ pub async fn serve_bootstrap(
     let http = Router::new().fallback(get(move |headers: HeaderMap| async move {
         https_redirect(&headers, https_port)
     }));
-    let http_listener = tokio::net::TcpListener::bind(("0.0.0.0", http_port))
+    let http_listener = tokio::net::TcpListener::bind((bind_host, http_port))
         .await
         .map_err(|error| error.to_string())?;
     let http_server = axum::serve(http_listener, http);
-    let https_addr = std::net::SocketAddr::from(([0, 0, 0, 0], https_port));
+    let https_addr = std::net::SocketAddr::from((
+        if portable() {
+            [127, 0, 0, 1]
+        } else {
+            [0, 0, 0, 0]
+        },
+        https_port,
+    ));
     let https_server = axum_server::bind_rustls(https_addr, tls)
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>());
     tokio::select! {
         result = http_server => result.map_err(|error| error.to_string()),
         result = https_server => result.map_err(|error| error.to_string()),
-        () = wait_for_recovery(recovery_path) => Err("Configured storage returned; restarting the package service".to_string()),
+        () = wait_for_recovery(recovery_path) => restart_after_recovery(),
+        () = wait_for_restart(), if portable() => Ok(()),
     }
+}
+
+fn restart_after_recovery() -> Result<(), String> {
+    if !portable() {
+        return Err("Configured storage returned; restarting the package service".to_string());
+    }
+    request_portable_restart(&data_root())
+}
+
+fn request_portable_restart(data_dir: &Path) -> Result<(), String> {
+    std::fs::write(data_dir.join("storage-switch-status"), "running\n")
+        .map_err(|error| format!("Cannot record storage recovery: {error}"))?;
+    std::fs::write(data_dir.join("restart-requested"), "1\n")
+        .map_err(|error| format!("Cannot request storage recovery restart: {error}"))
 }
 
 async fn wait_for_recovery(path: Option<String>) {
@@ -491,12 +675,27 @@ async fn wait_for_recovery(path: Option<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{bootstrap_router, inspect_directory, parse_saved_path, request_is_loopback};
+    use super::{
+        bootstrap_router, inspect_directory, parse_saved_path, portal_uri_path,
+        request_is_loopback, request_portable_restart,
+    };
     use axum::body::Body;
     use axum::extract::ConnectInfo;
     use axum::http::{Request, StatusCode};
     use std::net::SocketAddr;
+    use std::path::PathBuf;
     use tower::ServiceExt;
+
+    #[test]
+    fn recovered_flatpak_storage_requests_launcher_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        request_portable_restart(temp.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("storage-switch-status")).unwrap(),
+            "running\n"
+        );
+        assert!(temp.path().join("restart-requested").is_file());
+    }
 
     #[test]
     fn requires_readable_roms_but_reports_optional_siblings() {
@@ -516,6 +715,15 @@ mod tests {
         assert_eq!(parse_saved_path("/mnt/games\n"), Some("/mnt/games".into()));
         assert_eq!(parse_saved_path("games\n"), None);
         assert_eq!(parse_saved_path("/mnt/games\n/other\n"), None);
+    }
+
+    #[test]
+    fn portal_folder_uri_decodes_to_document_path() {
+        assert_eq!(
+            portal_uri_path("file:///run/user/1000/doc/abc123/Game%20Library"),
+            Some(PathBuf::from("/run/user/1000/doc/abc123/Game Library"))
+        );
+        assert_eq!(portal_uri_path("https://example.com/library"), None);
     }
 
     #[test]

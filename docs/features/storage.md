@@ -64,7 +64,7 @@ The app keeps data that belongs to a ROM collection on that storage device:
 
 This data travels with the ROM collection if you move the storage device to another computer. The library index and downloaded metadata sources stay on the computer running Replay Control.
 
-In standalone mode, the selected folder is remembered on that computer. Changing folders does not erase your app preferences; each library keeps its own favorites, artwork, and other library data. Standalone mode is **work in progress and unsupported**.
+In standalone mode, the selected folder is remembered on that computer. Changing folders does not erase your app preferences; each library keeps its own favorites, artwork, and other library data. You can switch between folders on the same disk; each gets its own library index. Existing standalone folders that previously shared an index are scanned again after upgrading. Standalone mode is **work in progress and unsupported**.
 
 On first startup, choose the folder that contains `roms/`. Replay Control then continues to the metadata setup step. You can change the folder later from Settings.
 

@@ -137,8 +137,25 @@ async function openDirectory(path, showBrowser = true) {
 }
 
 document.getElementById('browse').addEventListener('click', () => {
+  if (messages.portable) {
+    pickDirectory().catch(error => say(error.message, true));
+    return;
+  }
   openDirectory(pathInput.value || '/').catch(error => say(error.message, true));
 });
+
+async function pickDirectory() {
+  const response = await fetch('/storage-setup/pick', {
+    method: 'POST',
+    headers: { 'x-replay-control-portal': 'pick-storage' }
+  });
+  if (response.status === 204) return;
+  if (!response.ok) throw new Error(await response.text());
+  const info = await response.json();
+  pathInput.value = info.path;
+  browser.hidden = true;
+  showPreview(info);
+}
 parentButton.addEventListener('click', () => {
   if (parentPath) openDirectory(parentPath).catch(error => say(error.message, true));
 });
@@ -214,7 +231,10 @@ selectButton.addEventListener('click', async () => {
   }
 });
 
-loadMessages().then(() => fetch('/storage-setup/status', { cache: 'no-store' }))
+loadMessages().then(() => {
+  pathInput.readOnly = !!messages.portable;
+  return fetch('/storage-setup/status', { cache: 'no-store' });
+})
   .then(response => response.json())
   .then(result => {
     if (result.status === 'error' || result.status === 'delayed') markFirstRunPending(false);
@@ -235,6 +255,13 @@ loadMessages().then(() => fetch('/storage-setup/status', { cache: 'no-store' }))
       say(messages.switching);
       pollSwitch();
     }
+    if (messages.portable) {
+      pathInput.value = result.current || '';
+      return;
+    }
     return openDirectory(result.current || '/', false);
   })
-  .catch(() => openDirectory('/', false).catch(error => say(error.message, true)));
+  .catch(error => {
+    if (messages.portable) say(error.message, true);
+    else openDirectory('/', false).catch(browserError => say(browserError.message, true));
+  });

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.lapastillaroja.ReplayControl</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Replay Control</name>
+  <summary>Browse and manage your game library</summary>
+  <description>
+    <p>Replay Control provides a browser interface for a ROM collection. Standalone use is experimental.</p>
+  </description>
+  <launchable type="desktop-id">io.github.lapastillaroja.ReplayControl.desktop</launchable>
+  <url type="homepage">https://github.com/lapastillaroja/replay-control</url>
+  <provides>
+    <binary>replay-control</binary>
+  </provides>
+  <categories>
+    <category>Game</category>
+  </categories>
+</component>

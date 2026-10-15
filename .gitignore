@@ -122,6 +122,8 @@ PLAN.md
 /catalog.sqlite.*
 /replay-control_*.deb
 /replay-control-*.rpm
+/replay-control-*.flatpak
+/replay-control-*.flatpak.*
 *.sqlite-shm
 *.sqlite-wal
 

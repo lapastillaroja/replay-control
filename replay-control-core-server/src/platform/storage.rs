@@ -309,7 +309,7 @@ pub struct MtimeProbeResult {
 /// Resolution order:
 /// 1. Existing marker already exists.
 /// 2. Derive a deterministic id from the filesystem UUID (or
-///    `server:/share` for NFS). Same storage → same id forever.
+///    `server:/share` for NFS). Standalone folders also include their path.
 /// 3. If the FS id can't be obtained (tmpfs, tempdir, exotic mount), random
 ///    fallback.
 pub fn ensure_storage_id_at(rc_dir: &Path, kind: &str) -> Result<crate::storage_id::StorageId> {
@@ -318,13 +318,35 @@ pub fn ensure_storage_id_at(rc_dir: &Path, kind: &str) -> Result<crate::storage_
     let marker = rc_dir.join(STORAGE_ID_FILE);
     let storage_root = rc_dir.parent().unwrap_or(rc_dir);
 
-    if let Some(id) = read_marker(&marker)? {
+    let existing = read_marker(&marker)?;
+    if kind != StorageKind::Folder.as_str()
+        && let Some(id) = existing
+    {
         return Ok(id);
     }
+    let filesystem_id = filesystem_id_for(storage_root);
+    if let Some(id) = existing {
+        // Older standalone installs derived the id from the filesystem alone.
+        // Two folders on one disk then shared a library index. Re-key those
+        // markers; the index is rebuilt from each folder's ROMs on startup.
+        let legacy_folder_id = filesystem_id
+            .as_deref()
+            .map(|fs_id| StorageId::from_filesystem_id(kind, fs_id));
+        if legacy_folder_id.as_ref() != Some(&id) {
+            return Ok(id);
+        }
+    }
 
-    let id = match filesystem_id_for(storage_root) {
+    let id = match filesystem_id {
         Some(fs_id) => {
-            let derived = StorageId::from_filesystem_id(kind, &fs_id);
+            let identity = if kind == StorageKind::Folder.as_str() {
+                let canonical_root =
+                    std::fs::canonicalize(storage_root).map_err(|e| Error::io(storage_root, e))?;
+                format!("{fs_id}\0{}", canonical_root.display())
+            } else {
+                fs_id.clone()
+            };
+            let derived = StorageId::from_filesystem_id(kind, &identity);
             tracing::info!("Deriving storage id from filesystem id ({fs_id}) -> {derived}");
             derived
         }
@@ -675,6 +697,49 @@ mod tests {
         let c = ensure_storage_id_at(&rc_dir, "usb").unwrap();
         assert_eq!(a, b);
         assert_eq!(b, c);
+    }
+
+    #[test]
+    fn standalone_folders_on_one_filesystem_have_distinct_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = tmp.path().join("first");
+        let second = tmp.path().join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+
+        let first_id = ensure_storage_id_at(&first.join(RC_DIR), "folder").unwrap();
+        let second_id = ensure_storage_id_at(&second.join(RC_DIR), "folder").unwrap();
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(
+            first_id,
+            ensure_storage_id_at(&first.join(RC_DIR), "folder").unwrap()
+        );
+        assert_eq!(
+            second_id,
+            ensure_storage_id_at(&second.join(RC_DIR), "folder").unwrap()
+        );
+    }
+
+    #[test]
+    fn standalone_legacy_filesystem_id_is_replaced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("games");
+        let rc_dir = root.join(RC_DIR);
+        std::fs::create_dir_all(&rc_dir).unwrap();
+        let fs_id = filesystem_id_for(&root).unwrap();
+        let legacy_id = crate::storage_id::StorageId::from_filesystem_id("folder", &fs_id);
+        std::fs::write(rc_dir.join(STORAGE_ID_FILE), legacy_id.as_str()).unwrap();
+
+        let new_id = ensure_storage_id_at(&rc_dir, "folder").unwrap();
+        assert_ne!(legacy_id, new_id);
+        assert_eq!(
+            std::fs::read_to_string(rc_dir.join(STORAGE_ID_FILE))
+                .unwrap()
+                .trim(),
+            new_id.as_str()
+        );
+        assert_eq!(new_id, ensure_storage_id_at(&rc_dir, "folder").unwrap());
     }
 
     #[test]

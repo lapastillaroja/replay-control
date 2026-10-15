@@ -1565,9 +1565,15 @@ mod ssr {
         } else {
             app
         };
+        let portable = standalone_storage::portable();
+        let bind_ip = if portable {
+            [127, 0, 0, 1]
+        } else {
+            [0, 0, 0, 0]
+        };
 
         if !serve_https {
-            let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
+            let addr = SocketAddr::from((bind_ip, cli.port));
             if host.is_replayos() {
                 tracing::warn!(
                     "dangerous_disable_https is set; serving Replay Control over plain HTTP on {addr}"
@@ -1581,14 +1587,18 @@ mod ssr {
                     tracing::error!("failed to bind HTTP listener on {addr}: {error}");
                     std::process::exit(1);
                 });
-            if let Err(error) = axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .await
-            {
-                tracing::error!("HTTP server stopped with error: {error}");
-                std::process::exit(1);
+            standalone_storage::finish_portable_restart();
+            tokio::select! {
+                result = axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                ) => {
+                    if let Err(error) = result {
+                        tracing::error!("HTTP server stopped with error: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                () = standalone_storage::wait_for_restart(), if portable => {}
             }
             return;
         }
@@ -1623,8 +1633,8 @@ mod ssr {
             }
         };
 
-        let http_addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
-        let https_addr = SocketAddr::from(([0, 0, 0, 0], cli.https_port));
+        let http_addr = SocketAddr::from((bind_ip, cli.port));
+        let https_addr = SocketAddr::from((bind_ip, cli.https_port));
         let http_app = http_guidance_router(
             cli.https_port,
             guard_state.clone(),
@@ -1635,7 +1645,10 @@ mod ssr {
             http_rom_docs_handler,
         );
 
-        tracing::info!("Starting HTTPS app on https://0.0.0.0:{}", cli.https_port);
+        tracing::info!(
+            "Starting HTTPS app on https://{bind_ip:?}:{}",
+            cli.https_port
+        );
         tracing::info!(
             "HTTP guidance page available on http://0.0.0.0:{}",
             cli.port
@@ -1679,6 +1692,7 @@ mod ssr {
             })
             .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
+        standalone_storage::finish_portable_restart();
         tokio::select! {
             result = http_server => {
                 if let Err(error) = result {
@@ -1692,6 +1706,7 @@ mod ssr {
                     std::process::exit(1);
                 }
             }
+            () = standalone_storage::wait_for_restart(), if portable => {}
         }
     }
 

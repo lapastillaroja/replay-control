@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+data_dir="${REPLAY_CONTROL_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/replay-control}"
+settings_dir="${REPLAY_CONTROL_SETTINGS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/replay-control}"
+mkdir -p "$data_dir" "$settings_dir"
+export REPLAY_CONTROL_PACKAGED=1
+export REPLAY_CONTROL_PORTABLE=1
+export REPLAY_CONTROL_DATA_DIR="$data_dir"
+export REPLAY_CONTROL_SETTINGS_DIR="$settings_dir"
+
+url=https://localhost:18443/
+if [[ ${1:-} == --no-browser ]]; then
+    open_browser=false
+else
+    open_browser=true
+fi
+
+selection="$data_dir/standalone-storage-path"
+restart_marker="$data_dir/restart-requested"
+previous_selection="$data_dir/storage-switch-previous"
+
+save_previous_selection() {
+    if [[ -f "$selection" ]]; then
+        printf 'present\n%s\n' "$(cat "$selection")" > "$previous_selection.next"
+    else
+        printf 'absent\n' > "$previous_selection.next"
+    fi
+    mv -f "$previous_selection.next" "$previous_selection"
+}
+
+restore_previous_selection() {
+    if [[ $(head -n 1 "$previous_selection") == present ]]; then
+        sed -n '2p' "$previous_selection" > "$selection.next"
+        mv -f "$selection.next" "$selection"
+    else
+        rm -f "$selection"
+    fi
+}
+
+restarting=false
+[[ ! -e "$restart_marker" ]] || restarting=true
+while true; do
+    if [[ ! -e "$restart_marker" ]]; then
+        save_previous_selection
+    fi
+    /app/bin/replay-control-app \
+        --enable-https \
+        --port 18080 \
+        --https-port 18443 \
+        --site-root /app/share/replay-control/site \
+        --catalog-path /app/share/replay-control/catalog.sqlite \
+        --data-dir "$data_dir" \
+        --settings-path "$settings_dir" &
+    child=$!
+    if $open_browser; then
+        for _ in {1..60}; do
+            if (echo > /dev/tcp/127.0.0.1/18443) 2>/dev/null; then
+                break
+            fi
+            if ! kill -0 "$child" 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        if command -v xdg-open >/dev/null 2>&1; then
+            xdg-open "$url" || true
+        elif command -v gio >/dev/null 2>&1; then
+            gio open "$url" || true
+        else
+            echo "Open $url in your browser."
+        fi
+    else
+        echo "Open $url in your browser."
+    fi
+    wait "$child" && status=0 || status=$?
+    if [[ -e "$restart_marker" ]]; then
+        if $restarting && [[ "$status" -ne 0 ]]; then
+            restore_previous_selection
+            rm -f "$restart_marker" "$previous_selection"
+            printf 'error\nCould not start with the selected storage. Choose a storage folder again.\n' \
+                > "$data_dir/storage-switch-status"
+            restarting=false
+            continue
+        fi
+        restarting=true
+        open_browser=false
+        continue
+    fi
+    rm -f "$previous_selection"
+    exit "$status"
+done

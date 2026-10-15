@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Replay Control
+Comment=Browse and manage your game library
+Exec=replay-control
+Icon=io.github.lapastillaroja.ReplayControl
+Categories=Game;
+Terminal=false

@@ -8,6 +8,8 @@ Host identity is detected once at startup from `/opt/replay` and sent to the bro
 
 On standalone packages, a saved browser choice takes precedence over `REPLAY_STORAGE_PATH`, which optionally preconfigures the first path. Without a path, the package serves the local storage selector before creating `AppState`. Direct binary runs require a path. Package ownership is checked separately by the updater to choose APT, DNF, or the archive update path.
 
+The standalone storage ID combines the filesystem identity with the canonical selected folder path, so separate folders on one disk have separate host-side `library.db` indexes. The ID is persisted in each folder's `.replay-control/storage-id`, which keeps it stable after a move. Legacy standalone IDs derived only from the filesystem are replaced on first use; their indexes are rebuilt from ROMs while `user_data.db` and media stay in the selected folder. RePlayOS storage IDs retain their filesystem-based derivation.
+
 ## Crates
 
 The codebase is split into four crates inside a Cargo workspace.

@@ -51,6 +51,8 @@ async-stream = { version = "0.3.6", optional = true }
 rand = { version = "0.10.3", optional = true }
 uuid = { version = "1.28.0", features = ["v4"], optional = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "stream"], optional = true }
+ashpd = { version = "0.13.13", default-features = false, features = ["tokio", "file_chooser"], optional = true }
+url = { version = "2.5.8", optional = true }
 semver = { version = "1.0.28", optional = true }
 flate2 = { version = "1.1.10", optional = true }
 tar = { version = "0.4.46", optional = true }
@@ -125,6 +127,8 @@ ssr = [
     "dep:rand",
     "dep:tikv-jemallocator",
     "dep:reqwest",
+    "dep:ashpd",
+    "dep:url",
     "dep:semver",
     "dep:flate2",
     "dep:tar",

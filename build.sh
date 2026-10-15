@@ -9,6 +9,7 @@ PKG_DIR="$OUT_DIR/pkg"
 TARGET=""
 TARGET_SET=false
 SERVER_ONLY=false
+SITE_ONLY=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -26,9 +27,15 @@ while [[ $# -gt 0 ]]; do
             fi
             TARGET=""; TARGET_SET=true; shift ;;
         --server-only) SERVER_ONLY=true; shift ;;
+        --site-only) SITE_ONLY=true; shift ;;
         *) echo "Unknown build argument: $1" >&2; exit 1 ;;
     esac
 done
+
+if [[ "$SERVER_ONLY" == true && "$SITE_ONLY" == true ]]; then
+    echo "--server-only and --site-only cannot be combined" >&2
+    exit 1
+fi
 
 # Allow TARGET env var as well
 if [[ "$TARGET_SET" == false ]]; then
@@ -199,6 +206,11 @@ rm -rf "$OUT_DIR/icons" "$OUT_DIR/branding"
 cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
 cp -r "replay-control-app/static/branding" "$OUT_DIR/branding" 2>/dev/null || true
 
+fi
+
+if [[ "$SITE_ONLY" == true ]]; then
+    echo "Done! Site: $OUT_DIR/"
+    exit 0
 fi
 
 echo "==> Building server (ssr)..."

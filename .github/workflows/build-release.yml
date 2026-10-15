@@ -19,8 +19,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    # Cross sysroot sets the oldest glibc/library ABI supported by the .deb.
+  site:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -29,9 +28,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown,aarch64-unknown-linux-gnu
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-site
 
       - name: Restore downloaded data cache
         # Restore-only from the shared data/upstream cache (produced weekly by
@@ -46,17 +47,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            binaryen \
-            brotli \
-            mold \
-            p7zip-full \
-            unzip
-          sudo apt-get install -y dpkg-dev rpm
-          # Make mold discoverable by aarch64 cross-compiler
-          sudo ln -sf /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
+          sudo apt-get install -y binaryen brotli mold p7zip-full unzip
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.129
@@ -66,10 +57,118 @@ jobs:
           TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
         run: ./scripts/download-tgdb-lookups.sh
 
-      - name: Build (WASM + arm64 and amd64 servers)
+      - name: Build catalog and browser
+        run: ./build.sh --site-only
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-site
+          retention-days: 1
+          path: |
+            target/site/
+            catalog.sqlite
+
+  server:
+    needs: site
+    # Both jobs check out the tag at the same path and use the same toolchain.
+    # The package step checks the native/browser server-function routes.
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            build_arg: aarch64
+            binary_dir: target/aarch64-unknown-linux-gnu/release
+          - arch: amd64
+            build_arg: amd64
+            binary_dir: target/release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.arch }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-site
+
+      - name: Install build dependencies
         run: |
-          ./build.sh aarch64
-          ./build.sh amd64 --server-only
+          sudo apt-get update
+          sudo apt-get install -y mold
+          if [[ '${{ matrix.arch }}' == arm64 ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+            sudo ln -sf /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
+          fi
+
+      - name: Build ${{ matrix.arch }} server
+        run: ./build.sh '${{ matrix.build_arg }}' --server-only
+
+      - name: Pack server artifact
+        run: tar -czf 'release-${{ matrix.arch }}.tar.gz' -C '${{ matrix.binary_dir }}' replay-control-app
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.arch }}
+          retention-days: 1
+          path: release-${{ matrix.arch }}.tar.gz
+
+      - name: Install Flatpak build tools
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build Flatpak bundle
+        if: matrix.arch == 'amd64'
+        run: ./scripts/package-flatpak.sh
+
+      - name: Test installed Flatpak
+        if: matrix.arch == 'amd64'
+        run: |
+          flatpak install --user -y ./replay-control-*.flatpak
+          python3 tests/package/flatpak_smoke.py
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.arch == 'amd64'
+        with:
+          name: release-flatpak
+          retention-days: 1
+          path: replay-control-*.flatpak
+
+  publish:
+    needs: server
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Restore server binaries
+        run: |
+          mkdir -p target/aarch64-unknown-linux-gnu/release target/release
+          tar -xzf release-arm64.tar.gz -C target/aarch64-unknown-linux-gnu/release
+          tar -xzf release-amd64.tar.gz -C target/release
+
+      - name: Install package tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev rpm
 
       - name: Package release archives
         run: |
@@ -100,6 +199,7 @@ jobs:
               replay-control_*_arm64.deb \
               replay-control_*_amd64.deb \
               replay-control-*-1.x86_64.rpm \
+              replay-control-*.flatpak \
               install.sh \
               > checksums.sha256
 
@@ -131,6 +231,7 @@ jobs:
             replay-control_*_arm64.deb \
             replay-control_*_amd64.deb \
             replay-control-*-1.x86_64.rpm \
+            replay-control-*.flatpak \
             install.sh \
             checksums.sha256 \
             --clobber

@@ -3406,6 +3406,11 @@ fn main() {
         })
         .unwrap_or(0);
 
+    // The shipped catalog is read-only. Leave it in rollback-journal mode so
+    // SQLite can open it from immutable package and Flatpak filesystems.
+    conn.pragma_update(None, "journal_mode", "DELETE")
+        .expect("Failed to finalize catalog journal mode");
+
     println!("catalog.sqlite written to {}", args.output.display());
     println!("  arcade_game:    {}", arcade_count);
     println!("  canonical_game: {}", canonical_count);

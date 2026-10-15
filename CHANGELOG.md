@@ -6,6 +6,10 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [1.3.0-beta.2]
 
+### Added
+
+- An experimental x86_64 Flatpak for standalone desktop Linux installs. It opens Replay Control in the default browser and asks you to choose the folder containing `roms/` through the desktop folder picker. Each selected folder keeps its own library data and index.
+
 ### Changed
 
 - The Flycast arcade game list can now be synced from upstream; a monthly job proposes board-classification updates in a reviewable pull request, including the correction needed for Initial D Cycraft. (#163)

@@ -1,0 +1,31 @@
+{
+  "id": "io.github.lapastillaroja.ReplayControl",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "25.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "replay-control",
+  "finish-args": [
+    "--share=network"
+  ],
+  "modules": [
+    {
+      "name": "replay-control",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -Dm755 replay-control-app /app/bin/replay-control-app",
+        "install -Dm755 replay-control /app/bin/replay-control",
+        "install -Dm644 catalog.sqlite /app/share/replay-control/catalog.sqlite",
+        "cp -a site /app/share/replay-control/site",
+        "install -Dm644 io.github.lapastillaroja.ReplayControl.desktop /app/share/applications/io.github.lapastillaroja.ReplayControl.desktop",
+        "install -Dm644 io.github.lapastillaroja.ReplayControl.metainfo.xml /app/share/metainfo/io.github.lapastillaroja.ReplayControl.metainfo.xml",
+        "install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/io.github.lapastillaroja.ReplayControl.png"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "payload"
+        }
+      ]
+    }
+  ]
+}

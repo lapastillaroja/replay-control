@@ -8,8 +8,9 @@
 //!
 //! The 8 hex chars are the lower 32 bits of a CRC32 over the filesystem's
 //! own stable identifier — the volume UUID for block-backed filesystems
-//! (exFAT/ext4/etc.), or the `server:/share` source string for NFS. Same
-//! storage → same id every time; reformatting rotates the id by changing
+//! (exFAT/ext4/etc.), or the `server:/share` source string for NFS. Standalone
+//! folder IDs also include the canonical folder path. Same storage → same id
+//! every time; reformatting rotates the id by changing
 //! the underlying FS UUID. Random fallback only when no FS identifier can
 //! be obtained (tmpfs, weird mounts).
 //!

@@ -340,6 +340,12 @@ pub async fn start_update(
     state: &super::AppState,
     tag: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if std::env::var_os("REPLAY_CONTROL_PORTABLE").is_some() {
+        return Err(
+            "Download and install the newer Replay Control Flatpak bundle from its GitHub release."
+                .into(),
+        );
+    }
     if std::env::var("REPLAY_CONTROL_DEV_MODE").as_deref() == Ok("1") {
         return Err(
             "A development build is active. Run dev.sh --pi --reset before using Update Now."

@@ -95,3 +95,13 @@ sudo dnf install ./replay-control-VERSION-1.x86_64.rpm
 Replace the example filename with the exact file you downloaded. Open **https://localhost:8443** on that computer. On first use, choose the folder that contains your `roms/` directory. You can change it later in **Settings > Library & Games > Storage location**. The package also adds a Replay Control shortcut to desktop application menus.
 
 To remove a standalone install, run `sudo apt remove replay-control` on Debian or `sudo dnf remove replay-control` on Fedora. Your settings and library data remain available for a later reinstall.
+
+An experimental **x86_64 Flatpak** is also available for desktop Linux systems with Flatpak installed. Download the `.flatpak` bundle from a Replay Control release and install it with:
+
+```sh
+flatpak install --user ./replay-control-VERSION-x86_64.flatpak
+```
+
+Launch **Replay Control** from your application menu. It opens **https://localhost:18443** and asks you to choose a folder containing `roms/` with your desktop's folder picker. Approve the local certificate warning on first use. You can choose a different folder later in Settings. To update it, download and install a newer bundle. Standalone Flatpak use is work in progress and unsupported.
+
+To remove the Flatpak, run `flatpak uninstall --user io.github.lapastillaroja.ReplayControl`.
