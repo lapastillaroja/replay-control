@@ -1662,7 +1662,21 @@ mod ssr {
             http_listener,
             http_app.into_make_service_with_connect_info::<SocketAddr>(),
         );
-        let https_server = axum_server::bind_rustls(https_addr, tls_config)
+        let https_listener = std::net::TcpListener::bind(https_addr).unwrap_or_else(|error| {
+            tracing::error!("failed to bind HTTPS listener on {https_addr}: {error}");
+            std::process::exit(1);
+        });
+        https_listener
+            .set_nonblocking(true)
+            .unwrap_or_else(|error| {
+                tracing::error!("failed to make HTTPS listener nonblocking: {error}");
+                std::process::exit(1);
+            });
+        let https_server = axum_server::from_tcp_rustls(https_listener, tls_config)
+            .unwrap_or_else(|error| {
+                tracing::error!("failed to initialize HTTPS listener on {https_addr}: {error}");
+                std::process::exit(1);
+            })
             .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
         tokio::select! {
