@@ -4,6 +4,32 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [1.3.0]
+
+> Welcome to Replay Control 1.3.0: more systems, deeper game controls, and full RePlayOS 2.x support.
+
+### Added
+
+- Optional Debian 13 (arm64 and amd64) and Fedora 42 (x86_64) packages with desktop shortcuts and in-app updates. Existing RePlayOS installs can migrate from the 1.0 archive installer without losing settings or library data. An experimental x86_64 Flatpak is also available for standalone desktop use.
+- Atari Jaguar CD, Nintendo GameCube, and PlayStation 2 libraries, with metadata, artwork, system icons, and supported disc formats. RetroAchievements identification is available for GameCube and PS2 images. Launching some formats requires a compatible RePlayOS version or renderer.
+- Running-game settings on the game detail page, with separate Game and System views for the current display. Controls include screen position, gamma, volume, and available video options; changes take effect after applying them. Saved game settings can be removed from the page.
+- RePlayOS Insider token and Link Play settings, save-state screenshots in the player bar, and expanded playtime summaries where the connected RePlayOS version supports them.
+
+### Changed
+
+- Updated the RePlayOS 2.x API integration and added version and Vulkan capability checks with guidance when a launch option is unavailable.
+- Replay Control follows RePlayOS's selected storage and separate save-data location. On a standalone desktop, each selected ROM folder keeps its own library index.
+- Services leave CPU 0 available for RePlayOS and use the remaining detected CPUs. New installs use dedicated port settings instead of `REPLAY_EXTRA_ARGS`.
+- Flycast arcade game lists can be refreshed from upstream through a reviewable pull request. (#163)
+
+### Fixed
+
+- Storage detection and recovery now follow the selected SD, USB, NVMe, or NFS location, including when a mount disappears and later returns.
+- HTTPS startup works when the listener must be nonblocking.
+- RePlayOS on-screen message duration saves immediately, and Net Control checks authenticated status without repeatedly retrying rejected requests. (#142)
+- Metadata setup recognizes all required artwork sources, LaunchBox extraction no longer requires a system `unzip`, and exact catalog titles can supply missing non-arcade box art.
+- Thumbnail download failures report useful diagnostics without exposing credentials.
+
 ## [1.3.0-beta.2]
 
 ### Added
