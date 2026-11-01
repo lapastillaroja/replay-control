@@ -82,6 +82,14 @@
  },
  {
   "hashes": [
+   "d5304197ef20ddcb6c3685190d08066e"
+  ],
+  "num_achievements": 10,
+  "ra_id": "45169",
+  "title": "~Hack~ Pokémon Lost Silver"
+ },
+ {
+  "hashes": [
    "e3de09f287b5e8b60c32b69b76f0cd83"
   ],
   "num_achievements": 78,
@@ -253,6 +261,14 @@
   "num_achievements": 6,
   "ra_id": "22124",
   "title": "~Homebrew~ Blinky's Revenge"
+ },
+ {
+  "hashes": [
+   "eb235b01ab02463a92e2080d7addf7d9"
+  ],
+  "num_achievements": 17,
+  "ra_id": "37962",
+  "title": "~Homebrew~ Blob Dash"
  },
  {
   "hashes": [
@@ -504,7 +520,7 @@
  },
  {
   "hashes": [
-   "afe14eef683f3eb910b67ea2e3feb124"
+   "9933a47f570777a1d15eb4d6e44e70d0"
   ],
   "num_achievements": 16,
   "ra_id": "30726",
@@ -782,6 +798,14 @@
   "num_achievements": 7,
   "ra_id": "33642",
   "title": "~Homebrew~ TV-Chan's Great Escape!: GB"
+ },
+ {
+  "hashes": [
+   "d715542e5f6f00884154d0fb8cbc9cb4"
+  ],
+  "num_achievements": 7,
+  "ra_id": "45231",
+  "title": "~Homebrew~ Twin Peaks: Meanwhile"
  },
  {
   "hashes": [
@@ -2150,9 +2174,9 @@
  },
  {
   "hashes": [
+   "0e4961c33a0d7e2a40529d35fefab20d",
+   "22ab154e4ce5902685b2b76ab1cb1ec6",
    "66039ffd2bd4ec27b8dd43c3ee0b7b7c",
-   "a9d5dcec070a6eb4f83c7afd070419e3",
-   "c9011621c6153994c0184f79f7ef7ccc",
    "cbc55f3bb98f8c0443917ae477e56e51"
   ],
   "num_achievements": 149,
@@ -2161,10 +2185,10 @@
  },
  {
   "hashes": [
-   "18ecfecb444fb397c0ec3f02ea2f7f51",
+   "4d9c2125fd5b35dac9e39d440b90693b",
+   "535c98b54ede97e026f8d9fb23ac945c",
    "dabfbdc9aba5f2edc21f884c52881e0d",
-   "debaaabe98cfca4555b1f775d5ea35a2",
-   "fd554e4f14203beec25942c39e2b4616"
+   "debaaabe98cfca4555b1f775d5ea35a2"
   ],
   "num_achievements": 149,
   "ra_id": "16090",

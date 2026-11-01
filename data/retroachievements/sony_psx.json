@@ -105,6 +105,14 @@
  },
  {
   "hashes": [
+   "889379ea4bd2a1e5e742be0fd0cfe868"
+  ],
+  "num_achievements": 11,
+  "ra_id": "41185",
+  "title": "~Hack~ CTR 30th Anniversary Custom Adventure"
+ },
+ {
+  "hashes": [
    "223e3fd23b56486cc46c16d274da3d11"
   ],
   "num_achievements": 12,
@@ -126,6 +134,14 @@
   "num_achievements": 27,
   "ra_id": "38652",
   "title": "~Hack~ CTR: Lolo Racing GP"
+ },
+ {
+  "hashes": [
+   "c33fc4bfebf4fdddeaf745413848f184"
+  ],
+  "num_achievements": 70,
+  "ra_id": "41175",
+  "title": "~Hack~ CTR: Lolo Racing GP 2, and Pancho"
  },
  {
   "hashes": [
@@ -923,6 +939,14 @@
  },
  {
   "hashes": [
+   "a299f7dc421c11bbd2489a4059a375ca"
+  ],
+  "num_achievements": 71,
+  "ra_id": "8267",
+  "title": "Area 51"
+ },
+ {
+  "hashes": [
    "efa9c4ef5b06a87c412dc92f88c9b6b5"
   ],
   "num_achievements": 38,
@@ -1007,6 +1031,14 @@
  },
  {
   "hashes": [
+   "3135da3dc372198c770da66788945610"
+  ],
+  "num_achievements": 52,
+  "ra_id": "31481",
+  "title": "Asuka 120% Final BURNING Fest."
+ },
+ {
+  "hashes": [
    "8f65b241ea2379b53f6bf3c10a179a65"
   ],
   "num_achievements": 56,
@@ -1028,6 +1060,14 @@
   "num_achievements": 19,
   "ra_id": "17411",
   "title": "Atlantis: The Lost Empire"
+ },
+ {
+  "hashes": [
+   "8ea7f6a29f9bcc2c4f08b8d7912de8a0"
+  ],
+  "num_achievements": 19,
+  "ra_id": "17192",
+  "title": "ATV Racers"
  },
  {
   "hashes": [
@@ -1068,6 +1108,14 @@
   "num_achievements": 75,
   "ra_id": "14433",
   "title": "Barbie: Explorer"
+ },
+ {
+  "hashes": [
+   "6110e0bffb36dd07116bad55ee526f1f"
+  ],
+  "num_achievements": 19,
+  "ra_id": "24605",
+  "title": "Barbie: Race & Ride"
  },
  {
   "hashes": [
@@ -1439,6 +1487,14 @@
   "num_achievements": 73,
   "ra_id": "7115",
   "title": "Bust A Groove 2"
+ },
+ {
+  "hashes": [
+   "34d538ba70167613a75f9e0eb3479463"
+  ],
+  "num_achievements": 180,
+  "ra_id": "17802",
+  "title": "Bust-A-Move 4"
  },
  {
   "hashes": [
@@ -4705,6 +4761,7 @@
  },
  {
   "hashes": [
+   "2d2dd00223e55c0c41255ba01b70daf9",
    "8f93d735c91e73cc4743979fe3285025"
   ],
   "num_achievements": 63,
@@ -6052,6 +6109,23 @@
   "num_achievements": 64,
   "ra_id": "17040",
   "title": "Space Invaders"
+ },
+ {
+  "hashes": [
+   "3f9039c8970b08c0da84e7f35b9cec76",
+   "79f72c6f835ec9057c86dbb141c95c5c"
+  ],
+  "num_achievements": 13,
+  "ra_id": "28270",
+  "title": "Spectral Tower"
+ },
+ {
+  "hashes": [
+   "b0cdace8b05faf5602d190fa952a2c56"
+  ],
+  "num_achievements": 107,
+  "ra_id": "43585",
+  "title": "Spectral Tower [Subset - 107 Class Endings]"
  },
  {
   "hashes": [

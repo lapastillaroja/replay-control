@@ -293,6 +293,14 @@
  },
  {
   "hashes": [
+   "875d183f4838b2090198f0a04248fd94"
+  ],
+  "num_achievements": 25,
+  "ra_id": "46143",
+  "title": "~Hack~ Super Monkey Ball: Fright Night"
+ },
+ {
+  "hashes": [
    "786d44bbf718f843340246fb215a32b2"
   ],
   "num_achievements": 74,
@@ -667,6 +675,14 @@
  },
  {
   "hashes": [
+   "18268c9d701d90a715543f5dca70747d"
+  ],
+  "num_achievements": 41,
+  "ra_id": "30512",
+  "title": "Driven"
+ },
+ {
+  "hashes": [
    "09be56dcfe7a43b9ff185f0a57b74026"
   ],
   "num_achievements": 25,
@@ -771,6 +787,14 @@
   "num_achievements": 85,
   "ra_id": "28598",
   "title": "GT Cube"
+ },
+ {
+  "hashes": [
+   "43dbf63cd3bc99fbef985a9fec646726"
+  ],
+  "num_achievements": 61,
+  "ra_id": "30224",
+  "title": "Harry Potter and the Sorcerer's Stone"
  },
  {
   "hashes": [
@@ -1123,6 +1147,14 @@
  },
  {
   "hashes": [
+   "4bc25bfc8b6e80858170e9fee09a391f"
+  ],
+  "num_achievements": 69,
+  "ra_id": "30315",
+  "title": "NBA Street"
+ },
+ {
+  "hashes": [
    "7e27db8b3fc71b991cd31c2f1b6d1afe"
   ],
   "num_achievements": 68,
@@ -1185,6 +1217,12 @@
   "num_achievements": 123,
   "ra_id": "4000",
   "title": "Paper Mario: The Thousand-Year Door"
+ },
+ {
+  "hashes": [],
+  "num_achievements": 10,
+  "ra_id": "45073",
+  "title": "Paper Mario: The Thousand-Year Door [Subset - Pre-Hooktail Pit of 100 Trials]"
  },
  {
   "hashes": [
@@ -1480,6 +1518,7 @@
  },
  {
   "hashes": [
+   "55e20f571c0771939badfde5a5760786",
    "90f666f636fff92b2e609462edbb29b5"
   ],
   "num_achievements": 142,
@@ -1545,7 +1584,7 @@
  },
  {
   "hashes": [],
-  "num_achievements": 167,
+  "num_achievements": 175,
   "ra_id": "30893",
   "title": "SpongeBob SquarePants: Battle for Bikini Bottom [Subset - Bonus]"
  },

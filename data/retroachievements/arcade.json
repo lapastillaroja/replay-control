@@ -18,6 +18,14 @@
  },
  {
   "hashes": [
+   "ef61a077cf4e6527c24bf68f2c9a2c8a"
+  ],
+  "num_achievements": 17,
+  "ra_id": "45795",
+  "title": "~Hack~ Donkey Kong Bowser's Takeover"
+ },
+ {
+  "hashes": [
    "9ff137b6c9672882ee95a66476b9020c"
   ],
   "num_achievements": 16,
@@ -1004,6 +1012,15 @@
   "num_achievements": 10,
   "ra_id": "13729",
   "title": "Cash Quiz"
+ },
+ {
+  "hashes": [
+   "30e74ce9ab4f90150919617c227c779b",
+   "f83046e09537cf94fcc717dea659126c"
+  ],
+  "num_achievements": 24,
+  "ra_id": "11883",
+  "title": "Caveman Ninja"
  },
  {
   "hashes": [
@@ -2597,6 +2614,14 @@
   "num_achievements": 29,
   "ra_id": "13794",
   "title": "Mutation Nation"
+ },
+ {
+  "hashes": [
+   "7f9d5004c906aefcfdd840c3a28934c0"
+  ],
+  "num_achievements": 30,
+  "ra_id": "15674",
+  "title": "Mystic Warriors: Wrath of the Ninjas"
  },
  {
   "hashes": [

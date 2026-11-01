@@ -209,6 +209,14 @@
  },
  {
   "hashes": [
+   "9b40063cb777f95b0e919b2fd81f792b"
+  ],
+  "num_achievements": 26,
+  "ra_id": "45166",
+  "title": "~Hack~ Ambivalence"
+ },
+ {
+  "hashes": [
    "d0cb3603e4617bff79f564debe6e51fb"
   ],
   "num_achievements": 28,
@@ -1007,6 +1015,17 @@
  },
  {
   "hashes": [
+   "5c5341a02dc0bbeef08c54f08f93c84c",
+   "88a30743b828f6b3c0b2ce758f61a7e6",
+   "8e1899b6a009f1cb0a0f54932b40200a",
+   "fc96a197ee960ffb2a8b18537c10871f"
+  ],
+  "num_achievements": 176,
+  "ra_id": "41206",
+  "title": "~Hack~ Final Fantasy VI: T-IC"
+ },
+ {
+  "hashes": [
    "5bc14b6604e59740d8d0a78ca5c4e93d"
   ],
   "num_achievements": 92,
@@ -1582,6 +1601,14 @@
   "num_achievements": 17,
   "ra_id": "5310",
   "title": "~Hack~ Mario Saves Christmas"
+ },
+ {
+  "hashes": [
+   "43e37d8d0a7315f89d4d98251394f607"
+  ],
+  "num_achievements": 11,
+  "ra_id": "2920",
+  "title": "~Hack~ Mario vs. SONIC.EXE"
  },
  {
   "hashes": [
@@ -2619,6 +2646,14 @@
   "num_achievements": 17,
   "ra_id": "41224",
   "title": "~Hack~ Super Magro World for Super Nintendo"
+ },
+ {
+  "hashes": [
+   "ba66f6bf845444a8ed623700d5ba202e"
+  ],
+  "num_achievements": 24,
+  "ra_id": "20066",
+  "title": "~Hack~ Super Mario /v/orld"
  },
  {
   "hashes": [
@@ -3724,6 +3759,14 @@
  },
  {
   "hashes": [
+   "f374534b100b180cda7bcf0b3c4c3fd8"
+  ],
+  "num_achievements": 15,
+  "ra_id": "45085",
+  "title": "~Homebrew~ Find 87"
+ },
+ {
+  "hashes": [
    "ca21da5d36bfa68d04b69f6a0833d67f"
   ],
   "num_achievements": 53,
@@ -4297,6 +4340,14 @@
   "num_achievements": 37,
   "ra_id": "11653",
   "title": "Battle Pinball"
+ },
+ {
+  "hashes": [
+   "3b9a0f6c862cd723760f75d845508a4a"
+  ],
+  "num_achievements": 41,
+  "ra_id": "23035",
+  "title": "Battle Tycoon: Flash Hiders SFX"
  },
  {
   "hashes": [
@@ -4996,6 +5047,15 @@
  },
  {
   "hashes": [
+   "1095474903c14921a17edb56a2d58870",
+   "55108013f875db3b39da04b8f58489ab"
+  ],
+  "num_achievements": 41,
+  "ra_id": "2607",
+  "title": "Dark Half"
+ },
+ {
+  "hashes": [
    "381c7c7a339f647d193486e6fe7c84a7",
    "d58849487d0ab3038f5f9cc38efc8602"
   ],
@@ -5535,6 +5595,7 @@
  },
  {
   "hashes": [
+   "3fc38c304aa7c3b985d5b63a68a6a7d7",
    "6ff960ff16436e90d2841e59df1d4b90",
    "7981c47e3b3e957be5b352f8508c3f6e",
    "7d5b022d2e0f89f22989a4dce79539cd",
@@ -5571,13 +5632,13 @@
  },
  {
   "hashes": [
-   "11aa974b516f7013362cc9e5268b07f4",
    "2cba753e115a60ec20b2b4ef52ff7a1e",
    "2ce3c879155241bf3cd1768d9287b63d",
    "544311e104805e926083acf29ec664da",
    "8b449c1a94ea898f5c33ccac4cda432d",
+   "8f18c1a7cae6be8e6beb63e41edb0b24",
    "aad61f72f56198a3c982293d0f43b363",
-   "cfb6a52d31d0bc37cc8543966248cb8f",
+   "af0d205817b4e53ff11481450ebf0e7d",
    "ea12d01beeb8bc3376d0a91a80fdc201",
    "f3334df6425f78c34bef9afbc8118150",
    "f34746ef44744f313f775876ad42a53b"
@@ -5837,7 +5898,8 @@
  },
  {
   "hashes": [
-   "388cffcebcd3155cae2f2c5cec1f92c1"
+   "388cffcebcd3155cae2f2c5cec1f92c1",
+   "f08f2d2e9fe441abc573243dd537c25b"
   ],
   "num_achievements": 18,
   "ra_id": "1361",
@@ -5981,6 +6043,16 @@
   "num_achievements": 36,
   "ra_id": "409",
   "title": "Hagane: The Final Conflict"
+ },
+ {
+  "hashes": [
+   "5b042f9443d8338e0eb7e2604f9a3363",
+   "9a3fbda325a00ffdc28c22393ba2ab32",
+   "feeed7666e84d0e23a1c8a4e7401464d"
+  ],
+  "num_achievements": 41,
+  "ra_id": "2965",
+  "title": "Hamelin no Violin Hiki"
  },
  {
   "hashes": [
@@ -6305,6 +6377,15 @@
   "num_achievements": 34,
   "ra_id": "7886",
   "title": "Kaizou Choujin Shubibinman Zero"
+ },
+ {
+  "hashes": [
+   "e265847c3d2f72f81094c8db1711a1a6",
+   "efe8a1e8fbd0c05d1f515e2227e48d11"
+  ],
+  "num_achievements": 35,
+  "ra_id": "3115",
+  "title": "Kamaitachi no Yoru"
  },
  {
   "hashes": [
@@ -7948,6 +8029,14 @@
  },
  {
   "hashes": [
+   "ef37e657e2bb1fbff7c1c09a184028b5"
+  ],
+  "num_achievements": 32,
+  "ra_id": "5871",
+  "title": "Return of Double Dragon"
+ },
+ {
+  "hashes": [
    "b4745109dfb032675c6a0cb83598607f"
   ],
   "num_achievements": 13,
@@ -8536,6 +8625,7 @@
    "3a9127df7780161875769daacf82f118",
    "56dae36934bbd68444f0af7156eb2cab",
    "9998ee7ab55e1589933c550cf39a609b",
+   "d02e6de72daef1ce8a564e2e8fb8a91c",
    "d2a9522229e0cd96d800057ab7122765",
    "d5e4d3ad82936cdc4124e418f9035698",
    "d686ba6df942084216393ada009126dc"
@@ -9026,6 +9116,14 @@
  },
  {
   "hashes": [
+   "3765a816cedd0b2781de0b43b2b9419d"
+  ],
+  "num_achievements": 16,
+  "ra_id": "45175",
+  "title": "Super Punch-Out!! [Subset - TAS Ties]"
+ },
+ {
+  "hashes": [
    "0dc4efac96b9e965009e9c613913c6f8"
   ],
   "num_achievements": 39,
@@ -9261,6 +9359,12 @@
   "num_achievements": 102,
   "ra_id": "1250",
   "title": "Tecmo Secret of the Stars"
+ },
+ {
+  "hashes": [],
+  "num_achievements": 62,
+  "ra_id": "39604",
+  "title": "Tecmo Secret of the Stars [Subset - Item Drops]"
  },
  {
   "hashes": [
@@ -9786,16 +9890,6 @@
   "num_achievements": 35,
   "ra_id": "1287",
   "title": "The Twisted Tales of Spike McFang"
- },
- {
-  "hashes": [
-   "5b042f9443d8338e0eb7e2604f9a3363",
-   "9a3fbda325a00ffdc28c22393ba2ab32",
-   "feeed7666e84d0e23a1c8a4e7401464d"
-  ],
-  "num_achievements": 41,
-  "ra_id": "2965",
-  "title": "The Violinist of Hameln"
  },
  {
   "hashes": [

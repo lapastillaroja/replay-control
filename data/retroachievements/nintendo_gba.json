@@ -214,7 +214,7 @@
  },
  {
   "hashes": [
-   "0cb5a6c15a1a816c0efb2e0ce717ae4f",
+   "45dd08a9db1609ed02336b03c05ef0bd",
    "6ea329996dc6f918137b4de21af84414"
   ],
   "num_achievements": 82,
@@ -453,7 +453,7 @@
    "b16d27ee00538824ad70cdbed976b763",
    "fdec9ab03f8c165872ad22ba2277fce2"
   ],
-  "num_achievements": 109,
+  "num_achievements": 108,
   "ra_id": "33298",
   "title": "~Hack~ Pokémon Elysium"
  },
@@ -511,7 +511,7 @@
   "hashes": [
    "7e319f61dc68fc37223d5ac17f012356"
   ],
-  "num_achievements": 23,
+  "num_achievements": 31,
   "ra_id": "17757",
   "title": "~Hack~ Pokémon Emerald Version: Party Randomizer"
  },
@@ -1476,6 +1476,15 @@
  },
  {
   "hashes": [
+   "26b44c6f29e95b1aae1b79f37725d959",
+   "4a0e450c74e3e07f261a9a8f5624b788"
+  ],
+  "num_achievements": 43,
+  "ra_id": "9135",
+  "title": "A Sound of Thunder"
+ },
+ {
+  "hashes": [
    "4e46dd3ae5c9c70c49587d093517049a"
   ],
   "num_achievements": 43,
@@ -1581,6 +1590,14 @@
   "num_achievements": 28,
   "ra_id": "5544",
   "title": "Animal Snap: Rescue Them 2 by 2"
+ },
+ {
+  "hashes": [
+   "4075c0553f360e180cf9efc899b1d8bc"
+  ],
+  "num_achievements": 37,
+  "ra_id": "8856",
+  "title": "Animaniacs: Lights, Camera, Action!"
  },
  {
   "hashes": [
@@ -3048,6 +3065,12 @@
   "num_achievements": 87,
   "ra_id": "554",
   "title": "Fire Emblem: The Blazing Blade"
+ },
+ {
+  "hashes": [],
+  "num_achievements": 117,
+  "ra_id": "41269",
+  "title": "Fire Emblem: The Blazing Blade [Subset - Support Conversations]"
  },
  {
   "hashes": [
@@ -4893,7 +4916,7 @@
    "d3fa079587d3f1180491f49b0b6a60c9",
    "dd694bf96b08fb92a7450d991aae9afc"
   ],
-  "num_achievements": 128,
+  "num_achievements": 127,
   "ra_id": "2816",
   "title": "Pokémon Mystery Dungeon: Red Rescue Team"
  },
@@ -6370,6 +6393,14 @@
   "num_achievements": 56,
   "ra_id": "9051",
   "title": "Tweety & the Magic Gems"
+ },
+ {
+  "hashes": [
+   "56424a475e1171e608fdaaf3883c3cf9"
+  ],
+  "num_achievements": 66,
+  "ra_id": "9098",
+  "title": "Ty the Tasmanian Tiger 2: Bush Rescue"
  },
  {
   "hashes": [
