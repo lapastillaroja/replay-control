@@ -160,6 +160,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "2Xtreme",
+    "series_name": "Xtreme",
+    "system": "sony_psx",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "3-D Bomberman",
     "series_name": "Bomberman",
     "system": "microsoft_msx",
@@ -172,6 +180,14 @@
     "series_name": "3-D Ultra Pinball",
     "system": "nintendo_gbc",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "3Xtreme",
+    "series_name": "Xtreme",
+    "system": "sony_psx",
+    "series_order": 3,
     "follows": "",
     "followed_by": ""
   },
@@ -536,6 +552,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Actua Ice Hockey",
+    "series_name": "Actua Sports",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Actua Ice Hockey 2",
     "series_name": "Actua Sports",
     "system": "sony_psx",
@@ -574,6 +598,22 @@
     "series_order": null,
     "follows": "",
     "followed_by": "Actua Soccer 2"
+  },
+  {
+    "game_title": "Actua Soccer 2",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "Actua Soccer",
+    "followed_by": "Actua Soccer 3"
+  },
+  {
+    "game_title": "Actua Soccer 3",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "Actua Soccer 2",
+    "followed_by": ""
   },
   {
     "game_title": "Actua Tennis",
@@ -1448,6 +1488,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Angelique Duet",
+    "series_name": "Angelique",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Angry Video Game Nerd 8-bit",
     "series_name": "Angry Video Game Nerd",
     "system": "nintendo_nes",
@@ -1468,6 +1516,14 @@
     "series_name": "Ankh",
     "system": "nintendo_ds",
     "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Anna Kournikova's Smash Court Tennis",
+    "series_name": "Smash Court",
+    "system": "sony_psx",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -2092,6 +2148,14 @@
     "series_name": "Ayrton Senna Kart Duel",
     "system": "sony_psx",
     "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Ayrton Senna Kart Duel 2",
+    "series_name": "Ayrton Senna Kart Duel",
+    "system": "sony_psx",
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -3584,6 +3648,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Boku no Choro Q",
+    "series_name": "Choro Q",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Boku no Natsuyasumi",
     "series_name": "Boku no Natsuyasumi",
     "system": "sony_psx",
@@ -3660,16 +3732,16 @@
     "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "3-D Bomberman",
-    "followed_by": "Bomberman II"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Bomberman",
     "series_name": "Bomberman",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "follows": "3-D Bomberman",
+    "followed_by": "Bomberman II"
   },
   {
     "game_title": "Bomberman",
@@ -5560,9 +5632,33 @@
     "followed_by": ""
   },
   {
+    "game_title": "Choro Q Jet: Rainbow Wings",
+    "series_name": "Choro Q",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Choro Q Marine: Q-Boat",
+    "series_name": "Choro Q",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Choro Q Park",
     "series_name": "Choro Q",
     "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Choro Q: Hyper Customable GB",
+    "series_name": "Choro Q",
+    "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -5657,6 +5753,38 @@
   },
   {
     "game_title": "Chunithm",
+    "series_name": "Chunithm",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Chunithm 2024",
+    "series_name": "Chunithm",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Chunithm 2025",
+    "series_name": "Chunithm",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Chunithm 2026",
+    "series_name": "Chunithm",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Chunithm 2027",
     "series_name": "Chunithm",
     "system": "arcade_fbneo",
     "series_order": null,
@@ -6195,6 +6323,22 @@
     "game_title": "Columns II",
     "series_name": "Columns",
     "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Combat Choro Q",
+    "series_name": "Choro Q",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Combat Choro Q: Advance dai sakusen",
+    "series_name": "Choro Q",
+    "system": "nintendo_gba",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -7196,16 +7340,16 @@
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "Dance Dance Revolution X3",
-    "followed_by": "Dance Dance Revolution A"
+    "follows": "",
+    "followed_by": ""
   },
   {
     "game_title": "Dance Dance Revolution",
     "series_name": "Dance Dance Revolution",
     "system": "arcade_fbneo",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
+    "follows": "Dance Dance Revolution X3",
+    "followed_by": "Dance Dance Revolution A"
   },
   {
     "game_title": "Dance Dance Revolution",
@@ -7331,14 +7475,6 @@
     "game_title": "Dance Dance Revolution Extra Mix",
     "series_name": "Dance Dance Revolution",
     "system": "sony_psx",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Dance Dance Revolution Extreme",
-    "series_name": "Dance Dance Revolution",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -8595,6 +8731,14 @@
     "game_title": "Dino Crisis",
     "series_name": "Dino Crisis",
     "system": "sega_dc",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Dino Crisis",
+    "series_name": "Dino Crisis",
+    "system": "sony_psx",
     "series_order": 1,
     "follows": "",
     "followed_by": ""
@@ -10864,6 +11008,14 @@
     "followed_by": "ECW Anarchy Rulz"
   },
   {
+    "game_title": "ESPN Extreme Games",
+    "series_name": "Xtreme",
+    "system": "sony_psx",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "ESPN NBA 2Night",
     "series_name": "",
     "system": "sega_dc",
@@ -11139,6 +11291,14 @@
     "game_title": "Elevator Action",
     "series_name": "Elevator Action",
     "system": "microsoft_msx",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Elevator Action",
+    "series_name": "Elevator Action",
+    "system": "nintendo_gb",
     "series_order": 1,
     "follows": "",
     "followed_by": ""
@@ -13664,6 +13824,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Gadget Racers",
+    "series_name": "Choro Q",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Gaia Saver",
     "series_name": "Compati Hero Series",
     "system": "nintendo_snes",
@@ -15480,6 +15648,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Gunfighter: The Legend of Jesse James",
+    "series_name": "Gunfighter",
+    "system": "sony_psx",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Gungriffon",
     "series_name": "Gungriffon",
     "system": "sega_saturn",
@@ -16052,14 +16228,6 @@
     "series_name": "Heroes of Might and Magic",
     "system": "nintendo_gbc",
     "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Heroes of Might and Magic II: The Succession Wars",
-    "series_name": "Heroes of Might and Magic",
-    "system": "nintendo_gbc",
-    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -17352,6 +17520,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Jetpac",
+    "series_name": "Jetman",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Jewelpet: The Glittering Magical Jewel Box",
     "series_name": "Jewelpet",
     "system": "arcade_fbneo",
@@ -17453,6 +17629,22 @@
     "system": "sega_smd",
     "series_order": null,
     "follows": "One on One",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Jubeat",
+    "series_name": "Jubeat",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Jubeat Ripples",
+    "series_name": "Jubeat",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
     "followed_by": ""
   },
   {
@@ -18027,7 +18219,7 @@
     "game_title": "King's Field",
     "series_name": "King's Field",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 1,
     "follows": "",
     "followed_by": ""
   },
@@ -18035,7 +18227,7 @@
     "game_title": "King's Field II",
     "series_name": "King's Field",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 2,
     "follows": "",
     "followed_by": ""
   },
@@ -18043,7 +18235,7 @@
     "game_title": "King's Field III",
     "series_name": "King's Field",
     "system": "sony_psx",
-    "series_order": null,
+    "series_order": 3,
     "follows": "",
     "followed_by": ""
   },
@@ -18540,6 +18732,14 @@
     "series_name": "LEGO Island",
     "system": "sony_psx",
     "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "LMA Manager",
+    "series_name": "LMA Manager",
+    "system": "sony_psx",
+    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -19264,6 +19464,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "Lode Runner: The Legend Returns",
+    "series_name": "Lode Runner",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Lode Runner: The Legend Returns",
+    "series_name": "Lode Runner",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "London Racer II",
     "series_name": "A2 Racer",
     "system": "sony_psx",
@@ -19491,6 +19707,14 @@
     "game_title": "Lunar 2: Eternal Blue Complete",
     "series_name": "Lunar",
     "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Lunar Knights",
+    "series_name": "Boktai",
+    "system": "nintendo_ds",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -21010,6 +21234,14 @@
   {
     "game_title": "MechWarrior 2: 31st Century Combat",
     "series_name": "",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "MechWarrior",
+    "followed_by": "MechWarrior 3"
+  },
+  {
+    "game_title": "MechWarrior 2: 31st Century Combat",
+    "series_name": "",
     "system": "sony_psx",
     "series_order": null,
     "follows": "MechWarrior",
@@ -21694,6 +21926,38 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
+  },
+  {
+    "game_title": "Memories Off",
+    "series_name": "Memories Off",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Memories Off 2nd"
+  },
+  {
+    "game_title": "Memories Off",
+    "series_name": "Memories Off",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Memories Off 2nd"
+  },
+  {
+    "game_title": "Memories Off 2nd",
+    "series_name": "Memories Off",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "Memories Off",
+    "followed_by": "Omoide ni Kawaru Kimi: Memories Off"
+  },
+  {
+    "game_title": "Memories Off 2nd",
+    "series_name": "Memories Off",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "Memories Off",
+    "followed_by": "Omoide ni Kawaru Kimi: Memories Off"
   },
   {
     "game_title": "Men in Black 2: The Series",
@@ -23696,9 +23960,25 @@
     "followed_by": ""
   },
   {
+    "game_title": "NBA In The Zone '98",
+    "series_name": "NBA in the Zone",
+    "system": "sony_psx",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "NBA In The Zone '99",
     "series_name": "NBA in the Zone",
     "system": "nintendo_n64",
+    "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NBA In The Zone '99",
+    "series_name": "NBA in the Zone",
+    "system": "sony_psx",
     "series_order": 4,
     "follows": "",
     "followed_by": ""
@@ -23827,6 +24107,14 @@
     "game_title": "NBA Jam: Tournament Edition",
     "series_name": "NBA Jam",
     "system": "sega_smd",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NBA Jam: Tournament Edition",
+    "series_name": "NBA Jam",
+    "system": "sony_psx",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -24073,6 +24361,14 @@
   },
   {
     "game_title": "NCAA Football 2001",
+    "series_name": "EA Sports College Football",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NCAA Football 99",
     "series_name": "EA Sports College Football",
     "system": "sony_psx",
     "series_order": null,
@@ -24624,7 +24920,31 @@
     "followed_by": ""
   },
   {
+    "game_title": "NHL FaceOff 2000",
+    "series_name": "NHL FaceOff",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NHL FaceOff 2001",
+    "series_name": "NHL FaceOff",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "NHL FaceOff 98",
+    "series_name": "NHL FaceOff",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "NHL FaceOff 99",
     "series_name": "NHL FaceOff",
     "system": "sony_psx",
     "series_order": null,
@@ -25648,6 +25968,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Omoide ni Kawaru Kimi: Memories Off",
+    "series_name": "Memories Off",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "Memories Off 2nd",
+    "followed_by": "Memories Off: Sorekara"
+  },
+  {
     "game_title": "One Piece",
     "series_name": "One Piece",
     "system": "nintendo_gba",
@@ -25677,14 +26005,6 @@
     "system": "arcade_fbneo",
     "series_order": null,
     "follows": "Himitsu no AiPri",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Ongeki",
-    "series_name": "Ongeki",
-    "system": "arcade_fbneo",
-    "series_order": 1,
-    "follows": "",
     "followed_by": ""
   },
   {
@@ -26435,6 +26755,14 @@
     "game_title": "Penny Racers",
     "series_name": "Choro Q",
     "system": "nintendo_n64",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Perfect Choro Q",
+    "series_name": "Choro Q",
+    "system": "nintendo_gbc",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -30344,6 +30672,14 @@
     "followed_by": ""
   },
   {
+    "game_title": "Road Trip: Shifting Gears",
+    "series_name": "Choro Q",
+    "system": "nintendo_gba",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Robo Aleste",
     "series_name": "Power Strike",
     "system": "sega_cd",
@@ -33176,6 +33512,22 @@
     "followed_by": ""
   },
   {
+    "game_title": "Smash Court",
+    "series_name": "Smash Court",
+    "system": "sony_psx",
+    "series_order": 1,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Smash Court 3",
+    "series_name": "Smash Court",
+    "system": "sony_psx",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Snake's Revenge",
     "series_name": "Metal Gear",
     "system": "nintendo_nes",
@@ -35058,6 +35410,14 @@
   {
     "game_title": "Star Wars Arcade",
     "series_name": "",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Star Wars Trilogy Arcade"
+  },
+  {
+    "game_title": "Star Wars Arcade",
+    "series_name": "",
     "system": "sega_32x",
     "series_order": null,
     "follows": "",
@@ -36353,6 +36713,14 @@
   },
   {
     "game_title": "Super Mario Bros. 3",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_gba",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario Bros. 3",
     "series_name": "Mario",
     "system": "nintendo_nes",
     "series_order": null,
@@ -36369,6 +36737,14 @@
   },
   {
     "game_title": "Super Mario Bros. 3",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_nes",
+    "series_order": 3,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario Bros. 3",
     "series_name": "Mario",
     "system": "nintendo_snes",
     "series_order": null,
@@ -36380,6 +36756,14 @@
     "series_name": "Super Mario",
     "system": "nintendo_snes",
     "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario Bros. 3",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_snes",
+    "series_order": 3,
     "follows": "",
     "followed_by": ""
   },
@@ -36457,6 +36841,14 @@
   },
   {
     "game_title": "Super Mario World",
+    "series_name": "Super Mario Bros.",
+    "system": "arcade_fbneo",
+    "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario World",
     "series_name": "Mario",
     "system": "nintendo_gba",
     "series_order": null,
@@ -36473,6 +36865,14 @@
   },
   {
     "game_title": "Super Mario World",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_gba",
+    "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario World",
     "series_name": "Mario",
     "system": "nintendo_snes",
     "series_order": null,
@@ -36484,6 +36884,14 @@
     "series_name": "Super Mario",
     "system": "nintendo_snes",
     "series_order": 6,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario World",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_snes",
+    "series_order": 4,
     "follows": "",
     "followed_by": ""
   },
@@ -36492,6 +36900,14 @@
     "series_name": "Super Mario",
     "system": "nintendo_gba",
     "series_order": 8,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario World 2: Yoshi's Island",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_gba",
+    "series_order": 5,
     "follows": "",
     "followed_by": ""
   },
@@ -36516,6 +36932,14 @@
     "series_name": "Super Mario",
     "system": "nintendo_snes",
     "series_order": 8,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Super Mario World 2: Yoshi's Island",
+    "series_name": "Super Mario Bros.",
+    "system": "nintendo_snes",
+    "series_order": 5,
     "follows": "",
     "followed_by": ""
   },
@@ -37054,6 +37478,14 @@
     "series_order": null,
     "follows": "",
     "followed_by": ""
+  },
+  {
+    "game_title": "Superbike 2000",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "Superbike World Championship",
+    "followed_by": "Superbike 2001"
   },
   {
     "game_title": "Susume! Taisen Puzzle Dama: Tōkon! Marutama Chō",
@@ -37992,6 +38424,22 @@
     "followed_by": "Tennis no Oujisama: Sweat & Tears 2"
   },
   {
+    "game_title": "Tentama",
+    "series_name": "",
+    "system": "sega_dc",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Tentama 2wins"
+  },
+  {
+    "game_title": "Tentama",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Tentama 2wins"
+  },
+  {
     "game_title": "Terminator 2",
     "series_name": "Terminator",
     "system": "nintendo_snes",
@@ -38360,6 +38808,30 @@
     "followed_by": "Tetris Plus 2"
   },
   {
+    "game_title": "Tetris Plus",
+    "series_name": "",
+    "system": "nintendo_gb",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Tetris Plus 2"
+  },
+  {
+    "game_title": "Tetris Plus",
+    "series_name": "",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Tetris Plus 2"
+  },
+  {
+    "game_title": "Tetris Plus",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "Tetris Plus 2"
+  },
+  {
     "game_title": "Tetris Plus 2",
     "series_name": "",
     "system": "arcade_fbneo",
@@ -38590,6 +39062,30 @@
     "series_order": null,
     "follows": "Test Drive",
     "followed_by": "Test Drive III: The Passion"
+  },
+  {
+    "game_title": "The F.A. Premier League Stars",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": "The F.A. Premier League Stars 2001"
+  },
+  {
+    "game_title": "The F.A. Premier League Stars 2001",
+    "series_name": "",
+    "system": "nintendo_gbc",
+    "series_order": null,
+    "follows": "The F.A. Premier League Stars",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The F.A. Premier League Stars 2001",
+    "series_name": "",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "The F.A. Premier League Stars",
+    "followed_by": ""
   },
   {
     "game_title": "The Fairly OddParents: Breakin' da Rules",
@@ -38835,6 +39331,14 @@
     "game_title": "The King of Fighters '95",
     "series_name": "The King of Fighters",
     "system": "arcade_fbneo",
+    "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "The King of Fighters '95",
+    "series_name": "The King of Fighters",
+    "system": "sony_psx",
     "series_order": 2,
     "follows": "",
     "followed_by": ""
@@ -40576,6 +41080,38 @@
     "followed_by": ""
   },
   {
+    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
+    "series_name": "Taisen Puzzle-Dama",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
+    "series_name": "Tokimeki Memorial",
+    "system": "sega_saturn",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
+    "series_name": "Taisen Puzzle-Dama",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Tokimeki Memorial Taisen Puzzle-Dama",
+    "series_name": "Tokimeki Memorial",
+    "system": "sony_psx",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Tokyo Majin Gakuen: Fuju Houroku",
     "series_name": "Tokyo Majin Gakuen",
     "system": "nintendo_gba",
@@ -41529,7 +42065,7 @@
   },
   {
     "game_title": "TrackMania Turbo",
-    "series_name": "TrackMania",
+    "series_name": "Trackmania",
     "system": "nintendo_ds",
     "series_order": 7,
     "follows": "",
@@ -42232,6 +42768,14 @@
     "followed_by": "Mortal Kombat Trilogy"
   },
   {
+    "game_title": "Ultra Street Fighter II: The Final Challengers",
+    "series_name": "Street Fighter",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
     "game_title": "Ultraman Club: Chikyū Dakkan Sakusen",
     "series_name": "Ultraman Club",
     "system": "nintendo_nes",
@@ -42524,6 +43068,22 @@
     "series_name": "V-Tennis",
     "system": "sony_psx",
     "series_order": 2,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "VS. Super Mario Bros.",
+    "series_name": "Super Mario",
+    "system": "arcade_fbneo",
+    "series_order": null,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "VS. Super Mario Bros.",
+    "series_name": "Super Mario Bros.",
+    "system": "arcade_fbneo",
+    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
@@ -43163,22 +43723,6 @@
     "game_title": "Vs. Excitebike",
     "series_name": "Excite",
     "system": "nintendo_nes",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Vs. Super Mario Bros.",
-    "series_name": "Super Mario",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Vs. Super Mario Bros.",
-    "series_name": "Super Mario Bros.",
-    "system": "arcade_fbneo",
     "series_order": null,
     "follows": "",
     "followed_by": ""
@@ -44116,6 +44660,14 @@
     "series_name": "Wizards & Warriors",
     "system": "nintendo_gb",
     "series_order": 4,
+    "follows": "",
+    "followed_by": ""
+  },
+  {
+    "game_title": "Wolfenstein 3D",
+    "series_name": "Wolfenstein",
+    "system": "arcade_fbneo",
+    "series_order": 3,
     "follows": "",
     "followed_by": ""
   },
@@ -45544,38 +46096,6 @@
     "followed_by": ""
   },
   {
-    "game_title": "Zhong Er Jie Zou 2024",
-    "series_name": "Chunithm",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Zhong Er Jie Zou 2025",
-    "series_name": "Chunithm",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Zhong Er Jie Zou 2026",
-    "series_name": "Chunithm",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "Zhong Er Jie Zou 2027",
-    "series_name": "Chunithm",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
     "game_title": "Zoda's Revenge: StarTropics II",
     "series_name": "StarTropics",
     "system": "nintendo_nes",
@@ -45724,22 +46244,6 @@
     "series_name": "iCarly",
     "system": "nintendo_ds",
     "series_order": 1,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "jubeat",
-    "series_name": "jubeat",
-    "system": "arcade_fbneo",
-    "series_order": null,
-    "follows": "",
-    "followed_by": ""
-  },
-  {
-    "game_title": "jubeat ripples",
-    "series_name": "jubeat",
-    "system": "arcade_fbneo",
-    "series_order": null,
     "follows": "",
     "followed_by": ""
   },
