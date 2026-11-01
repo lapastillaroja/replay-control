@@ -1140,7 +1140,7 @@
   "hashes": [
    "e5860491dbaaa87e116cf6cbd2e3eb52"
   ],
-  "num_achievements": 228,
+  "num_achievements": 227,
   "ra_id": "15626",
   "title": "Gran Turismo: The Real Driving Simulator"
  },
@@ -1204,6 +1204,14 @@
   "num_achievements": 110,
   "ra_id": "3539",
   "title": "Half-Minute Hero"
+ },
+ {
+  "hashes": [
+   "80785b10b7c3c555f5704ddd940d70c5"
+  ],
+  "num_achievements": 48,
+  "ra_id": "3550",
+  "title": "Hammerin' Hero"
  },
  {
   "hashes": [
@@ -1405,7 +1413,7 @@
   "hashes": [
    "c8ead2c27430dbb5c99e8ef0560b9895"
   ],
-  "num_achievements": 132,
+  "num_achievements": 131,
   "ra_id": "3556",
   "title": "Kingdom Hearts: Birth by Sleep -Final Mix-"
  },
@@ -2583,6 +2591,7 @@
  },
  {
   "hashes": [
+   "5eeec1b1605a3577a53b52a15ee92535",
    "c183b117a01a596ce5cf0378ecc9b766",
    "cac7b4421efbe182ea1e8f70c7c70b60"
   ],
@@ -2756,6 +2765,16 @@
   "num_achievements": 42,
   "ra_id": "3587",
   "title": "Ultimate Ghosts 'n Goblins"
+ },
+ {
+  "hashes": [
+   "87131883413cc64dfa5ffcda64d2e966",
+   "f0f0e207bff457f81fa950f443e32e9b",
+   "f4348c163a85d3ec4153ed2c6247e5c3"
+  ],
+  "num_achievements": 38,
+  "ra_id": "41219",
+  "title": "Umineko no Naku Koro ni Portable 1"
  },
  {
   "hashes": [

@@ -833,6 +833,14 @@
  },
  {
   "hashes": [
+   "f9bba2eb6e79512dbf387cfb8a8f25ae"
+  ],
+  "num_achievements": 14,
+  "ra_id": "45174",
+  "title": "~Homebrew~ Mortal Coil"
+ },
+ {
+  "hashes": [
    "fce7079639133df3c4d1f7beb8a89b21"
   ],
   "num_achievements": 24,
@@ -1124,6 +1132,14 @@
  },
  {
   "hashes": [
+   "2863835c2f892c3b0f34b8591415178a"
+  ],
+  "num_achievements": 8,
+  "ra_id": "45319",
+  "title": "~Homebrew~ Word-O"
+ },
+ {
+  "hashes": [
    "702bee919d1c9a67069213d6d286af51"
   ],
   "num_achievements": 8,
@@ -1153,6 +1169,38 @@
   "num_achievements": 12,
   "ra_id": "27432",
   "title": "~Homebrew~ You Are a Skeleton & That Is a Problem"
+ },
+ {
+  "hashes": [
+   "97b6eb86385cc51fed8f65c6db04548a"
+  ],
+  "num_achievements": 11,
+  "ra_id": "33385",
+  "title": "~Homebrew~ Yurivania 0: Soul Night Prelude"
+ },
+ {
+  "hashes": [
+   "b814eb1064975392a2db18b5f410abf7"
+  ],
+  "num_achievements": 16,
+  "ra_id": "33386",
+  "title": "~Homebrew~ Yurivania 1: Uhaul of the Night"
+ },
+ {
+  "hashes": [
+   "bea053b0d658d549444a2f3e71a3e135"
+  ],
+  "num_achievements": 15,
+  "ra_id": "45078",
+  "title": "~Homebrew~ Yurivania 2: Josette's Quest"
+ },
+ {
+  "hashes": [
+   "9e679016b9d0e1e5a5039343b36a0a4d"
+  ],
+  "num_achievements": 29,
+  "ra_id": "45082",
+  "title": "~Homebrew~ Yurivania 3: Circle of the Polycule"
  },
  {
   "hashes": [
@@ -1957,6 +2005,7 @@
  {
   "hashes": [
    "3d4537f6a0542f781e408bd5440d23dd",
+   "9f95ba738b04685e093e5a2c9ac77a23",
    "ef3df5f544c31b74dc6ecfa7a562917b"
   ],
   "num_achievements": 34,
@@ -2320,11 +2369,28 @@
  },
  {
   "hashes": [
+   "1e211849c2de390070ca06fccabdd025",
+   "bf9334b9c902510cd9fe39af82b4b465"
+  ],
+  "num_achievements": 20,
+  "ra_id": "22119",
+  "title": "Hugo 2"
+ },
+ {
+  "hashes": [
    "1efea4210026a8d733a5b2ade2b005f1"
   ],
   "num_achievements": 25,
   "ra_id": "5351",
   "title": "Ikari no Yousai 2"
+ },
+ {
+  "hashes": [
+   "83ef6dc979ee752513a3b2c794d4cbff"
+  ],
+  "num_achievements": 19,
+  "ra_id": "7689",
+  "title": "Initial D Gaiden"
  },
  {
   "hashes": [
@@ -2889,11 +2955,12 @@
  },
  {
   "hashes": [
-   "7db13139bc32e2aadb732d610f4c1604"
+   "65e455737df458e59cc7b0892b95e6cd",
+   "d8fafe7e8bf3d169d03b48ea23262fd5"
   ],
-  "num_achievements": 13,
-  "ra_id": "3651",
-  "title": "Mr. Nutz"
+  "num_achievements": 28,
+  "ra_id": "4746",
+  "title": "Mr. Do!"
  },
  {
   "hashes": [
@@ -3705,6 +3772,14 @@
  },
  {
   "hashes": [
+   "133ae23114bf442fef6acccd1b8e187a"
+  ],
+  "num_achievements": 16,
+  "ra_id": "2574",
+  "title": "Terminator 2: Judgment Day"
+ },
+ {
+  "hashes": [
    "084f1e457749cdec86183189bd88ce69",
    "982ed5d2b12a0377eb14bcdc4123744e",
    "d1feeed857f9010980b00bf53f749d61"
@@ -4073,7 +4148,8 @@
  },
  {
   "hashes": [
-   "5294a5fed7e88a6f76707979c83017d6"
+   "5294a5fed7e88a6f76707979c83017d6",
+   "cdfe58c81471d5b126d0cf7b20fd68b1"
   ],
   "num_achievements": 26,
   "ra_id": "6695",

@@ -140,6 +140,14 @@
  },
  {
   "hashes": [
+   "eb95b58873842dd610f4d5f239a698a2"
+  ],
+  "num_achievements": 51,
+  "ra_id": "35536",
+  "title": "Art Style: ROTOZOA"
+ },
+ {
+  "hashes": [
    "6088c162ef1676651b693ae8826e44b9"
   ],
   "num_achievements": 45,
@@ -502,6 +510,14 @@
  },
  {
   "hashes": [
+   "1185be1c51424f3e7c906ad840cfc03c"
+  ],
+  "num_achievements": 85,
+  "ra_id": "34567",
+  "title": "DJ Hero 2"
+ },
+ {
+  "hashes": [
    "904fffe4e4cc5daa96d76a7106d1bceb"
   ],
   "num_achievements": 7,
@@ -767,6 +783,14 @@
   "num_achievements": 74,
   "ra_id": "34589",
   "title": "Ghost Squad"
+ },
+ {
+  "hashes": [
+   "11499eba4f42d3ddda1e4bbf1ae910d6"
+  ],
+  "num_achievements": 10,
+  "ra_id": "35725",
+  "title": "Gnömz"
  },
  {
   "hashes": [
@@ -1221,6 +1245,14 @@
  },
  {
   "hashes": [
+   "311c5102f4486b2b8b5df539c58a8a8c"
+  ],
+  "num_achievements": 125,
+  "ra_id": "86",
+  "title": "MadWorld"
+ },
+ {
+  "hashes": [
    "1e98b8204e91b3d5d0462c0b09a0ee0b"
   ],
   "num_achievements": 61,
@@ -1467,6 +1499,15 @@
   "num_achievements": 39,
   "ra_id": "34721",
   "title": "MySims: Kingdom"
+ },
+ {
+  "hashes": [
+   "1ce46062f1737c512308f70c174799d4",
+   "82a5cc35dab760fa342b693ffa21e163"
+  ],
+  "num_achievements": 100,
+  "ra_id": "35361",
+  "title": "Naruto Shippuden: Clash of Ninja Revolution III"
  },
  {
   "hashes": [
@@ -2283,6 +2324,22 @@
  },
  {
   "hashes": [
+   "a5b7a3e88c87b5eef568eb04bc207273"
+  ],
+  "num_achievements": 77,
+  "ra_id": "57",
+  "title": "Trauma Center: New Blood"
+ },
+ {
+  "hashes": [
+   "e36a35bc1628208f282e419c390d4d84"
+  ],
+  "num_achievements": 36,
+  "ra_id": "45074",
+  "title": "Trauma Center: New Blood [Subset - Multiplayer]"
+ },
+ {
+  "hashes": [
    "b50249285515d011d041558c046b1a1e"
   ],
   "num_achievements": 149,
@@ -2403,6 +2460,14 @@
   "num_achievements": 19,
   "ra_id": "35523",
   "title": "Who Wants to Be a Millionaire: 2nd Edition"
+ },
+ {
+  "hashes": [
+   "d9be53705d71d78d86e7d2ae6238f16a"
+  ],
+  "num_achievements": 12,
+  "ra_id": "35966",
+  "title": "Wii Chess"
  },
  {
   "hashes": [

@@ -537,6 +537,14 @@
  },
  {
   "hashes": [
+   "8f6b5619ccaf3fa00ffafa8e96db5705"
+  ],
+  "num_achievements": 20,
+  "ra_id": "37813",
+  "title": "~Hack~ Untitled Short Anniversary Sonic Hack"
+ },
+ {
+  "hashes": [
    "832b07b687cbe719964fa09df6045abe"
   ],
   "num_achievements": 32,
@@ -1620,7 +1628,7 @@
   "hashes": [
    "dc3847b07cd94a15b1b9e0fb2ff5db11"
   ],
-  "num_achievements": 27,
+  "num_achievements": 25,
   "ra_id": "4123",
   "title": "Bonanza Bros."
  },
@@ -2601,6 +2609,14 @@
  },
  {
   "hashes": [
+   "426471b87024c7b1e688fa8474390624"
+  ],
+  "num_achievements": 50,
+  "ra_id": "4284",
+  "title": "Goofy's Hysterical History Tour"
+ },
+ {
+  "hashes": [
    "18ff626a183c188f789d71f17dd739d5",
    "bfa46f13c36688373e504584a3a8d09e"
   ],
@@ -2926,6 +2942,7 @@
    "2cad7a202eaf98c27248d99680ca38b5",
    "38b00b29431634e2348579687855410b",
    "3a4a21f894f011b3f57bf636a3386f53",
+   "3ef80fe678f1765ff340ab78e884dc4b",
    "4feae5987b0c552b84620f3d48bd8c4b",
    "62d468dbb3f1c4a864c65c64b8dfcbe4",
    "6397f7029f90f59881bdc4174eafb52f",
@@ -3122,6 +3139,14 @@
   "num_achievements": 24,
   "ra_id": "294",
   "title": "Mega Turrican"
+ },
+ {
+  "hashes": [
+   "87bf5af19eb663526ad00ecf7b0b923b"
+  ],
+  "num_achievements": 38,
+  "ra_id": "4354",
+  "title": "Menacer 6-Game Cartridge"
  },
  {
   "hashes": [
