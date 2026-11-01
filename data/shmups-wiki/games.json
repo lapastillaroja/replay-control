@@ -40,6 +40,10 @@
     "page_title": "Sonic Wings 3"
   },
   {
+    "normalized_title": "aiandllmpolicy",
+    "page_title": "AI and LLM Policy"
+  },
+  {
     "normalized_title": "airgallet",
     "page_title": "Akuu Gallet",
     "video_index": true
@@ -813,6 +817,10 @@
     "page_title": "V-V"
   },
   {
+    "normalized_title": "gstreamg2020",
+    "page_title": "G-Stream G2020"
+  },
+  {
     "normalized_title": "guardianforce",
     "page_title": "Guardian Force",
     "video_index": true
@@ -1232,6 +1240,10 @@
     "normalized_title": "nemesis",
     "page_title": "Gradius",
     "video_index": true
+  },
+  {
+    "normalized_title": "neonbreakerendlessarcade",
+    "page_title": "Neon Breaker: Endless Arcade"
   },
   {
     "normalized_title": "nichibutsu",
